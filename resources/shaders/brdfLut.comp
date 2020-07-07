@@ -1,0 +1,49 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#include "brdf.inc"
+
+#include "sampling.inc"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set=1, binding = 0, rg16f) uniform image2D lut;
+
+void main(){
+	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+	
+	float r = uv.x / float(imageSize(lut).x);
+	r = max(r, 0.0001f);
+	
+	float NoV = max(float(uv.y), 0.1f) / float(imageSize(lut).y);
+	
+	vec3 V = vec3(sqrt( 1.0f - NoV * NoV ), 0.f, NoV);
+	vec3 N = vec3(0.f, 0.f, 1.f);
+	
+	int samples = 1024;
+	
+	vec2 result = vec2(0.f, 0.f);
+	for(int i = 0; i < samples; i++){
+	
+		vec2 random = hammersley2d(i, samples);
+		vec3 H = importanceSampleGGX(random.x, random.y, r, N);
+
+		vec3 L = 2.f * dot(V, H ) * H - V;
+		
+		float VoH = max(dot(V, H), 0.f);
+		float NoH = max(H.z, 0);
+		float NoL = max(L.z, 0);
+		
+		if(NoL > 0.f){
+			float F_c = pow(1.f - VoH, 5.f);
+			float Vis = Visibility(NoV, NoL, r);
+			
+			float k = Vis * VoH * NoL / NoH;
+			
+			result.x += (1.f - F_c) * k;
+			result.y += F_c * k;
+		}	
+	}
+	result /= float(samples);
+    result *= 4.f;
+	imageStore(lut, uv, vec4(result, 0.f, 0.f));
+}

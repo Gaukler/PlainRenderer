@@ -1,0 +1,80 @@
+cmake_minimum_required(VERSION 3.16)
+#3.16 required for pre-compiled-headers
+
+Project(Plain)
+
+#require c++ 17
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+# add source files
+file(GLOB_RECURSE SOURCE_FILES
+	${CMAKE_SOURCE_DIR}/Plain/src/*.c
+	${CMAKE_SOURCE_DIR}/Plain/src/*.cpp)
+
+# add header files
+file(GLOB_RECURSE HEADER_FILES
+	${CMAKE_SOURCE_DIR}/Plain/src/*.h
+	${CMAKE_SOURCE_DIR}/Plain/src/*.hpp)
+
+add_executable(${PROJECT_NAME}
+	${HEADER_FILES}
+	${SOURCE_FILES})
+
+#add src/ as include to avoid relative include paths
+include_directories(Plain/src)
+
+#add vendor folder to allow direct inclusion of header libraries
+include_directories(Plain/vendor)
+
+#enable multi core compilation when using Visual Studio
+if(MSVC)
+  target_compile_options(Plain PRIVATE "/MP")
+endif()
+
+#add glfw
+add_subdirectory(Plain/vendor/glfw)
+include_directories(Plain/vendor/glfw)
+target_link_libraries(Plain glfw ${GLFW_LIBRARIES})
+
+#add SPIRV-Cross
+add_subdirectory(Plain/vendor/spirv-cross)
+include_directories(Plain/vendor/spirv-cross)
+target_link_libraries(Plain spirv-cross-c)
+
+#add glm
+add_subdirectory(Plain/vendor/glm)
+include_directories(Plain/vendor/glm)
+#glm is header only, no target_link_libraries needed
+
+#add imgui
+include_directories(Plain/vendor/imgui)
+set(IMGUI_FILES 
+	Plain/vendor/imgui/imgui.h
+	Plain/vendor/imgui/imgui_internal.h
+	Plain/vendor/imgui/imstb_rectpack.h
+	Plain/vendor/imgui/imstb_textedit.h
+	Plain/vendor/imgui/imstb_truetype.h
+	Plain/vendor/imgui/examples/imgui_impl_vulkan.h
+	Plain/vendor/imgui/examples/imgui_impl_glfw.h
+
+	Plain/vendor/imgui/imgui.cpp
+	Plain/vendor/imgui/imgui_demo.cpp
+	Plain/vendor/imgui/imgui_draw.cpp
+	Plain/vendor/imgui/imgui_widgets.cpp
+	Plain/vendor/imgui/examples/imgui_impl_vulkan.cpp
+	Plain/vendor/imgui/examples/imgui_impl_glfw.cpp)
+target_sources(Plain PRIVATE ${IMGUI_FILES})
+source_group("ImGui" FILES ${IMGUI_FILES})
+
+#add vulkan
+find_package(Vulkan REQUIRED)
+target_include_directories(Plain PRIVATE Vulkan::Vulkan)
+target_link_libraries(Plain Vulkan::Vulkan)
+
+#configure precompiled headers
+target_precompile_headers(Plain PRIVATE ${CMAKE_SOURCE_DIR}/Plain/src/pch.h)
+
+#set source groups to create proper filters in visual studio
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${HEADER_FILES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCE_FILES})

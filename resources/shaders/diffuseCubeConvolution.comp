@@ -1,0 +1,71 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set=1, binding = 0, rgba8)	uniform imageCube	cubeOut;
+layout(set=1, binding = 1) 			uniform textureCube	cubeTexture;
+layout(set=1, binding = 2) 			uniform sampler 	cubeSampler;
+
+float random(vec2 st){
+	return fract(sin(dot(st.xy, vec2(12.9898,78.233)))*43758.5453123);
+}
+
+vec3 coordinateToDirection(ivec3 co, ivec2 resolution){
+	vec3 forwardPerFace[6] = {
+		vec3(1.f, 0.f, 0.f),	//right
+		vec3(-1.f, 0.f, 0.f),	//left
+		vec3(0.f, 1.f, 0.f),	//down
+		vec3(0.f, -1.f, 0.f),	//up
+		vec3(0.f, 0.f, 1.f),	//forward
+		vec3(0.f, 0.f, -1.f)	//back
+	};
+	vec3 upPerFace[6] = {		
+		vec3(0.f, -1.f, 0.f),	//right
+		vec3(0.f, -1.f, 0.f),   //left
+		vec3(0.f, 0.f, 1.f),  	//down
+		vec3(0.f, 0.f, -1.f),   //up
+		vec3(0.f, -1.f, 0.f),   //forward
+		vec3(0.f, -1.f, 0.f)	//back
+	};
+	
+	vec3 forward = forwardPerFace[co.z];
+	vec3 up = upPerFace[co.z];
+	vec3 right = cross(forward, up);
+	
+	vec2 uvNormalized = vec2(co.xy) / vec2(resolution);
+	vec2 factors = 2.f * uvNormalized - 1.f;
+	
+	return normalize(forward + factors.y * up + factors.x * right);
+}
+
+void main(){
+	ivec3 storageCo = ivec3(gl_GlobalInvocationID.xyz);
+	vec3 direction = coordinateToDirection(storageCo, imageSize(cubeOut).xy);
+	
+	vec3 color = vec3(0.f);
+	float samplesTaken = 0.f;
+	const int samplesPerFace = 50;	
+	const ivec2 cubeRes = textureSize(samplerCube(cubeTexture, cubeSampler), 0).xy;
+	const ivec2 stepSize = cubeRes / samplesPerFace;
+	for(int x = 0; x < samplesPerFace; x++){
+		for(int y = 0; y < samplesPerFace; y++){
+			for(int face = 0; face < 6; face++){
+				ivec3 sampleCo  = ivec3(stepSize * ivec2(x, y), face);
+				const vec3 sampleDirection = coordinateToDirection(sampleCo, textureSize(samplerCube(cubeTexture, cubeSampler), 0).xy);
+				const float theta = dot(direction, sampleDirection);
+				/*
+				only allow samples in upper hemisphere
+				*/
+				if(theta > 0.f){
+					const vec3 sampleColor = texture(samplerCube(cubeTexture, cubeSampler), sampleDirection).rgb;
+					color += sampleColor * theta;
+					samplesTaken += 1.f;
+				}
+			}
+		}
+	}
+	color /= samplesTaken;
+	color += (random(vec2(gl_GlobalInvocationID.xy)) * 2.f - 1.f) / 256.f; //dithering to aleviate banding
+	imageStore(cubeOut, storageCo, vec4(color, 1.f));
+}

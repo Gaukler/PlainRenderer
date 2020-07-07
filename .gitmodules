@@ -1,0 +1,18 @@
+[submodule "glm"]
+	path = glm
+	url = https://github.com/g-truc/glm
+	branch = master
+[submodule "Plain/vendor/glm"]
+	path = Plain/vendor/glm
+	url = https://github.com/g-truc/glm
+	branch = master
+[submodule "Plain/vendor/glfw"]
+	path = Plain/vendor/glfw
+	url = https://github.com/glfw/glfw
+	branch = master
+[submodule "Plain/vendor/spirv-cross"]
+	path = Plain/vendor/spirv-cross
+	url = https://github.com/KhronosGroup/SPIRV-Cross
+[submodule "Plain/vendor/imgui"]
+	path = Plain/vendor/imgui
+	url = https://github.com/ocornut/imgui
