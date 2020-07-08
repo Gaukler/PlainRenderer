@@ -13,8 +13,7 @@ ImageDescription loadImage(const std::filesystem::path& path, const bool isFullP
         fullPath = path;
     }
     else {
-        const auto resourceDirectory = DirectoryUtils::getReference().getResourceDirectory();
-        fullPath = resourceDirectory / path;
+        fullPath = DirectoryUtils::getResourceDirectory() / path;
     }
 
 	int width, height, components;

@@ -1,22 +1,21 @@
 #include "pch.h"
 #include "DirectoryUtils.h"
 
-
 namespace fs = std::filesystem;
 
 fs::path DirectoryUtils::m_workingDirectory;
 fs::path DirectoryUtils::m_resourceDirectory;
 
-DirectoryUtils& DirectoryUtils::getReference() {
-	static DirectoryUtils instance;
-	return instance;
+void DirectoryUtils::init() {
+    m_workingDirectory = fs::current_path();
+    m_resourceDirectory = searchResourceDirectory(m_workingDirectory);
 }
 
-fs::path DirectoryUtils::getWorkingDirectory() const{
+fs::path DirectoryUtils::getWorkingDirectory(){
 	return m_workingDirectory;
 }
 
-fs::path DirectoryUtils::getResourceDirectory() const{
+fs::path DirectoryUtils::getResourceDirectory(){
 	return m_resourceDirectory;
 }
 
@@ -39,9 +38,4 @@ fs::path DirectoryUtils::searchResourceDirectory(const fs::path& workingDirector
 	}
 
 	throw std::runtime_error("couldn't find resource directory");
-}
-
-DirectoryUtils::DirectoryUtils() {
-	m_workingDirectory = fs::current_path();
-	m_resourceDirectory = searchResourceDirectory(m_workingDirectory);
 }

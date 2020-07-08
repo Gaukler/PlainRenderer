@@ -1,12 +1,15 @@
 #include "pch.h"
 #include "App.h"
 
-#include <Utilities/Timer.h>
+#include "Utilities/DirectoryUtils.h"
+#include "Utilities/Timer.h"
 #include "CameraController.h"
-#include <ModelLoader.h>
+#include "ModelLoader.h"
 #include <imgui/imgui.h>
 
 App::App() {
+
+    DirectoryUtils::init();
 
     const uint32_t initialWidth = 1600;
     const uint32_t initialHeight = 900;

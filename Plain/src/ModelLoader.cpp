@@ -14,8 +14,7 @@ loadModel
 */
 MeshData loadModel(const std::filesystem::path& filename){
 
-    const DirectoryUtils directoryPaths = DirectoryUtils::getReference();
-    const std::filesystem::path fullPath = directoryPaths.getResourceDirectory() / filename;
+    const std::filesystem::path fullPath = DirectoryUtils::getResourceDirectory() / filename;
 
     tinyobj::attrib_t attributes;
     std::vector<tinyobj::shape_t> shapes;

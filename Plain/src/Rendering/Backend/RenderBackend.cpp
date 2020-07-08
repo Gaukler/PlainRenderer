@@ -7,9 +7,8 @@
 
 #include "SpirvReflection.h"
 #include "VertexInput.h"
-#include "Rendering/ShaderLoader.h"
+#include "ShaderIO.h"
 #include "Utilities/GeneralUtils.h"
-#include "ShaderCompile.h"
 
 #include <imgui/imgui.h>
 #include <imgui/examples/imgui_impl_glfw.h>
@@ -116,7 +115,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     create swapchain copy pass
     */
     ComputePassDescription copyPass;
-    copyPass.shaderPath = "Shaders\\imageCopy.comp";
+    copyPass.shaderPath = "imageCopy.comp";
     m_swapchain.copyToSwapchainPass = createComputePass(copyPass);
 }
 
@@ -2543,8 +2542,7 @@ RenderPass RenderBackend::createComputePassInternal(const ComputePassDescription
     VkComputePipelineCreateInfo pipelineInfo;
     VkPipelineShaderStageCreateInfo stageInfo;
 
-    const auto shaderGLSL = loadShaderFile(desc.shaderPath);
-    const auto spirV = compileGLSLToSPIRV(shaderGLSL, desc.shaderPath);
+    const auto spirV = loadShader(desc.shaderPath);
 
     VkShaderModule module = createShaderModule(spirV);
     ShaderReflection reflection = performComputeShaderReflection(spirV);
@@ -2600,12 +2598,10 @@ RenderPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription
     /*
     load shader modules
      */
-    const auto vertexGLSL   = loadShaderFile(desc.shaderPaths.vertex);
-    const auto fragmentGLSL = loadShaderFile(desc.shaderPaths.fragment);
 
     GraphicShaderCode spirVCode;
-    spirVCode.vertexCode   = compileGLSLToSPIRV(vertexGLSL,   desc.shaderPaths.vertex);
-    spirVCode.fragmentCode = compileGLSLToSPIRV(fragmentGLSL, desc.shaderPaths.fragment);
+    spirVCode.vertexCode   = loadShader(desc.shaderPaths.vertex);
+    spirVCode.fragmentCode = loadShader(desc.shaderPaths.fragment);
 
     VkShaderModule vertexModule   = createShaderModule(spirVCode.vertexCode);
     VkShaderModule fragmentModule = createShaderModule(spirVCode.fragmentCode);
@@ -2614,21 +2610,14 @@ RenderPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription
     VkShaderModule tesselationControlModule = VK_NULL_HANDLE;
     VkShaderModule tesselationEvaluationModule = VK_NULL_HANDLE;
     if (desc.shaderPaths.geometry.has_value()) {
-        const auto geometryGLSL = loadShaderFile(desc.shaderPaths.geometry.value());
-        spirVCode.geometryCode = compileGLSLToSPIRV(geometryGLSL, desc.shaderPaths.geometry.value());
+        spirVCode.geometryCode = loadShader(desc.shaderPaths.geometry.value());
         geometryModule = createShaderModule(spirVCode.geometryCode.value());
     }
     if (desc.shaderPaths.tesselationControl.has_value()) {
         assert(desc.shaderPaths.tesselationEvaluation.has_value());   //both shaders must be defined or none
 
-        const auto tesselationControlPath    = desc.shaderPaths.tesselationControl.value();
-        const auto tesselationEvaluationPath = desc.shaderPaths.tesselationEvaluation.value();
-
-        const auto tesselationControlGLSL    = loadShaderFile(tesselationControlPath);
-        const auto tesselationEvaluationGLSL = loadShaderFile(tesselationEvaluationPath);
-
-        spirVCode.tesselationControlCode    = compileGLSLToSPIRV(tesselationControlGLSL,    tesselationControlPath);
-        spirVCode.tesselationEvaluationCode = compileGLSLToSPIRV(tesselationEvaluationGLSL, tesselationEvaluationPath);
+        spirVCode.tesselationControlCode    = loadShader(desc.shaderPaths.tesselationControl.value());
+        spirVCode.tesselationEvaluationCode = loadShader(desc.shaderPaths.tesselationEvaluation.value());
 
         tesselationControlModule    = createShaderModule(spirVCode.tesselationControlCode.value());
         tesselationEvaluationModule = createShaderModule(spirVCode.tesselationEvaluationCode.value());

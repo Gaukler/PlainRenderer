@@ -5,16 +5,17 @@ namespace fs = std::filesystem;
 
 class DirectoryUtils {
 public:
-	static DirectoryUtils& getReference();
-	fs::path getWorkingDirectory() const;
-	fs::path getResourceDirectory() const;
+    static void init();
+
+    static fs::path getWorkingDirectory();
+    static fs::path getResourceDirectory();
 
 private:
-	DirectoryUtils();
-
-	//loops trough up from working directory and checks for "resource" folder
-	//if none is found returns root of the path (C: or similar)
-	fs::path searchResourceDirectory(const fs::path& workingDirectory);
+	/*
+    loops trough up from working directory and checks for "resource" folder
+	if none is found returns root of the path (C: or similar)
+    */
+	static fs::path searchResourceDirectory(const fs::path& workingDirectory);
 
 	static fs::path m_workingDirectory;
 	static fs::path m_resourceDirectory;

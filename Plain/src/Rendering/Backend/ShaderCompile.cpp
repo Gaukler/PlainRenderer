@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "ShaderCompile.h"
 #include "Utilities/DirectoryUtils.h"
+#include "ShaderIO.h"
 
 #include <glslang/Public/ShaderLang.h>
 #include <SPIRV/GlslangToSpv.h>
@@ -117,14 +118,14 @@ const TBuiltInResource DefaultTBuiltInResource = {
 
 static bool glslangInitialized = false;
 
-std::vector<uint32_t> compileGLSLToSPIRV(const std::vector<char>& code, const std::filesystem::path& pathRelative) {
+std::vector<uint32_t> compileGLSLToSPIRV(const std::vector<char>& code, const std::filesystem::path& absolutePath) {
 
     if (!glslangInitialized) {
         glslang::InitializeProcess();
         glslangInitialized = true;
     }
 
-    const auto extension = pathRelative.extension();
+    const auto extension = absolutePath.extension();
     EShLanguage shaderType;
     if (extension == ".vert") {
         shaderType = EShLangVertex;
@@ -145,7 +146,7 @@ std::vector<uint32_t> compileGLSLToSPIRV(const std::vector<char>& code, const st
         shaderType = EShLangCompute;
     }
     else {
-        std::cout << "Unknown shader extension: " << pathRelative << "\n";
+        std::cout << "Unknown shader extension: " << absolutePath << "\n";
         shaderType = EShLangCount;
     }
 
@@ -164,13 +165,11 @@ std::vector<uint32_t> compileGLSLToSPIRV(const std::vector<char>& code, const st
     EShMessages messageFlags = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
     std::string preprocessedGLSL;
 
-    const auto directoryUtils = DirectoryUtils::getReference();
-    std::filesystem::path fullpath = directoryUtils.getResourceDirectory() / pathRelative.parent_path();
     DirStackFileIncluder includer;
-    includer.pushExternalLocalDirectory(fullpath.string());
+    includer.pushExternalLocalDirectory(absolutePath.parent_path().string());
     
     if (!shader.preprocess(&resourceLimits, defaultVersion, ENoProfile, false, false, messageFlags, &preprocessedGLSL, includer)) {
-        std::cout << "GLSL preprocessing failed: " << pathRelative << std::endl;
+        std::cout << "GLSL preprocessing failed: " << absolutePath << std::endl;
         std::cout << shader.getInfoLog() << std::endl;
         std::cout << shader.getInfoDebugLog() << std::endl;
     }
@@ -179,7 +178,7 @@ std::vector<uint32_t> compileGLSLToSPIRV(const std::vector<char>& code, const st
     shader.setStrings(&preprocessedCString, 1);
 
     if (!shader.parse(&resourceLimits, defaultVersion, false, messageFlags)) {
-        std::cout << "GLSL Parsing failed: " << pathRelative << std::endl;
+        std::cout << "GLSL Parsing failed: " << absolutePath << std::endl;
         std::cout << shader.getInfoLog() << std::endl;
         std::cout << shader.getInfoDebugLog() << std::endl;
     }
@@ -188,7 +187,7 @@ std::vector<uint32_t> compileGLSLToSPIRV(const std::vector<char>& code, const st
     program.addShader(&shader);
 
     if (!program.link(messageFlags)) {
-        std::cout << "Shader linking failed: " << pathRelative << std::endl;
+        std::cout << "Shader linking failed: " << absolutePath << std::endl;
         std::cout << program.getInfoLog() << std::endl;
         std::cout << program.getInfoDebugLog() << std::endl;
     }
