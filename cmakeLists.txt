@@ -47,6 +47,11 @@ add_subdirectory(Plain/vendor/glm)
 include_directories(Plain/vendor/glm)
 #glm is header only, no target_link_libraries needed
 
+#add glslang
+add_subdirectory(Plain/vendor/glslang)
+include_directories(Plain/vendor/glslang)
+target_link_libraries(Plain glslang SPIRV)
+
 #add imgui
 include_directories(Plain/vendor/imgui)
 set(IMGUI_FILES 

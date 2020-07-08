@@ -16,3 +16,6 @@
 [submodule "Plain/vendor/imgui"]
 	path = Plain/vendor/imgui
 	url = https://github.com/ocornut/imgui
+[submodule "Plain/vendor/glslang"]
+	path = Plain/vendor/glslang
+	url = https://github.com/KhronosGroup/glslang

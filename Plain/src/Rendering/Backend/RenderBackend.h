@@ -287,7 +287,7 @@ private:
 
     VkRenderPass    createVulkanRenderPass(const std::vector<Attachment>& attachments);
     VkFramebuffer   createFramebuffer(const VkRenderPass renderPass, const VkExtent2D extent, const std::vector<Attachment>& attachments);
-    VkShaderModule  createShaderModule(const std::vector<char>& code);
+    VkShaderModule  createShaderModule(const std::vector<uint32_t>& code);
 
     VkPipelineShaderStageCreateInfo         createPipelineShaderStageInfos(const VkShaderModule module, const VkShaderStageFlagBits stage);
     VkPipelineInputAssemblyStateCreateInfo  createDefaultInputAssemblyInfo();

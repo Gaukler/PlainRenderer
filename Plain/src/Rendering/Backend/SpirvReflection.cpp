@@ -39,7 +39,7 @@ ShaderReflection performShaderReflection(const GraphicShaderCode& shaderCode) {
 performComputeShaderReflection
 =========
 */
-ShaderReflection performComputeShaderReflection(const std::vector<char>& shader) {
+ShaderReflection performComputeShaderReflection(const std::vector<uint32_t>& shader) {
 
     ShaderReflection reflection;
     std::vector<VkDescriptorSetLayoutBinding> layoutBindings[4];
@@ -54,7 +54,7 @@ ShaderReflection performComputeShaderReflection(const std::vector<char>& shader)
 VkDescriptorSetLayoutBindingsFromSpirv
 =========
 */
-void layoutFromSpirv(const std::vector<char>& spirv, const VkShaderStageFlags stageFlags, ShaderReflection* outReflection) {
+void layoutFromSpirv(const std::vector<uint32_t>& spirv, const VkShaderStageFlags stageFlags, ShaderReflection* outReflection) {
 
     //pass shader to SPIRV cross 
     spvc_context                    spirvCrossContext   = NULL;
@@ -65,7 +65,7 @@ void layoutFromSpirv(const std::vector<char>& spirv, const VkShaderStageFlags st
     spvc_context_create(&spirvCrossContext);
     spvc_context_set_error_callback(spirvCrossContext, spirvCrossErrorCallback, nullptr);
 
-    spvc_context_parse_spirv(spirvCrossContext, reinterpret_cast<const uint32_t*>(spirv.data()), spirv.size() / 4, &ir);
+    spvc_context_parse_spirv(spirvCrossContext, spirv.data(), spirv.size(), &ir);
     spvc_context_create_compiler(spirvCrossContext, SPVC_BACKEND_GLSL, ir, SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, &compiler);
     spvc_compiler_create_shader_resources(compiler, &resources);
 

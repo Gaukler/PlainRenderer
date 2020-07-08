@@ -382,8 +382,8 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
 
     GraphicPassDescription mainPassConfig;
     mainPassConfig.attachments = { colorAttachment, depthAttachment };
-    mainPassConfig.shaderPaths.vertex = "Shaders\\triangle_vert.spirv";
-    mainPassConfig.shaderPaths.fragment = "Shaders\\triangle_frag.spirv";
+    mainPassConfig.shaderPaths.vertex   = "Shaders\\triangle.vert";
+    mainPassConfig.shaderPaths.fragment = "Shaders\\triangle.frag";
     mainPassConfig.depthTest.function = DepthFunction::LessEqual;
     mainPassConfig.depthTest.write = true;
     mainPassConfig.rasterization.cullMode = CullMode::Back;
@@ -440,8 +440,8 @@ void RenderFrontend::createShadowPass() {
 
     GraphicPassDescription shadowPassConfig;
     shadowPassConfig.attachments = { shadowMapAttachment };
-    shadowPassConfig.shaderPaths.vertex = "Shaders\\shadow_vert.spirv";
-    shadowPassConfig.shaderPaths.fragment = "Shaders\\shadow_frag.spirv";
+    shadowPassConfig.shaderPaths.vertex   = "Shaders\\shadow.vert";
+    shadowPassConfig.shaderPaths.fragment = "Shaders\\shadow.frag";
     shadowPassConfig.depthTest.function = DepthFunction::LessEqual;
     shadowPassConfig.depthTest.write = true;
     shadowPassConfig.rasterization.cullMode = CullMode::Front;
@@ -458,11 +458,11 @@ createSkyTexturePreparationPasses
 void RenderFrontend::createSkyTexturePreparationPasses() {
 
     ComputePassDescription cubeWriteDesc;
-    cubeWriteDesc.shaderPath = "Shaders\\copyToCube_comp.spirv";
+    cubeWriteDesc.shaderPath = "Shaders\\copyToCube.comp";
     m_toCubemapPass = m_backend.createComputePass(cubeWriteDesc);
 
     ComputePassDescription cubemapMipPassDesc;
-    cubemapMipPassDesc.shaderPath = "Shaders\\cubemapMip_comp.spirv";
+    cubemapMipPassDesc.shaderPath = "Shaders\\cubemapMip.comp";
     /*
     first map is written to by different shader
     */
@@ -494,7 +494,7 @@ void RenderFrontend::createSpecularConvolutionPass() {
 
     for (uint32_t i = 0; i < m_specularProbeMipCount; i++) {
         ComputePassDescription specularConvolutionDesc;
-        specularConvolutionDesc.shaderPath = "Shaders\\specularCubeConvolution_comp.spirv";
+        specularConvolutionDesc.shaderPath = "Shaders\\specularCubeConvolution.comp";
         m_specularConvolutionPerMipPasses.push_back(m_backend.createComputePass(specularConvolutionDesc));
     }
 
@@ -519,7 +519,7 @@ createDiffuseConvolutionPass
 */
 void RenderFrontend::createDiffuseConvolutionPass() {
     ComputePassDescription diffuseConvolutionDesc;
-    diffuseConvolutionDesc.shaderPath = "Shaders\\diffuseCubeConvolution_comp.spirv";
+    diffuseConvolutionDesc.shaderPath = "Shaders\\diffuseCubeConvolution.comp";
     m_diffuseConvolutionPass = m_backend.createComputePass(diffuseConvolutionDesc);
 
     const auto diffuseProbeDesc = ImageDescription(
@@ -560,8 +560,8 @@ void RenderFrontend::createSkyPass() {
 
     GraphicPassDescription skyPassConfig;
     skyPassConfig.attachments = { colorAttachment, depthAttachment };
-    skyPassConfig.shaderPaths.vertex = "Shaders\\sky_vert.spirv";
-    skyPassConfig.shaderPaths.fragment = "Shaders\\sky_frag.spirv";
+    skyPassConfig.shaderPaths.vertex   = "Shaders\\sky.vert";
+    skyPassConfig.shaderPaths.fragment = "Shaders\\sky.frag";
     skyPassConfig.depthTest.function = DepthFunction::LessEqual;
     skyPassConfig.depthTest.write = false;
     skyPassConfig.rasterization.cullMode = CullMode::None;
@@ -579,7 +579,7 @@ createBRDFLutPreparationPass
 void RenderFrontend::createBRDFLutPreparationPass() {
 
     ComputePassDescription brdfLutPassDesc;
-    brdfLutPassDesc.shaderPath = "Shaders\\brdfLut_comp.spirv";
+    brdfLutPassDesc.shaderPath = "Shaders\\brdfLut.comp";
     m_brdfLutPass = m_backend.createComputePass(brdfLutPassDesc);
 
     const auto brdfLustDesc = ImageDescription(
