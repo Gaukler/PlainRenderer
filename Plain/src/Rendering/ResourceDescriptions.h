@@ -109,11 +109,11 @@ enum class BlendState { None, Additive };
 shader paths
 */
 struct GraphicPassShaderPaths {
-    std::string                 vertex;
-    std::string                 fragment;
-    std::optional<std::string>  geometry;
-    std::optional<std::string>  tesselationControl;
-    std::optional<std::string>  tesselationEvaluation;
+    std::filesystem::path                 vertex;
+    std::filesystem::path                 fragment;
+    std::optional<std::filesystem::path>  geometry;
+    std::optional<std::filesystem::path>  tesselationControl;
+    std::optional<std::filesystem::path>  tesselationEvaluation;
 };
 
 /*

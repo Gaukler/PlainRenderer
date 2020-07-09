@@ -148,6 +148,8 @@ void RenderFrontend::renderFrame() {
     if (m_minimized) {
         return;
     }
+
+    m_backend.updateShaderCode();
     
     /*
     additional passes that have to be executed before the main pass
@@ -659,9 +661,6 @@ drawUi
 */
 void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
-    if (ImGui::Button("Reload Shaders")) {
-        m_backend.reloadShaders();
-    }
     ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
     ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
     ImGui::End();

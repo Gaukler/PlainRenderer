@@ -118,7 +118,7 @@ const TBuiltInResource DefaultTBuiltInResource = {
 
 static bool glslangInitialized = false;
 
-std::vector<uint32_t> compileGLSLToSPIRV(const std::vector<char>& code, const std::filesystem::path& absolutePath) {
+bool compileGLSLToSPIRV(const std::vector<char>& code, const std::filesystem::path& absolutePath, std::vector<uint32_t>* outSpirV) {
 
     if (!glslangInitialized) {
         glslang::InitializeProcess();
@@ -170,8 +170,9 @@ std::vector<uint32_t> compileGLSLToSPIRV(const std::vector<char>& code, const st
     
     if (!shader.preprocess(&resourceLimits, defaultVersion, ENoProfile, false, false, messageFlags, &preprocessedGLSL, includer)) {
         std::cout << "GLSL preprocessing failed: " << absolutePath << std::endl;
-        std::cout << shader.getInfoLog() << std::endl;
-        std::cout << shader.getInfoDebugLog() << std::endl;
+        std::cout << shader.getInfoLog();
+        std::cout << shader.getInfoDebugLog();
+        return false;
     }
 
     const char* preprocessedCString = preprocessedGLSL.c_str();
@@ -179,8 +180,9 @@ std::vector<uint32_t> compileGLSLToSPIRV(const std::vector<char>& code, const st
 
     if (!shader.parse(&resourceLimits, defaultVersion, false, messageFlags)) {
         std::cout << "GLSL Parsing failed: " << absolutePath << std::endl;
-        std::cout << shader.getInfoLog() << std::endl;
-        std::cout << shader.getInfoDebugLog() << std::endl;
+        std::cout << shader.getInfoLog();
+        std::cout << shader.getInfoDebugLog();
+        return false;
     }
 
     glslang::TProgram program;
@@ -188,14 +190,14 @@ std::vector<uint32_t> compileGLSLToSPIRV(const std::vector<char>& code, const st
 
     if (!program.link(messageFlags)) {
         std::cout << "Shader linking failed: " << absolutePath << std::endl;
-        std::cout << program.getInfoLog() << std::endl;
-        std::cout << program.getInfoDebugLog() << std::endl;
+        std::cout << program.getInfoLog();
+        std::cout << program.getInfoDebugLog();
+        return false;
     }
 
-    std::vector<unsigned int> spirV;
     spv::SpvBuildLogger logger;
     glslang::SpvOptions spvOptions;
-    glslang::GlslangToSpv(*program.getIntermediate(shaderType), spirV, &logger, &spvOptions);
+    glslang::GlslangToSpv(*program.getIntermediate(shaderType), *outSpirV, &logger, &spvOptions);
 
-    return spirV;
+    return true;
 }

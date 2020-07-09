@@ -244,19 +244,71 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
 reloadShaders
 =========
 */
-void RenderBackend::reloadShaders() {
-    vkDeviceWaitIdle(m_context.device);
-    std::cout << "Reloaded Shaders\n" << std::endl;
+void RenderBackend::updateShaderCode() {
 
+    //helper comparing last change dates of cache and source and updating date to prevent constant reloading if shader is not compiling
+    auto isShaderOutOfDate = [](std::filesystem::path relativePath) {
+        const auto absolutePath = absoluteShaderPathFromRelative(relativePath);
+        const auto cachePath = shaderCachePathFromRelative(relativePath);
+        assert(std::filesystem::exists(absolutePath));
+        assert(std::filesystem::exists(cachePath));
+        return std::filesystem::last_write_time(absolutePath) > std::filesystem::last_write_time(cachePath);
+    };
+
+    //iterate over all render passes and check for every shader if it's out of date
+    std::vector<uint32_t> outOfDateRenderPasses;
     for (uint32_t i = 0; i < m_renderPasses.size(); i++) {
-        destroyRenderPass(m_renderPasses[i]);
+        bool needsUpdate = false;
         if (m_renderPasses[i].isGraphicPass) {
-            assert(m_renderPasses[i].graphicPassDesc.has_value());
-            m_renderPasses[i] = createGraphicPassInternal(m_renderPasses[i].graphicPassDesc.value());
+            const auto shaderPaths = m_renderPasses[i].graphicPassDesc.value().shaderPaths;
+            needsUpdate |= isShaderOutOfDate(shaderPaths.vertex);
+            needsUpdate |= isShaderOutOfDate(shaderPaths.fragment);
+            if (shaderPaths.geometry.has_value()) {
+                needsUpdate |= isShaderOutOfDate(shaderPaths.geometry.value());
+            }
+            if (shaderPaths.tesselationControl.has_value()) {
+                needsUpdate |= isShaderOutOfDate(shaderPaths.tesselationControl.value());
+            }
+            if (shaderPaths.tesselationEvaluation.has_value()) {
+                needsUpdate |= isShaderOutOfDate(shaderPaths.tesselationEvaluation.value());
+            }           
         }
         else {
-            assert(m_renderPasses[i].computePassDesc.has_value());
-            m_renderPasses[i] = createComputePassInternal(m_renderPasses[i].computePassDesc.value());
+            needsUpdate |= isShaderOutOfDate(m_renderPasses[i].computePassDesc.value().shaderPath);
+        }
+        if (needsUpdate) {
+            outOfDateRenderPasses.push_back(i);
+        }
+    }
+
+    //return if no updates are needed
+    if (outOfDateRenderPasses.size() == 0) {
+        return;
+    }
+
+    //when updating passes they must not be used
+    vkDeviceWaitIdle(m_context.device);
+
+    /*
+    iterate over all out of date passes
+    if a shader can't be loaded or compiled it's just skipped as the current version can still be used
+    */
+    for (const auto passIndex : outOfDateRenderPasses) {
+        if (m_renderPasses[passIndex].isGraphicPass) {
+            assert(m_renderPasses[passIndex].graphicPassDesc.has_value());
+            GraphicPassShaderSpirV spirV;
+            if (loadGraphicPassShaders(m_renderPasses[passIndex].graphicPassDesc.value().shaderPaths, &spirV)) {
+                destroyRenderPass(m_renderPasses[passIndex]);
+                m_renderPasses[passIndex] = createGraphicPassInternal(m_renderPasses[passIndex].graphicPassDesc.value(), spirV);
+            }
+        }
+        else {
+            assert(m_renderPasses[passIndex].computePassDesc.has_value());
+            std::vector<uint32_t> spirV;
+            if(loadShader(m_renderPasses[passIndex].computePassDesc.value().shaderPath, &spirV)) {
+                destroyRenderPass(m_renderPasses[passIndex]);
+                m_renderPasses[passIndex] = createComputePassInternal(m_renderPasses[passIndex].computePassDesc.value(), spirV);
+            }
         }
     }
 }
@@ -477,7 +529,13 @@ createComputePass
 */
 RenderPassHandle RenderBackend::createComputePass(const ComputePassDescription& desc) {
 
-    RenderPass pass = createComputePassInternal(desc);
+    std::vector<uint32_t> spirV;
+    if (!loadShader(desc.shaderPath, &spirV)) {
+        std::cout << "Initial shader loading failed" << std::endl; //loadShaders provides details trough cout
+        throw;
+    }
+
+    RenderPass pass = createComputePassInternal(desc, spirV);
     RenderPassHandle handle = m_renderPasses.size();
     m_renderPasses.push_back(pass);
     return handle;
@@ -490,7 +548,13 @@ createGraphicPass
 */
 RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& desc) {
 
-    RenderPass pass = createGraphicPassInternal(desc);
+    GraphicPassShaderSpirV spirV;
+    if (!loadGraphicPassShaders(desc.shaderPaths, &spirV)) {
+        std::cout << "Initial shader loading failed" << std::endl;
+        throw;
+    }
+
+    RenderPass pass = createGraphicPassInternal(desc, spirV);
     RenderPassHandle handle = m_renderPasses.size();
     m_renderPasses.push_back(pass);
     
@@ -2535,14 +2599,12 @@ renderpass creation
 createComputePassInternal
 =========
 */
-RenderPass RenderBackend::createComputePassInternal(const ComputePassDescription& desc) {
+RenderPass RenderBackend::createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV) {
 
     RenderPass pass;
     pass.computePassDesc = desc;
     VkComputePipelineCreateInfo pipelineInfo;
     VkPipelineShaderStageCreateInfo stageInfo;
-
-    const auto spirV = loadShader(desc.shaderPath);
 
     VkShaderModule module = createShaderModule(spirV);
     ShaderReflection reflection = performComputeShaderReflection(spirV);
@@ -2585,7 +2647,7 @@ RenderPass RenderBackend::createComputePassInternal(const ComputePassDescription
 createGraphicPassInternal
 =========
 */
-RenderPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription& desc) {
+RenderPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV) {
 
     RenderPass pass;
     pass.graphicPassDesc = desc;
@@ -2598,29 +2660,19 @@ RenderPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription
     /*
     load shader modules
      */
-
-    GraphicShaderCode spirVCode;
-    spirVCode.vertexCode   = loadShader(desc.shaderPaths.vertex);
-    spirVCode.fragmentCode = loadShader(desc.shaderPaths.fragment);
-
-    VkShaderModule vertexModule   = createShaderModule(spirVCode.vertexCode);
-    VkShaderModule fragmentModule = createShaderModule(spirVCode.fragmentCode);
+    VkShaderModule vertexModule   = createShaderModule(spirV.vertex);
+    VkShaderModule fragmentModule = createShaderModule(spirV.fragment);
 
     VkShaderModule geometryModule = VK_NULL_HANDLE;
     VkShaderModule tesselationControlModule = VK_NULL_HANDLE;
     VkShaderModule tesselationEvaluationModule = VK_NULL_HANDLE;
-    if (desc.shaderPaths.geometry.has_value()) {
-        spirVCode.geometryCode = loadShader(desc.shaderPaths.geometry.value());
-        geometryModule = createShaderModule(spirVCode.geometryCode.value());
+    if (spirV.geometry.has_value()) {
+        geometryModule = createShaderModule(spirV.geometry.value());
     }
     if (desc.shaderPaths.tesselationControl.has_value()) {
         assert(desc.shaderPaths.tesselationEvaluation.has_value());   //both shaders must be defined or none
-
-        spirVCode.tesselationControlCode    = loadShader(desc.shaderPaths.tesselationControl.value());
-        spirVCode.tesselationEvaluationCode = loadShader(desc.shaderPaths.tesselationEvaluation.value());
-
-        tesselationControlModule    = createShaderModule(spirVCode.tesselationControlCode.value());
-        tesselationEvaluationModule = createShaderModule(spirVCode.tesselationEvaluationCode.value());
+        tesselationControlModule    = createShaderModule(spirV.tesselationControl.value());
+        tesselationEvaluationModule = createShaderModule(spirV.tesselationEvaluation.value());
     }
 
     /*
@@ -2641,7 +2693,7 @@ RenderPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription
     /*
     shader reflection
     */
-    ShaderReflection reflection = performShaderReflection(spirVCode);
+    ShaderReflection reflection = performShaderReflection(spirV);
     pass.vertexInputFlags = reflection.vertexInputFlags;
     pass.materialFeatures = reflection.materialFeatures;
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);

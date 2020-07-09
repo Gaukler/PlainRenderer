@@ -15,20 +15,20 @@ void spirvCrossErrorCallback(void* userdata, const char* error) {
 performShaderReflection
 =========
 */
-ShaderReflection performShaderReflection(const GraphicShaderCode& shaderCode) {
+ShaderReflection performShaderReflection(const GraphicPassShaderSpirV& shaderCode) {
 
     ShaderReflection reflection;
     
-    layoutFromSpirv(shaderCode.vertexCode, VK_SHADER_STAGE_VERTEX_BIT, &reflection);
-    layoutFromSpirv(shaderCode.fragmentCode, VK_SHADER_STAGE_FRAGMENT_BIT, &reflection);
+    layoutFromSpirv(shaderCode.vertex, VK_SHADER_STAGE_VERTEX_BIT, &reflection);
+    layoutFromSpirv(shaderCode.fragment, VK_SHADER_STAGE_FRAGMENT_BIT, &reflection);
 
-    if (shaderCode.geometryCode.has_value()) {
-        layoutFromSpirv(shaderCode.geometryCode.value(), VK_SHADER_STAGE_GEOMETRY_BIT, &reflection);
+    if (shaderCode.geometry.has_value()) {
+        layoutFromSpirv(shaderCode.geometry.value(), VK_SHADER_STAGE_GEOMETRY_BIT, &reflection);
     }
-    if (shaderCode.tesselationControlCode.has_value()) {
-        assert(shaderCode.tesselationEvaluationCode.has_value());
-        layoutFromSpirv(shaderCode.tesselationControlCode.value(), VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, &reflection);
-        layoutFromSpirv(shaderCode.tesselationEvaluationCode.value(), VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, &reflection);
+    if (shaderCode.tesselationControl.has_value()) {
+        assert(shaderCode.tesselationEvaluation.has_value());
+        layoutFromSpirv(shaderCode.tesselationControl.value(), VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, &reflection);
+        layoutFromSpirv(shaderCode.tesselationEvaluation.value(), VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, &reflection);
     }
 
     return reflection;

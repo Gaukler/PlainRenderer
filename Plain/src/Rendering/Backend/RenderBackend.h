@@ -51,7 +51,9 @@ public:
 	void setup(GLFWwindow* window);
 	void teardown();
     void recreateSwapchain(const uint32_t width, const uint32_t height, GLFWwindow* window);
-    void reloadShaders();
+
+    //checks if any shaders are out of date, if so reloads them and reconstructs the corresponding pipeline
+    void updateShaderCode();
 
     /*
     multiple images must be resizable at once, as framebuffers may only be updated once all images have been resized
@@ -282,8 +284,8 @@ private:
     actual creation of internal objects
     split from public function to allow use when reloading shader
     */
-    RenderPass createComputePassInternal(const ComputePassDescription& desc);
-    RenderPass createGraphicPassInternal(const GraphicPassDescription& desc);
+    RenderPass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
+    RenderPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
     VkRenderPass    createVulkanRenderPass(const std::vector<Attachment>& attachments);
     VkFramebuffer   createFramebuffer(const VkRenderPass renderPass, const VkExtent2D extent, const std::vector<Attachment>& attachments);

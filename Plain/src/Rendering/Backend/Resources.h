@@ -3,6 +3,7 @@
 
 #include <vulkan/vulkan.h>
 #include "VertexInput.h"
+#include "Rendering/ResourceDescriptions.h"
 
 /*
 shader bindings
@@ -86,6 +87,14 @@ struct MeshRenderCommand {
     glm::mat4       modelMatrix;
 };
 
+struct GraphicPassShaderSpirV {
+    std::vector<uint32_t> vertex;
+    std::vector<uint32_t> fragment;
+    std::optional<std::vector<uint32_t>> geometry;
+    std::optional<std::vector<uint32_t>> tesselationEvaluation;
+    std::optional<std::vector<uint32_t>> tesselationControl;
+};
+
 /*
 renderpass
 */
@@ -93,6 +102,8 @@ struct RenderPass {
     //used to reconstruct pass when reloading shader
     std::optional<GraphicPassDescription> graphicPassDesc;
     std::optional<ComputePassDescription> computePassDesc;
+
+    std::filesystem::file_time_type lastModifiedShader;
 
     bool                                isGraphicPass; //else compute
     VkRenderPass                        vulkanRenderPass = VK_NULL_HANDLE;

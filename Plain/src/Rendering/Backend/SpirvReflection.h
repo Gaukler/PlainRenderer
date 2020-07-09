@@ -23,15 +23,6 @@ error callback for the SPIRV-Cross library
 */
 void spirvCrossErrorCallback(void* userdata, const char* error);
 
-//input for shader reflection
-struct GraphicShaderCode {
-    std::vector<uint32_t> vertexCode;
-    std::vector<uint32_t> fragmentCode;
-    std::optional<std::vector<uint32_t>> geometryCode;
-    std::optional<std::vector<uint32_t>> tesselationControlCode;
-    std::optional<std::vector<uint32_t>> tesselationEvaluationCode;
-};
-
 /*
 =======
 descriptor set layout functions
@@ -43,7 +34,7 @@ primary functions to retrieve layout from SPIRV
 only the second set is reflected
 the first and third are global and material layouts, both of which are predefined
 */
-ShaderReflection performShaderReflection(const GraphicShaderCode& shaderCode);
+ShaderReflection performShaderReflection(const GraphicPassShaderSpirV& shaderCode);
 ShaderReflection performComputeShaderReflection(const std::vector<uint32_t>& shader);
 
 void layoutFromSpirv(const std::vector<uint32_t>& spirv, const VkShaderStageFlags stageFlags, ShaderReflection* outReflection);
