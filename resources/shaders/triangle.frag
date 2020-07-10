@@ -89,6 +89,7 @@ void main(){
 	const float NoL = max(dot(N, L), 0);
 	const float NoV = abs(dot(N, V));
 	const float VoH = abs(dot(V, H));
+    const float LoV = max(dot(L, V), 0.f);
 	
 	const vec3 f0 = mix(vec3(0.04f), albedo, metalic);
 	
@@ -130,8 +131,8 @@ void main(){
     }
     //titanfall 2 diffuse from gdc presentation
     else {
-        float facing = 0.5f + 0.5f * VoH;
-        float rough = min(facing * (0.9f - 0.4f * facing) * (0.5f + NoH) / max(NoH, 0.01f), 1.f);
+        float facing = 0.5f + 0.5f * LoV;
+        float rough = facing * (0.9f - 0.4f * facing) * (0.5f + NoH) / max(NoH, 0.03f);
         float smoothDiffuse = 1.05f *   (1.f - pow(1.f - NoL, 5.f)) * 
                                         (1.f - pow(1.f - NoV, 5.f));
         float single = 1.f / 3.1415f * mix(smoothDiffuse, rough, r);
@@ -193,5 +194,4 @@ void main(){
     
     //combine components
 	color = diffuseDirect + specularDirect + lightingIndirect;
-    color = diffuseDirect;
 }
