@@ -105,17 +105,6 @@ config for blending
 */
 enum class BlendState { None, Additive };
 
-/*  
-shader paths
-*/
-struct GraphicPassShaderPaths {
-    std::filesystem::path                 vertex;
-    std::filesystem::path                 fragment;
-    std::optional<std::filesystem::path>  geometry;
-    std::optional<std::filesystem::path>  tesselationControl;
-    std::optional<std::filesystem::path>  tesselationEvaluation;
-};
-
 /*
 attachments are fixed after renderpass creation and can't be changed from frame to frame
 */
@@ -135,9 +124,28 @@ struct Attachment {
     AttachmentLoadOp    loadOp      = AttachmentLoadOp::DontCare;
 };
 
+//only int support at the moment
+struct ShaderSpecialisationConstants {
+    std::vector<uint32_t>    locationIDs;
+    std::vector<int>         values;
+};
+
+struct ShaderDescription {
+    std::filesystem::path srcPathRelative;
+    ShaderSpecialisationConstants specialisationConstants;
+};
+
+struct GraphicPassShaderDescriptions {
+    ShaderDescription                 vertex;
+    ShaderDescription                 fragment;
+    std::optional<ShaderDescription>  geometry;
+    std::optional<ShaderDescription>  tesselationControl;
+    std::optional<ShaderDescription>  tesselationEvaluation;
+};
+
 struct GraphicPassDescription {
-    GraphicPassShaderPaths  shaderPaths;
-    std::vector<Attachment> attachments;
+    GraphicPassShaderDescriptions   shaderDescriptions;
+    std::vector<Attachment>         attachments;
 
     //configuration
     uint32_t                patchControlPoints; //ignored if no tesselation shader
@@ -147,7 +155,7 @@ struct GraphicPassDescription {
 };
 
 struct ComputePassDescription {
-    std::string shaderPath;
+    ShaderDescription shaderDescription;
 };
 
 /*

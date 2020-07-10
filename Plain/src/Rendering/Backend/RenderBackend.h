@@ -45,6 +45,13 @@ struct UIRenderInfo {
     VkRenderPass                        renderPass;
 };
 
+//structs that are reference by VkPipelineShaderStageCreateInfo
+struct VulkanShaderCreateAdditionalStructs {
+    VkSpecializationInfo                    specialisationInfo;
+    std::vector<VkSpecializationMapEntry>   specilisationMap;
+};
+
+
 class RenderBackend {
 public:
 
@@ -71,6 +78,9 @@ public:
 
     void setViewProjectionMatrix(const glm::mat4& viewProjection, const RenderPassHandle pass);
     void setGlobalShaderInfo(const GlobalShaderInfo& info);
+
+    //set path and specialisation constants, forces recompile and pipeline recreation
+    void updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc);
 
     /*
     actual rendering of frame using commands generated from drawMesh calls
@@ -291,7 +301,9 @@ private:
     VkFramebuffer   createFramebuffer(const VkRenderPass renderPass, const VkExtent2D extent, const std::vector<Attachment>& attachments);
     VkShaderModule  createShaderModule(const std::vector<uint32_t>& code);
 
-    VkPipelineShaderStageCreateInfo         createPipelineShaderStageInfos(const VkShaderModule module, const VkShaderStageFlagBits stage);
+    //outAdditionalInfo has to be from parent scope to keep pointers to info structs valid
+    VkPipelineShaderStageCreateInfo         createPipelineShaderStageInfos(const VkShaderModule module, const VkShaderStageFlagBits stage, 
+        const ShaderSpecialisationConstants& specialisationInfo, VulkanShaderCreateAdditionalStructs* outAdditionalInfo);
     VkPipelineInputAssemblyStateCreateInfo  createDefaultInputAssemblyInfo();
     VkPipelineTessellationStateCreateInfo   createTesselationState(const uint32_t patchControlPoints);
     VkPipelineRasterizationStateCreateInfo  createRasterizationState(const RasterizationConfig& raster);

@@ -10,10 +10,10 @@ only recompiles if none is found
 recompiled shaders are written into the shader cache directory for next time
 filename must be relative to resources\\shaders\\
 */
-bool loadShader(const std::filesystem::path& relativePath, std::vector<uint32_t>* outSpirV);
+bool loadShader(const ShaderDescription& desc, std::vector<uint32_t>* outSpirV);
 
 //helper that loads shaders from all supplied paths into the corresponding out struct
-bool loadGraphicPassShaders(const GraphicPassShaderPaths& paths, GraphicPassShaderSpirV* outSpirV);
+bool loadGraphicPassShaders(const GraphicPassShaderDescriptions& shaderDescriptions, GraphicPassShaderSpirV* outSpirV);
 
 /*
 file loader functions

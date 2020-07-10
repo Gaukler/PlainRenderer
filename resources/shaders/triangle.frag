@@ -39,6 +39,12 @@ layout(location = 3) in mat3 passTBN;
 
 layout(location = 0) out vec3 color;
 
+//0: lambert
+//1: disney
+//2: CoD WWII
+//3: Titanfall 2
+layout(constant_id = 0) const int diffuseBRDF = 0;
+
 float calcShadow(vec3 pos){
 	vec4 posLightSpace = lightMatrix * vec4(pos, 1.f);
 	posLightSpace /= posLightSpace.w;
@@ -91,40 +97,48 @@ void main(){
     
     //direct diffuse
     vec3 diffuseColor = (1.f - metalic) * albedo;
-	vec3 diffuseDirect = diffuseColor / 3.1415f * directLighting;
     
+    vec3 diffuseDirect;
+    
+    //lambert
+    if(diffuseBRDF == 0){
+        diffuseDirect = diffuseColor / 3.1415f * directLighting;
+    }
     //disney diffuse
-    float fresnelDiffuse90 = 0.5f + 2.f * VoH * VoH * r;
-    vec3 disneyDiffuse = diffuseColor / 3.1415f * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90), NoL) * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90), NoV);
-    
-    //energy conservation from frostbite PBR paper
-    float energyBias = mix(0.f, 0.5f, r);
-    float energyFactor = mix(1.f, 1.f / 1.51f, r);
-    float fresnelDiffuse90Biased = energyBias + 2.f * VoH * VoH * r;
-    disneyDiffuse = diffuseColor / 3.1415f * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90Biased), NoL) * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90Biased), NoV) * energyFactor;
-    
-    //Cod WWII diffuse BRDF, conversion from roughness to gloss from journey to multiscatter brdf presentation
-    float f0Diffuse = VoH + pow(1.f - VoH, 5.f);
-    float f1 =  (1.f - 0.75f * pow(1.f - NoL, 5.f)) * 
-                (1.f - 0.75f * pow(1.f - NoV, 5.f));
-    float g = log2(2.f / (r * r) - 1.f) / 18.f;
-    float t = clamp(2.2f * g - 0.5f, 0.f, 1.f);
-    float fd = f0Diffuse + (f1 - f0Diffuse) * t;
-    float fb = (34.5f * g * g - 59.f * g + 24.5f) * VoH * pow(2.f, -max(73.2f * g - 21.2f, 8.9f) * sqrt(NoH));
-    vec3 fr = diffuseColor / 3.1415f * (fd + fb);
-    
+	else if (diffuseBRDF == 1){
+        float fresnelDiffuse90 = 0.5f + 2.f * VoH * VoH * r;
+        vec3 disneyDiffuse = diffuseColor / 3.1415f * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90), NoL) * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90), NoV);
+        
+        //energy conservation from frostbite PBR paper
+        float energyBias = mix(0.f, 0.5f, r);
+        float energyFactor = mix(1.f, 1.f / 1.51f, r);
+        float fresnelDiffuse90Biased = energyBias + 2.f * VoH * VoH * r;
+        disneyDiffuse = diffuseColor / 3.1415f * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90Biased), NoL) * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90Biased), NoV) * energyFactor;
+        diffuseDirect = disneyDiffuse * directLighting;
+    }
+    //Cod WWII diffuse BRDF, conversion from roughness to gloss computed from papers gloss to roughness formula
+    else if (diffuseBRDF == 2){
+        float f0Diffuse = VoH + pow(1.f - VoH, 5.f);
+        float f1 =  (1.f - 0.75f * pow(1.f - NoL, 5.f)) * 
+                    (1.f - 0.75f * pow(1.f - NoV, 5.f));
+        float g = log2(2.f / (r * r) - 1.f) / 18.f;
+        float t = clamp(2.2f * g - 0.5f, 0.f, 1.f);
+        float fd = f0Diffuse + (f1 - f0Diffuse) * t;
+        float fb = (34.5f * g * g - 59.f * g + 24.5f) * VoH * pow(2.f, -max(73.2f * g - 21.2f, 8.9f) * sqrt(NoH));
+        vec3 fr = diffuseColor / 3.1415f * (fd + fb);
+        diffuseDirect = fr * directLighting;              
+    }
     //titanfall 2 diffuse from gdc presentation
-    float facing = 0.5f + 0.5f * VoH;
-    float rough = min(facing * (0.9f - 0.4f * facing) * (0.5f + NoH) / max(NoH, 0.01f), 1.f);
-    float smoothDiffuse = 1.05f *   (1.f - pow(1.f - NoL, 5.f)) * 
-                                    (1.f - pow(1.f - NoV, 5.f));
-    float single = 1.f / 3.1415f * mix(smoothDiffuse, rough, r);
-    float multi = 0.1159f * r;
-    vec3 diffuseTitanfall2 = diffuseColor * (single + diffuseColor * multi);
-    
-    //diffuseDirect = disneyDiffuse * directLighting;   //disney
-    //diffuseDirect = fr * directLighting;              //CoD
-    diffuseDirect = diffuseTitanfall2 * directLighting; //titanfall 2
+    else {
+        float facing = 0.5f + 0.5f * VoH;
+        float rough = min(facing * (0.9f - 0.4f * facing) * (0.5f + NoH) / max(NoH, 0.01f), 1.f);
+        float smoothDiffuse = 1.05f *   (1.f - pow(1.f - NoL, 5.f)) * 
+                                        (1.f - pow(1.f - NoV, 5.f));
+        float single = 1.f / 3.1415f * mix(smoothDiffuse, rough, r);
+        float multi = 0.1159f * r;
+        vec3 diffuseTitanfall2 = diffuseColor * (single + diffuseColor * multi);
+        diffuseDirect = diffuseTitanfall2 * directLighting;
+    }
 	
     //indirect specular
 	vec2 brdfLut = texture(sampler2D(brdfLutTexture, lutSampler), vec2(r, NoV)).rg;
@@ -179,4 +193,5 @@ void main(){
     
     //combine components
 	color = diffuseDirect + specularDirect + lightingIndirect;
+    color = diffuseDirect;
 }

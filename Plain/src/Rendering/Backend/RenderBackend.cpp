@@ -115,7 +115,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     create swapchain copy pass
     */
     ComputePassDescription copyPass;
-    copyPass.shaderPath = "imageCopy.comp";
+    copyPass.shaderDescription.srcPathRelative = "imageCopy.comp";
     m_swapchain.copyToSwapchainPass = createComputePass(copyPass);
 }
 
@@ -260,21 +260,21 @@ void RenderBackend::updateShaderCode() {
     for (uint32_t i = 0; i < m_renderPasses.size(); i++) {
         bool needsUpdate = false;
         if (m_renderPasses[i].isGraphicPass) {
-            const auto shaderPaths = m_renderPasses[i].graphicPassDesc.value().shaderPaths;
-            needsUpdate |= isShaderOutOfDate(shaderPaths.vertex);
-            needsUpdate |= isShaderOutOfDate(shaderPaths.fragment);
-            if (shaderPaths.geometry.has_value()) {
-                needsUpdate |= isShaderOutOfDate(shaderPaths.geometry.value());
+            const auto shaderDescriptions = m_renderPasses[i].graphicPassDesc.value().shaderDescriptions;
+            needsUpdate |= isShaderOutOfDate(shaderDescriptions.vertex.srcPathRelative);
+            needsUpdate |= isShaderOutOfDate(shaderDescriptions.fragment.srcPathRelative);
+            if (shaderDescriptions.geometry.has_value()) {
+                needsUpdate |= isShaderOutOfDate(shaderDescriptions.geometry.value().srcPathRelative);
             }
-            if (shaderPaths.tesselationControl.has_value()) {
-                needsUpdate |= isShaderOutOfDate(shaderPaths.tesselationControl.value());
+            if (shaderDescriptions.tesselationControl.has_value()) {
+                needsUpdate |= isShaderOutOfDate(shaderDescriptions.tesselationControl.value().srcPathRelative);
             }
-            if (shaderPaths.tesselationEvaluation.has_value()) {
-                needsUpdate |= isShaderOutOfDate(shaderPaths.tesselationEvaluation.value());
+            if (shaderDescriptions.tesselationEvaluation.has_value()) {
+                needsUpdate |= isShaderOutOfDate(shaderDescriptions.tesselationEvaluation.value().srcPathRelative);
             }           
         }
         else {
-            needsUpdate |= isShaderOutOfDate(m_renderPasses[i].computePassDesc.value().shaderPath);
+            needsUpdate |= isShaderOutOfDate(m_renderPasses[i].computePassDesc.value().shaderDescription.srcPathRelative);
         }
         if (needsUpdate) {
             outOfDateRenderPasses.push_back(i);
@@ -297,7 +297,7 @@ void RenderBackend::updateShaderCode() {
         if (m_renderPasses[passIndex].isGraphicPass) {
             assert(m_renderPasses[passIndex].graphicPassDesc.has_value());
             GraphicPassShaderSpirV spirV;
-            if (loadGraphicPassShaders(m_renderPasses[passIndex].graphicPassDesc.value().shaderPaths, &spirV)) {
+            if (loadGraphicPassShaders(m_renderPasses[passIndex].graphicPassDesc.value().shaderDescriptions, &spirV)) {
                 destroyRenderPass(m_renderPasses[passIndex]);
                 m_renderPasses[passIndex] = createGraphicPassInternal(m_renderPasses[passIndex].graphicPassDesc.value(), spirV);
             }
@@ -305,7 +305,7 @@ void RenderBackend::updateShaderCode() {
         else {
             assert(m_renderPasses[passIndex].computePassDesc.has_value());
             std::vector<uint32_t> spirV;
-            if(loadShader(m_renderPasses[passIndex].computePassDesc.value().shaderPath, &spirV)) {
+            if(loadShader(m_renderPasses[passIndex].computePassDesc.value().shaderDescription, &spirV)) {
                 destroyRenderPass(m_renderPasses[passIndex]);
                 m_renderPasses[passIndex] = createComputePassInternal(m_renderPasses[passIndex].computePassDesc.value(), spirV);
             }
@@ -436,6 +436,23 @@ void RenderBackend::setGlobalShaderInfo(const GlobalShaderInfo& info) {
 
 /*
 =========
+setGlobalShaderInfo
+=========
+*/
+void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& shaderDescriptions) {
+    assert(m_renderPasses[passHandle].isGraphicPass);
+    assert(m_renderPasses[passHandle].graphicPassDesc.has_value());
+    m_renderPasses[passHandle].graphicPassDesc.value().shaderDescriptions = shaderDescriptions;
+    GraphicPassShaderSpirV spirV;
+    if (loadGraphicPassShaders(m_renderPasses[passHandle].graphicPassDesc.value().shaderDescriptions, &spirV)) {
+        vkDeviceWaitIdle(m_context.device);
+        destroyRenderPass(m_renderPasses[passHandle]);
+        m_renderPasses[passHandle] = createGraphicPassInternal(m_renderPasses[passHandle].graphicPassDesc.value(), spirV);
+    }
+}
+
+/*
+=========
 renderFrame
 =========
 */
@@ -530,7 +547,7 @@ createComputePass
 RenderPassHandle RenderBackend::createComputePass(const ComputePassDescription& desc) {
 
     std::vector<uint32_t> spirV;
-    if (!loadShader(desc.shaderPath, &spirV)) {
+    if (!loadShader(desc.shaderDescription, &spirV)) {
         std::cout << "Initial shader loading failed" << std::endl; //loadShaders provides details trough cout
         throw;
     }
@@ -549,7 +566,7 @@ createGraphicPass
 RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& desc) {
 
     GraphicPassShaderSpirV spirV;
-    if (!loadGraphicPassShaders(desc.shaderPaths, &spirV)) {
+    if (!loadGraphicPassShaders(desc.shaderDescriptions, &spirV)) {
         std::cout << "Initial shader loading failed" << std::endl;
         throw;
     }
@@ -2669,8 +2686,8 @@ RenderPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription
     if (spirV.geometry.has_value()) {
         geometryModule = createShaderModule(spirV.geometry.value());
     }
-    if (desc.shaderPaths.tesselationControl.has_value()) {
-        assert(desc.shaderPaths.tesselationEvaluation.has_value());   //both shaders must be defined or none
+    if (desc.shaderDescriptions.tesselationControl.has_value()) {
+        assert(desc.shaderDescriptions.tesselationEvaluation.has_value());   //both shaders must be defined or none
         tesselationControlModule    = createShaderModule(spirV.tesselationControl.value());
         tesselationEvaluationModule = createShaderModule(spirV.tesselationEvaluation.value());
     }
@@ -2679,15 +2696,23 @@ RenderPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription
     create module infos
     */
     std::vector<VkPipelineShaderStageCreateInfo> stages;
-    stages.push_back(createPipelineShaderStageInfos(vertexModule, VK_SHADER_STAGE_VERTEX_BIT));
-    stages.push_back(createPipelineShaderStageInfos(fragmentModule, VK_SHADER_STAGE_FRAGMENT_BIT));
+
+    VulkanShaderCreateAdditionalStructs additionalStructs[5];
+
+    stages.push_back(createPipelineShaderStageInfos(vertexModule,   VK_SHADER_STAGE_VERTEX_BIT,   
+        desc.shaderDescriptions.vertex.specialisationConstants, &additionalStructs[0]));
+    stages.push_back(createPipelineShaderStageInfos(fragmentModule, VK_SHADER_STAGE_FRAGMENT_BIT, 
+        desc.shaderDescriptions.fragment.specialisationConstants, &additionalStructs[1]));
 
     if (geometryModule != VK_NULL_HANDLE) {
-        stages.push_back(createPipelineShaderStageInfos(geometryModule, VK_SHADER_STAGE_GEOMETRY_BIT));
+        stages.push_back(createPipelineShaderStageInfos(geometryModule, VK_SHADER_STAGE_GEOMETRY_BIT, 
+            desc.shaderDescriptions.geometry.value().specialisationConstants, &additionalStructs[2]));
     }
     if (tesselationControlModule != VK_NULL_HANDLE) {
-        stages.push_back(createPipelineShaderStageInfos(tesselationControlModule, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT));
-        stages.push_back(createPipelineShaderStageInfos(tesselationEvaluationModule, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT));
+        stages.push_back(createPipelineShaderStageInfos(tesselationControlModule, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, 
+            desc.shaderDescriptions.tesselationControl.value().specialisationConstants, &additionalStructs[3]));
+        stages.push_back(createPipelineShaderStageInfos(tesselationEvaluationModule, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
+            desc.shaderDescriptions.tesselationEvaluation.value().specialisationConstants, &additionalStructs[4]));
     }
 
     /*
@@ -2853,7 +2878,7 @@ RenderPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription
     const auto multisamplingState = createDefaultMultisamplingInfo();
     const auto depthStencilState = createDepthStencilState(desc.depthTest);
     const auto inputAssemblyState = createDefaultInputAssemblyInfo();
-    const auto tesselationState = desc.shaderPaths.tesselationControl.has_value() ? &createTesselationState(desc.patchControlPoints) : nullptr;
+    const auto tesselationState = desc.shaderDescriptions.tesselationControl.has_value() ? &createTesselationState(desc.patchControlPoints) : nullptr;
 
     /*
     dynamic state
@@ -3089,16 +3114,40 @@ VkShaderModule RenderBackend::createShaderModule(const std::vector<uint32_t>& co
 /*
 createPipelineShaderStageInfos
 */
-VkPipelineShaderStageCreateInfo RenderBackend::createPipelineShaderStageInfos(const VkShaderModule module, const VkShaderStageFlagBits stage) {
-    VkPipelineShaderStageCreateInfo info;
-    info.sType                  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    info.pNext                  = nullptr;
-    info.flags                  = 0;
-    info.stage                  = stage;
-    info.module                 = module;
-    info.pName                  = "main";
-    info.pSpecializationInfo    = nullptr;
-    return info;
+VkPipelineShaderStageCreateInfo RenderBackend::createPipelineShaderStageInfos(const VkShaderModule module, const VkShaderStageFlagBits stage,
+    const ShaderSpecialisationConstants& specialisationInfo, VulkanShaderCreateAdditionalStructs* outAdditionalInfo) {
+
+    assert(outAdditionalInfo != nullptr);
+    assert(specialisationInfo.locationIDs.size() == specialisationInfo.values.size());
+    uint32_t nSpecialisation = specialisationInfo.locationIDs.size();
+
+    VkPipelineShaderStageCreateInfo createInfos;
+    createInfos.sType                  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    createInfos.pNext                  = nullptr;
+    createInfos.flags                  = 0;
+    createInfos.stage                  = stage;
+    createInfos.module                 = module;
+    createInfos.pName                  = "main";
+    createInfos.pSpecializationInfo    = nullptr;
+
+    if (specialisationInfo.values.size() > 0) {
+
+        outAdditionalInfo->specilisationMap.resize(nSpecialisation);
+        for (uint32_t i = 0; i < outAdditionalInfo->specilisationMap.size(); i++) {
+            outAdditionalInfo->specilisationMap[i].constantID = specialisationInfo.locationIDs[i];
+            outAdditionalInfo->specilisationMap[i].offset = i * sizeof(int);
+            outAdditionalInfo->specilisationMap[i].size = sizeof(int);
+        }
+
+        outAdditionalInfo->specialisationInfo.dataSize      = nSpecialisation * sizeof(int);
+        outAdditionalInfo->specialisationInfo.mapEntryCount = nSpecialisation;
+        outAdditionalInfo->specialisationInfo.pData         = specialisationInfo.values.data();
+        outAdditionalInfo->specialisationInfo.pMapEntries   = outAdditionalInfo->specilisationMap.data();
+
+        createInfos.pSpecializationInfo = &outAdditionalInfo->specialisationInfo;
+    }
+
+    return createInfos;
 }
 
 /*

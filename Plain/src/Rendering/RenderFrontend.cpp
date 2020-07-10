@@ -84,6 +84,14 @@ void RenderFrontend::newFrame() {
     if (m_minimized) {
         return;
     }
+
+    if (m_isMainPassShaderDescriptionStale) {
+        m_backend.updateGraphicPassShaderDescription(m_mainPass, m_mainPassShaderConfig);
+        m_isMainPassShaderDescriptionStale = false;
+    }
+
+    m_backend.updateShaderCode();
+
     m_backend.newFrame();
 }
 
@@ -148,8 +156,6 @@ void RenderFrontend::renderFrame() {
     if (m_minimized) {
         return;
     }
-
-    m_backend.updateShaderCode();
     
     /*
     additional passes that have to be executed before the main pass
@@ -382,17 +388,25 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
         0,
         AttachmentLoadOp::Clear);
 
-    GraphicPassDescription mainPassConfig;
-    mainPassConfig.attachments = { colorAttachment, depthAttachment };
-    mainPassConfig.shaderPaths.vertex   = "triangle.vert";
-    mainPassConfig.shaderPaths.fragment = "triangle.frag";
-    mainPassConfig.depthTest.function = DepthFunction::LessEqual;
-    mainPassConfig.depthTest.write = true;
-    mainPassConfig.rasterization.cullMode = CullMode::Back;
-    mainPassConfig.rasterization.mode = RasterizationeMode::Fill;
-    mainPassConfig.blending = BlendState::None;
+    
+    m_mainPassShaderConfig.vertex.srcPathRelative   = "triangle.vert";
+    m_mainPassShaderConfig.fragment.srcPathRelative = "triangle.frag";
 
-    m_mainPass = m_backend.createGraphicPass(mainPassConfig);
+    const int diffuseBRDFConstantID = 0;
+    const int diffuseBRDFDefaultSelection = 3;
+    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(diffuseBRDFConstantID);
+    m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(diffuseBRDFDefaultSelection);
+
+    GraphicPassDescription mainPassDesc;
+    mainPassDesc.shaderDescriptions = m_mainPassShaderConfig;
+    mainPassDesc.attachments = { colorAttachment, depthAttachment };
+    mainPassDesc.depthTest.function = DepthFunction::LessEqual;
+    mainPassDesc.depthTest.write = true;
+    mainPassDesc.rasterization.cullMode = CullMode::Back;
+    mainPassDesc.rasterization.mode = RasterizationeMode::Fill;
+    mainPassDesc.blending = BlendState::None;
+
+    m_mainPass = m_backend.createGraphicPass(mainPassDesc);
     m_backend.setSwapchainInputImage(m_colorBuffer);
 
     const auto cubeSamplerDesc = SamplerDescription(
@@ -442,8 +456,8 @@ void RenderFrontend::createShadowPass() {
 
     GraphicPassDescription shadowPassConfig;
     shadowPassConfig.attachments = { shadowMapAttachment };
-    shadowPassConfig.shaderPaths.vertex   = "shadow.vert";
-    shadowPassConfig.shaderPaths.fragment = "shadow.frag";
+    shadowPassConfig.shaderDescriptions.vertex.srcPathRelative   = "shadow.vert";
+    shadowPassConfig.shaderDescriptions.fragment.srcPathRelative = "shadow.frag";
     shadowPassConfig.depthTest.function = DepthFunction::LessEqual;
     shadowPassConfig.depthTest.write = true;
     shadowPassConfig.rasterization.cullMode = CullMode::Front;
@@ -460,11 +474,11 @@ createSkyTexturePreparationPasses
 void RenderFrontend::createSkyTexturePreparationPasses() {
 
     ComputePassDescription cubeWriteDesc;
-    cubeWriteDesc.shaderPath = "copyToCube.comp";
+    cubeWriteDesc.shaderDescription.srcPathRelative = "copyToCube.comp";
     m_toCubemapPass = m_backend.createComputePass(cubeWriteDesc);
 
     ComputePassDescription cubemapMipPassDesc;
-    cubemapMipPassDesc.shaderPath = "cubemapMip.comp";
+    cubemapMipPassDesc.shaderDescription.srcPathRelative = "cubemapMip.comp";
     /*
     first map is written to by different shader
     */
@@ -496,7 +510,7 @@ void RenderFrontend::createSpecularConvolutionPass() {
 
     for (uint32_t i = 0; i < m_specularProbeMipCount; i++) {
         ComputePassDescription specularConvolutionDesc;
-        specularConvolutionDesc.shaderPath = "specularCubeConvolution.comp";
+        specularConvolutionDesc.shaderDescription.srcPathRelative = "specularCubeConvolution.comp";
         m_specularConvolutionPerMipPasses.push_back(m_backend.createComputePass(specularConvolutionDesc));
     }
 
@@ -521,7 +535,7 @@ createDiffuseConvolutionPass
 */
 void RenderFrontend::createDiffuseConvolutionPass() {
     ComputePassDescription diffuseConvolutionDesc;
-    diffuseConvolutionDesc.shaderPath = "diffuseCubeConvolution.comp";
+    diffuseConvolutionDesc.shaderDescription.srcPathRelative = "diffuseCubeConvolution.comp";
     m_diffuseConvolutionPass = m_backend.createComputePass(diffuseConvolutionDesc);
 
     const auto diffuseProbeDesc = ImageDescription(
@@ -562,8 +576,8 @@ void RenderFrontend::createSkyPass() {
 
     GraphicPassDescription skyPassConfig;
     skyPassConfig.attachments = { colorAttachment, depthAttachment };
-    skyPassConfig.shaderPaths.vertex   = "sky.vert";
-    skyPassConfig.shaderPaths.fragment = "sky.frag";
+    skyPassConfig.shaderDescriptions.vertex.srcPathRelative   = "sky.vert";
+    skyPassConfig.shaderDescriptions.fragment.srcPathRelative = "sky.frag";
     skyPassConfig.depthTest.function = DepthFunction::LessEqual;
     skyPassConfig.depthTest.write = false;
     skyPassConfig.rasterization.cullMode = CullMode::None;
@@ -581,7 +595,7 @@ createBRDFLutPreparationPass
 void RenderFrontend::createBRDFLutPreparationPass() {
 
     ComputePassDescription brdfLutPassDesc;
-    brdfLutPassDesc.shaderPath = "brdfLut.comp";
+    brdfLutPassDesc.shaderDescription.srcPathRelative = "brdfLut.comp";
     m_brdfLutPass = m_backend.createComputePass(brdfLutPassDesc);
 
     const auto brdfLustDesc = ImageDescription(
@@ -663,5 +677,8 @@ void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
     ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
     ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
+    const char* diffuseBRDFOptions[] = { "Lambert", "Disney", "CoD WWII", "Titanfall 2" };
+    m_isMainPassShaderDescriptionStale = ImGui::Combo("Diffuse BRDF", 
+        &m_mainPassShaderConfig.fragment.specialisationConstants.values[0], diffuseBRDFOptions, 4);
     ImGui::End();
 }

@@ -89,6 +89,10 @@ private:
 
     MeshHandle      m_skyCube;
 
+    //cached to reuse to change for changig specialisation constants
+    GraphicPassShaderDescriptions m_mainPassShaderConfig;
+    bool m_isMainPassShaderDescriptionStale = false;
+
     void updateGlobalShaderInfo();
 
     void createMainPass(const uint32_t width, const uint32_t height);

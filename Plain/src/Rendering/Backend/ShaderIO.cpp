@@ -7,23 +7,23 @@
 loadShader
 =========
 */
-bool loadShader(const std::filesystem::path& relativePath, std::vector<uint32_t>* outSpirV) {
+bool loadShader(const ShaderDescription& desc, std::vector<uint32_t>* outSpirV) {
 
-    const auto absolutePath = absoluteShaderPathFromRelative(relativePath);
-    std::filesystem::path spirVCachePath = shaderCachePathFromRelative(relativePath);
+    const auto absolutePath = absoluteShaderPathFromRelative(desc.srcPathRelative);
+    std::filesystem::path spirVCachePath = shaderCachePathFromRelative(desc.srcPathRelative);
 
     if (std::filesystem::exists(spirVCachePath)) {
         const auto sourceLastChange = std::filesystem::last_write_time(absolutePath);
         const auto cacheLastChange  = std::filesystem::last_write_time(spirVCachePath);
         if (sourceLastChange > cacheLastChange) {
-            std::cout << relativePath << " cache out of date, recompiling\n";
+            std::cout << desc.srcPathRelative << " cache out of date, recompiling\n";
         }
         else {
             return loadShaderSpirVFile(spirVCachePath, outSpirV);
         }
     }
     else {
-        std::cout << relativePath << " no cache found, recompiling\n";
+        std::cout << desc.srcPathRelative << " no cache found, recompiling\n";
     }
 
     std::vector<char> shaderGLSL;
@@ -39,18 +39,18 @@ bool loadShader(const std::filesystem::path& relativePath, std::vector<uint32_t>
     return true;
 }
 
-bool loadGraphicPassShaders(const GraphicPassShaderPaths& paths, GraphicPassShaderSpirV* outSpirV) {
+bool loadGraphicPassShaders(const GraphicPassShaderDescriptions& shaderDescriptions, GraphicPassShaderSpirV* outSpirV) {
     bool success = true;
-    success &= loadShader(paths.vertex, &outSpirV->vertex);
-    success &= loadShader(paths.fragment, &outSpirV->fragment);
-    if (paths.geometry.has_value()) {
-        success &= loadShader(paths.geometry.value(), &outSpirV->geometry.value());
+    success &= loadShader(shaderDescriptions.vertex, &outSpirV->vertex);
+    success &= loadShader(shaderDescriptions.fragment, &outSpirV->fragment);
+    if (shaderDescriptions.geometry.has_value()) {
+        success &= loadShader(shaderDescriptions.geometry.value(), &outSpirV->geometry.value());
     }
-    if (paths.tesselationControl.has_value()) {
-        success &= loadShader(paths.tesselationControl.value(), &outSpirV->tesselationControl.value());
+    if (shaderDescriptions.tesselationControl.has_value()) {
+        success &= loadShader(shaderDescriptions.tesselationControl.value(), &outSpirV->tesselationControl.value());
     }
-    if (paths.tesselationEvaluation.has_value()) {
-        success &= loadShader(paths.tesselationEvaluation.value(), &outSpirV->tesselationEvaluation.value());
+    if (shaderDescriptions.tesselationEvaluation.has_value()) {
+        success &= loadShader(shaderDescriptions.tesselationEvaluation.value(), &outSpirV->tesselationEvaluation.value());
     }
     return success;
 }
