@@ -1,9 +1,9 @@
-vec3 importanceSampleGGX(float thetaIn, float phiIn, float r, vec3 N){
+vec3 importanceSampleGGX(vec2 xi, float r, vec3 N){
 	
 	float r_2 = r * r;
-	float cosTheta = sqrt((1.f - thetaIn) / (1.f + (r_2 - 1.f) * thetaIn));
+	float cosTheta = sqrt((1.f - xi.x) / (1.f + (r_2 - 1.f) * xi.x));
     float sinTheta = sqrt(1 - cosTheta * cosTheta);
-	float phi = 2.f * 3.1415 * phiIn;
+	float phi = 2.f * 3.1415 * xi.y;
 	vec3 sampleHemisphere = vec3(cos(phi)*sinTheta, sin(phi)*sinTheta, cosTheta);
 	
 	/*

@@ -111,6 +111,9 @@ void main(){
     vec3 diffuseColor = (1.f - metalic) * albedo;
     
     vec3 diffuseDirect;
+    vec3 diffuseBRDFIntegral = vec3(1.f);
+    
+    vec3 brdfLut = texture(sampler2D(brdfLutTexture, lutSampler), vec2(r, NoV)).rgb;
     
     //lambert
     if(diffuseBRDF == 0){
@@ -118,43 +121,26 @@ void main(){
     }
     //disney diffuse
 	else if (diffuseBRDF == 1){
-        float fresnelDiffuse90 = 0.5f + 2.f * VoH * VoH * r;
-        vec3 disneyDiffuse = diffuseColor / 3.1415f * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90), NoL) * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90), NoV);
-        
-        //energy conservation from frostbite PBR paper
-        float energyBias = mix(0.f, 0.5f, r);
-        float energyFactor = mix(1.f, 1.f / 1.51f, r);
-        float fresnelDiffuse90Biased = energyBias + 2.f * VoH * VoH * r;
-        disneyDiffuse = diffuseColor / 3.1415f * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90Biased), NoL) * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90Biased), NoV) * energyFactor;
+        vec3 disneyDiffuse = DisneyDiffuse(diffuseColor, NoL, VoH, NoV, r);
         diffuseDirect = disneyDiffuse * directLighting;
+        diffuseBRDFIntegral = vec3(brdfLut.z);
     }
-    //Cod WWII diffuse BRDF, conversion from roughness to gloss computed from papers gloss to roughness formula
+    //Cod WWII diffuse BRDF
     else if (diffuseBRDF == 2){
-        float f0Diffuse = VoH + pow(1.f - VoH, 5.f);
-        float f1 =  (1.f - 0.75f * pow(1.f - NoL, 5.f)) * 
-                    (1.f - 0.75f * pow(1.f - NoV, 5.f));
-        float g = log2(2.f / (r * r) - 1.f) / 18.f;
-        float t = clamp(2.2f * g - 0.5f, 0.f, 1.f);
-        float fd = f0Diffuse + (f1 - f0Diffuse) * t;
-        float fb = (34.5f * g * g - 59.f * g + 24.5f) * VoH * pow(2.f, -max(73.2f * g - 21.2f, 8.9f) * sqrt(NoH));
-        vec3 fr = diffuseColor / 3.1415f * (fd + fb);
-        diffuseDirect = fr * directLighting;              
+        vec3 fr = CoDWWIIDiffuse(diffuseColor, NoL, VoH, NoV, NoH, r);
+        diffuseDirect = fr * directLighting;      
+        diffuseBRDFIntegral = vec3(brdfLut.z);        
     }
     //titanfall 2 diffuse from gdc presentation
-    else {
-        float facing = 0.5f + 0.5f * LoV;
-        float rough = facing * (0.9f - 0.4f * facing) * (0.5f + NoH) / max(NoH, 0.03f);
-        float smoothDiffuse = 1.05f *   (1.f - pow(1.f - NoL, 5.f)) * 
-                                        (1.f - pow(1.f - NoV, 5.f));
-        float single = 1.f / 3.1415f * mix(smoothDiffuse, rough, r);
-        float multi = 0.1159f * r;
-        vec3 diffuseTitanfall2 = diffuseColor * (single + diffuseColor * multi);
+    else if (diffuseBRDF == 3){
+        vec3 diffuseTitanfall2 = Titanfall2Diffuse(diffuseColor, NoL, LoV, NoV, NoH, r);
         diffuseDirect = diffuseTitanfall2 * directLighting;
+        float multiIntegral = 0.1159f * r * 3.1415;
+        diffuseBRDFIntegral = min(vec3(brdfLut.z + diffuseColor * multiIntegral), vec3(1.f));
     }
 	
     //indirect specular
     vec3 lightingIndirect;
-    vec2 brdfLut = texture(sampler2D(brdfLutTexture, lutSampler), vec2(r, NoV)).rg;
     vec3 environmentSample = textureLod(samplerCube(specularProbe, specularProbeSampler), R, r * 6.f).rgb;
     vec3 irradiance = texture(samplerCube(diffuseProbe, cubeSampler), N).rgb;
     vec3 fresnelAverage = f0 + (1-f0) / 21.f;
@@ -162,7 +148,7 @@ void main(){
     //single scattering only
     if(indirectMultiscatterBRDF == 0){
         vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y);
-        lightingIndirect = singleScattering * environmentSample + irradiance * diffuseColor;
+        lightingIndirect = singleScattering * environmentSample + irradiance * diffuseColor * diffuseBRDFIntegral;
     }
     else {
         //multi scattering for IBL from "A Multiple-Scattering Microfacet Model for Real-Time Image-based Lighting"
@@ -174,7 +160,7 @@ void main(){
         vec3 multiScattering = energyMultiScattering * fresnelMultiScattering;
         
         vec3 energyDiffuseMultiScattering = 1.f - (singleScattering + multiScattering);
-        vec3 diffuseCorrection = (1.f - metalic) * albedo * energyDiffuseMultiScattering;
+        vec3 diffuseCorrection = (1.f - metalic) * albedo * energyDiffuseMultiScattering * diffuseBRDFIntegral;
         
         lightingIndirect = singleScattering * environmentSample + (multiScattering + diffuseCorrection) * irradiance;
     }
@@ -190,9 +176,6 @@ void main(){
     
     /*
     multiscattering formulation from "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
-    not working correctly: confusion of "smoothness" parameter of EnergyAverage is it r or 1 - r? if using r too strong for rough materials, using 1-r has effect contrary of what it should look like
-    note: smoothness parameter seems to be another kind of gloss parametrization, compare with gloss to roughness from CoD: WWII diffuse
-    maybe integrate in octave and fit myself
     */     
     vec3 multiScatteringLobe;
     if(directMultiscatterBRDF == 0){
@@ -225,5 +208,5 @@ void main(){
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
     //combine components
-	color = diffuseDirect + specularDirect + lightingIndirect;
+	color = diffuseDirect + specularDirect + lightingIndirect;    
 }

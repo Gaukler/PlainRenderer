@@ -27,6 +27,9 @@ public:
     void renderFrame();
 private:
 
+    void firstFramePreparation();
+    void computeBRDFLut();
+
     /*
     stored for resizing
     */
@@ -88,10 +91,22 @@ private:
     SamplerHandle m_lutSampler;
 
     MeshHandle      m_skyCube;
+    
+    const int m_diffuseBRDFDefaultSelection = 3;
+
+    //specilisation constant indices
+    const int m_mainPassSpecilisationConstantDiffuseBRDFIndex = 0;
+    const int m_mainPassSpecilisationConstantDirectMultiscatterBRDFIndex = 1;
+    const int m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex = 2;
+
+    const int m_brdfLutSpecilisationConstantDiffuseBRDFIndex = 0;
 
     //cached to reuse to change for changig specialisation constants
-    GraphicPassShaderDescriptions m_mainPassShaderConfig;
+    GraphicPassShaderDescriptions   m_mainPassShaderConfig;
+    ShaderDescription               m_brdfLutPassShaderConfig;
+
     bool m_isMainPassShaderDescriptionStale = false;
+    bool m_isBRDFLutShaderDescriptionStale = false;
 
     void updateGlobalShaderInfo();
 

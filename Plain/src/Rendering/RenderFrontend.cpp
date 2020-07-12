@@ -90,6 +90,13 @@ void RenderFrontend::newFrame() {
         m_isMainPassShaderDescriptionStale = false;
     }
 
+    if (m_isBRDFLutShaderDescriptionStale) {
+        m_brdfLutPassShaderConfig.specialisationConstants.values[m_brdfLutSpecilisationConstantDiffuseBRDFIndex] 
+            = m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantDiffuseBRDFIndex];
+        m_backend.updateComputePassShaderDescription(m_brdfLutPass, m_brdfLutPassShaderConfig);
+        //don't reset m_isMainPassShaderDescriptionStale, this is done when rendering as it's used to trigger lut recreation
+    }
+
     m_backend.updateShaderCode();
 
     m_backend.newFrame();
@@ -164,112 +171,23 @@ void RenderFrontend::renderFrame() {
 
     if (m_firstFrame) {
 
-        /*
-        write to sky texture
-        */
-        const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
-        const auto hdrCaptureResource = ImageResource(m_environmentMapSrc, 0, 1);
-        const auto hdrSamplerResource = SamplerResource(m_cubeSampler, 2);
+        firstFramePreparation();
 
-        RenderPassExecution cubeWriteExecution;
-        cubeWriteExecution.handle = m_toCubemapPass;
-        cubeWriteExecution.resources.storageImages = { skyTextureResource };
-        cubeWriteExecution.resources.sampledImages = { hdrCaptureResource };
-        cubeWriteExecution.resources.samplers = { hdrSamplerResource };
-        cubeWriteExecution.dispatchCount[0] = m_skyTextureRes / 8;
-        cubeWriteExecution.dispatchCount[1] = m_skyTextureRes / 8;
-        cubeWriteExecution.dispatchCount[2] = 6;
-        m_backend.setRenderPassExecution(cubeWriteExecution);
-
-        /*
-        create sky texture mips
-        */
-        for (uint32_t i = 1; i < m_skyTextureMipCount; i++) {
-            const uint32_t srcMip = i - 1;
-            const auto skyMipSrcResource = ImageResource(m_skyTexture, srcMip, 0);
-            const auto skyMipDstResource = ImageResource(m_skyTexture, i, 1);
-
-            RenderPassExecution skyMipExecution;
-            skyMipExecution.handle = m_cubemapMipPasses[srcMip];
-            skyMipExecution.resources.storageImages = { skyMipSrcResource, skyMipDstResource };
-            if (srcMip == 0) {
-                skyMipExecution.parents = { m_toCubemapPass };
-            }
-            else {
-                skyMipExecution.parents = { m_cubemapMipPasses[srcMip - 1] };
-            }
-            skyMipExecution.dispatchCount[0] = m_skyTextureRes / 8 / glm::pow(2, i);
-            skyMipExecution.dispatchCount[1] = m_skyTextureRes / 8 / glm::pow(2, i);
-            skyMipExecution.dispatchCount[2] = 6;
-            m_backend.setRenderPassExecution(skyMipExecution);
-        }
-
-        /*
-        diffuse convolution
-        */
-        const auto diffuseProbeResource             = ImageResource(m_diffuseProbe, 0, 0);
-        const auto diffuseConvolutionSrcResource    = ImageResource(m_skyTexture, 0, 1);
-        const auto cubeSamplerResource              = SamplerResource(m_skySamplerWithMips, 2);
-
-        RenderPassExecution diffuseConvolutionExecution;
-        diffuseConvolutionExecution.handle = m_diffuseConvolutionPass;
-        diffuseConvolutionExecution.parents = { m_toCubemapPass };
-        diffuseConvolutionExecution.resources.storageImages = { diffuseProbeResource };
-        diffuseConvolutionExecution.resources.sampledImages = { diffuseConvolutionSrcResource };
-        diffuseConvolutionExecution.resources.samplers = { cubeSamplerResource };
-        diffuseConvolutionExecution.dispatchCount[0] = m_diffuseProbeRes / 8;
-        diffuseConvolutionExecution.dispatchCount[1] = m_diffuseProbeRes / 8;
-        diffuseConvolutionExecution.dispatchCount[2] = 6;
-        m_backend.setRenderPassExecution(diffuseConvolutionExecution);
         preparationPasses.push_back(m_diffuseConvolutionPass);
-
-        /*
-        create brdf lut for split sum approximation
-        */
-        const auto brdfLutStorageResource = ImageResource(m_brdfLut, 0, 0);
-
-        RenderPassExecution brdfLutExecution;
-        brdfLutExecution.handle = m_brdfLutPass;
-        brdfLutExecution.resources.storageImages = { brdfLutStorageResource };
-        brdfLutExecution.dispatchCount[0] = m_brdfLutRes / 8;
-        brdfLutExecution.dispatchCount[1] = m_brdfLutRes / 8;
-        brdfLutExecution.dispatchCount[2] = 1;
-        m_backend.setRenderPassExecution(brdfLutExecution);
         preparationPasses.push_back(m_brdfLutPass);
-
-        /*
-        specular probe convolution
-        */
-        for (uint32_t i = 0; i < m_specularProbeMipCount; i++) {
-
-            int mipLevel = i;
-            BufferDescription mipLevelBufferDesc;
-            mipLevelBufferDesc.initialData = &mipLevel;
-            mipLevelBufferDesc.size = sizeof(mipLevel);
-            mipLevelBufferDesc.type = BufferType::Uniform;
-            const auto mipLevelBuffer = m_backend.createUniformBuffer(mipLevelBufferDesc);
-
-            const auto specularProbeResource = ImageResource(m_specularProbe, i, 0);
-            const auto specularConvolutionSrcResource = ImageResource(m_skyTexture, 0, 1);
-            const auto specCubeSamplerResource = SamplerResource(m_skySamplerWithMips, 2);
-            const auto mipBufferResource = UniformBufferResource(mipLevelBuffer, true, 3);
-
-            RenderPassExecution specularConvolutionExecution;
-            specularConvolutionExecution.handle = m_specularConvolutionPerMipPasses[i];
-            specularConvolutionExecution.parents = { m_toCubemapPass, m_cubemapMipPasses.back() };
-            specularConvolutionExecution.resources.storageImages = { specularProbeResource };
-            specularConvolutionExecution.resources.sampledImages = { specularConvolutionSrcResource };
-            specularConvolutionExecution.resources.samplers = { specCubeSamplerResource };
-            specularConvolutionExecution.resources.uniformBuffers = { mipBufferResource };
-            specularConvolutionExecution.dispatchCount[0] = m_specularProbeRes / 8;
-            specularConvolutionExecution.dispatchCount[1] = m_specularProbeRes / 8;
-            specularConvolutionExecution.dispatchCount[2] = 6;
-            m_backend.setRenderPassExecution(specularConvolutionExecution);
+        for (uint32_t i = 0; i < m_specularConvolutionPerMipPasses.size(); i++) {
             preparationPasses.push_back(m_specularConvolutionPerMipPasses[i]);
         }
 
         m_firstFrame = false;
     }
+
+    if (m_isBRDFLutShaderDescriptionStale) {
+        computeBRDFLut();
+        preparationPasses.push_back(m_brdfLutPass);
+        m_isBRDFLutShaderDescriptionStale = false;
+    }
+
     /*
     render sun shadow
     */
@@ -322,6 +240,124 @@ void RenderFrontend::renderFrame() {
     m_backend.drawMesh(m_skyCube, std::vector<RenderPassHandle> { m_skyPass }, glm::mat4(1.f));
     m_backend.renderFrame();
 }
+
+/*
+=========
+firstFramePreparation
+=========
+*/
+void RenderFrontend::firstFramePreparation() {
+    /*
+        write to sky texture
+        */
+    const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
+    const auto hdrCaptureResource = ImageResource(m_environmentMapSrc, 0, 1);
+    const auto hdrSamplerResource = SamplerResource(m_cubeSampler, 2);
+
+    RenderPassExecution cubeWriteExecution;
+    cubeWriteExecution.handle = m_toCubemapPass;
+    cubeWriteExecution.resources.storageImages = { skyTextureResource };
+    cubeWriteExecution.resources.sampledImages = { hdrCaptureResource };
+    cubeWriteExecution.resources.samplers = { hdrSamplerResource };
+    cubeWriteExecution.dispatchCount[0] = m_skyTextureRes / 8;
+    cubeWriteExecution.dispatchCount[1] = m_skyTextureRes / 8;
+    cubeWriteExecution.dispatchCount[2] = 6;
+    m_backend.setRenderPassExecution(cubeWriteExecution);
+
+    /*
+    create sky texture mips
+    */
+    for (uint32_t i = 1; i < m_skyTextureMipCount; i++) {
+        const uint32_t srcMip = i - 1;
+        const auto skyMipSrcResource = ImageResource(m_skyTexture, srcMip, 0);
+        const auto skyMipDstResource = ImageResource(m_skyTexture, i, 1);
+
+        RenderPassExecution skyMipExecution;
+        skyMipExecution.handle = m_cubemapMipPasses[srcMip];
+        skyMipExecution.resources.storageImages = { skyMipSrcResource, skyMipDstResource };
+        if (srcMip == 0) {
+            skyMipExecution.parents = { m_toCubemapPass };
+        }
+        else {
+            skyMipExecution.parents = { m_cubemapMipPasses[srcMip - 1] };
+        }
+        skyMipExecution.dispatchCount[0] = m_skyTextureRes / 8 / glm::pow(2, i);
+        skyMipExecution.dispatchCount[1] = m_skyTextureRes / 8 / glm::pow(2, i);
+        skyMipExecution.dispatchCount[2] = 6;
+        m_backend.setRenderPassExecution(skyMipExecution);
+    }
+
+    /*
+    diffuse convolution
+    */
+    const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 0);
+    const auto diffuseConvolutionSrcResource = ImageResource(m_skyTexture, 0, 1);
+    const auto cubeSamplerResource = SamplerResource(m_skySamplerWithMips, 2);
+
+    RenderPassExecution diffuseConvolutionExecution;
+    diffuseConvolutionExecution.handle = m_diffuseConvolutionPass;
+    diffuseConvolutionExecution.parents = { m_toCubemapPass };
+    diffuseConvolutionExecution.resources.storageImages = { diffuseProbeResource };
+    diffuseConvolutionExecution.resources.sampledImages = { diffuseConvolutionSrcResource };
+    diffuseConvolutionExecution.resources.samplers = { cubeSamplerResource };
+    diffuseConvolutionExecution.dispatchCount[0] = m_diffuseProbeRes / 8;
+    diffuseConvolutionExecution.dispatchCount[1] = m_diffuseProbeRes / 8;
+    diffuseConvolutionExecution.dispatchCount[2] = 6;
+    m_backend.setRenderPassExecution(diffuseConvolutionExecution);
+
+    computeBRDFLut();
+
+    /*
+    specular probe convolution
+    */
+    for (uint32_t i = 0; i < m_specularProbeMipCount; i++) {
+
+        int mipLevel = i;
+        BufferDescription mipLevelBufferDesc;
+        mipLevelBufferDesc.initialData = &mipLevel;
+        mipLevelBufferDesc.size = sizeof(mipLevel);
+        mipLevelBufferDesc.type = BufferType::Uniform;
+        const auto mipLevelBuffer = m_backend.createUniformBuffer(mipLevelBufferDesc);
+
+        const auto specularProbeResource = ImageResource(m_specularProbe, i, 0);
+        const auto specularConvolutionSrcResource = ImageResource(m_skyTexture, 0, 1);
+        const auto specCubeSamplerResource = SamplerResource(m_skySamplerWithMips, 2);
+        const auto mipBufferResource = UniformBufferResource(mipLevelBuffer, true, 3);
+
+        RenderPassExecution specularConvolutionExecution;
+        specularConvolutionExecution.handle = m_specularConvolutionPerMipPasses[i];
+        specularConvolutionExecution.parents = { m_toCubemapPass, m_cubemapMipPasses.back() };
+        specularConvolutionExecution.resources.storageImages = { specularProbeResource };
+        specularConvolutionExecution.resources.sampledImages = { specularConvolutionSrcResource };
+        specularConvolutionExecution.resources.samplers = { specCubeSamplerResource };
+        specularConvolutionExecution.resources.uniformBuffers = { mipBufferResource };
+        specularConvolutionExecution.dispatchCount[0] = m_specularProbeRes / 8;
+        specularConvolutionExecution.dispatchCount[1] = m_specularProbeRes / 8;
+        specularConvolutionExecution.dispatchCount[2] = 6;
+        m_backend.setRenderPassExecution(specularConvolutionExecution);
+    }
+}
+
+/*
+=========
+computeBRDFLut
+=========
+*/
+void RenderFrontend::computeBRDFLut() {
+    /*
+    create brdf lut for split sum approximation
+    */
+    const auto brdfLutStorageResource = ImageResource(m_brdfLut, 0, 0);
+
+    RenderPassExecution brdfLutExecution;
+    brdfLutExecution.handle = m_brdfLutPass;
+    brdfLutExecution.resources.storageImages = { brdfLutStorageResource };
+    brdfLutExecution.dispatchCount[0] = m_brdfLutRes / 8;
+    brdfLutExecution.dispatchCount[1] = m_brdfLutRes / 8;
+    brdfLutExecution.dispatchCount[2] = 1;
+    m_backend.setRenderPassExecution(brdfLutExecution);
+}
+
 
 /*
 =========
@@ -393,9 +429,8 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
     m_mainPassShaderConfig.fragment.srcPathRelative = "triangle.frag";
 
     const int diffuseBRDFConstantID = 0;
-    const int diffuseBRDFDefaultSelection = 3;
     m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(diffuseBRDFConstantID);
-    m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(diffuseBRDFDefaultSelection);
+    m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(m_diffuseBRDFDefaultSelection);
 
     const int directMultiscatterBRDFID = 1;
     const int directMultiscatterBRDFDefaultSelection = 0;
@@ -604,22 +639,27 @@ createBRDFLutPreparationPass
 */
 void RenderFrontend::createBRDFLutPreparationPass() {
 
+    m_brdfLutPassShaderConfig.srcPathRelative = "brdfLut.comp";
+    const int diffuseBRDFConstantID = 0;
+    m_brdfLutPassShaderConfig.specialisationConstants.locationIDs.push_back(diffuseBRDFConstantID);
+    m_brdfLutPassShaderConfig.specialisationConstants.values.push_back(m_diffuseBRDFDefaultSelection);
+
     ComputePassDescription brdfLutPassDesc;
-    brdfLutPassDesc.shaderDescription.srcPathRelative = "brdfLut.comp";
+    brdfLutPassDesc.shaderDescription = m_brdfLutPassShaderConfig;
     m_brdfLutPass = m_backend.createComputePass(brdfLutPassDesc);
 
-    const auto brdfLustDesc = ImageDescription(
+    const auto brdfLutDesc = ImageDescription(
         std::vector<char>{},
         m_brdfLutRes,
         m_brdfLutRes,
         1,
         ImageType::Type2D,
-        ImageFormat::RG16_sFloat,
+        ImageFormat::RGBA16_sFloat,
         (ImageUsageFlags)(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE),
         MipCount::One,
         1,
         false);
-    m_brdfLut = m_backend.createImage(brdfLustDesc);
+    m_brdfLut = m_backend.createImage(brdfLutDesc);
 }
 
 /*
@@ -688,19 +728,25 @@ void RenderFrontend::drawUi() {
     ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
     ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
 
-    static bool indirectMultiscatterSelection = m_mainPassShaderConfig.fragment.specialisationConstants.values[2] == 1;
+    static bool indirectMultiscatterSelection = 
+        m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex] == 1;
     if (ImGui::Checkbox("Indirect Multiscatter BRDF", &indirectMultiscatterSelection)) {
         m_isMainPassShaderDescriptionStale = true;
-        m_mainPassShaderConfig.fragment.specialisationConstants.values[2] = indirectMultiscatterSelection ? 1 : 0;
+        m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex] 
+            = indirectMultiscatterSelection ? 1 : 0;
     }
 
     const char* diffuseBRDFOptions[] = { "Lambert", "Disney", "CoD WWII", "Titanfall 2" };
-    m_isMainPassShaderDescriptionStale |= ImGui::Combo("Diffuse BRDF", 
-        &m_mainPassShaderConfig.fragment.specialisationConstants.values[0], diffuseBRDFOptions, 4);
+    const bool diffuseBRDFChanged = ImGui::Combo("Diffuse BRDF", 
+        &m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantDiffuseBRDFIndex], 
+        diffuseBRDFOptions, 4);
+    m_isMainPassShaderDescriptionStale |= diffuseBRDFChanged;
+    m_isBRDFLutShaderDescriptionStale = diffuseBRDFChanged;
 
     const char* directMultiscatterBRDFOptions[] = { "McAuley", "Simplified", "Scaled GGX lobe", "None" };
     m_isMainPassShaderDescriptionStale |= ImGui::Combo("Direct Multiscatter BRDF",
-        &m_mainPassShaderConfig.fragment.specialisationConstants.values[1], directMultiscatterBRDFOptions, 4);
+        &m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantDirectMultiscatterBRDFIndex], 
+        directMultiscatterBRDFOptions, 4);
 
     ImGui::End();
 }

@@ -30,8 +30,8 @@ void main(){
 	
 	for(int i = 0; i < samples; i++){
 		
-		vec2 random = hammersley2d(i, samples);
-		vec3 H = importanceSampleGGX(random.x, random.y, r, N);
+		vec2 xi = hammersley2d(i, samples);
+		vec3 H = importanceSampleGGX(xi, r, N);
 		vec3 L = 2.f * dot(V, H ) * H - V;
 
 		float NoL = max(dot(N, L), 0.f);

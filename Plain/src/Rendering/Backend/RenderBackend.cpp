@@ -436,7 +436,7 @@ void RenderBackend::setGlobalShaderInfo(const GlobalShaderInfo& info) {
 
 /*
 =========
-setGlobalShaderInfo
+updateGraphicPassShaderDescription
 =========
 */
 void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& shaderDescriptions) {
@@ -448,6 +448,18 @@ void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle pa
         vkDeviceWaitIdle(m_context.device);
         destroyRenderPass(m_renderPasses[passHandle]);
         m_renderPasses[passHandle] = createGraphicPassInternal(m_renderPasses[passHandle].graphicPassDesc.value(), spirV);
+    }
+}
+
+void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle passHandle, const ShaderDescription& desc) {
+    assert(!m_renderPasses[passHandle].isGraphicPass);
+    assert(m_renderPasses[passHandle].computePassDesc.has_value());
+    m_renderPasses[passHandle].computePassDesc.value().shaderDescription = desc;
+    std::vector<uint32_t> spirV;
+    if (loadShader(m_renderPasses[passHandle].computePassDesc.value().shaderDescription, &spirV)) {
+        vkDeviceWaitIdle(m_context.device);
+        destroyRenderPass(m_renderPasses[passHandle]);
+        m_renderPasses[passHandle] = createComputePassInternal(m_renderPasses[passHandle].computePassDesc.value(), spirV);
     }
 }
 
@@ -847,6 +859,7 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
     case ImageFormat::R8:               format = VK_FORMAT_R8_UNORM;                aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RGBA8:            format = VK_FORMAT_R8G8B8A8_UNORM;          aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RG16_sFloat:      format = VK_FORMAT_R16G16_SFLOAT;           aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
+    case ImageFormat::RGBA16_sFloat:    format = VK_FORMAT_R16G16B16A16_SFLOAT;     aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::R11G11B10_uFloat: format = VK_FORMAT_B10G11R11_UFLOAT_PACK32; aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RGBA32_sFloat:    format = VK_FORMAT_R32G32B32A32_SFLOAT;     aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::Depth16:          format = VK_FORMAT_D16_UNORM;               aspectFlag = VK_IMAGE_ASPECT_DEPTH_BIT; break;
@@ -2621,7 +2634,6 @@ RenderPass RenderBackend::createComputePassInternal(const ComputePassDescription
     RenderPass pass;
     pass.computePassDesc = desc;
     VkComputePipelineCreateInfo pipelineInfo;
-    VkPipelineShaderStageCreateInfo stageInfo;
 
     VkShaderModule module = createShaderModule(spirV);
     ShaderReflection reflection = performComputeShaderReflection(spirV);
@@ -2629,18 +2641,13 @@ RenderPass RenderBackend::createComputePassInternal(const ComputePassDescription
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
     pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, VK_NULL_HANDLE, false);
 
-    stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stageInfo.pNext = nullptr;
-    stageInfo.flags = 0;
-    stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    stageInfo.module = module;
-    stageInfo.pName = "main";
-    stageInfo.pSpecializationInfo = nullptr;
+    VulkanShaderCreateAdditionalStructs additionalStructs;
 
     pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     pipelineInfo.pNext = nullptr;
     pipelineInfo.flags = 0;
-    pipelineInfo.stage = stageInfo;
+    pipelineInfo.stage = createPipelineShaderStageInfos(module, VK_SHADER_STAGE_COMPUTE_BIT,
+        desc.shaderDescription.specialisationConstants, &additionalStructs);
     pipelineInfo.layout = pass.pipelineLayout;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = 0;

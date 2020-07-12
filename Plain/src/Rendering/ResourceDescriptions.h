@@ -165,7 +165,7 @@ Image
 */
 
 enum class ImageType { Type1D, Type2D, Type3D, TypeCube };
-enum class ImageFormat { R8, RGBA8, RG16_sFloat, RGBA32_sFloat, R11G11B10_uFloat, Depth16, Depth32 };
+enum class ImageFormat { R8, RGBA8, RG16_sFloat, RGBA16_sFloat, RGBA32_sFloat, R11G11B10_uFloat, Depth16, Depth32 };
 enum class MipCount { One, FullChain, Manual };
 
 typedef enum ImageUsageFlags {

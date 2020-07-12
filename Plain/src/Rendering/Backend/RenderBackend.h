@@ -81,6 +81,7 @@ public:
 
     //set path and specialisation constants, forces recompile and pipeline recreation
     void updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc);
+    void updateComputePassShaderDescription(const RenderPassHandle passHandle, const ShaderDescription& desc);
 
     /*
     actual rendering of frame using commands generated from drawMesh calls
