@@ -1,4 +1,5 @@
-vec3 importanceSampleGGX(float thetaIn, float phiIn, float r, vec3 N){	
+vec3 importanceSampleGGX(float thetaIn, float phiIn, float r, vec3 N){
+	
 	float r_2 = r * r;
 	float cosTheta = sqrt((1.f - thetaIn) / (1.f + (r_2 - 1.f) * thetaIn));
     float sinTheta = sqrt(1 - cosTheta * cosTheta);
@@ -13,6 +14,28 @@ vec3 importanceSampleGGX(float thetaIn, float phiIn, float r, vec3 N){
 	vec3 bitangent = cross(N, tangent);
 	
 	vec3 sampleWorld = vec3(0);
+	sampleWorld += sampleHemisphere.x * tangent;
+	sampleWorld += sampleHemisphere.y * bitangent;
+	sampleWorld += sampleHemisphere.z * N;
+	
+	return sampleWorld;
+}
+
+vec3 importanceSampleCosine(vec2 xi, vec3 N){
+    
+    float sinTheta = sqrt(xi.x);
+    float phi = 2.f * 3.1415f * xi.y;
+    
+    vec3 sampleHemisphere = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, sqrt(1.f - xi.x));
+    
+    /*
+	orient sample into world space
+	*/
+    vec3 up = abs(N.z) < 0.999 ? vec3(0.f, 0.f, 1.f) : vec3(1.f, 0.f, 0.f);
+	vec3 tangent = normalize(cross(up, N));
+	vec3 bitangent = cross(N, tangent);
+    
+    vec3 sampleWorld = vec3(0);
 	sampleWorld += sampleHemisphere.x * tangent;
 	sampleWorld += sampleHemisphere.y * bitangent;
 	sampleWorld += sampleHemisphere.z * N;

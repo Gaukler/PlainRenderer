@@ -209,7 +209,7 @@ void RenderFrontend::renderFrame() {
         */
         const auto diffuseProbeResource             = ImageResource(m_diffuseProbe, 0, 0);
         const auto diffuseConvolutionSrcResource    = ImageResource(m_skyTexture, 0, 1);
-        const auto cubeSamplerResource              = SamplerResource(m_cubeSampler, 2);
+        const auto cubeSamplerResource              = SamplerResource(m_skySamplerWithMips, 2);
 
         RenderPassExecution diffuseConvolutionExecution;
         diffuseConvolutionExecution.handle = m_diffuseConvolutionPass;
@@ -396,6 +396,16 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
     const int diffuseBRDFDefaultSelection = 3;
     m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(diffuseBRDFConstantID);
     m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(diffuseBRDFDefaultSelection);
+
+    const int directMultiscatterBRDFID = 1;
+    const int directMultiscatterBRDFDefaultSelection = 0;
+    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(directMultiscatterBRDFID);
+    m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(directMultiscatterBRDFDefaultSelection);
+
+    const int indirectMultiscatterBRDFID = 2;
+    const int indirectMultiscatterBRDFDefaultSelection = 1;
+    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(indirectMultiscatterBRDFID);
+    m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(indirectMultiscatterBRDFDefaultSelection);
 
     GraphicPassDescription mainPassDesc;
     mainPassDesc.shaderDescriptions = m_mainPassShaderConfig;
@@ -677,8 +687,20 @@ void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
     ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
     ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
+
+    static bool indirectMultiscatterSelection = m_mainPassShaderConfig.fragment.specialisationConstants.values[2] == 1;
+    if (ImGui::Checkbox("Indirect Multiscatter BRDF", &indirectMultiscatterSelection)) {
+        m_isMainPassShaderDescriptionStale = true;
+        m_mainPassShaderConfig.fragment.specialisationConstants.values[2] = indirectMultiscatterSelection ? 1 : 0;
+    }
+
     const char* diffuseBRDFOptions[] = { "Lambert", "Disney", "CoD WWII", "Titanfall 2" };
-    m_isMainPassShaderDescriptionStale = ImGui::Combo("Diffuse BRDF", 
+    m_isMainPassShaderDescriptionStale |= ImGui::Combo("Diffuse BRDF", 
         &m_mainPassShaderConfig.fragment.specialisationConstants.values[0], diffuseBRDFOptions, 4);
+
+    const char* directMultiscatterBRDFOptions[] = { "McAuley", "Simplified", "Scaled GGX lobe", "None" };
+    m_isMainPassShaderDescriptionStale |= ImGui::Combo("Direct Multiscatter BRDF",
+        &m_mainPassShaderConfig.fragment.specialisationConstants.values[1], directMultiscatterBRDFOptions, 4);
+
     ImGui::End();
 }

@@ -45,6 +45,16 @@ layout(location = 0) out vec3 color;
 //3: Titanfall 2
 layout(constant_id = 0) const int diffuseBRDF = 0;
 
+//0: McAuley
+//1: simplified
+//2: scaled GGX lobe
+//3: none
+layout(constant_id = 1) const int directMultiscatterBRDF = 0;
+
+//0: disabled
+//1: enabled
+layout(constant_id = 2) const int indirectMultiscatterBRDF = 0;
+
 float calcShadow(vec3 pos){
 	vec4 posLightSpace = lightMatrix * vec4(pos, 1.f);
 	posLightSpace /= posLightSpace.w;
@@ -58,7 +68,8 @@ float calcShadow(vec3 pos){
 }
 
 //mathematical fit from: "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
-float EnergyAverage(float smoothness){
+float EnergyAverage(float roughness){
+    float smoothness = 1.f - pow(roughness, 0.25f);
     float r = -0.0761947f - 0.383026f * smoothness;
           r = 1.04997f + smoothness * r;
           r = 0.409255f + smoothness * r;
@@ -142,23 +153,32 @@ void main(){
     }
 	
     //indirect specular
-	vec2 brdfLut = texture(sampler2D(brdfLutTexture, lutSampler), vec2(r, NoV)).rg;
-	vec3 environmentSample = textureLod(samplerCube(specularProbe, specularProbeSampler), R, r * 6.f).rgb;
-    
-    //multi scattering for IBL from "A Multiple-Scattering Microfacet Model forReal-Time Image-based Lighting"
-    vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y); //includes fresnel and energy
-    
-    float energySingleScattering = brdfLut.x + brdfLut.y;
-    float energyMultiScattering = 1 - energySingleScattering;
-    vec3 fresnelAverage = f0 + (1-f0) / 21.f;
-    vec3 fresnelMultiScattering = singleScattering * fresnelAverage / (1.f - (1.f - energySingleScattering) * fresnelAverage);
-    vec3 multiScattering = energyMultiScattering * fresnelMultiScattering;
-    
-    vec3 energyDiffuseMultiScattering = 1.f - (singleScattering + multiScattering);
-    vec3 diffuseCorrection = (1.f - metalic) * albedo * energyDiffuseMultiScattering;
-    
+    vec3 lightingIndirect;
+    vec2 brdfLut = texture(sampler2D(brdfLutTexture, lutSampler), vec2(r, NoV)).rg;
+    vec3 environmentSample = textureLod(samplerCube(specularProbe, specularProbeSampler), R, r * 6.f).rgb;
     vec3 irradiance = texture(samplerCube(diffuseProbe, cubeSampler), N).rgb;
-	vec3 lightingIndirect = singleScattering * environmentSample + (multiScattering + diffuseCorrection) * irradiance;
+    vec3 fresnelAverage = f0 + (1-f0) / 21.f;
+    
+    //single scattering only
+    if(indirectMultiscatterBRDF == 0){
+        vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y);
+        lightingIndirect = singleScattering * environmentSample + irradiance * diffuseColor;
+    }
+    else {
+        //multi scattering for IBL from "A Multiple-Scattering Microfacet Model for Real-Time Image-based Lighting"
+        vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y); //includes fresnel and energy
+        
+        float energySingleScattering = brdfLut.x + brdfLut.y;
+        float energyMultiScattering = 1 - energySingleScattering;
+        vec3 fresnelMultiScattering = singleScattering * fresnelAverage / (1.f - (1.f - energySingleScattering) * fresnelAverage);
+        vec3 multiScattering = energyMultiScattering * fresnelMultiScattering;
+        
+        vec3 energyDiffuseMultiScattering = 1.f - (singleScattering + multiScattering);
+        vec3 diffuseCorrection = (1.f - metalic) * albedo * energyDiffuseMultiScattering;
+        
+        lightingIndirect = singleScattering * environmentSample + (multiScattering + diffuseCorrection) * irradiance;
+    }
+	
     
     //direct specular
 	const float D = D_GGX(NoH, r);
@@ -167,29 +187,41 @@ void main(){
     vec3 singleScatteringLobe = D * Vis * F;
     
     float energyOutgoing = brdfLut.x + brdfLut.y;
+    
     /*
-    //more complex multiscattering formulation from "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
-    //not working correctly: confusion of "smoothness" parameter of EnergyAverage is it r or 1 - r? if using r too strong for rough materials, using 1-r has effect contrary of what it should look like
-    //note: smoothness parameter seems to be another kind of gloss parametrization, compare with gloss to roughness from CoD: WWII diffuse
-    //maybe integrate in octave and fit myself
-    float energyAverage = EnergyAverage(r);
+    multiscattering formulation from "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
+    not working correctly: confusion of "smoothness" parameter of EnergyAverage is it r or 1 - r? if using r too strong for rough materials, using 1-r has effect contrary of what it should look like
+    note: smoothness parameter seems to be another kind of gloss parametrization, compare with gloss to roughness from CoD: WWII diffuse
+    maybe integrate in octave and fit myself
+    */     
+    vec3 multiScatteringLobe;
+    if(directMultiscatterBRDF == 0){
+        float energyAverage = EnergyAverage(r);
     
-    vec2 brdfLutIncoming = texture(sampler2D(brdfLutTexture, lutSampler), vec2(r, NoL)).rg;
-    float energyIncoming = brdfLutIncoming.x + brdfLutIncoming.y;
-    
-    float multiScatteringLobe = (1.f - energyIncoming) * (1.f - energyOutgoing) / (3.1415f * (1.f - energyAverage));
-    vec3 multiScatteringScaling = (fresnelAverage * fresnelAverage * energyAverage) / (1.f - fresnelAverage * (1.f - energyAverage));
-    */      
+        vec2 brdfLutIncoming = texture(sampler2D(brdfLutTexture, lutSampler), vec2(r, NoL)).rg;
+        float energyIncoming = brdfLutIncoming.x + brdfLutIncoming.y;
+        
+        float multiScatteringLobeFloat = (1.f - energyIncoming) * (1.f - energyOutgoing) / (3.1415f * (1.f - energyAverage));
+        vec3 multiScatteringScaling = (fresnelAverage * fresnelAverage * energyAverage) / (1.f - fresnelAverage * (1.f - energyAverage));
+        
+        multiScatteringLobe = multiScatteringLobeFloat * multiScatteringScaling;
+    }
     //this is the above but approximating E_avg = E_o, simplifying the equation
-    vec3 multiScatteringLobe = vec3((1.f - energyOutgoing) / 3.1415f);
-    vec3 multiScatteringScaling = (fresnelAverage * fresnelAverage * energyOutgoing) / (1.f - fresnelAverage * (1.f - energyOutgoing));
-    multiScatteringLobe *= multiScatteringScaling;
-    
-    /* 
-    simple multiscattering achieved by adding scaled singe scattering lobe, see PBR Filament document
-    not using alternative LUT formulation, but this should be equal? Formulation also used by indirect multi scattering paper
-    */
-    //vec3 multiScatteringLobe = f0 * (1.f - energyOutgoing) / energyOutgoing * singleScatteringLobe;
+    else if(directMultiscatterBRDF == 1){
+        multiScatteringLobe = vec3((1.f - energyOutgoing) / 3.1415f);
+        vec3 multiScatteringScaling = (fresnelAverage * fresnelAverage * energyOutgoing) / (1.f - fresnelAverage * (1.f - energyOutgoing));
+        multiScatteringLobe *= multiScatteringScaling;
+    }
+    else if(directMultiscatterBRDF == 2){
+        /* 
+        simple multiscattering achieved by adding scaled singe scattering lobe, see PBR Filament document
+        not using alternative LUT formulation, but this should be equal? Formulation also used by indirect multi scattering paper
+        */
+        multiScatteringLobe = f0 * (1.f - energyOutgoing) / energyOutgoing * singleScatteringLobe;
+    }   
+    else {
+        multiScatteringLobe = vec3(0.f);
+    }
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
     //combine components
