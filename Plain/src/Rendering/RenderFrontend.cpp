@@ -163,7 +163,14 @@ void RenderFrontend::renderFrame() {
     if (m_minimized) {
         return;
     }
-    
+
+    /*
+    compute exposed illuminance for sun and sky
+    */
+    float exposure = 1.f / (pow(2.f, m_cameraEV100) * 1.2f);
+    m_globalShaderInfo.skyStrengthExposed = m_skyIlluminanceLux * exposure;
+    m_globalShaderInfo.sunStrengthExposed = m_sunIlluminanceLux * exposure;
+
     /*
     additional passes that have to be executed before the main pass
     */
@@ -727,6 +734,9 @@ void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
     ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
     ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
+    ImGui::DragFloat("Camera EV100", &m_cameraEV100, 0.1f, 0.f, 30.f);
+    ImGui::InputFloat("Sun Illuminance Lux", &m_sunIlluminanceLux);
+    ImGui::InputFloat("Sky Illuminance Lux", &m_skyIlluminanceLux);
 
     static bool indirectMultiscatterSelection = 
         m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex] == 1;

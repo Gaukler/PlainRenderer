@@ -274,4 +274,6 @@ struct GlobalShaderInfo {
     glm::vec4 ambient = glm::vec4(0.05f);
     glm::mat4 lightMatrix = glm::mat4(1.f);
     glm::vec4 cameraPos = glm::vec4(0.f);
+    float sunStrengthExposed = 1.f;
+    float skyStrengthExposed = 1.f;
 };

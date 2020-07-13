@@ -48,6 +48,13 @@ private:
     Camera m_camera;
 
     /*
+    light and camera values
+    */
+    float m_cameraEV100 = 15.f;
+    float m_sunIlluminanceLux = 80000.f;
+    float m_skyIlluminanceLux = 30000.f;
+
+    /*
     resources
     */
     GlobalShaderInfo m_globalShaderInfo;

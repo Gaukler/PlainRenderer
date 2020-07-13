@@ -9,6 +9,8 @@ layout(set=0, binding = 0, std140) uniform global{
 	vec4 ambient;
 	mat4 lightMatrix;
 	vec4 cameraPosition;
+    float sunStrengthExposed;
+    float skyStrengthExposed;
 };
 
 layout(set=1, binding = 0) uniform texture2D depthTexture;
@@ -207,6 +209,9 @@ void main(){
     }
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
-    //combine components
-	color = diffuseDirect + specularDirect + lightingIndirect;    
+    float aperture = 1.f / 5.6f;
+    float shutterSpeed = 1.f / 500.f;
+    float sensitivity = 50.f;
+    
+	color = (diffuseDirect + specularDirect) * sunStrengthExposed + lightingIndirect * skyStrengthExposed;   
 }

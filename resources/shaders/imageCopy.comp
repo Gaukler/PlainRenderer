@@ -6,9 +6,22 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(set=1, binding = 0, rgba8) 			uniform image2D imageOut;
 layout(set=1, binding = 1, r11f_g11f_b10f) 	uniform image2D imageIn;
 
+
 void main(){
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
-	vec3 color = pow(imageLoad(imageIn, uv).rgb, vec3(1.f / 2.2f)); //gamma correction
+	vec3 linearColor = imageLoad(imageIn, uv).rgb;
+    
     //color = color / (dot(color, vec3(0.21, 0.72, 0.07)) + 1.f); //reinhard tonemapping
-	imageStore(imageOut, uv, vec4(color, 1.f));
+    
+    //accurate linear to sRGB conversion from frostbite paper
+    vec3 sRGBLo = linearColor * 12.92;
+    vec3 sRGBHi = (pow(abs(linearColor), vec3(1.0/2.4)) * 1.055)  - 0.055;
+    vec3 sRGB;
+    sRGB.x = linearColor.x  <= 0.0031308 ? sRGBLo.x : sRGBHi.x;
+    sRGB.y = linearColor.y  <= 0.0031308 ? sRGBLo.y : sRGBHi.y;
+    sRGB.z = linearColor.z  <= 0.0031308 ? sRGBLo.z : sRGBHi.z;
+    
+    //approximation
+    //sRGB = pow(linearColor, vec3(1.f/2.2f));
+	imageStore(imageOut, uv, vec4(sRGB, 1.f));
 }
