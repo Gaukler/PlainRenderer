@@ -87,7 +87,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_commandBuffer = allocateCommandBuffer();
 
     /*
-    create global uniform buffer
+    create global storage buffer
     */
     std::vector<uint32_t> queueFamilies = { m_context.queueFamilies.graphicsQueueIndex, m_context.queueFamilies.computeQueueIndex };
     GlobalShaderInfo defaultInfo;
@@ -1490,7 +1490,7 @@ hasRequiredDeviceFeatures
 bool RenderBackend::hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDevice) {
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physicalDevice, &features);
-    return features.samplerAnisotropy && features.imageCubeArray;
+    return features.samplerAnisotropy && features.imageCubeArray && features.fragmentStoresAndAtomics;
 }
 
 /*
@@ -1600,6 +1600,7 @@ void RenderBackend::createLogicalDevice() {
 
     VkPhysicalDeviceFeatures features = {};
     features.samplerAnisotropy = true;
+    features.fragmentStoresAndAtomics = true;
 
     //device info
     VkDeviceCreateInfo deviceInfo = {};

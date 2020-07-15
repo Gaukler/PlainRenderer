@@ -2,16 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
 #include "brdf.inc"
-
-layout(set=0, binding = 0, std140) uniform global{
-	vec4 sunColor;
-	vec4 sunDirection;
-	vec4 ambient;
-	mat4 lightMatrix;
-	vec4 cameraPosition;
-    float sunStrengthExposed;
-    float skyStrengthExposed;
-};
+#include "global.inc" 
 
 layout(set=1, binding = 0) uniform texture2D depthTexture;
 layout(set=1, binding = 1) uniform sampler depthSampler;
@@ -23,6 +14,12 @@ layout(set=1, binding = 4) 	uniform texture2D 	brdfLutTexture;
 layout(set=1, binding = 5) 	uniform textureCube	specularProbe;
 layout(set=1, binding = 6) 	uniform sampler 	specularProbeSampler;
 layout(set=1, binding = 7) 	uniform sampler 	lutSampler;
+
+layout(set=1, binding = 8, std430) buffer lightBuffer{
+    float previousFrameExposure;
+    float sunStrengthExposed;
+    float skyStrengthExposed;
+};
 
 layout(set=2, binding = 0) uniform sampler colorSampler;
 layout(set=2, binding = 1) uniform sampler normalSampler;
@@ -58,7 +55,7 @@ layout(constant_id = 1) const int directMultiscatterBRDF = 0;
 layout(constant_id = 2) const int indirectMultiscatterBRDF = 0;
 
 float calcShadow(vec3 pos){
-	vec4 posLightSpace = lightMatrix * vec4(pos, 1.f);
+	vec4 posLightSpace = g_lightMatrix * vec4(pos, 1.f);
 	posLightSpace /= posLightSpace.w;
 	posLightSpace.xy = posLightSpace.xy * 0.5f + 0.5f;
 	float actualDepth = clamp(posLightSpace.z, 0.f, 1.f);
@@ -93,8 +90,8 @@ void main(){
 	r = max(r, 0.045f);
 	
 	vec3 N = normalize(passTBN * normalTexel);
-	vec3 L = normalize(sunDirection.xyz);
-	vec3 V = normalize(cameraPosition.xyz - passPos.xyz);
+	vec3 L = normalize(g_sunDirection.xyz);
+	vec3 V = normalize(g_cameraPosition.xyz - passPos.xyz);
 	vec3 H = normalize(V + L);
 	vec3 R = reflect(-V, N);
 	
@@ -107,7 +104,7 @@ void main(){
 	const vec3 f0 = mix(vec3(0.04f), albedo, metalic);
 	
     //sun light
-	vec3 directLighting = max(dot(N, L), 0.f) * calcShadow(passPos.xyz / passPos.w) * sunColor.rgb;
+	vec3 directLighting = max(dot(N, L), 0.f) * calcShadow(passPos.xyz / passPos.w) * g_sunColor.rgb;
     
     //direct diffuse
     vec3 diffuseColor = (1.f - metalic) * albedo;
@@ -208,10 +205,6 @@ void main(){
         multiScatteringLobe = vec3(0.f);
     }
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
-    
-    float aperture = 1.f / 5.6f;
-    float shutterSpeed = 1.f / 500.f;
-    float sensitivity = 50.f;
     
 	color = (diffuseDirect + specularDirect) * sunStrengthExposed + lightingIndirect * skyStrengthExposed;   
 }

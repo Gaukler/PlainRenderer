@@ -1,0 +1,44 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "global.inc"
+
+layout(constant_id = 0) const int constNBins = 64;
+layout(constant_id = 1) const int constMinLuminance = 1;
+layout(constant_id = 2) const int constMaxLuminance = 100000;
+//multiplication factor to shift the number range over 1 for very dimm light values, as log() of values < 0 are negative and is problematic
+layout(constant_id = 3) const int constLuminanceFactor = 1000;
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set=1, binding = 0, std430) buffer histogramBuffer{
+    uint histogram[constNBins];
+};
+
+layout(set=1, binding = 1, std430) buffer lightBuffer{
+    float previousFrameExposure;
+    float sunStrengthExposed;
+    float skyStrengthExposed;
+};
+
+void main(){
+    
+    const float minLuminanceLog = log(float(1.f));
+    const float maxLuminanceLog = log(float(constMaxLuminance));
+    
+    float mean = 0.f;
+    float total = 0.f;
+    for(int i = 0; i < constNBins; i++){
+        float binValueLog = minLuminanceLog + maxLuminanceLog * i / float(constNBins - 1.f);
+        float binValueLinear = exp(binValueLog) / float(constLuminanceFactor);
+        mean += histogram[i] * binValueLinear;
+        total += histogram[i];
+    }
+    mean /= total;
+    float ev100 = log2(mean * 100.f / 12.5f) - exposureOffset;
+    float exposure = 1.f / (pow(2.f, ev100) * 1.2f);
+    sunStrengthExposed = g_sunStrength * exposure;
+    skyStrengthExposed = g_skyStrength * exposure;
+    previousFrameExposure = exposure;
+}

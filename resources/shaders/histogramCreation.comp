@@ -1,0 +1,48 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "global.inc"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(constant_id = 0) const int constNBins = 64;
+layout(constant_id = 1) const int constMinLuminance = 1;
+layout(constant_id = 2) const int constMaxLuminance = 100000;
+//multiplication factor to shift the number range over 1 for very dimm light values, as log() of values < 0 are negative and is problematic
+layout(constant_id = 3) const int constLuminanceFactor = 1000;
+
+layout(set=1, binding = 0, std430) buffer histogramBuffer{
+    uint histogram[constNBins];
+};
+layout(set=1, binding = 1, r11f_g11f_b10f) uniform image2D imageIn;
+
+layout(set=1, binding = 2, std430) buffer lightBuffer{
+    float previousFrameExposure;
+    float sunStrengthExposed;
+    float skyStrengthExposed;
+};
+
+//Reference: https://en.wikipedia.org/wiki/Relative_luminance
+float colorToLuminance(vec3 color){
+    return dot(color, vec3(0.2126f, 0.7152f, 0.0722f));
+}
+
+void main(){
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 inputSize = imageSize(imageIn);
+    if(uv.x >= inputSize.x || uv.y >= inputSize.y){
+        return;
+    }
+    
+    const float minLuminanceLog = log(float(1.f));
+    const float maxLuminanceLog = log(float(constMaxLuminance));
+    
+    vec3 color = imageLoad(imageIn, uv).rgb;
+    float luminance = colorToLuminance(color) / previousFrameExposure;
+    float luminanceLog = log(luminance * float(constLuminanceFactor));
+    const int maxIndex = constNBins - 1;
+    uint bin = uint(maxIndex * clamp((luminanceLog - minLuminanceLog) / (maxLuminanceLog - minLuminanceLog), 0.f, 1.f));
+    atomicAdd(histogram[bin], 1); 
+    
+}

@@ -50,9 +50,7 @@ private:
     /*
     light and camera values
     */
-    float m_cameraEV100 = 15.f;
-    float m_sunIlluminanceLux = 80000.f;
-    float m_skyIlluminanceLux = 30000.f;
+    float m_exposureOffset = 0.f;
 
     /*
     resources
@@ -70,6 +68,9 @@ private:
     RenderPassHandle m_brdfLutPass;
     std::vector<RenderPassHandle> m_cubemapMipPasses;
     std::vector<RenderPassHandle> m_specularConvolutionPerMipPasses;
+    RenderPassHandle m_histogramCreationPass;
+    RenderPassHandle m_histogramResetPass;
+    RenderPassHandle m_preExposeLightsPass;
 
     /*
     resources
@@ -81,6 +82,9 @@ private:
     const uint32_t m_diffuseProbeRes = 256;
     const uint32_t m_skyTextureMipCount = 8;
     const uint32_t m_brdfLutRes = 512;
+    const uint32_t m_nHistogramBins = 128;
+    const float m_histogramMin = 0.001f;
+    const float m_histogramMax = 200000.f;
 
     ImageHandle m_colorBuffer;
     ImageHandle m_depthBuffer;
@@ -98,6 +102,9 @@ private:
     SamplerHandle m_lutSampler;
 
     MeshHandle      m_skyCube;
+
+    StorageBufferHandle m_histogramBuffer;
+    StorageBufferHandle m_lightBuffer; //contains previous exposure and exposured light values
     
     const int m_diffuseBRDFDefaultSelection = 3;
 
@@ -125,6 +132,7 @@ private:
     void createDiffuseConvolutionPass();
     void createSpecularConvolutionPass();
     void createBRDFLutPreparationPass();
+    void createHistogramPasses();
 
     /*
     sun

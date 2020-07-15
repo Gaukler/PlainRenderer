@@ -27,6 +27,8 @@ void RenderFrontend::setup(GLFWwindow* window) {
 
     int width, height;
     glfwGetWindowSize(window, &width, &height);
+    m_screenWidth = width;
+    m_screenHeight = height;
     m_camera.intrinsic.aspectRatio = (float)width / (float)height;
 
     m_backend.setup(window);
@@ -59,6 +61,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     createSpecularConvolutionPass();
     createDiffuseConvolutionPass();
     createBRDFLutPreparationPass();
+    createHistogramPasses();
 }
 
 /*
@@ -165,13 +168,6 @@ void RenderFrontend::renderFrame() {
     }
 
     /*
-    compute exposed illuminance for sun and sky
-    */
-    float exposure = 1.f / (pow(2.f, m_cameraEV100) * 1.2f);
-    m_globalShaderInfo.skyStrengthExposed = m_skyIlluminanceLux * exposure;
-    m_globalShaderInfo.sunStrengthExposed = m_sunIlluminanceLux * exposure;
-
-    /*
     additional passes that have to be executed before the main pass
     */
     std::vector<RenderPassHandle> preparationPasses;
@@ -198,45 +194,109 @@ void RenderFrontend::renderFrame() {
     /*
     render sun shadow
     */
-    RenderPassExecution shadowPassExecution;
-    shadowPassExecution.handle = m_shadowPass;
-    m_backend.setRenderPassExecution(shadowPassExecution);
+    {
+        RenderPassExecution shadowPassExecution;
+        shadowPassExecution.handle = m_shadowPass;
+        m_backend.setRenderPassExecution(shadowPassExecution);
+    }
+    
+    /*
+    histogram and exposure computation
+    */
+    StorageBufferResource histogramResource(m_histogramBuffer, false, 0);
+
+    {
+        //histogram reset
+        RenderPassExecution histogramResetExecution;
+        histogramResetExecution.handle = m_histogramResetPass;
+        histogramResetExecution.resources.storageBuffers = { histogramResource };
+        histogramResetExecution.dispatchCount[0] = uint32_t(std::ceilf(m_nHistogramBins / 64.f));
+        histogramResetExecution.dispatchCount[1] = 1;
+        histogramResetExecution.dispatchCount[2] = 1;
+
+        m_backend.setRenderPassExecution(histogramResetExecution);
+    }
+    
+
+    //histogram create
+    {
+        ImageResource colorBufferImageResource(m_colorBuffer, 0, 1);
+        StorageBufferResource lightBufferResource(m_lightBuffer, false, 2);
+
+        RenderPassExecution histogramCreateExecution;
+        histogramCreateExecution.handle = m_histogramCreationPass;
+        histogramCreateExecution.resources.storageBuffers = { histogramResource, lightBufferResource };
+        histogramCreateExecution.resources.storageImages = { colorBufferImageResource };
+        histogramCreateExecution.parents = { m_histogramResetPass };
+        histogramCreateExecution.dispatchCount[0] = uint32_t(std::ceilf((float)m_screenWidth / 8.f));
+        histogramCreateExecution.dispatchCount[1] = uint32_t(std::ceilf((float)m_screenHeight / 8.f));
+        histogramCreateExecution.dispatchCount[2] = 1;
+
+        m_backend.setRenderPassExecution(histogramCreateExecution);
+    }
+
+    //pre expose
+    {
+        StorageBufferResource lightBufferResource(m_lightBuffer, false, 1);
+
+        RenderPassExecution preExposeLightsExecution;
+        preExposeLightsExecution.handle = m_preExposeLightsPass;
+        preExposeLightsExecution.resources.storageBuffers = { histogramResource, lightBufferResource };
+        preExposeLightsExecution.parents = { m_histogramCreationPass };
+        preExposeLightsExecution.dispatchCount[0] = 1;
+        preExposeLightsExecution.dispatchCount[1] = 1;
+        preExposeLightsExecution.dispatchCount[2] = 1;
+
+        m_backend.setRenderPassExecution(preExposeLightsExecution);
+    }
+    
 
     /*
     render scene geometry
     */
-    const auto shadowMapResource        = ImageResource(m_shadowMap, 0, 0);
-    const auto shadowSamplerResource    = SamplerResource(m_shadowSampler, 1);
-    const auto diffuseProbeResource     = ImageResource(m_diffuseProbe, 0, 2);
-    const auto cubeSamplerResource      = SamplerResource(m_cubeSampler, 3);
-    const auto brdfLutResource          = ImageResource(m_brdfLut, 0, 4);
-    const auto specularProbeResource    = ImageResource(m_specularProbe, 0, 5);
-    const auto cubeSamplerMipsResource  = SamplerResource(m_skySamplerWithMips, 6);
-    const auto lustSamplerResource      = SamplerResource(m_lutSampler, 7);
+    {
+        const auto shadowMapResource = ImageResource(m_shadowMap, 0, 0);
+        const auto shadowSamplerResource = SamplerResource(m_shadowSampler, 1);
+        const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 2);
+        const auto cubeSamplerResource = SamplerResource(m_cubeSampler, 3);
+        const auto brdfLutResource = ImageResource(m_brdfLut, 0, 4);
+        const auto specularProbeResource = ImageResource(m_specularProbe, 0, 5);
+        const auto cubeSamplerMipsResource = SamplerResource(m_skySamplerWithMips, 6);
+        const auto lustSamplerResource = SamplerResource(m_lutSampler, 7);
+        const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 8);
 
-    RenderPassExecution mainPassExecution;
-    mainPassExecution.handle = m_mainPass;
-    mainPassExecution.resources.sampledImages = { shadowMapResource, diffuseProbeResource, brdfLutResource, specularProbeResource };
-    mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource, cubeSamplerMipsResource, lustSamplerResource };
-    mainPassExecution.parents = { m_shadowPass };
-    mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
-    m_backend.setRenderPassExecution(mainPassExecution);
+        RenderPassExecution mainPassExecution;
+        mainPassExecution.handle = m_mainPass;
+        mainPassExecution.resources.storageBuffers = { lightBufferResource };
+        mainPassExecution.resources.sampledImages = { shadowMapResource, diffuseProbeResource, brdfLutResource, specularProbeResource };
+        mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource, cubeSamplerMipsResource, lustSamplerResource };
+        mainPassExecution.parents = { m_shadowPass, m_preExposeLightsPass };
+        mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
+        m_backend.setRenderPassExecution(mainPassExecution);
 
-    const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
-    const auto skySamplerResource = SamplerResource(m_cubeSampler, 1);
+    }
+    
+    
 
     /*
     render sky
     */
-    RenderPassExecution skyPassExecution;
-    skyPassExecution.handle = m_skyPass;
-    skyPassExecution.resources.sampledImages = { skyTextureResource };
-    skyPassExecution.resources.samplers = { skySamplerResource };
-    skyPassExecution.parents = { m_mainPass };
-    if (m_firstFrame) {
-        skyPassExecution.parents = { m_mainPass, m_toCubemapPass };
+    {
+        const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
+        const auto skySamplerResource = SamplerResource(m_cubeSampler, 1);
+        const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 2);
+
+        RenderPassExecution skyPassExecution;
+        skyPassExecution.handle = m_skyPass;
+        skyPassExecution.resources.storageBuffers = { lightBufferResource };
+        skyPassExecution.resources.sampledImages = { skyTextureResource };
+        skyPassExecution.resources.samplers = { skySamplerResource };
+        skyPassExecution.parents = { m_mainPass };
+        if (m_firstFrame) {
+            skyPassExecution.parents = { m_mainPass, m_toCubemapPass };
+        }
+        m_backend.setRenderPassExecution(skyPassExecution);
     }
-    m_backend.setRenderPassExecution(skyPassExecution);
 
     /*
     update and final commands
@@ -671,6 +731,71 @@ void RenderFrontend::createBRDFLutPreparationPass() {
 
 /*
 =========
+createHistogramPasses
+=========
+*/
+void RenderFrontend::createHistogramPasses() {
+    BufferDescription histogramBufferDesc;
+    histogramBufferDesc.size = m_nHistogramBins * sizeof(uint32_t);
+    histogramBufferDesc.type = BufferType::Storage;
+    m_histogramBuffer = m_backend.createStorageBuffer(histogramBufferDesc);
+
+    float initialLightBufferData[3] = { 1.f, 1.f, 1.f };
+    BufferDescription lightBufferDesc;
+    lightBufferDesc.size = 3 * sizeof(uint32_t);
+    lightBufferDesc.type = BufferType::Storage;
+    lightBufferDesc.initialData = initialLightBufferData;
+    m_lightBuffer = m_backend.createStorageBuffer(lightBufferDesc);
+
+    ComputePassDescription histogramCreationDesc;
+    histogramCreationDesc.shaderDescription.srcPathRelative = "histogramCreation.comp";
+
+    const uint32_t nBinsSpecialisationConstantID = 0;
+    const uint32_t minLumininanceSpecialisationConstantID = 1;
+    const uint32_t maxLumininanceSpecialisationConstantID = 2;
+    const uint32_t lumininanceFactorSpecialisationConstantID = 3;
+    
+    //range is remapped to avoid values < 0, due to problems with log()
+    const uint32_t minHistogramValue = 1;
+    const uint32_t maxHistogramValue = uint32_t(m_histogramMax / m_histogramMin);
+    const uint32_t histogramFactor = uint32_t(1.f / m_histogramMin);
+
+    histogramCreationDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
+    histogramCreationDesc.shaderDescription.specialisationConstants.locationIDs.push_back(minLumininanceSpecialisationConstantID);
+    histogramCreationDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxLumininanceSpecialisationConstantID);
+    histogramCreationDesc.shaderDescription.specialisationConstants.locationIDs.push_back(lumininanceFactorSpecialisationConstantID);
+
+    histogramCreationDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
+    histogramCreationDesc.shaderDescription.specialisationConstants.values.push_back(minHistogramValue);
+    histogramCreationDesc.shaderDescription.specialisationConstants.values.push_back(maxHistogramValue);
+    histogramCreationDesc.shaderDescription.specialisationConstants.values.push_back(histogramFactor);
+
+    m_histogramCreationPass = m_backend.createComputePass(histogramCreationDesc);
+
+    ComputePassDescription histogramResetDesc;
+    histogramResetDesc.shaderDescription.srcPathRelative = "histogramReset.comp";
+    histogramResetDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
+    histogramResetDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
+    m_histogramResetPass = m_backend.createComputePass(histogramResetDesc);
+
+    ComputePassDescription preExposeLightsDesc;
+    preExposeLightsDesc.shaderDescription.srcPathRelative = "preExposeLights.comp";
+
+    preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
+    preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(minLumininanceSpecialisationConstantID);
+    preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxLumininanceSpecialisationConstantID);
+    preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(lumininanceFactorSpecialisationConstantID);
+
+    preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
+    preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(minHistogramValue);
+    preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(maxHistogramValue);
+    preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(histogramFactor);
+
+    m_preExposeLightsPass = m_backend.createComputePass(preExposeLightsDesc);
+}
+
+/*
+=========
 createSkyCubeMesh
 =========
 */
@@ -734,9 +859,9 @@ void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
     ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
     ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
-    ImGui::DragFloat("Camera EV100", &m_cameraEV100, 0.1f, 0.f, 30.f);
-    ImGui::InputFloat("Sun Illuminance Lux", &m_sunIlluminanceLux);
-    ImGui::InputFloat("Sky Illuminance Lux", &m_skyIlluminanceLux);
+    ImGui::DragFloat("Exposure offset EV", &m_globalShaderInfo.exposureOffset, 0.1f);
+    ImGui::InputFloat("Sun Illuminance Lux", &m_globalShaderInfo.sunIlluminanceLux);
+    ImGui::InputFloat("Sky Illuminance Lux", &m_globalShaderInfo.skyIlluminanceLux);
 
     static bool indirectMultiscatterSelection = 
         m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex] == 1;

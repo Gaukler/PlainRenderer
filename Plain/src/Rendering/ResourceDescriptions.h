@@ -13,6 +13,10 @@ the shader dictates what type of resource must be bound where
 resources may be changed from frame to frame
 */
 struct StorageBufferResource {
+    StorageBufferResource(
+        const StorageBufferHandle   buffer,
+        const bool                  readOnly,
+        const uint32_t              binding) : buffer(buffer), readOnly(readOnly), binding(binding) {};
     StorageBufferHandle buffer;
     bool                readOnly;
     uint32_t            binding;
@@ -223,7 +227,7 @@ enum class BufferType { Storage, Uniform };
 struct BufferDescription {
     BufferType  type;
     size_t      size;
-    void*       initialData;
+    void*       initialData = nullptr;
 };
 
 /*
@@ -271,9 +275,9 @@ Global shader info
 struct GlobalShaderInfo {
     glm::vec4 sunColor = glm::vec4(1.f);
     glm::vec4 sunDirection = glm::vec4(0.f, -1.f, 0.f, 0.f);
-    glm::vec4 ambient = glm::vec4(0.05f);
     glm::mat4 lightMatrix = glm::mat4(1.f);
     glm::vec4 cameraPos = glm::vec4(0.f);
-    float sunStrengthExposed = 1.f;
-    float skyStrengthExposed = 1.f;
+    float sunIlluminanceLux = 80000.f;
+    float skyIlluminanceLux = 30000.f;
+    float exposureOffset = 0.f;
 };
