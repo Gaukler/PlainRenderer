@@ -69,6 +69,8 @@ void RenderBackend::setup(GLFWwindow* window) {
     glfwGetWindowSize(window, &width, &height);
     getSwapchainImages((uint32_t)width, (uint32_t)height);
 
+    acquireDebugUtilsExtFunctionsPointers();
+
     m_commandPool = createCommandPool(m_context.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     m_transientCommandPool = createCommandPool(m_context.queueFamilies.transferQueueFamilyIndex, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
     m_descriptorPool = createDescriptorPool(100);
@@ -315,7 +317,7 @@ void RenderBackend::updateShaderCode() {
 
 /*
 =========
-newFrame
+resizeImages
 =========
 */
 void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const uint32_t width, const uint32_t height) {
@@ -487,13 +489,33 @@ void RenderBackend::renderFrame() {
     vkResetCommandBuffer(m_commandBuffer, 0);
     vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
    
+    const VkDebugUtilsLabelEXT mainLabel =
+    {
+        VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+        nullptr,
+        "Scene",
+        { 1.0f, 1.0f, 1.0f, 1.0f },
+    };
+    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT(m_commandBuffer, &mainLabel);
+
     for (const auto& execution : m_renderPassInternalExecutions) {
         submitRenderPass(execution);
     }
 
+    m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT(m_commandBuffer);
+
     /*
     imgui
     */
+    const VkDebugUtilsLabelEXT uiLabel =
+    {
+        VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+        nullptr,
+        "IMGui",
+        { 1.0f, 1.0f, 1.0f, 1.0f },
+    };
+    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT(m_commandBuffer, &uiLabel);
+
     ImGui::Render();
 
     vkCmdPipelineBarrier(m_commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
@@ -502,6 +524,7 @@ void RenderBackend::renderFrame() {
     vkCmdBeginRenderPass(m_commandBuffer, &m_ui.passBeginInfos[imageIndex], VK_SUBPASS_CONTENTS_INLINE);
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_commandBuffer);
     vkCmdEndRenderPass(m_commandBuffer);
+    m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT(m_commandBuffer);
 
     /*
     transition swapchain image to present
@@ -1373,6 +1396,7 @@ std::vector<const char*> RenderBackend::getRequiredExtensions() {
 
     //add debug extension if used
     std::vector<const char*> requestedExtensions(requiredExtensionsGlfw, requiredExtensionsGlfw + requiredExtensionGlfwCount);
+    requestedExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     if (m_useValidationLayers) {
         requestedExtensions.push_back("VK_EXT_debug_report");
     }
@@ -1566,6 +1590,21 @@ bool RenderBackend::getQueueFamilies(const VkPhysicalDevice device, QueueFamilie
     }
     return foundCompute && foundGraphics && foundPresentation;
 }
+
+void RenderBackend::acquireDebugUtilsExtFunctionsPointers() {
+    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT    = (PFN_vkCmdBeginDebugUtilsLabelEXT)    vkGetDeviceProcAddr(m_context.device, "vkCmdBeginDebugUtilsLabelEXT");
+    m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT      = (PFN_vkCmdEndDebugUtilsLabelEXT)      vkGetDeviceProcAddr(m_context.device, "vkCmdEndDebugUtilsLabelEXT");
+    m_debugExtFunctions.vkCmdInsertDebugUtilsLabelEXT   = (PFN_vkCmdInsertDebugUtilsLabelEXT)   vkGetDeviceProcAddr(m_context.device, "vkCmdInsertDebugUtilsLabelEXT");
+    m_debugExtFunctions.vkCreateDebugUtilsMessengerEXT  = (PFN_vkCreateDebugUtilsMessengerEXT)  vkGetDeviceProcAddr(m_context.device, "vkCreateDebugUtilsMessengerEXT");
+    m_debugExtFunctions.vkDestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetDeviceProcAddr(m_context.device, "vkDestroyDebugUtilsMessengerEXT");
+    m_debugExtFunctions.vkQueueBeginDebugUtilsLabelEXT  = (PFN_vkQueueBeginDebugUtilsLabelEXT)  vkGetDeviceProcAddr(m_context.device, "vkQueueBeginDebugUtilsLabelEXT");
+    m_debugExtFunctions.vkQueueEndDebugUtilsLabelEXT    = (PFN_vkQueueEndDebugUtilsLabelEXT)    vkGetDeviceProcAddr(m_context.device, "vkQueueEndDebugUtilsLabelEXT");
+    m_debugExtFunctions.vkQueueInsertDebugUtilsLabelEXT = (PFN_vkQueueInsertDebugUtilsLabelEXT) vkGetDeviceProcAddr(m_context.device, "vkQueueInsertDebugUtilsLabelEXT");
+    m_debugExtFunctions.vkSetDebugUtilsObjectNameEXT    = (PFN_vkSetDebugUtilsObjectNameEXT)    vkGetDeviceProcAddr(m_context.device, "vkSetDebugUtilsObjectNameEXT");
+    m_debugExtFunctions.vkSetDebugUtilsObjectTagEXT     = (PFN_vkSetDebugUtilsObjectTagEXT)     vkGetDeviceProcAddr(m_context.device, "vkSetDebugUtilsObjectTagEXT");
+    m_debugExtFunctions.vkSubmitDebugUtilsMessageEXT    = (PFN_vkSubmitDebugUtilsMessageEXT)    vkGetDeviceProcAddr(m_context.device, "vkSubmitDebugUtilsMessageEXT");
+}
+
 
 /*
 =========

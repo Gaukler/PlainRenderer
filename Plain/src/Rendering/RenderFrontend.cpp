@@ -35,23 +35,40 @@ void RenderFrontend::setup(GLFWwindow* window) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, resizeCallback);
 
-    const auto cubeSamplerDesc = SamplerDescription(
-        SamplerInterpolation::Linear, 
-        SamplerWrapping::Clamp, 
-        false, 
-        1, 
-        SamplerBorderColor::Black, 
-        0);
-    m_cubeSampler = m_backend.createSampler(cubeSamplerDesc);
+    {
+        const auto cubeSamplerDesc = SamplerDescription(
+            SamplerInterpolation::Linear,
+            SamplerWrapping::Clamp,
+            false,
+            1,
+            SamplerBorderColor::Black,
+            0);
+        m_cubeSampler = m_backend.createSampler(cubeSamplerDesc);
+    }
+    
+    {
+        const auto skySamplerDesc = SamplerDescription(
+            SamplerInterpolation::Linear,
+            SamplerWrapping::Clamp,
+            false,
+            0,
+            SamplerBorderColor::Black,
+            m_skyTextureMipCount);
+        m_skySamplerWithMips = m_backend.createSampler(skySamplerDesc);
+    }
 
-    const auto skySamplerDesc = SamplerDescription(
-        SamplerInterpolation::Linear,
-        SamplerWrapping::Clamp,
-        false,
-        0,
-        SamplerBorderColor::Black,
-        m_skyTextureMipCount);
-    m_skySamplerWithMips = m_backend.createSampler(skySamplerDesc);
+    {
+        const auto texelSamplerDesc = SamplerDescription(
+            SamplerInterpolation::Nearest,
+            SamplerWrapping::Clamp,
+            false,
+            0,
+            SamplerBorderColor::Black,
+            0
+        );
+        m_defaultTexelSampler = m_backend.createSampler(texelSamplerDesc);
+    }
+    
 
     createShadowPass();
     createMainPass(width, height);
@@ -203,46 +220,64 @@ void RenderFrontend::renderFrame() {
     /*
     histogram and exposure computation
     */
-    StorageBufferResource histogramResource(m_histogramBuffer, false, 0);
+    StorageBufferResource histogramPerTileResource(m_histogramPerTileBuffer, false, 0);
+    StorageBufferResource histogramResource(m_histogramBuffer, false, 1);  
 
+    //histogram per tile
     {
-        //histogram reset
+        ImageResource colorTextureResource(m_colorBuffer, 0, 2);
+        SamplerResource texelSamplerResource(m_defaultTexelSampler, 4);
+        StorageBufferResource lightBufferResource(m_lightBuffer, true, 3);
+
+        RenderPassExecution histogramPerTileExecution;
+        histogramPerTileExecution.handle = m_histogramPerTilePass;
+        histogramPerTileExecution.resources.storageBuffers = { histogramPerTileResource, lightBufferResource };
+        histogramPerTileExecution.resources.samplers = { texelSamplerResource };
+        histogramPerTileExecution.resources.sampledImages = { colorTextureResource };
+        histogramPerTileExecution.dispatchCount[0] = uint32_t(std::ceilf((float)m_screenWidth  / float(m_histogramTileSizeX)));
+        histogramPerTileExecution.dispatchCount[1] = uint32_t(std::ceilf((float)m_screenHeight / float(m_histogramTileSizeY)));
+        histogramPerTileExecution.dispatchCount[2] = 1;
+
+        m_backend.setRenderPassExecution(histogramPerTileExecution);
+    }
+
+    const float binsPerDispatch = 64.f;
+    //reset global tile
+    {
         RenderPassExecution histogramResetExecution;
         histogramResetExecution.handle = m_histogramResetPass;
         histogramResetExecution.resources.storageBuffers = { histogramResource };
-        histogramResetExecution.dispatchCount[0] = uint32_t(std::ceilf(m_nHistogramBins / 64.f));
+        histogramResetExecution.dispatchCount[0] = uint32_t(std::ceilf(float(m_nHistogramBins) / binsPerDispatch));
         histogramResetExecution.dispatchCount[1] = 1;
         histogramResetExecution.dispatchCount[2] = 1;
 
         m_backend.setRenderPassExecution(histogramResetExecution);
     }
-    
 
-    //histogram create
+    //combine tiles
     {
-        ImageResource colorBufferImageResource(m_colorBuffer, 0, 1);
-        StorageBufferResource lightBufferResource(m_lightBuffer, false, 2);
+        RenderPassExecution histogramCombineTilesExecution;
+        histogramCombineTilesExecution.handle = m_histogramCombinePass;
+        histogramCombineTilesExecution.resources.storageBuffers = { histogramPerTileResource, histogramResource };
+        float nTiles = 
+            std::ceilf(m_screenWidth  / float(m_histogramTileSizeX)) * 
+            std::ceilf(m_screenHeight / float(m_histogramTileSizeY));
+        histogramCombineTilesExecution.dispatchCount[0] = nTiles;
+        histogramCombineTilesExecution.dispatchCount[1] = uint32_t(std::ceilf(float(m_nHistogramBins) / binsPerDispatch));
+        histogramCombineTilesExecution.dispatchCount[2] = 1;
+        histogramCombineTilesExecution.parents = { m_histogramPerTilePass, m_histogramResetPass };
 
-        RenderPassExecution histogramCreateExecution;
-        histogramCreateExecution.handle = m_histogramCreationPass;
-        histogramCreateExecution.resources.storageBuffers = { histogramResource, lightBufferResource };
-        histogramCreateExecution.resources.storageImages = { colorBufferImageResource };
-        histogramCreateExecution.parents = { m_histogramResetPass };
-        histogramCreateExecution.dispatchCount[0] = uint32_t(std::ceilf((float)m_screenWidth / 8.f));
-        histogramCreateExecution.dispatchCount[1] = uint32_t(std::ceilf((float)m_screenHeight / 8.f));
-        histogramCreateExecution.dispatchCount[2] = 1;
-
-        m_backend.setRenderPassExecution(histogramCreateExecution);
+        m_backend.setRenderPassExecution(histogramCombineTilesExecution);
     }
 
     //pre expose
     {
-        StorageBufferResource lightBufferResource(m_lightBuffer, false, 1);
+        StorageBufferResource lightBufferResource(m_lightBuffer, false, 0);
 
         RenderPassExecution preExposeLightsExecution;
         preExposeLightsExecution.handle = m_preExposeLightsPass;
         preExposeLightsExecution.resources.storageBuffers = { histogramResource, lightBufferResource };
-        preExposeLightsExecution.parents = { m_histogramCreationPass };
+        preExposeLightsExecution.parents = { m_histogramCombinePass };
         preExposeLightsExecution.dispatchCount[0] = 1;
         preExposeLightsExecution.dispatchCount[1] = 1;
         preExposeLightsExecution.dispatchCount[2] = 1;
@@ -273,10 +308,7 @@ void RenderFrontend::renderFrame() {
         mainPassExecution.parents = { m_shadowPass, m_preExposeLightsPass };
         mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
         m_backend.setRenderPassExecution(mainPassExecution);
-
     }
-    
-    
 
     /*
     render sky
@@ -450,7 +482,8 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
         1,
         ImageType::Type2D,
         ImageFormat::R11G11B10_uFloat,
-        (ImageUsageFlags)(ImageUsageFlags::IMAGE_USAGE_ATTACHMENT | ImageUsageFlags::IMAGE_USAGE_STORAGE),
+        (ImageUsageFlags)(ImageUsageFlags::IMAGE_USAGE_ATTACHMENT | ImageUsageFlags::IMAGE_USAGE_STORAGE | 
+            ImageUsageFlags::IMAGE_USAGE_SAMPLED),
         MipCount::One,
         0,
         false);
@@ -735,63 +768,110 @@ createHistogramPasses
 =========
 */
 void RenderFrontend::createHistogramPasses() {
-    BufferDescription histogramBufferDesc;
-    histogramBufferDesc.size = m_nHistogramBins * sizeof(uint32_t);
-    histogramBufferDesc.type = BufferType::Storage;
-    m_histogramBuffer = m_backend.createStorageBuffer(histogramBufferDesc);
 
-    float initialLightBufferData[3] = { 1.f, 1.f, 1.f };
-    BufferDescription lightBufferDesc;
-    lightBufferDesc.size = 3 * sizeof(uint32_t);
-    lightBufferDesc.type = BufferType::Storage;
-    lightBufferDesc.initialData = initialLightBufferData;
-    m_lightBuffer = m_backend.createStorageBuffer(lightBufferDesc);
+    /*
+    create ssbos
+    */
+    {
+        BufferDescription histogramBufferDesc;
+        histogramBufferDesc.size = m_nHistogramBins * sizeof(uint32_t);
+        histogramBufferDesc.type = BufferType::Storage;
+        m_histogramBuffer = m_backend.createStorageBuffer(histogramBufferDesc);
+    }
+   
+    {
+        float initialLightBufferData[3] = { 1.f, 1.f, 1.f };
+        BufferDescription lightBufferDesc;
+        lightBufferDesc.size = 3 * sizeof(uint32_t);
+        lightBufferDesc.type = BufferType::Storage;
+        lightBufferDesc.initialData = initialLightBufferData;
+        m_lightBuffer = m_backend.createStorageBuffer(lightBufferDesc);
+    }
+    
+    uint32_t pixelsPerTile = m_histogramTileSizeX * m_histogramTileSizeX;
+    uint32_t nMaxTiles = 1920 * 1080 / pixelsPerTile; //FIXME: update buffer on rescale
 
-    ComputePassDescription histogramCreationDesc;
-    histogramCreationDesc.shaderDescription.srcPathRelative = "histogramCreation.comp";
+    {
+        BufferDescription histogramPerTileBufferDesc;
+        histogramPerTileBufferDesc.size = nMaxTiles * m_nHistogramBins * sizeof(uint32_t);
+        histogramPerTileBufferDesc.type = BufferType::Storage;
+        m_histogramPerTileBuffer = m_backend.createStorageBuffer(histogramPerTileBufferDesc);
+    }
+
+    /*
+    create renderpasses
+    */
 
     const uint32_t nBinsSpecialisationConstantID = 0;
     const uint32_t minLumininanceSpecialisationConstantID = 1;
     const uint32_t maxLumininanceSpecialisationConstantID = 2;
     const uint32_t lumininanceFactorSpecialisationConstantID = 3;
-    
+
     //range is remapped to avoid values < 0, due to problems with log()
     const uint32_t minHistogramValue = 1;
     const uint32_t maxHistogramValue = uint32_t(m_histogramMax / m_histogramMin);
     const uint32_t histogramFactor = uint32_t(1.f / m_histogramMin);
 
-    histogramCreationDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
-    histogramCreationDesc.shaderDescription.specialisationConstants.locationIDs.push_back(minLumininanceSpecialisationConstantID);
-    histogramCreationDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxLumininanceSpecialisationConstantID);
-    histogramCreationDesc.shaderDescription.specialisationConstants.locationIDs.push_back(lumininanceFactorSpecialisationConstantID);
+    {
+        ComputePassDescription histogramPerTileDesc;
+        histogramPerTileDesc.shaderDescription.srcPathRelative = "histogramPerTile.comp";
 
-    histogramCreationDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
-    histogramCreationDesc.shaderDescription.specialisationConstants.values.push_back(minHistogramValue);
-    histogramCreationDesc.shaderDescription.specialisationConstants.values.push_back(maxHistogramValue);
-    histogramCreationDesc.shaderDescription.specialisationConstants.values.push_back(histogramFactor);
+        const uint32_t maxTilesSpecialisationConstantID = 4;
 
-    m_histogramCreationPass = m_backend.createComputePass(histogramCreationDesc);
+        histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
+        histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(minLumininanceSpecialisationConstantID);
+        histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxLumininanceSpecialisationConstantID);
+        histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(lumininanceFactorSpecialisationConstantID);
+        histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxTilesSpecialisationConstantID);
 
-    ComputePassDescription histogramResetDesc;
-    histogramResetDesc.shaderDescription.srcPathRelative = "histogramReset.comp";
-    histogramResetDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
-    histogramResetDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
-    m_histogramResetPass = m_backend.createComputePass(histogramResetDesc);
+        histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
+        histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(minHistogramValue);
+        histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(maxHistogramValue);
+        histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(histogramFactor);
+        histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(nMaxTiles);
 
-    ComputePassDescription preExposeLightsDesc;
-    preExposeLightsDesc.shaderDescription.srcPathRelative = "preExposeLights.comp";
+        m_histogramPerTilePass = m_backend.createComputePass(histogramPerTileDesc);
+    }
 
-    preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
-    preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(minLumininanceSpecialisationConstantID);
-    preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxLumininanceSpecialisationConstantID);
-    preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(lumininanceFactorSpecialisationConstantID);
+    {
+        ComputePassDescription resetDesc;
+        resetDesc.shaderDescription.srcPathRelative = "histogramReset.comp";
+        resetDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
+        resetDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
+        m_histogramResetPass = m_backend.createComputePass(resetDesc);
+    }
 
-    preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
-    preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(minHistogramValue);
-    preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(maxHistogramValue);
-    preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(histogramFactor);
+    {
+        const uint32_t maxTilesSpecialisationConstantID = 1;
 
-    m_preExposeLightsPass = m_backend.createComputePass(preExposeLightsDesc);
+        ComputePassDescription histogramCombineDesc;
+        histogramCombineDesc.shaderDescription.srcPathRelative = "histogramCombineTiles.comp";
+
+        histogramCombineDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
+        histogramCombineDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxTilesSpecialisationConstantID);
+
+        histogramCombineDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
+        histogramCombineDesc.shaderDescription.specialisationConstants.values.push_back(nMaxTiles);
+
+        m_histogramCombinePass = m_backend.createComputePass(histogramCombineDesc);
+    }
+
+    {
+        ComputePassDescription preExposeLightsDesc;
+        preExposeLightsDesc.shaderDescription.srcPathRelative = "preExposeLights.comp";
+
+        preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
+        preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(minLumininanceSpecialisationConstantID);
+        preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxLumininanceSpecialisationConstantID);
+        preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(lumininanceFactorSpecialisationConstantID);
+
+        preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
+        preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(minHistogramValue);
+        preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(maxHistogramValue);
+        preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(histogramFactor);
+
+        m_preExposeLightsPass = m_backend.createComputePass(preExposeLightsDesc);
+    }
 }
 
 /*

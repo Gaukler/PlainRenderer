@@ -8,7 +8,9 @@ layout(set=1, binding = 1, r11f_g11f_b10f) 	uniform image2D imageIn;
 
 
 void main(){
+
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    
 	vec3 linearColor = imageLoad(imageIn, uv).rgb;
     
     //color = color / (dot(color, vec3(0.21, 0.72, 0.07)) + 1.f); //reinhard tonemapping

@@ -51,6 +51,20 @@ struct VulkanShaderCreateAdditionalStructs {
     std::vector<VkSpecializationMapEntry>   specilisationMap;
 };
 
+//because they are extensions they need to be acquired using vkGetDeviceProcAddr
+struct VulkanDebugUtilsFunctions {
+    PFN_vkCmdBeginDebugUtilsLabelEXT    vkCmdBeginDebugUtilsLabelEXT;
+    PFN_vkCmdEndDebugUtilsLabelEXT      vkCmdEndDebugUtilsLabelEXT;
+    PFN_vkCmdInsertDebugUtilsLabelEXT   vkCmdInsertDebugUtilsLabelEXT;
+    PFN_vkCreateDebugUtilsMessengerEXT  vkCreateDebugUtilsMessengerEXT;
+    PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
+    PFN_vkQueueBeginDebugUtilsLabelEXT  vkQueueBeginDebugUtilsLabelEXT;
+    PFN_vkQueueEndDebugUtilsLabelEXT    vkQueueEndDebugUtilsLabelEXT;
+    PFN_vkQueueInsertDebugUtilsLabelEXT vkQueueInsertDebugUtilsLabelEXT;
+    PFN_vkSetDebugUtilsObjectNameEXT    vkSetDebugUtilsObjectNameEXT;
+    PFN_vkSetDebugUtilsObjectTagEXT     vkSetDebugUtilsObjectTagEXT;
+    PFN_vkSubmitDebugUtilsMessageEXT    vkSubmitDebugUtilsMessageEXT;
+};
 
 class RenderBackend {
 public:
@@ -151,6 +165,10 @@ private:
     */
     bool getQueueFamilies(const VkPhysicalDevice device, QueueFamilies* pOutQueueFamilies);
 
+    //debug marker use an extension and as such need to get function pointers
+    void acquireDebugUtilsExtFunctionsPointers();
+
+    VulkanDebugUtilsFunctions m_debugExtFunctions;
 
     /*
     =========

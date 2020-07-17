@@ -12,14 +12,14 @@ layout(constant_id = 3) const int constLuminanceFactor = 1000;
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-layout(set=1, binding = 0, std430) buffer histogramBuffer{
-    uint histogram[constNBins];
-};
-
-layout(set=1, binding = 1, std430) buffer lightBuffer{
+layout(set=1, binding = 0, std430) buffer lightBuffer{
     float previousFrameExposure;
     float sunStrengthExposed;
     float skyStrengthExposed;
+};
+
+layout(set=1, binding = 1, std430) buffer histogramBuffer{
+    uint histogram[constNBins];
 };
 
 void main(){
@@ -37,7 +37,11 @@ void main(){
     }
     mean /= total;
     float ev100 = log2(mean * 100.f / 12.5f) - exposureOffset;
-    float exposure = 1.f / (pow(2.f, ev100) * 1.2f);
+    float exposureTarget = 1.f / (pow(2.f, ev100) * 1.2f);
+    float exposureDelta = exposureTarget - previousFrameExposure;
+    float exposureMaxChange = 0.001f;
+    float exposureChange = sign(exposureDelta) * min(abs(exposureDelta), exposureMaxChange);
+    float exposure = previousFrameExposure + exposureChange;
     sunStrengthExposed = g_sunStrength * exposure;
     skyStrengthExposed = g_skyStrength * exposure;
     previousFrameExposure = exposure;

@@ -68,7 +68,8 @@ private:
     RenderPassHandle m_brdfLutPass;
     std::vector<RenderPassHandle> m_cubemapMipPasses;
     std::vector<RenderPassHandle> m_specularConvolutionPerMipPasses;
-    RenderPassHandle m_histogramCreationPass;
+    RenderPassHandle m_histogramPerTilePass;
+    RenderPassHandle m_histogramCombinePass;
     RenderPassHandle m_histogramResetPass;
     RenderPassHandle m_preExposeLightsPass;
 
@@ -86,6 +87,9 @@ private:
     const float m_histogramMin = 0.001f;
     const float m_histogramMax = 200000.f;
 
+    const uint32_t m_histogramTileSizeX = 32;
+    const uint32_t m_histogramTileSizeY = 32;
+
     ImageHandle m_colorBuffer;
     ImageHandle m_depthBuffer;
     ImageHandle m_shadowMap;
@@ -100,9 +104,11 @@ private:
     SamplerHandle m_cubeSampler;
     SamplerHandle m_skySamplerWithMips;
     SamplerHandle m_lutSampler;
+    SamplerHandle m_defaultTexelSampler;
 
     MeshHandle      m_skyCube;
 
+    StorageBufferHandle m_histogramPerTileBuffer;
     StorageBufferHandle m_histogramBuffer;
     StorageBufferHandle m_lightBuffer; //contains previous exposure and exposured light values
     
