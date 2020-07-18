@@ -15,6 +15,192 @@
 #include <imgui/examples/imgui_impl_vulkan.h>
 
 /*
+==================
+
+RenderPasses
+
+==================
+*/
+
+/*
+=========
+isGraphicPassHandle
+=========
+*/
+bool RenderPasses::isGraphicPassHandle(const RenderPassHandle handle) {
+    //checks first bit
+    const uint32_t upperBit = 1 << 31;
+    return handle & upperBit;
+}
+
+/*
+=========
+addGraphicPass
+=========
+*/
+RenderPassHandle RenderPasses::addGraphicPass(const GraphicPass pass) {
+    uint32_t index = m_graphicPasses.size();
+    m_graphicPasses.push_back(pass);
+    return indexToGraphicPassHandle(index);
+}
+
+/*
+=========
+addComputePass
+=========
+*/
+RenderPassHandle RenderPasses::addComputePass(const ComputePass pass) {
+    uint32_t index = m_computePasses.size();
+    m_computePasses.push_back(pass);
+    return indexToComputePassHandle(index);
+}
+
+/*
+=========
+getNGraphicPasses
+=========
+*/
+uint32_t RenderPasses::getNGraphicPasses() {
+    return m_graphicPasses.size();
+}
+
+/*
+=========
+getNComputePasses
+=========
+*/
+uint32_t RenderPasses::getNComputePasses(){
+    return m_computePasses.size();
+}
+
+/*
+=========
+getGraphicPassReferenceByHandle
+=========
+*/
+GraphicPass& RenderPasses::getGraphicPassRefByHandle(const RenderPassHandle handle) {
+    assert(isGraphicPassHandle(handle));
+    return m_graphicPasses[graphicPassHandleToIndex(handle)];
+}
+
+/*
+=========
+getComputePassReferenceByHandle
+=========
+*/
+ComputePass& RenderPasses::getComputePassRefByHandle(const RenderPassHandle handle) {
+    assert(!isGraphicPassHandle(handle));
+    return m_computePasses[computePassHandleToIndex(handle)];
+}
+
+/*
+=========
+getGraphicPassReferenceByIndex
+=========
+*/
+GraphicPass& RenderPasses::getGraphicPassRefByIndex(const uint32_t index) {
+    return m_graphicPasses[index];
+}
+
+/*
+=========
+getComputePassReferenceByIndex
+=========
+*/
+ComputePass& RenderPasses::getComputePassRefByIndex(const uint32_t index) {
+    return m_computePasses[index];
+}
+
+/*
+=========
+updateGraphicPassByHandle
+=========
+*/
+void RenderPasses::updateGraphicPassByHandle(const GraphicPass pass, const RenderPassHandle handle) {
+    const uint32_t index = graphicPassHandleToIndex(handle);
+    updateGraphicPassByIndex(pass, index);
+}
+
+/*
+=========
+updateComputePassByHandle
+=========
+*/
+void RenderPasses::updateComputePassByHandle(const ComputePass pass, const RenderPassHandle handle) {
+    const uint32_t index = computePassHandleToIndex(handle);
+    updateComputePassByIndex(pass, index);
+}
+
+/*
+=========
+updateGraphicPassByIndex
+=========
+*/
+void RenderPasses::updateGraphicPassByIndex(const GraphicPass pass, const uint32_t index) {
+    m_graphicPasses[index] = pass;
+}
+
+/*
+=========
+updateComputePassByIndex
+=========
+*/
+void RenderPasses::updateComputePassByIndex(const ComputePass pass, const uint32_t index) {
+    m_computePasses[index] = pass;
+}
+
+/*
+=========
+graphicPassHandleToIndex
+=========
+*/
+uint32_t RenderPasses::graphicPassHandleToIndex(const RenderPassHandle handle) {
+    //set first bit to 0
+    const uint32_t noUpperBit = ~(1 << 31);
+    return handle & noUpperBit;
+}
+
+/*
+=========
+computePassHandleToIndex
+=========
+*/
+uint32_t RenderPasses::computePassHandleToIndex(const RenderPassHandle handle) {
+    //first bit already 0, just return
+    return handle;
+}
+
+/*
+=========
+indexToGraphicPassHandle
+=========
+*/
+RenderPassHandle RenderPasses::indexToGraphicPassHandle(const uint32_t index) {
+    //set first bit to 1 and cast
+    const uint32_t upperBit = 1 << 31;
+    return index | upperBit;
+}
+
+/*
+=========
+indexToComputePassHandle
+=========
+*/
+RenderPassHandle RenderPasses::indexToComputePassHandle(const uint32_t index) {
+    //first bit should already be 0, just cast
+    return index;
+}
+
+/*
+==================
+
+RenderBackend
+
+==================
+*/
+
+
+/*
 =========
 debugReportCallback
 =========
@@ -76,8 +262,8 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_descriptorPool = createDescriptorPool(100);
 
     m_swapchain.imageAvaible = createSemaphore();
-    m_renderFinished = createSemaphore();
-    m_imageInFlight = createFence();
+    m_renderFinishedSemaphore = createSemaphore();
+    m_renderFinishedFence = createFence();
 
     /*
     create common descriptor set layouts
@@ -86,7 +272,8 @@ void RenderBackend::setup(GLFWwindow* window) {
     globalLayout.uniformBufferBindings.push_back(0);
     m_globalDescriptorSetLayout = createDescriptorSetLayout(globalLayout);
 
-    m_commandBuffer = allocateCommandBuffer();
+    m_commandBuffers[0] = allocateCommandBuffer();
+    m_commandBuffers[1] = allocateCommandBuffer();
 
     /*
     create global storage buffer
@@ -141,8 +328,12 @@ void RenderBackend::teardown() {
     for (ImageHandle i = 0; i < m_images.size(); i++) {
         destroyImage(i);
     }
-    for (const auto& pass : m_renderPasses) {
-        destroyRenderPass(pass);
+
+    for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
+        destroyGraphicPass(m_renderPasses.getGraphicPassRefByIndex(i));
+    }
+    for (uint32_t i = 0; i < m_renderPasses.getNComputePasses(); i++) {
+        destroyComputePass(m_renderPasses.getComputePassRefByIndex(i));
     }
     for (const auto& mesh : m_meshes) {
         destroyMesh(mesh);
@@ -176,10 +367,10 @@ void RenderBackend::teardown() {
     vkDestroyCommandPool(m_context.device, m_commandPool, nullptr);
     vkDestroyCommandPool(m_context.device, m_transientCommandPool, nullptr);
 
-    vkDestroySemaphore(m_context.device, m_renderFinished, nullptr);
+    vkDestroySemaphore(m_context.device, m_renderFinishedSemaphore, nullptr);
     vkDestroySemaphore(m_context.device, m_swapchain.imageAvaible, nullptr);
 
-    vkDestroyFence(m_context.device, m_imageInFlight, nullptr);
+    vkDestroyFence(m_context.device, m_renderFinishedFence, nullptr);
     vkDestroyDevice(m_context.device, nullptr);
     vkDestroyInstance(m_context.vulkanInstance, nullptr);
 }
@@ -258,33 +449,37 @@ void RenderBackend::updateShaderCode() {
     };
 
     //iterate over all render passes and check for every shader if it's out of date
-    std::vector<uint32_t> outOfDateRenderPasses;
-    for (uint32_t i = 0; i < m_renderPasses.size(); i++) {
+    //graphic passes
+    std::vector<uint32_t> outOfDateGraphicPasses;
+    for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
         bool needsUpdate = false;
-        if (m_renderPasses[i].isGraphicPass) {
-            const auto shaderDescriptions = m_renderPasses[i].graphicPassDesc.value().shaderDescriptions;
-            needsUpdate |= isShaderOutOfDate(shaderDescriptions.vertex.srcPathRelative);
-            needsUpdate |= isShaderOutOfDate(shaderDescriptions.fragment.srcPathRelative);
-            if (shaderDescriptions.geometry.has_value()) {
-                needsUpdate |= isShaderOutOfDate(shaderDescriptions.geometry.value().srcPathRelative);
-            }
-            if (shaderDescriptions.tesselationControl.has_value()) {
-                needsUpdate |= isShaderOutOfDate(shaderDescriptions.tesselationControl.value().srcPathRelative);
-            }
-            if (shaderDescriptions.tesselationEvaluation.has_value()) {
-                needsUpdate |= isShaderOutOfDate(shaderDescriptions.tesselationEvaluation.value().srcPathRelative);
-            }           
+        const auto shaderDescriptions = m_renderPasses.getGraphicPassRefByIndex(i).graphicPassDesc.shaderDescriptions;
+        needsUpdate |= isShaderOutOfDate(shaderDescriptions.vertex.srcPathRelative);
+        needsUpdate |= isShaderOutOfDate(shaderDescriptions.fragment.srcPathRelative);
+        if (shaderDescriptions.geometry.has_value()) {
+            needsUpdate |= isShaderOutOfDate(shaderDescriptions.geometry.value().srcPathRelative);
         }
-        else {
-            needsUpdate |= isShaderOutOfDate(m_renderPasses[i].computePassDesc.value().shaderDescription.srcPathRelative);
+        if (shaderDescriptions.tesselationControl.has_value()) {
+            needsUpdate |= isShaderOutOfDate(shaderDescriptions.tesselationControl.value().srcPathRelative);
         }
+        if (shaderDescriptions.tesselationEvaluation.has_value()) {
+            needsUpdate |= isShaderOutOfDate(shaderDescriptions.tesselationEvaluation.value().srcPathRelative);
+        }           
         if (needsUpdate) {
-            outOfDateRenderPasses.push_back(i);
+            outOfDateGraphicPasses.push_back(i);
+        }
+    }
+
+    //compute passes
+    std::vector<uint32_t> outOfDateComputePasses;
+    for (uint32_t i = 0; i < m_renderPasses.getNComputePasses(); i++) {
+        if (isShaderOutOfDate(m_renderPasses.getComputePassRefByIndex(i).computePassDesc.shaderDescription.srcPathRelative)) {
+            outOfDateComputePasses.push_back(i);
         }
     }
 
     //return if no updates are needed
-    if (outOfDateRenderPasses.size() == 0) {
+    if (outOfDateGraphicPasses.size() + outOfDateComputePasses.size()  == 0) {
         return;
     }
 
@@ -295,22 +490,21 @@ void RenderBackend::updateShaderCode() {
     iterate over all out of date passes
     if a shader can't be loaded or compiled it's just skipped as the current version can still be used
     */
-    for (const auto passIndex : outOfDateRenderPasses) {
-        if (m_renderPasses[passIndex].isGraphicPass) {
-            assert(m_renderPasses[passIndex].graphicPassDesc.has_value());
-            GraphicPassShaderSpirV spirV;
-            if (loadGraphicPassShaders(m_renderPasses[passIndex].graphicPassDesc.value().shaderDescriptions, &spirV)) {
-                destroyRenderPass(m_renderPasses[passIndex]);
-                m_renderPasses[passIndex] = createGraphicPassInternal(m_renderPasses[passIndex].graphicPassDesc.value(), spirV);
-            }
+    for (const auto passIndex : outOfDateGraphicPasses) {
+        GraphicPassShaderSpirV spirV;
+        auto& pass = m_renderPasses.getGraphicPassRefByIndex(passIndex);
+        if (loadGraphicPassShaders(pass.graphicPassDesc.shaderDescriptions, &spirV)) {
+            destroyGraphicPass(pass);
+            pass = createGraphicPassInternal(pass.graphicPassDesc, spirV);
         }
-        else {
-            assert(m_renderPasses[passIndex].computePassDesc.has_value());
-            std::vector<uint32_t> spirV;
-            if(loadShader(m_renderPasses[passIndex].computePassDesc.value().shaderDescription, &spirV)) {
-                destroyRenderPass(m_renderPasses[passIndex]);
-                m_renderPasses[passIndex] = createComputePassInternal(m_renderPasses[passIndex].computePassDesc.value(), spirV);
-            }
+    }
+
+    for (const auto passIndex : outOfDateComputePasses) {
+        std::vector<uint32_t> spirV;
+        auto& pass = m_renderPasses.getComputePassRefByIndex(passIndex);
+        if (loadShader(pass.computePassDesc.shaderDescription, &spirV)) {
+            destroyComputePass(pass);
+            pass = createComputePassInternal(pass.computePassDesc, spirV);
         }
     }
 }
@@ -345,11 +539,9 @@ void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const u
     rect.extent = extent;
     rect.offset = { 0, 0 };
 
-    for (auto& pass : m_renderPasses) {
-        if (!pass.isGraphicPass) {
-            continue;
-        }
+    for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
         bool mustBeResized = false;
+        auto pass = m_renderPasses.getGraphicPassRefByIndex(i);
         for (const auto& image : images) {
             if (vectorContains(pass.attachments, image)) {
                 mustBeResized = true;
@@ -362,6 +554,7 @@ void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const u
             pass.viewport.width = width;
             pass.viewport.height = height;
             pass.scissor.extent = extent;
+            m_renderPasses.updateGraphicPassByIndex(pass, i);
         }
     }
 }
@@ -402,7 +595,8 @@ void RenderBackend::drawMesh(const MeshHandle meshHandle, const std::vector<Rend
     command.modelMatrix = modelMatrix;
 
     for (const auto passHandle : passes) {
-        auto& pass = m_renderPasses[passHandle];
+        assert(m_renderPasses.isGraphicPassHandle(passHandle));
+        auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
         for (const auto& material : mesh.materials) {
             if (material.flags == pass.materialFeatures) {
                 command.materialSet = material.descriptorSet;
@@ -423,7 +617,8 @@ setViewProjectionMatrix
 =========
 */
 void RenderBackend::setViewProjectionMatrix(const glm::mat4& viewProjection, const RenderPassHandle pass) {
-    m_renderPasses[pass].viewProjectionMatrix = viewProjection;
+    assert(m_renderPasses.isGraphicPassHandle(pass));
+    m_renderPasses.getGraphicPassRefByHandle(pass).viewProjectionMatrix = viewProjection;
 }
 
 /*
@@ -442,26 +637,25 @@ updateGraphicPassShaderDescription
 =========
 */
 void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& shaderDescriptions) {
-    assert(m_renderPasses[passHandle].isGraphicPass);
-    assert(m_renderPasses[passHandle].graphicPassDesc.has_value());
-    m_renderPasses[passHandle].graphicPassDesc.value().shaderDescriptions = shaderDescriptions;
+    assert(m_renderPasses.isGraphicPassHandle(passHandle));
+    auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
     GraphicPassShaderSpirV spirV;
-    if (loadGraphicPassShaders(m_renderPasses[passHandle].graphicPassDesc.value().shaderDescriptions, &spirV)) {
+    if (loadGraphicPassShaders(pass.graphicPassDesc.shaderDescriptions, &spirV)) {
         vkDeviceWaitIdle(m_context.device);
-        destroyRenderPass(m_renderPasses[passHandle]);
-        m_renderPasses[passHandle] = createGraphicPassInternal(m_renderPasses[passHandle].graphicPassDesc.value(), spirV);
+        destroyGraphicPass(pass);
+        pass = createGraphicPassInternal(pass.graphicPassDesc, spirV);
     }
 }
 
 void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle passHandle, const ShaderDescription& desc) {
-    assert(!m_renderPasses[passHandle].isGraphicPass);
-    assert(m_renderPasses[passHandle].computePassDesc.has_value());
-    m_renderPasses[passHandle].computePassDesc.value().shaderDescription = desc;
+    assert(!m_renderPasses.isGraphicPassHandle(passHandle));
+    auto& pass = m_renderPasses.getComputePassRefByHandle(passHandle);
+    pass.computePassDesc.shaderDescription = desc;
     std::vector<uint32_t> spirV;
-    if (loadShader(m_renderPasses[passHandle].computePassDesc.value().shaderDescription, &spirV)) {
+    if (loadShader(pass.computePassDesc.shaderDescription, &spirV)) {
         vkDeviceWaitIdle(m_context.device);
-        destroyRenderPass(m_renderPasses[passHandle]);
-        m_renderPasses[passHandle] = createComputePassInternal(m_renderPasses[passHandle].computePassDesc.value(), spirV);
+        destroyComputePass(pass);
+        pass = createComputePassInternal(pass.computePassDesc, spirV);
     }
 }
 
@@ -471,9 +665,6 @@ renderFrame
 =========
 */
 void RenderBackend::renderFrame() {
-
-    vkWaitForFences(m_context.device, 1, &m_imageInFlight, VK_TRUE, UINT64_MAX);
-    vkResetFences(m_context.device, 1, &m_imageInFlight);
 
     uint32_t imageIndex;
     vkAcquireNextImageKHR(m_context.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvaible, VK_NULL_HANDLE, &imageIndex);
@@ -486,8 +677,11 @@ void RenderBackend::renderFrame() {
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     beginInfo.pInheritanceInfo = nullptr;
 
-    vkResetCommandBuffer(m_commandBuffer, 0);
-    vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
+    const auto currentCommandBuffer = m_commandBuffers[m_currentCommandBufferIndex];
+    m_currentCommandBufferIndex = (m_currentCommandBufferIndex + 1) % 2;
+
+    vkResetCommandBuffer(currentCommandBuffer, 0);
+    vkBeginCommandBuffer(currentCommandBuffer, &beginInfo);
    
     const VkDebugUtilsLabelEXT mainLabel =
     {
@@ -496,13 +690,13 @@ void RenderBackend::renderFrame() {
         "Scene",
         { 1.0f, 1.0f, 1.0f, 1.0f },
     };
-    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT(m_commandBuffer, &mainLabel);
+    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT(currentCommandBuffer, &mainLabel);
 
     for (const auto& execution : m_renderPassInternalExecutions) {
-        submitRenderPass(execution);
+        submitRenderPass(execution, currentCommandBuffer);
     }
 
-    m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT(m_commandBuffer);
+    m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT(currentCommandBuffer);
 
     /*
     imgui
@@ -514,17 +708,17 @@ void RenderBackend::renderFrame() {
         "IMGui",
         { 1.0f, 1.0f, 1.0f, 1.0f },
     };
-    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT(m_commandBuffer, &uiLabel);
+    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT(currentCommandBuffer, &uiLabel);
 
     ImGui::Render();
 
-    vkCmdPipelineBarrier(m_commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+    vkCmdPipelineBarrier(currentCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
         0, 0, nullptr, 0, nullptr, 1, m_ui.barriers.data());
 
-    vkCmdBeginRenderPass(m_commandBuffer, &m_ui.passBeginInfos[imageIndex], VK_SUBPASS_CONTENTS_INLINE);
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_commandBuffer);
-    vkCmdEndRenderPass(m_commandBuffer);
-    m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT(m_commandBuffer);
+    vkCmdBeginRenderPass(currentCommandBuffer, &m_ui.passBeginInfos[imageIndex], VK_SUBPASS_CONTENTS_INLINE);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentCommandBuffer);
+    vkCmdEndRenderPass(currentCommandBuffer);
+    m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT(currentCommandBuffer);
 
     /*
     transition swapchain image to present
@@ -532,37 +726,39 @@ void RenderBackend::renderFrame() {
     auto& swapchainPresentImage = m_images[m_swapchain.imageHandles[imageIndex]];
     const auto& transitionToPresentBarrier = createImageBarriers(swapchainPresentImage, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
         0, 1);
-    barriersCommand(m_commandBuffer, transitionToPresentBarrier, std::vector<VkBufferMemoryBarrier> {});
+    barriersCommand(currentCommandBuffer, transitionToPresentBarrier, std::vector<VkBufferMemoryBarrier> {});
 
-    vkEndCommandBuffer(m_commandBuffer);
+    vkEndCommandBuffer(currentCommandBuffer);
 
     //submit 
     VkSubmitInfo submit = {};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.pNext = nullptr;
     submit.waitSemaphoreCount = 1;
-
-    VkSemaphore imageAvaible = m_swapchain.imageAvaible;
-    submit.pWaitSemaphores = &imageAvaible;
+    submit.pWaitSemaphores = &m_swapchain.imageAvaible;
 
     VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     submit.pWaitDstStageMask = &waitStage;
 
     submit.commandBufferCount = 1;
-    submit.pCommandBuffers = &m_commandBuffer;
+    submit.pCommandBuffers = &currentCommandBuffer;
     submit.signalSemaphoreCount = 1;
-    submit.pSignalSemaphores = &m_renderFinished;
+    submit.pSignalSemaphores = &m_renderFinishedSemaphore;
 
-    vkQueueSubmit(m_context.graphicQueue, 1, &submit, m_imageInFlight);
+    //wait for previous frame to render so resources are avaible
+    vkWaitForFences(m_context.device, 1, &m_renderFinishedFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(m_context.device, 1, &m_renderFinishedFence);
 
-    presentImage(imageIndex, m_renderFinished);
+    vkQueueSubmit(m_context.graphicQueue, 1, &submit, m_renderFinishedFence);
+
+    presentImage(imageIndex, m_renderFinishedSemaphore);
     glfwPollEvents();
 
     /*
     cleanup
     */
-    for (auto& pass : m_renderPasses) {
-        pass.currentMeshRenderCommands.clear();
+    for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
+        m_renderPasses.getGraphicPassRefByIndex(i).currentMeshRenderCommands.clear();
     }
 }
 
@@ -587,10 +783,8 @@ RenderPassHandle RenderBackend::createComputePass(const ComputePassDescription& 
         throw;
     }
 
-    RenderPass pass = createComputePassInternal(desc, spirV);
-    RenderPassHandle handle = m_renderPasses.size();
-    m_renderPasses.push_back(pass);
-    return handle;
+    ComputePass pass = createComputePassInternal(desc, spirV);
+    return m_renderPasses.addComputePass(pass);
 }
 
 /*
@@ -606,11 +800,8 @@ RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& 
         throw;
     }
 
-    RenderPass pass = createGraphicPassInternal(desc, spirV);
-    RenderPassHandle handle = m_renderPasses.size();
-    m_renderPasses.push_back(pass);
-    
-    return handle;
+    GraphicPass pass = createGraphicPassInternal(desc, spirV);    
+    return m_renderPasses.addGraphicPass(pass);;
 }
 
 /*
@@ -636,7 +827,8 @@ MeshHandle RenderBackend::createMesh(const MeshData& data, const std::vector<Ren
     */
     for (const auto passHandle : passes) {
 
-        const auto& pass = m_renderPasses[passHandle];
+        assert(m_renderPasses.isGraphicPassHandle(passHandle));
+        const auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
 
         /*
         check if there exists a buffer with the required vertex input
@@ -734,7 +926,7 @@ MeshHandle RenderBackend::createMesh(const MeshData& data, const std::vector<Ren
 
     for (const auto passHandle : passes) {
 
-        const auto& pass = m_renderPasses[passHandle];
+        const auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
 
         /*
         check if there exists a material with the required features
@@ -1128,7 +1320,12 @@ void RenderBackend::prepareRenderPasses(const ImageHandle swapchainOutputImage) 
     update descriptor set
     */
     for (const auto pass : m_renderPassExecutions) {
-        updateDescriptorSet(m_renderPasses[pass.handle].descriptorSet, pass.resources);
+        if (m_renderPasses.isGraphicPassHandle(pass.handle)) {
+            updateDescriptorSet(m_renderPasses.getGraphicPassRefByHandle(pass.handle).descriptorSet, pass.resources);
+        }
+        else {
+            updateDescriptorSet(m_renderPasses.getComputePassRefByHandle(pass.handle).descriptorSet, pass.resources);
+        }
     }
     
     m_renderPassInternalExecutions.clear();
@@ -1192,7 +1389,7 @@ void RenderBackend::prepareRenderPasses(const ImageHandle swapchainOutputImage) 
 
     RenderPassResources swapchainCopyResources;
     swapchainCopyResources.storageImages = { swapchainInput, swapchainOutput };
-    updateDescriptorSet(m_renderPasses[m_swapchain.copyToSwapchainPass].descriptorSet, swapchainCopyResources);
+    updateDescriptorSet(m_renderPasses.getComputePassRefByHandle(m_swapchain.copyToSwapchainPass).descriptorSet, swapchainCopyResources);
     m_renderPassInternalExecutions.push_back(swapchainCopy);
 
     /*
@@ -1274,33 +1471,35 @@ void RenderBackend::prepareRenderPasses(const ImageHandle swapchainOutputImage) 
         /*
         attachments
         */
-        const auto& pass = m_renderPasses[execution.handle];
-        for (const auto imageHandle : pass.attachments) {
-            Image& image = m_images[imageHandle];
+        if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
+            const auto& pass = m_renderPasses.getGraphicPassRefByHandle(execution.handle);
+            for (const auto imageHandle : pass.attachments) {
+                Image& image = m_images[imageHandle];
 
-            /*
-            check if any mip levels need a layout transition
-            */
-            const VkImageLayout requiredLayout = isDepthFormat(image.format) ? 
-                VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                /*
+                check if any mip levels need a layout transition
+                */
+                const VkImageLayout requiredLayout = isDepthFormat(image.format) ?
+                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-            bool needsLayoutTransition = false;
-            for (const auto& layout : image.layoutPerMip) {
-                if (layout != requiredLayout) {
-                    needsLayoutTransition = true;
+                bool needsLayoutTransition = false;
+                for (const auto& layout : image.layoutPerMip) {
+                    if (layout != requiredLayout) {
+                        needsLayoutTransition = true;
+                    }
+                }
+
+                if (image.currentlyWriting | needsLayoutTransition) {
+                    const VkAccessFlags access = isDepthFormat(image.format) ?
+                        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+                    const auto& layoutBarriers = createImageBarriers(image, requiredLayout, access, 0, image.viewPerMip.size());
+                    barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
+                    image.currentlyWriting = true;
                 }
             }
-
-            if (image.currentlyWriting | needsLayoutTransition) {
-                const VkAccessFlags access = isDepthFormat(image.format) ?
-                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-                const auto& layoutBarriers = createImageBarriers(image, requiredLayout, access, 0, image.viewPerMip.size());
-                barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
-                image.currentlyWriting = true;
-            }
         }
-
+        
         m_renderPassInternalExecutions[i].imageBarriers = barriers;
     }
 
@@ -1316,11 +1515,14 @@ void RenderBackend::prepareRenderPasses(const ImageHandle swapchainOutputImage) 
 submitRenderPass
 =========
 */
-void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& execution) {
-    barriersCommand(m_commandBuffer, execution.imageBarriers, execution.memoryBarriers);
-    auto& pass = m_renderPasses[execution.handle];
+void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& execution, const VkCommandBuffer commandBuffer) {
 
-    if (pass.isGraphicPass) {
+    barriersCommand(commandBuffer, execution.imageBarriers, execution.memoryBarriers);
+    
+
+    if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
+
+        auto& pass = m_renderPasses.getGraphicPassRefByHandle(execution.handle);
 
         /*
         update pointer: might become invalid if pass vector was changed
@@ -1328,10 +1530,10 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
         pass.beginInfo.pClearValues = pass.clearValues.data();
 
         //prepare pass
-        vkCmdBeginRenderPass(m_commandBuffer, &pass.beginInfo, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipeline);
-        vkCmdSetViewport(m_commandBuffer, 0, 1, &pass.viewport);
-        vkCmdSetScissor(m_commandBuffer, 0, 1, &pass.scissor);
+        vkCmdBeginRenderPass(commandBuffer, &pass.beginInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipeline);
+        vkCmdSetViewport(commandBuffer, 0, 1, &pass.viewport);
+        vkCmdSetScissor(commandBuffer, 0, 1, &pass.scissor);
 
         for (const auto& mesh : pass.currentMeshRenderCommands) {
 
@@ -1339,30 +1541,32 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
             vertex/index buffers
             */
             VkDeviceSize offset[] = { 0 };
-            vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &mesh.vertexBuffer, offset);
-            vkCmdBindIndexBuffer(m_commandBuffer, mesh.indexBuffer, offset[0], VK_INDEX_TYPE_UINT32);
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer, offset);
+            vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer, offset[0], VK_INDEX_TYPE_UINT32);
 
             /*
             update push constants
             */
             glm::mat4 matrices[2] = { pass.viewProjectionMatrix * mesh.modelMatrix, mesh.modelMatrix };
-            vkCmdPushConstants(m_commandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(matrices), &matrices);
+            vkCmdPushConstants(commandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(matrices), &matrices);
 
             /*
             materials
             */
             VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, mesh.materialSet };
-            vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
-            vkCmdDrawIndexed(m_commandBuffer, mesh.indexCount, 1, 0, 0, 0);
+            vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, 0, 0, 0);
         }
-        vkCmdEndRenderPass(m_commandBuffer);
+        vkCmdEndRenderPass(commandBuffer);
     }
     else {
-        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
+        auto& pass = m_renderPasses.getComputePassRefByHandle(execution.handle);
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
         VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet };
-        vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 2, sets, 0, nullptr);
-        vkCmdDispatch(m_commandBuffer, execution.dispatches[0], execution.dispatches[1], execution.dispatches[2]);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 2, sets, 0, nullptr);
+        vkCmdDispatch(commandBuffer, execution.dispatches[0], execution.dispatches[1], execution.dispatches[2]);
     }
 }
 
@@ -1372,7 +1576,7 @@ waitForRenderFinished
 =========
 */
 void RenderBackend::waitForRenderFinished() {
-    vkWaitForFences(m_context.device, 1, &m_imageInFlight, VK_TRUE, INT64_MAX);
+    vkWaitForFences(m_context.device, 1, &m_renderFinishedFence, VK_TRUE, INT64_MAX);
 }
 
 /*
@@ -1900,19 +2104,21 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
     /*
     build fonts texture
     */
+    const auto currentCommandBuffer = m_commandBuffers[0];
+
     VkCommandBufferBeginInfo begin_info = {};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin_info.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    auto res = vkBeginCommandBuffer(m_commandBuffer, &begin_info);
+    auto res = vkBeginCommandBuffer(currentCommandBuffer, &begin_info);
     assert(res == VK_SUCCESS);
 
-    ImGui_ImplVulkan_CreateFontsTexture(m_commandBuffer);
+    ImGui_ImplVulkan_CreateFontsTexture(currentCommandBuffer);
 
     VkSubmitInfo end_info = {};
     end_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     end_info.commandBufferCount = 1;
-    end_info.pCommandBuffers = &m_commandBuffer;
-    res = vkEndCommandBuffer(m_commandBuffer);
+    end_info.pCommandBuffers = &currentCommandBuffer;
+    res = vkEndCommandBuffer(currentCommandBuffer);
     assert(res == VK_SUCCESS);
     res = vkQueueSubmit(m_context.graphicQueue, 1, &end_info, VK_NULL_HANDLE);
     assert(res == VK_SUCCESS);
@@ -2669,15 +2875,14 @@ renderpass creation
 createComputePassInternal
 =========
 */
-RenderPass RenderBackend::createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV) {
+ComputePass RenderBackend::createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV) {
 
-    RenderPass pass;
+    ComputePass pass;
     pass.computePassDesc = desc;
     VkComputePipelineCreateInfo pipelineInfo;
 
     VkShaderModule module = createShaderModule(spirV);
     ShaderReflection reflection = performComputeShaderReflection(spirV);
-    pass.isGraphicPass = false;
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
     pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, VK_NULL_HANDLE, false);
 
@@ -2711,11 +2916,10 @@ RenderPass RenderBackend::createComputePassInternal(const ComputePassDescription
 createGraphicPassInternal
 =========
 */
-RenderPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV) {
+GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV) {
 
-    RenderPass pass;
+    GraphicPass pass;
     pass.graphicPassDesc = desc;
-    pass.isGraphicPass = true;
     pass.attachmentDescriptions = desc.attachments;
     for (const auto attachment : desc.attachments) {
         pass.attachments.push_back(attachment.image);
@@ -3587,15 +3791,24 @@ void RenderBackend::destroyMesh(const Mesh& mesh) {
 
 /*
 =========
-destroyRenderPass
+destroyGraphicRenderPass
 =========
 */
-void RenderBackend::destroyRenderPass(const RenderPass& pass) {
-    if (pass.isGraphicPass) {
-        vkDestroyRenderPass(m_context.device, pass.vulkanRenderPass, nullptr);
-        vkDestroyFramebuffer(m_context.device, pass.beginInfo.framebuffer, nullptr);
-        vkDestroyDescriptorSetLayout(m_context.device, pass.materialSetLayout, nullptr);
-    }
+void RenderBackend::destroyGraphicPass(const GraphicPass& pass) {
+    vkDestroyRenderPass(m_context.device, pass.vulkanRenderPass, nullptr);
+    vkDestroyFramebuffer(m_context.device, pass.beginInfo.framebuffer, nullptr);
+    vkDestroyDescriptorSetLayout(m_context.device, pass.materialSetLayout, nullptr);
+    vkDestroyPipelineLayout(m_context.device, pass.pipelineLayout, nullptr);
+    vkDestroyPipeline(m_context.device, pass.pipeline, nullptr);
+    vkDestroyDescriptorSetLayout(m_context.device, pass.descriptorSetLayout, nullptr);
+}
+
+/*
+=========
+destroyComputeRenderPass
+=========
+*/
+void RenderBackend::destroyComputePass(const ComputePass& pass) {
     vkDestroyPipelineLayout(m_context.device, pass.pipelineLayout, nullptr);
     vkDestroyPipeline(m_context.device, pass.pipeline, nullptr);
     vkDestroyDescriptorSetLayout(m_context.device, pass.descriptorSetLayout, nullptr);

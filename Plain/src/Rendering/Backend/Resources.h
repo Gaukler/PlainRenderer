@@ -98,22 +98,19 @@ struct GraphicPassShaderSpirV {
 /*
 renderpass
 */
-struct RenderPass {
+struct GraphicPass {
     //used to reconstruct pass when reloading shader
-    std::optional<GraphicPassDescription> graphicPassDesc;
-    std::optional<ComputePassDescription> computePassDesc;
-
+    GraphicPassDescription graphicPassDesc;
+    
     std::filesystem::file_time_type lastModifiedShader;
 
-    bool                                isGraphicPass; //else compute
-    VkRenderPass                        vulkanRenderPass = VK_NULL_HANDLE;
-    VkPipeline                          pipeline = VK_NULL_HANDLE;
-    VkPipelineLayout                    pipelineLayout = VK_NULL_HANDLE;
-    VkDescriptorSet                     descriptorSet;
-    VkDescriptorSetLayout               descriptorSetLayout;
-    VkRenderPassBeginInfo               beginInfo;
+    VkRenderPass            vulkanRenderPass = VK_NULL_HANDLE;
+    VkPipeline              pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout        pipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSet         descriptorSet;
+    VkDescriptorSetLayout   descriptorSetLayout;
+    VkRenderPassBeginInfo   beginInfo;
 
-    //only used in graphic passes
     VkViewport                      viewport;
     VkRect2D                        scissor;
     glm::mat4                       viewProjectionMatrix = glm::mat4(1.f);
@@ -133,6 +130,31 @@ struct RenderPass {
     */
     VkDescriptorSetLayout   materialSetLayout;
     MaterialFeatureFlags    materialFeatures;
+
+    /*
+    shader path cache to speed up out of date check
+    */
+    std::string shaderCachePathAbsolute;
+    std::string shaderSrcPathAbsolute;
+};
+
+struct ComputePass {
+    ComputePassDescription computePassDesc;
+
+    std::filesystem::file_time_type lastModifiedShader;
+
+    VkRenderPass            vulkanRenderPass = VK_NULL_HANDLE;
+    VkPipeline              pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout        pipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSet         descriptorSet;
+    VkDescriptorSetLayout   descriptorSetLayout;
+    VkRenderPassBeginInfo   beginInfo;
+
+    /*
+    shader path cache to speed up out of date check
+    */
+    std::string shaderCachePathAbsolute;
+    std::string shaderSrcPathAbsolute;
 };
 
 /*

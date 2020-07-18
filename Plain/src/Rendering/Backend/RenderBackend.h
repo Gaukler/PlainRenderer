@@ -66,6 +66,60 @@ struct VulkanDebugUtilsFunctions {
     PFN_vkSubmitDebugUtilsMessageEXT    vkSubmitDebugUtilsMessageEXT;
 };
 
+/*
+RenderPass handles are shared between compute and graphics to allow easy dependency management in the frontend
+the first bit of the handle indicates wether a handle is a compute or graphic pass
+this class wraps the vectors and indexing to avoid having to explicitly call a translation function for every access
+e.g. passes(handleToIndex(handle))
+*/
+class RenderPasses {
+public:
+
+    bool isGraphicPassHandle(const RenderPassHandle handle);
+
+    /*
+    add
+    */
+    RenderPassHandle addGraphicPass(const GraphicPass pass);
+    RenderPassHandle addComputePass(const ComputePass pass);
+
+    /*
+    getters
+    */
+    uint32_t getNGraphicPasses();
+    uint32_t getNComputePasses();
+
+    GraphicPass& getGraphicPassRefByHandle(const RenderPassHandle handle);
+    ComputePass& getComputePassRefByHandle(const RenderPassHandle handle);
+
+    GraphicPass& getGraphicPassRefByIndex(const uint32_t index);
+    ComputePass& getComputePassRefByIndex(const uint32_t index);
+
+    /*
+    updates
+    */
+    void updateGraphicPassByHandle(const GraphicPass pass, const RenderPassHandle handle);
+    void updateComputePassByHandle(const ComputePass pass, const RenderPassHandle handle);
+
+    void updateGraphicPassByIndex(const GraphicPass pass, const uint32_t index);
+    void updateComputePassByIndex(const ComputePass pass, const uint32_t index);
+
+private:
+    std::vector<GraphicPass> m_graphicPasses;
+    std::vector<ComputePass> m_computePasses;
+
+    /*
+    utilities
+    renderpass handles are indices into the respective vector
+    graphic passes have the first bit set to 1
+    */
+
+    uint32_t graphicPassHandleToIndex(const RenderPassHandle handle);
+    uint32_t computePassHandleToIndex(const RenderPassHandle handle);
+    RenderPassHandle indexToGraphicPassHandle(const uint32_t index);
+    RenderPassHandle indexToComputePassHandle(const uint32_t index);
+};
+
 class RenderBackend {
 public:
 
@@ -132,7 +186,7 @@ private:
     submits render commands of pass
     m_commandBuffer must be recording
     */
-    void submitRenderPass(const RenderPassExecutionInternal& execution);
+    void submitRenderPass(const RenderPassExecutionInternal& execution, const VkCommandBuffer commandBuffer);
 
     void waitForRenderFinished();
 
@@ -204,12 +258,12 @@ private:
     resources
     =========
     */
-    std::vector<RenderPass>     m_renderPasses;
-    std::vector<Image>          m_images;
-    std::vector<Mesh>           m_meshes;
-    std::vector<VkSampler>      m_samplers;
-    std::vector<Buffer>         m_uniformBuffers;
-    std::vector<Buffer>         m_storageBuffers;
+    RenderPasses            m_renderPasses;
+    std::vector<Image>      m_images;
+    std::vector<Mesh>       m_meshes;
+    std::vector<VkSampler>  m_samplers;
+    std::vector<Buffer>     m_uniformBuffers;
+    std::vector<Buffer>     m_storageBuffers;
 
     /*
     freed indices
@@ -256,7 +310,13 @@ private:
     */
     VkCommandPool   m_commandPool;
     VkCommandPool   m_transientCommandPool; //used for short lived copy command buffer and such
-    VkCommandBuffer m_commandBuffer;        //primary command buffer used for all rendering
+    /*
+    primary command buffers used for all rendering
+    two so one can be filled while the other is still rendering
+    */
+    VkCommandBuffer m_commandBuffers[2];
+
+    uint32_t m_currentCommandBufferIndex = 0;
 
     
     VkCommandPool   createCommandPool(const uint32_t queueFamilyIndex, const VkCommandPoolCreateFlagBits flags);
@@ -313,8 +373,8 @@ private:
     actual creation of internal objects
     split from public function to allow use when reloading shader
     */
-    RenderPass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
-    RenderPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
+    ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
+    GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
     VkRenderPass    createVulkanRenderPass(const std::vector<Attachment>& attachments);
     VkFramebuffer   createFramebuffer(const VkRenderPass renderPass, const VkExtent2D extent, const std::vector<Attachment>& attachments);
@@ -358,8 +418,8 @@ private:
     sync objects
     =========
     */
-    VkSemaphore             m_renderFinished;
-    VkFence                 m_imageInFlight;
+    VkSemaphore m_renderFinishedSemaphore;
+    VkFence     m_renderFinishedFence;
 
 
     VkSemaphore createSemaphore();
@@ -374,5 +434,6 @@ private:
     void destroyImage(const ImageHandle handle);
     void destroyBuffer(const Buffer& buffer);
     void destroyMesh(const Mesh& mesh);
-    void destroyRenderPass(const RenderPass& pass);
+    void destroyGraphicPass(const GraphicPass& pass);
+    void destroyComputePass(const ComputePass& pass);
 };
