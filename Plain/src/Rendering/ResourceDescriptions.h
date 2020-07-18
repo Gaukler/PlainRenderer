@@ -280,4 +280,6 @@ struct GlobalShaderInfo {
     float sunIlluminanceLux = 80000.f;
     float skyIlluminanceLux = 30000.f;
     float exposureOffset = 0.f;
+    float exposureAdaptionSpeedEvPerSec = 2.f;
+    float delteTime = 0.016f;
 };

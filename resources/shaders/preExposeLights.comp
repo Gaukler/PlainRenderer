@@ -37,12 +37,12 @@ void main(){
     }
     mean /= total;
     
-    float targetEV100 = log2(mean * 100.f / 12.5f) - exposureOffset;
-    float previousEV100 = log2(1.f / (previousFrameExposure * 1.2f));
+    float targetEV100 = log2(mean * 100.f / 12.5f) - g_exposureOffset;
+    float previousEV100 = log2(1.f / (max(previousFrameExposure, 0.000001f) * 1.2f));
     
     float evDelta = targetEV100 - previousEV100;
-    float evMaxChange = 3.f / 60.f;
-    float evChange = sign(evDelta) * min(abs(evDelta), evMaxChange);
+    float evMaxChange = g_exposureAdaptionSpeedEvPerSec * g_deltaTime;
+    float evChange = sign(evDelta) * min(abs(evDelta), abs(evMaxChange));
     
     float currentEV100 = previousEV100 + evChange;
 

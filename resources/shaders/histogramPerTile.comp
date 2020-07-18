@@ -37,6 +37,7 @@ float colorToLuminance(vec3 color){
 void main(){
     
     ivec2 uv = ivec2(gl_GlobalInvocationID.xy);   
+    ivec2 inputSize = textureSize(sampler2D(srcTexture, texelSampler), 0);
     
     if(uv.x >= inputSize.x || uv.y >= inputSize.y){
         return;

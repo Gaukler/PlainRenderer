@@ -3,6 +3,7 @@
 #include "ImageLoader.h"
 #include <imgui/imgui.h>
 #include <Utilities/MathUtils.h>
+#include "Utilities/Timer.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -465,6 +466,10 @@ updateGlobalShaderInfo
 */
 void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.cameraPos = glm::vec4(m_camera.extrinsic.position, 1.f);
+
+    Timer& timer = Timer::getReference();
+    m_globalShaderInfo.delteTime = timer.getDeltaTimeFloat();
+
     m_backend.setGlobalShaderInfo(m_globalShaderInfo);
 }
 
@@ -940,6 +945,7 @@ void RenderFrontend::drawUi() {
     ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
     ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
     ImGui::DragFloat("Exposure offset EV", &m_globalShaderInfo.exposureOffset, 0.1f);
+    ImGui::DragFloat("Adaption speed EV/s", &m_globalShaderInfo.exposureAdaptionSpeedEvPerSec, 0.1f, 0.f);
     ImGui::InputFloat("Sun Illuminance Lux", &m_globalShaderInfo.sunIlluminanceLux);
     ImGui::InputFloat("Sky Illuminance Lux", &m_globalShaderInfo.skyIlluminanceLux);
 
