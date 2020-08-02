@@ -6,3 +6,5 @@
 if isFullPath is false, the resource directory is prepended
 */
 ImageDescription loadImage(const std::filesystem::path& filename, const bool isFullPath);
+
+ImageDescription loadDDSFile(const std::filesystem::path& filename);

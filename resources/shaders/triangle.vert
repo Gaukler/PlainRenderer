@@ -23,8 +23,12 @@ void main(){
 	passNormal = inNormal;
 	passPos = translation.model * vec4(inPos, 1.f);
 	
-	vec3 T = mat3(translation.model) * inTangent;
-	vec3 B = mat3(translation.model) * inBitangent;
-	vec3 N = mat3(translation.model) * inNormal;
+	vec3 T = normalize(mat3(translation.model) * inTangent);
+    vec3 B = normalize(mat3(translation.model) * inBitangent);
+    vec3 N = normalize(mat3(translation.model) * inNormal);
+    
+    //T = normalize(T - dot(T, N) * N);
+    //vec3 B = cross(N, T);
+
 	passTBN = mat3(T, B, N);
 }

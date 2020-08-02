@@ -137,17 +137,14 @@ void layoutFromSpirv(const std::vector<uint32_t>& spirv, const VkShaderStageFlag
             */
             if (set == 2) {
                 const uint32_t binding = spvc_compiler_get_decoration(compiler, id, SpvDecorationBinding);
-                if (binding == 0 || binding == 4) {
+                if (binding == 0 || binding == 3) {
                     outReflection->materialFeatures = (MaterialFeatureFlags)(outReflection->materialFeatures | MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE);
                 }
-                if (binding == 1 || binding == 5) {
+                if (binding == 1 || binding == 4) {
                     outReflection->materialFeatures = (MaterialFeatureFlags)(outReflection->materialFeatures | MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE);
                 }
-                if (binding == 2 || binding == 6) {
-                    outReflection->materialFeatures = (MaterialFeatureFlags)(outReflection->materialFeatures | MATERIAL_FEATURE_FLAG_METALIC_TEXTURE);
-                }
-                if (binding == 3 || binding == 7) {
-                    outReflection->materialFeatures = (MaterialFeatureFlags)(outReflection->materialFeatures | MATERIAL_FEATURE_FLAG_ROUGHNESS_TEXTURE);
+                if (binding == 2 || binding == 5) {
+                    outReflection->materialFeatures = (MaterialFeatureFlags)(outReflection->materialFeatures | MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE);
                 }
             }
         }

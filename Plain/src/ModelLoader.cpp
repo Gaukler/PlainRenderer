@@ -12,7 +12,7 @@
 loadModel
 =========
 */
-MeshData loadModel(const std::filesystem::path& filename){
+std::vector<MeshData> loadModel(const std::filesystem::path& filename){
 
     const std::filesystem::path fullPath = DirectoryUtils::getResourceDirectory() / filename;
 
@@ -38,61 +38,92 @@ MeshData loadModel(const std::filesystem::path& filename){
         throw std::runtime_error("couldn't open file");
     }
 
-    MeshData meshData;
+    std::vector<MeshData> meshes(materials.size());
 
     //iterate over models
-    for (const auto& shape : shapes) {
+    for (uint32_t shapeIndex = 0; shapeIndex < shapes.size(); shapeIndex++) {
+
+        const auto shape = shapes[shapeIndex];
+
         //iterate over face vertices
         for (size_t i = 0; i < shape.mesh.indices.size(); i++) {
+
+            int materialIndex = shape.mesh.material_ids[i / 3];
 
             const auto& indices = shape.mesh.indices[i];
             size_t vertexIndex = indices.vertex_index;
             size_t normalIndex = indices.normal_index;
             size_t uvIndex = indices.texcoord_index;
 
-            meshData.positions.push_back(glm::vec3(
+            meshes[materialIndex].positions.push_back(glm::vec3(
                 attributes.vertices[vertexIndex * 3],
                 attributes.vertices[vertexIndex * 3 + 1],
-                attributes.vertices[vertexIndex * 3 + 2]));
+                -attributes.vertices[vertexIndex * 3 + 2]));
 
-            meshData.normals.push_back(glm::vec3(
+            meshes[materialIndex].normals.push_back(glm::vec3(
                 attributes.normals[normalIndex * 3],
                 attributes.normals[normalIndex * 3 + 1],
                 attributes.normals[normalIndex * 3 + 2]));
 
-            meshData.uvs.push_back(glm::vec2(
+            meshes[materialIndex].uvs.push_back(glm::vec2(
                 attributes.texcoords[uvIndex * 2],
-                attributes.texcoords[uvIndex * 2 + 1]));
+                1.f - attributes.texcoords[uvIndex * 2 + 1]));
 
             //correct for vulkan coordinate system
-            meshData.positions.back().y *= -1.f;
-            meshData.normals.back().y *= -1.f;
+            meshes[materialIndex].positions.back().y *= -1.f;
+            meshes[materialIndex].normals.back().y *= -1.f;
         }
     }
-    computeTangentBitangent(&meshData);
-    MeshData indexedData = buildIndexedData(meshData);
 
-    
-
-    /*
-    textures
-    note that ***_tex_name is based on blender exported .objs which has incorrect naming for certain texture types
-    */
     const auto modelDirectory = fullPath.parent_path();
+    for (size_t i = 0; i < meshes.size(); i++) {
+        computeTangentBitangent(&meshes[i]);
+        meshes[i] = buildIndexedData(meshes[i]);
 
-    std::string diffuseTexture = materials[0].diffuse_texname;
-    indexedData.material.diffuseTexture = loadImage(modelDirectory / diffuseTexture, true);
+        const auto cleanPath = [](std::string path) {
 
-    std::string normalTexture = materials[0].bump_texname;
-    indexedData.material.normalTexture = loadImage(modelDirectory / normalTexture, true);
+            auto backslashPos = path.find("\\\\");
+            while (backslashPos != std::string::npos) {
+                path.replace(backslashPos, 2, "\\");
+                backslashPos = path.find("\\\\");
+            }
 
-    std::string metalicTexture = materials[0].reflection_texname;
-    indexedData.material.metalicTexture = loadImage(modelDirectory / metalicTexture, true);
+            if (path.substr(0, 3) == "..\\") {
+                return path.substr(3);
+            }
+            else {
+                return path;
+            }
+        };
 
-    std::string roughnessTexture = materials[0].specular_highlight_texname;
-    indexedData.material.roughnessTexture = loadImage(modelDirectory / roughnessTexture, true);
+        if (materials[i].diffuse_texname.length() != 0) {
+            std::filesystem::path diffuseTexture = cleanPath(materials[i].diffuse_texname);
+            meshes[i].material.albedoTexturePath = modelDirectory / diffuseTexture;
+        }
+        else {
+            meshes[i].material.albedoTexturePath = "";
+        }
 
-    return indexedData;
+        if (materials[i].bump_texname.length() != 0) {
+            std::string normalTexture = cleanPath(materials[i].bump_texname);
+            meshes[i].material.normalTexturePath = modelDirectory / normalTexture;
+        }
+        else {
+            meshes[i].material.normalTexturePath = "";
+        }
+
+        if (materials[i].specular_texname.length() != 0) {
+            std::string specularTexture = cleanPath(materials[i].specular_texname);
+            meshes[i].material.specularTexturePath = modelDirectory / specularTexture;
+        }
+        else {
+            meshes[i].material.specularTexturePath = "";
+        }
+    }
+    
+    //necessary, otherwise code after meshes allocation is skipped... compiler error?
+    const auto test = meshes;
+    return test;
 }
 
 /*
@@ -106,6 +137,9 @@ void computeTangentBitangent(MeshData* outMeshData) {
     assert(outMeshData->tangents.size() == 0);
     assert(outMeshData->bitangents.size() == 0);
 
+    outMeshData->tangents.reserve(outMeshData->positions.size());
+    outMeshData->bitangents.reserve(outMeshData->positions.size());
+
     for (uint32_t triangle = 0; triangle < outMeshData->positions.size() / 3; triangle++) {
 
         const uint32_t i0 = triangle * 3;
@@ -116,9 +150,9 @@ void computeTangentBitangent(MeshData* outMeshData) {
         const glm::vec3 v1 = outMeshData->positions[i1];
         const glm::vec3 v2 = outMeshData->positions[i2];
 
-        const glm::vec2 uv0 = outMeshData->uvs[i0];
-        const glm::vec2 uv1 = outMeshData->uvs[i1];
-        const glm::vec2 uv2 = outMeshData->uvs[i2];
+        glm::vec2 uv0 = outMeshData->uvs[i0];
+        glm::vec2 uv1 = outMeshData->uvs[i1];
+        glm::vec2 uv2 = outMeshData->uvs[i2];
         
         const glm::vec3 edge1 = v1 - v0;
         const glm::vec3 edge2 = v2 - v0;
@@ -147,32 +181,41 @@ MeshData buildIndexedData(const MeshData& rawData) {
     assert(rawData.positions.size() == rawData.bitangents.size());
 
     auto findSimilar = [](const glm::vec3& positionVector, const glm::vec2& uv, const glm::vec3& normal, const MeshData &data, uint32_t* outSimilarIndex) {
-        /*
-        iterate all indexed vertices
-        */
+        //iterate all indexed vertices
         for (uint32_t i = 0; i < data.positions.size(); i++) {
 
-            glm::vec3 posDiff = abs(data.positions[i] - positionVector);
             glm::vec2 uvDiff = abs(data.uvs[i] - uv);
-            glm::vec3 normalDiff = abs(data.normals[i] - normal);
-
-            bool similarPosition = (posDiff.x + posDiff.y + posDiff.z < 0.01f);
-            bool similarUvs = (uvDiff.x + uvDiff.y < 0.01f);
-            bool similarNormals = (normalDiff.x + normalDiff.y + normalDiff.z < 0.01f);
-
-            if (similarPosition && similarUvs && similarNormals) {
-                *outSimilarIndex = i;
-                return true;
+            if (uvDiff.x + uvDiff.y < 0.01f) {
+                continue;
             }
+
+            glm::vec3 posDiff = abs(data.positions[i] - positionVector);
+            if (posDiff.x + posDiff.y + posDiff.z < 0.01f){
+                continue;
+            }
+
+            glm::vec3 normalDiff = abs(data.normals[i] - normal);
+            if (normalDiff.x + normalDiff.y + normalDiff.z < 0.01f) {
+                continue;
+            }
+
+            *outSimilarIndex = i;
         }
         return false;
     };
 
-    /*
-    iterate over all vertices
-    */
+    
+    //iterate over all vertices
     MeshData indexedData;
     uint32_t newIndex = 0;
+
+    indexedData.indices.reserve(rawData.positions.size());
+    indexedData.positions.reserve(rawData.positions.size());
+    indexedData.normals.reserve(rawData.positions.size());
+    indexedData.uvs.reserve(rawData.positions.size());
+    indexedData.tangents.reserve(rawData.positions.size());
+    indexedData.bitangents.reserve(rawData.positions.size());
+
     for (uint32_t indexToAdd = 0; indexToAdd < rawData.positions.size(); indexToAdd++) {
 
         uint32_t similarIndex;
@@ -197,9 +240,10 @@ MeshData buildIndexedData(const MeshData& rawData) {
             newIndex++;
         }
     }
-    for (uint32_t i = 0; i < indexedData.tangents.size(); i++) {
-        indexedData.tangents[i] = glm::normalize(indexedData.tangents[i]);
-        indexedData.bitangents[i] = glm::normalize(indexedData.bitangents[i]);
+
+    for (uint32_t i = 0; i < rawData.positions.size(); i++) {
+        indexedData.tangents[i]     = glm::normalize(indexedData.tangents[i]);
+        indexedData.bitangents[i]   = glm::normalize(indexedData.bitangents[i]);
     }
 
     return indexedData;

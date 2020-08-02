@@ -18,10 +18,15 @@ App::App() {
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	m_window = glfwCreateWindow(initialWidth, initialHeight, "Plain Renderer", nullptr, nullptr);
     m_renderer.setup(m_window);
-    m_meshes.push_back(m_renderer.createMesh(loadModel("Models\\plain.obj")));
-    //m_meshes.push_back(m_renderer.createMesh(loadModel("Models\\monkey.obj")));
-    //m_meshes.push_back(m_renderer.createMesh(loadModel("Models\\ball.obj")));
-    m_meshes.push_back(m_renderer.createMesh(loadModel("Models\\MaterialSamples.obj")));
+
+    {
+        const auto mesh = m_renderer.createMeshes(loadModel("Models\\Sponza\\Sponza.obj"));
+        //const auto mesh = m_renderer.createMeshes(loadModel("Models\\DamagedHelmet\\DamagedHelmet.obj"));
+        //const auto mesh = m_renderer.createMeshes(loadModel("Models\\Bistro\\exterior.obj"));
+
+        m_meshes.insert(m_meshes.end(), mesh.begin(), mesh.end());
+    }
+    m_modelMatrices = std::vector<glm::mat4>(m_meshes.size(), glm::scale(glm::mat4(1.f), glm::vec3(1.f)));
 }
 
 void App::run() {
@@ -40,10 +45,7 @@ void App::run() {
 		cameraController.update(m_window);
 
         m_renderer.setCameraExtrinsic(cameraController.getExtrinsic());
-        for (uint32_t i = 0; i < m_meshes.size(); i++) {
-            const glm::mat4 m = i == 1 ? glm::translate(glm::mat4(1.f), glm::vec3(glm::sin(0), -1.f, 0.f)) : glm::mat4(1.f);
-            m_renderer.issueMeshDraw(m_meshes[i], m);
-        }
+        m_renderer.issueMeshDraws(m_meshes, m_modelMatrices);
 		m_renderer.renderFrame();
 
         glfwPollEvents();

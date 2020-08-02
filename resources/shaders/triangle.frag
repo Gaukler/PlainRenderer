@@ -23,13 +23,11 @@ layout(set=1, binding = 8, std430) buffer lightBuffer{
 
 layout(set=2, binding = 0) uniform sampler colorSampler;
 layout(set=2, binding = 1) uniform sampler normalSampler;
-layout(set=2, binding = 2) uniform sampler metalicSampler;
-layout(set=2, binding = 3) uniform sampler roughnessSampler;
+layout(set=2, binding = 2) uniform sampler specularSampler;
 
-layout(set=2, binding = 4) uniform texture2D colorTexture;
-layout(set=2, binding = 5) uniform texture2D normalTexture;
-layout(set=2, binding = 6) uniform texture2D metalicTexture;
-layout(set=2, binding = 7) uniform texture2D roughnessTexture;
+layout(set=2, binding = 3) uniform texture2D colorTexture;
+layout(set=2, binding = 4) uniform texture2D normalTexture;
+layout(set=2, binding = 5) uniform texture2D specularTexture;
 
 layout(location = 0) in vec2 passUV;
 layout(location = 1) in vec3 passNormal;
@@ -78,22 +76,27 @@ float EnergyAverage(float roughness){
 
 void main(){
 	vec3 albedoTexel 		= texture(sampler2D(colorTexture, 		colorSampler), 		passUV).rgb;
-	float metalic 			= texture(sampler2D(metalicTexture, 	metalicSampler), 	passUV).r;
-	float roughnessTexel 	= texture(sampler2D(roughnessTexture, 	roughnessSampler), 	passUV).r;
-	vec3 normalTexel 		= texture(sampler2D(normalTexture, 		normalSampler), 	passUV).rgb;
+	vec3 specularTexel 		= texture(sampler2D(specularTexture, 	specularSampler), 	passUV).rgb;
+	vec2 normalTexel 		= texture(sampler2D(normalTexture, 		normalSampler), 	passUV).rg;
 	
+    float microAO = specularTexel.r; //not used
+    float metalic = specularTexel.b;
+    float roughnessTexel = specularTexel.g;
+    
 	vec3 albedo = pow(albedoTexel, vec3(2.2f)); //gamma correction
     
-	normalTexel = normalTexel * 2.f - 1.f;
-	normalTexel.y *= -1.f;	//correct for vulkan coordinate system
-	float r = roughnessTexel * roughnessTexel; //remapping
+	//normalTexel = normalTexel * 2.f - 1.f;
+	vec3 normalTexelReconstructed = vec3(normalTexel, sqrt(normalTexel.r * normalTexel.r + normalTexel.g * normalTexel.g));
+    normalTexelReconstructed = normalTexelReconstructed * 2.f - 1.f;
+    
+	float r = roughnessTexel;//// * roughnessTexel; //remapping
 	r = max(r, 0.045f);
-	
-	vec3 N = normalize(passTBN * normalTexel);
+    
+	vec3 N = normalize(passTBN * normalTexelReconstructed);    
 	vec3 L = normalize(g_sunDirection.xyz);
 	vec3 V = normalize(g_cameraPosition.xyz - passPos.xyz);
 	vec3 H = normalize(V + L);
-	vec3 R = reflect(-V, N);
+	vec3 R = reflect(V, N);
 	
 	const float NoH = max(dot(N, H), 0);
 	const float NoL = max(dot(N, L), 0);

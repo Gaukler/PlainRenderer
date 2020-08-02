@@ -5,7 +5,7 @@
 #include "Rendering/RenderHandles.h"
 #include "Rendering/ResourceDescriptions.h"
 #include "Resources.h"
-#include "Rendering/MeshData.h"
+#include "Rendering/MeshDataInternal.h"
 
 struct GLFWwindow;
 
@@ -142,7 +142,7 @@ public:
     actual draw command is deferred until renderFrame is called
     meshHandle must be obtained from createMesh function
     */
-    void drawMesh(const MeshHandle meshHandle, const std::vector<RenderPassHandle>& passes, const glm::mat4& modelMatrix);
+    void drawMeshs(const std::vector<MeshHandle> meshHandles, const std::vector<glm::mat4>& modelMatrices, const std::vector<RenderPassHandle>& passes);
 
     void setViewProjectionMatrix(const glm::mat4& viewProjection, const RenderPassHandle pass);
     void setGlobalShaderInfo(const GlobalShaderInfo& info);
@@ -164,13 +164,13 @@ public:
     RenderPassHandle    createComputePass(const ComputePassDescription& desc);
     RenderPassHandle    createGraphicPass(const GraphicPassDescription& desc);
 
-    MeshHandle          createMesh(const MeshData& data, const std::vector<RenderPassHandle>& passes);
-    ImageHandle         createImage(const ImageDescription& description);
-    UniformBufferHandle createUniformBuffer(const BufferDescription& description);
-    StorageBufferHandle createStorageBuffer(const BufferDescription& description);
-    SamplerHandle       createSampler(const SamplerDescription& description);
+    std::vector<MeshHandle> createMeshes(const std::vector<MeshDataInternal>& meshes, const std::vector<RenderPassHandle>& passes);
+    ImageHandle             createImage(const ImageDescription& description);
+    UniformBufferHandle     createUniformBuffer(const BufferDescription& description);
+    StorageBufferHandle     createStorageBuffer(const BufferDescription& description);
+    SamplerHandle           createSampler(const SamplerDescription& description);
 
-    void                setSwapchainInputImage(ImageHandle image);
+    void                    setSwapchainInputImage(ImageHandle image);
 
 private:
 
@@ -272,10 +272,22 @@ private:
 
     UniformBufferHandle m_globalShaderInfoBuffer;
 
-    VkDeviceMemory      allocateMemory(const VkMemoryRequirements& requirements, const VkMemoryPropertyFlags flags);
+    //allocates one big chunk of device memory + staging buffer
+    uint32_t findMemoryIndex(const VkMemoryPropertyFlags flags);
+    void allocateMemory();
+    VkDeviceMemory m_deviceMemoryChunk;
+    const VkDeviceSize m_deviceMemoryChunkSize = 5368709120; //5gb
+    VkDeviceSize m_currentDeviceMemoryOffset = 0;
+    VkDeviceSize getDeviceMemoryOffset(const VkMemoryRequirements& requirements);
+
+    VkDeviceMemory m_stagingBufferMemory;
+    VkDeviceSize m_stagingBufferSize = 1048576; //1mb
+    VkBuffer m_stagingBuffer;
+    void createStagingBuffer();
 
     VkImageView createImageView(const Image image, const VkImageViewType viewType, const uint32_t baseMip, const uint32_t mipLevels, const VkImageAspectFlags aspectMask);
     Buffer      createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
+    MeshHandle  createMeshInternal(const MeshDataInternal data, const std::vector<RenderPassHandle>& passes);
 
     VkImageSubresourceLayers createSubresourceLayers(const Image& image, const uint32_t mipLevel);
 
@@ -283,25 +295,12 @@ private:
     copies data into a temporary staging buffer, then transfers data into image
     */
     void transferDataIntoImage(Image& target, const void* data, const VkDeviceSize size);
-    void generateMipChain(Image& image, const VkImageLayout oldLayout, const VkImageLayout newLayout);
+    void generateMipChain(Image& image, const VkImageLayout newLayout);
 
     /*
-    fills buffer using a temporary staging buffer
-    uses createStagingBuffer then copyBuffer and cleans everything up
+    fills buffer using the staging buffer
     */
     void fillBuffer(Buffer target, const void* data, const VkDeviceSize size);
-
-    /*
-    create a staging buffer
-    data is copied into buffer, can be used to copy transfer data into resource
-    */
-    Buffer createStagingBuffer(const void* data, const VkDeviceSize size);
-
-    /*
-    buffers must have been allocated using transfer src/dst bit
-    */
-    void copyBuffer(const Buffer src, const Buffer dst, const VkDeviceSize size);
-
 
     /*
     =========

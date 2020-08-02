@@ -80,6 +80,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     createDiffuseConvolutionPass();
     createBRDFLutPreparationPass();
     createHistogramPasses();
+    createDefaultTexture();
 }
 
 /*
@@ -158,11 +159,32 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
 
 /*
 =========
-createMesh
+createMeshes
 =========
 */
-MeshHandle RenderFrontend::createMesh(const MeshData& meshData) {
-    return m_backend.createMesh(meshData, std::vector<RenderPassHandle> { m_mainPass, m_shadowPass });
+std::vector<MeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>& meshData) {
+
+    //this is a lot of copying... improve later?
+    std::vector<MeshDataInternal> dataInternal;
+    dataInternal.reserve(meshData.size());
+
+    for (const auto& data : meshData) {
+        MeshDataInternal mesh;
+        mesh.indices = data.indices;
+        mesh.positions = data.positions;
+        mesh.uvs = data.uvs;
+        mesh.normals = data.normals;
+        mesh.tangents = data.tangents;
+        mesh.bitangents = data.bitangents;
+
+        mesh.diffuseTexture = getImageFromPath(data.material.albedoTexturePath);
+        mesh.normalTexture = getImageFromPath(data.material.normalTexturePath);
+        mesh.specularTexture = getImageFromPath(data.material.specularTexturePath);
+
+        dataInternal.push_back(mesh);
+    }
+
+    return m_backend.createMeshes(dataInternal, std::vector<RenderPassHandle> { m_mainPass, m_shadowPass });
 }
 
 /*
@@ -170,8 +192,8 @@ MeshHandle RenderFrontend::createMesh(const MeshData& meshData) {
 issueMeshDraw
 =========
 */
-void RenderFrontend::issueMeshDraw(const MeshHandle mesh, const glm::mat4& modelMatrix) {
-    m_backend.drawMesh(mesh, std::vector<RenderPassHandle> { m_mainPass, m_shadowPass }, modelMatrix);
+void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshs, const std::vector<glm::mat4>& modelMatrices) {
+    m_backend.drawMeshs(meshs, modelMatrices, std::vector<RenderPassHandle> { m_mainPass, m_shadowPass });
 }
 
 /*
@@ -337,8 +359,29 @@ void RenderFrontend::renderFrame() {
     drawUi();
     updateSun();
     updateGlobalShaderInfo();
-    m_backend.drawMesh(m_skyCube, std::vector<RenderPassHandle> { m_skyPass }, glm::mat4(1.f));
+    m_backend.drawMeshs(std::vector<MeshHandle> {m_skyCube}, std::vector<glm::mat4> { glm::mat4(1.f)}, std::vector<RenderPassHandle> { m_skyPass });
     m_backend.renderFrame();
+}
+
+/*
+=========
+firstFramePreparation
+=========
+*/
+ImageHandle RenderFrontend::getImageFromPath(std::filesystem::path path) {
+
+    if (path == "") {
+        return m_defaultTexture;
+    }
+
+    if (m_textureMap.find(path) == m_textureMap.end()) {
+        ImageHandle textureHandle = m_backend.createImage(loadImage(path, true));
+        m_textureMap[path] = textureHandle;
+        return textureHandle;
+    }
+    else {
+        return m_textureMap[path];
+    }
 }
 
 /*
@@ -884,10 +927,30 @@ void RenderFrontend::createHistogramPasses() {
 createSkyCubeMesh
 =========
 */
+void RenderFrontend::createDefaultTexture() {
+    ImageDescription defaultImage;
+    defaultImage.autoCreateMips = true;
+    defaultImage.depth = 1;
+    defaultImage.format = ImageFormat::R8;
+    defaultImage.initialData = { 0xf };
+    defaultImage.manualMipCount = 1;
+    defaultImage.mipCount = MipCount::FullChain;
+    defaultImage.type = ImageType::Type2D;
+    defaultImage.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+    defaultImage.width = 1;
+    defaultImage.height = 1;
+
+    m_defaultTexture = m_backend.createImage(defaultImage);
+}
+
+/*
+=========
+createSkyCubeMesh
+=========
+*/
 void RenderFrontend::createSkyCubeMesh() {
 
-    MeshData cubedata;
-    cubedata.useMaterial = false;
+    MeshDataInternal cubedata;
     cubedata.positions = {
         glm::vec3(-1.f, -1.f, -1.f),
         glm::vec3(1.f, -1.f, -1.f),
@@ -906,7 +969,7 @@ void RenderFrontend::createSkyCubeMesh() {
         3, 2, 7, 7, 2, 6,
         4, 5, 0, 0, 5, 1
     };
-    m_skyCube = m_backend.createMesh(cubedata, std::vector<RenderPassHandle>{ m_skyPass });
+    m_skyCube = m_backend.createMeshes(std::vector<MeshDataInternal> { cubedata }, std::vector<RenderPassHandle>{ m_skyPass })[0];
 }
 
 /*
@@ -942,6 +1005,7 @@ drawUi
 */
 void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
+    ImGui::Text(("FrameTime: " + std::to_string(m_globalShaderInfo.delteTime * 1000) + "ms").c_str());
     ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
     ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
     ImGui::DragFloat("Exposure offset EV", &m_globalShaderInfo.exposureOffset, 0.1f);

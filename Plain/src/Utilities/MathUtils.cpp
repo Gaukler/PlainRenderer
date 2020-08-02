@@ -39,7 +39,7 @@ projectionMatrixFromCameraIntrinsic
 =========
 */
 glm::mat4 projectionMatrixFromCameraIntrinsic(const CameraIntrinsic& intrinsic) {
-    glm::mat4 projectionMatrix = glm::perspective(glm::radians(intrinsic.fov), intrinsic.aspectRatio, 0.1f, 25.f);
+    glm::mat4 projectionMatrix = glm::perspective(glm::radians(intrinsic.fov), intrinsic.aspectRatio, 0.1f, 200.f);
 
     const glm::mat4 coordinateSystemCorrection = glm::mat4(
         1.0f, 0.0f, 0.0f, 0.0f,

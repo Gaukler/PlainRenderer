@@ -22,10 +22,17 @@ public:
     void newFrame();
     void setResolution(const uint32_t width, const uint32_t height);
     void setCameraExtrinsic(const CameraExtrinsic& extrinsic);
-    MeshHandle createMesh(const MeshData& meshData);
-    void issueMeshDraw(const MeshHandle mesh, const glm::mat4& modelMatrix);
+    std::vector<MeshHandle> createMeshes(const std::vector<MeshData>& meshData);
+    void issueMeshDraws(const std::vector<MeshHandle>& meshs, const std::vector<glm::mat4>& modelMatrices);
     void renderFrame();
 private:
+
+    /*
+    returns image from file
+    checks a map of all loaded images if it is avaible, returns existing image if possible
+    */
+    ImageHandle getImageFromPath(std::filesystem::path path);
+    std::map<std::filesystem::path, ImageHandle> m_textureMap;
 
     void firstFramePreparation();
     void computeBRDFLut();
@@ -139,6 +146,9 @@ private:
     void createSpecularConvolutionPass();
     void createBRDFLutPreparationPass();
     void createHistogramPasses();
+    void createDefaultTexture();
+
+    ImageHandle m_defaultTexture;
 
     /*
     sun

@@ -259,11 +259,18 @@ void RenderBackend::setup(GLFWwindow* window) {
 
     m_commandPool = createCommandPool(m_context.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     m_transientCommandPool = createCommandPool(m_context.queueFamilies.transferQueueFamilyIndex, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
-    m_descriptorPool = createDescriptorPool(100);
+    m_descriptorPool = createDescriptorPool(10000); //fixme make dynamic
 
     m_swapchain.imageAvaible = createSemaphore();
     m_renderFinishedSemaphore = createSemaphore();
     m_renderFinishedFence = createFence();
+
+    /*
+    allocate device memory and staging buffer memory
+    */
+    allocateMemory();
+    //allocate staging buffer itself
+    createStagingBuffer();
 
     /*
     create common descriptor set layouts
@@ -360,6 +367,13 @@ void RenderBackend::teardown() {
     }
     vkDestroyRenderPass(m_context.device, m_ui.renderPass, nullptr);
     ImGui_ImplVulkan_Shutdown();
+
+    //destroy staging buffer
+    vkDestroyBuffer(m_context.device, m_stagingBuffer, nullptr);
+
+    //free memory
+    vkFreeMemory(m_context.device, m_deviceMemoryChunk, nullptr);
+    vkFreeMemory(m_context.device, m_stagingBufferMemory, nullptr);
 
     vkDestroyDescriptorPool(m_context.device, m_descriptorPool, nullptr);
     vkDestroyDescriptorSetLayout(m_context.device, m_globalDescriptorSetLayout, nullptr);
@@ -586,28 +600,33 @@ void RenderBackend::setRenderPassExecution(const RenderPassExecution& execution)
 drawMesh
 =========
 */
-void RenderBackend::drawMesh(const MeshHandle meshHandle, const std::vector<RenderPassHandle>& passes, const glm::mat4& modelMatrix) {
+void RenderBackend::drawMeshs(const std::vector<MeshHandle> meshHandles, const std::vector<glm::mat4>& modelMatrices, const std::vector<RenderPassHandle>& passes) {
 
-    const auto mesh = m_meshes[meshHandle];
-    MeshRenderCommand command;
-    command.indexBuffer = mesh.indexBuffer.vulkanHandle;
-    command.indexCount = mesh.indexCount;
-    command.modelMatrix = modelMatrix;
+    assert(meshHandles.size() == modelMatrices.size());
+    for (uint32_t i = 0; i < meshHandles.size(); i++) {
 
-    for (const auto passHandle : passes) {
-        assert(m_renderPasses.isGraphicPassHandle(passHandle));
-        auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-        for (const auto& material : mesh.materials) {
-            if (material.flags == pass.materialFeatures) {
-                command.materialSet = material.descriptorSet;
+        const auto meshHandle = meshHandles[i];
+        const auto mesh = m_meshes[meshHandle];
+        MeshRenderCommand command;
+        command.indexBuffer = mesh.indexBuffer.vulkanHandle;
+        command.indexCount = mesh.indexCount;
+        command.modelMatrix = modelMatrices[i];
+
+        for (const auto passHandle : passes) {
+            assert(m_renderPasses.isGraphicPassHandle(passHandle));
+            auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+            for (const auto& material : mesh.materials) {
+                if (material.flags == pass.materialFeatures) {
+                    command.materialSet = material.descriptorSet;
+                }
             }
-        }
-        for (const auto& vertexBuffer : mesh.vertexBuffers) {
-            if (vertexBuffer.flags == pass.vertexInputFlags) {
-                command.vertexBuffer = vertexBuffer.vertexBuffer.vulkanHandle;
+            for (const auto& vertexBuffer : mesh.vertexBuffers) {
+                if (vertexBuffer.flags == pass.vertexInputFlags) {
+                    command.vertexBuffer = vertexBuffer.vertexBuffer.vulkanHandle;
+                }
             }
+            pass.currentMeshRenderCommands.push_back(command);
         }
-        pass.currentMeshRenderCommands.push_back(command);
     }
 }
 
@@ -636,9 +655,10 @@ void RenderBackend::setGlobalShaderInfo(const GlobalShaderInfo& info) {
 updateGraphicPassShaderDescription
 =========
 */
-void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& shaderDescriptions) {
+void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc) {
     assert(m_renderPasses.isGraphicPassHandle(passHandle));
     auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+    pass.graphicPassDesc.shaderDescriptions = desc;
     GraphicPassShaderSpirV spirV;
     if (loadGraphicPassShaders(pass.graphicPassDesc.shaderDescriptions, &spirV)) {
         vkDeviceWaitIdle(m_context.device);
@@ -806,259 +826,15 @@ RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& 
 
 /*
 =========
-createMesh
+createMeshes
 =========
 */
-MeshHandle RenderBackend::createMesh(const MeshData& data, const std::vector<RenderPassHandle>& passes) {
-
-    std::vector<uint32_t> queueFamilies = { m_context.queueFamilies.graphicsQueueIndex };
-    Mesh mesh;
-    mesh.indexCount = data.indices.size();
-
-    /*
-    index buffer
-    */
-    VkDeviceSize indexDataSize = data.indices.size() * sizeof(uint32_t);
-    mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    fillBuffer(mesh.indexBuffer, data.indices.data(), indexDataSize);
-
-    /*
-    vertex buffer per pass
-    */
-    for (const auto passHandle : passes) {
-
-        assert(m_renderPasses.isGraphicPassHandle(passHandle));
-        const auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-
-        /*
-        check if there exists a buffer with the required vertex input
-        only add new vertex buffer if thats not the case
-        */
-        bool foundSameInput = false;
-        for (auto& buffer : mesh.vertexBuffers) {
-            if (pass.vertexInputFlags == buffer.flags) {
-                foundSameInput = true;
-                break;
-            }
-        }
-        if (foundSameInput) {
-            continue;
-        }
-
-        /*
-        create new buffer
-        */
-        std::vector<float> vertexData;
-
-        size_t nVertices = 0;
-        if (pass.vertexInputFlags & VERTEX_INPUT_POSITION_BIT) {
-            nVertices = data.positions.size();
-        }
-        else if (pass.vertexInputFlags & VERTEX_INPUT_UV_BIT) {
-            nVertices = data.uvs.size();
-        }
-        else if (pass.vertexInputFlags & VERTEX_INPUT_NORMAL_BIT) {
-            nVertices = data.normals.size();
-        }
-        else if (pass.vertexInputFlags & VERTEX_INPUT_TANGENT_BIT) {
-            nVertices = data.tangents.size();
-        }
-        else if (pass.vertexInputFlags & VERTEX_INPUT_BITANGENT_BIT) {
-            nVertices = data.bitangents.size();
-        }
-
-        /*
-        fill in vertex data
-        */
-        for (size_t i = 0; i < nVertices; i++) {
-            if (pass.vertexInputFlags & VERTEX_INPUT_POSITION_BIT) {
-                vertexData.push_back(data.positions[i].x);
-                vertexData.push_back(data.positions[i].y);
-                vertexData.push_back(data.positions[i].z);
-            }
-            if (pass.vertexInputFlags & VERTEX_INPUT_UV_BIT) {
-                vertexData.push_back(data.uvs[i].x);
-                vertexData.push_back(data.uvs[i].y);
-            }
-            if (pass.vertexInputFlags & VERTEX_INPUT_NORMAL_BIT) {
-                vertexData.push_back(data.normals[i].x);
-                vertexData.push_back(data.normals[i].y);
-                vertexData.push_back(data.normals[i].z);
-            }
-            if (pass.vertexInputFlags & VERTEX_INPUT_TANGENT_BIT) {
-                vertexData.push_back(data.tangents[i].x);
-                vertexData.push_back(data.tangents[i].y);
-                vertexData.push_back(data.tangents[i].z);
-            }
-            if (pass.vertexInputFlags & VERTEX_INPUT_BITANGENT_BIT) {
-                vertexData.push_back(data.bitangents[i].x);
-                vertexData.push_back(data.bitangents[i].y);
-                vertexData.push_back(data.bitangents[i].z);
-            }
-        }
-
-        /*
-        create vertex buffer
-        */
-        MeshVertexBuffer buffer;
-        buffer.flags = pass.vertexInputFlags;
-        VkDeviceSize vertexDataSize = vertexData.size() * sizeof(float);
-
-        buffer.vertexBuffer = createBufferInternal(vertexDataSize, queueFamilies, 
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        fillBuffer(buffer.vertexBuffer, vertexData.data(), vertexDataSize);
-
-        mesh.vertexBuffers.push_back(buffer);
+std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshDataInternal>& meshes, const std::vector<RenderPassHandle>& passes) {
+    std::vector<MeshHandle> handles;
+    for (const auto& data : meshes) {
+        handles.push_back(createMeshInternal(data, passes));
     }
-
-    /*
-    material per pass
-    */
-    std::optional<ImageHandle> albedoTexture;
-    std::optional<ImageHandle> normalTexture;
-    std::optional<ImageHandle> metalicTexture;
-    std::optional<ImageHandle> roughnessTexture;
-
-    std::optional<SamplerHandle> albedoSampler;
-    std::optional<SamplerHandle> normalSampler;
-    std::optional<SamplerHandle> metalicSampler;
-    std::optional<SamplerHandle> roughnessSampler;
-
-    for (const auto passHandle : passes) {
-
-        const auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-
-        /*
-        check if there exists a material with the required features
-        only add new material if thats not the case
-        */
-        bool foundSameMaterial = false;
-        for (auto& material : mesh.materials) {
-            if (pass.materialFeatures == material.flags) {
-                foundSameMaterial = true;
-                break;
-            }
-        }
-        if (foundSameMaterial) {
-            continue;
-        }
-
-        /*
-        create resources
-        */
-        RenderPassResources resources;
-
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE) {
-            if (!albedoTexture.has_value()) {
-                albedoTexture = createImage(data.material.diffuseTexture);
-            }
-            if (!albedoSampler.has_value()) {
-                SamplerDescription albedoSamplerDesc;
-                albedoSamplerDesc.interpolation = SamplerInterpolation::Linear;
-                albedoSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                albedoSamplerDesc.maxMip = m_images[albedoTexture.value()].viewPerMip.size();
-                albedoSamplerDesc.useAnisotropy = true;
-                albedoSampler = createSampler(albedoSamplerDesc);
-            }
-            const auto albedoTextureResource = ImageResource(
-                albedoTexture.value(),
-                0,
-                4);
-
-            const auto albedoSamplerResource = SamplerResource(
-                albedoSampler.value(), 
-                0);
-
-            resources.sampledImages.push_back(albedoTextureResource);
-            resources.samplers.push_back(albedoSamplerResource);
-        }
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE) {
-            if (!normalTexture.has_value()) {
-                normalTexture = createImage(data.material.normalTexture);
-            }
-            if (!normalSampler.has_value()) {
-                SamplerDescription normalSamplerDesc;
-                normalSamplerDesc.interpolation = SamplerInterpolation::Linear;
-                normalSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                normalSamplerDesc.maxMip = m_images[normalTexture.value()].viewPerMip.size();
-                normalSamplerDesc.useAnisotropy = true;
-                normalSampler = createSampler(normalSamplerDesc);
-            }
-            const auto normalTextureResource = ImageResource(
-                normalTexture.value(), 
-                0, 
-                5);
-
-            const auto normalSamplerResource = SamplerResource(
-                normalSampler.value(),
-                1);
-
-            resources.sampledImages.push_back(normalTextureResource);
-            resources.samplers.push_back(normalSamplerResource);
-        }
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_METALIC_TEXTURE) {
-            if (!metalicTexture.has_value()) {
-                metalicTexture = createImage(data.material.metalicTexture);
-            }
-            if (!metalicSampler.has_value()) {
-                SamplerDescription metalicSamplerDesc;
-                metalicSamplerDesc.interpolation = SamplerInterpolation::Linear;
-                metalicSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                metalicSamplerDesc.maxMip = m_images[normalTexture.value()].viewPerMip.size();
-                metalicSamplerDesc.useAnisotropy = true;
-                metalicSampler = createSampler(metalicSamplerDesc);
-            }
-            const auto metalicTextureResource = ImageResource(
-                metalicTexture.value(), 
-                0, 
-                6);
-
-            const auto metalicSamplerResource = SamplerResource(
-                metalicSampler.value(), 
-                2);
-
-            resources.sampledImages.push_back(metalicTextureResource);
-            resources.samplers.push_back(metalicSamplerResource);
-        }
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_ROUGHNESS_TEXTURE) {
-            if (!roughnessTexture.has_value()) {
-                roughnessTexture = createImage(data.material.roughnessTexture);
-            }
-            if (!roughnessSampler.has_value()) {
-                SamplerDescription roughnessSamplerDesc;
-                roughnessSamplerDesc.interpolation = SamplerInterpolation::Linear;
-                roughnessSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                roughnessSamplerDesc.maxMip = m_images[normalTexture.value()].viewPerMip.size();
-                roughnessSamplerDesc.useAnisotropy = true;
-                roughnessSampler = createSampler(roughnessSamplerDesc);
-            }
-            const auto roughnessTextureResource = ImageResource(
-                roughnessTexture.value(),
-                0,
-                7);
-
-            const auto roughnessSamplerResource = SamplerResource(
-                roughnessSampler.value(),
-                3);
-
-            resources.sampledImages.push_back(roughnessTextureResource);
-            resources.samplers.push_back(roughnessSamplerResource);
-        }
-        MeshMaterial material;
-        material.flags = pass.materialFeatures;
-        material.descriptorSet = allocateDescriptorSet(pass.materialSetLayout);
-        updateDescriptorSet(material.descriptorSet, resources);
-
-        mesh.materials.push_back(material);
-    }
-
-    /*
-    save and return handle
-    */
-    MeshHandle handle = m_meshes.size();
-    m_meshes.push_back(mesh);
-
-    return handle;
+    return handles;
 }
 
 /*
@@ -1072,6 +848,7 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
     VkImageAspectFlagBits aspectFlag;
     switch (desc.format) {
     case ImageFormat::R8:               format = VK_FORMAT_R8_UNORM;                aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
+    case ImageFormat::RG8:              format = VK_FORMAT_R8G8_UNORM;              aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RGBA8:            format = VK_FORMAT_R8G8B8A8_UNORM;          aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RG16_sFloat:      format = VK_FORMAT_R16G16_SFLOAT;           aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RGBA16_sFloat:    format = VK_FORMAT_R16G16B16A16_SFLOAT;     aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
@@ -1079,6 +856,9 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
     case ImageFormat::RGBA32_sFloat:    format = VK_FORMAT_R32G32B32A32_SFLOAT;     aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::Depth16:          format = VK_FORMAT_D16_UNORM;               aspectFlag = VK_IMAGE_ASPECT_DEPTH_BIT; break;
     case ImageFormat::Depth32:          format = VK_FORMAT_D32_SFLOAT;              aspectFlag = VK_IMAGE_ASPECT_DEPTH_BIT; break;
+    case ImageFormat::BC1:              format = VK_FORMAT_BC1_RGB_UNORM_BLOCK;     aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
+    case ImageFormat::BC3:              format = VK_FORMAT_BC3_UNORM_BLOCK;         aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
+    case ImageFormat::BC5:              format = VK_FORMAT_BC5_UNORM_BLOCK;         aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     default: throw std::runtime_error("missing format defintion");
     }
 
@@ -1159,15 +939,17 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
     auto res = vkCreateImage(m_context.device, &imageInfo, nullptr, &image.vulkanHandle);
     assert(res == VK_SUCCESS);
 
-    //allocate memory;
+    //bind memory
     VkMemoryRequirements memoryRequirements;
     vkGetImageMemoryRequirements(m_context.device, image.vulkanHandle, &memoryRequirements);
-    image.memory = allocateMemory(memoryRequirements, 0);
-    vkBindImageMemory(m_context.device, image.vulkanHandle, image.memory, 0);
+    VkDeviceSize memoryOffset = getDeviceMemoryOffset(memoryRequirements);
+    vkBindImageMemory(m_context.device, image.vulkanHandle, m_deviceMemoryChunk, memoryOffset);
 
     //create image view
+    image.viewPerMip.reserve(mipCount);
     for (uint32_t i = 0; i < mipCount; i++) {
-        image.viewPerMip.push_back(createImageView(image, viewType, i, mipCount - i, aspectFlag));
+        const auto view = createImageView(image, viewType, i, mipCount - i, aspectFlag);
+        image.viewPerMip.push_back(view);
     }
 
     //fill with data
@@ -1175,13 +957,37 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
         transferDataIntoImage(image, desc.initialData.data(), desc.initialData.size());
     }
 
-    /*
-    generate mipmaps
-    */
+    //generate mipmaps
     if (desc.autoCreateMips) {
-        generateMipChain(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        generateMipChain(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
 
+    /*
+    most textures with sampled usage are used by the material system
+    the material systems assumes the read_only_optimal layout
+    if no mips are generated the layout will still be transfer_dst or undefined
+    to avoid issues all sampled images without mip generation are manually transitioned to read_only_optimal
+    */
+    if ((desc.usageFlags & ImageUsageFlags::IMAGE_USAGE_SAMPLED) && !desc.autoCreateMips) {
+        const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
+
+        const auto newLayoutBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, 0, image.viewPerMip.size());
+        barriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
+
+        //end recording
+        vkEndCommandBuffer(transitionCmdBuffer);
+
+        //submit
+        VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, m_context.transferQueue);
+
+        vkWaitForFences(m_context.device, 1, &fence, VK_TRUE, UINT64_MAX);
+
+        //cleanup
+        vkDestroyFence(m_context.device, fence, nullptr);
+        vkFreeCommandBuffers(m_context.device, m_transientCommandPool, 1, &transitionCmdBuffer);
+    }
+    
+    //reuse a free image handle or create a new one
     ImageHandle handle;
     if (m_freeImageHandles.size() > 0) {
         handle = m_freeImageHandles.back();
@@ -1519,7 +1325,6 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
 
     barriersCommand(commandBuffer, execution.imageBarriers, execution.memoryBarriers);
     
-
     if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
 
         auto& pass = m_renderPasses.getGraphicPassRefByHandle(execution.handle);
@@ -2021,8 +1826,8 @@ void RenderBackend::getSwapchainImages(const uint32_t width, const uint32_t heig
 
     m_swapchain.imageHandles.clear();
     for (const auto vulkanImage : swapchainImages) {
-        //FIXME fill in rest of data
         Image image;
+        image.isSwapchainImage = true;
         image.vulkanHandle = vulkanImage;
         image.extent.width = width;
         image.extent.height = height;
@@ -2168,30 +1973,23 @@ resources
 
 /*
 =========
-allocateMemory
+findMemoryIndex
 =========
 */
-VkDeviceMemory RenderBackend::allocateMemory(const VkMemoryRequirements& requirements, const VkMemoryPropertyFlags flags) {
-
-    VkMemoryAllocateInfo allocateInfo = {};
-    allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocateInfo.pNext = nullptr;
-    allocateInfo.allocationSize = requirements.size;
-
-    VkPhysicalDeviceMemoryProperties memoryProperties = {};
-    vkGetPhysicalDeviceMemoryProperties(m_context.physicalDevice, &memoryProperties);
+uint32_t RenderBackend::findMemoryIndex(const VkMemoryPropertyFlags flags) {
 
     uint32_t memoryIndex = 0;
     bool foundMemory = false;
 
+    VkPhysicalDeviceMemoryProperties memoryProperties = {};
+    vkGetPhysicalDeviceMemoryProperties(m_context.physicalDevice, &memoryProperties);
+
     //search for appropriate memory type
     for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
-        if ((requirements.memoryTypeBits & (1 << i)) >> i) {
-            if ((flags == 0) || (memoryProperties.memoryTypes[i].propertyFlags & flags)) {
-                memoryIndex = i;
-                foundMemory = true;
-                break;
-            }
+        if ((flags == 0) || (memoryProperties.memoryTypes[i].propertyFlags & flags)) {
+            memoryIndex = i;
+            foundMemory = true;
+            break;
         }
     }
 
@@ -2199,13 +1997,59 @@ VkDeviceMemory RenderBackend::allocateMemory(const VkMemoryRequirements& require
         throw std::runtime_error("failed to find adequate memory type for allocation");
     }
 
-    allocateInfo.memoryTypeIndex = memoryIndex;
+    return memoryIndex;
+}
 
-    VkDeviceMemory memory;
-    auto res = vkAllocateMemory(m_context.device, &allocateInfo, nullptr, &memory);
-    assert(res == VK_SUCCESS);
+/*
+=========
+allocateMemory
+=========
+*/
+void RenderBackend::allocateMemory() {
+    //device memory
+    {
+        VkMemoryAllocateInfo allocateInfo = {};
+        allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocateInfo.pNext = nullptr;
+        allocateInfo.allocationSize = m_deviceMemoryChunkSize;
 
-    return memory;
+        allocateInfo.memoryTypeIndex = findMemoryIndex(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        auto res = vkAllocateMemory(m_context.device, &allocateInfo, nullptr, &m_deviceMemoryChunk);
+        assert(res == VK_SUCCESS);
+    }
+    //staging buffer
+    {
+        VkMemoryAllocateInfo allocateInfo = {};
+        allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocateInfo.pNext = nullptr;
+        allocateInfo.allocationSize = m_stagingBufferSize;
+
+        allocateInfo.memoryTypeIndex = findMemoryIndex(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        auto res = vkAllocateMemory(m_context.device, &allocateInfo, nullptr, &m_stagingBufferMemory);
+        assert(res == VK_SUCCESS);
+    }
+}
+
+/*
+=========
+getDeviceMemoryOffset
+=========
+*/
+VkDeviceSize RenderBackend::getDeviceMemoryOffset(const VkMemoryRequirements& requirements) {
+    //correct for alignment
+    m_currentDeviceMemoryOffset += 
+        ((requirements.alignment - (m_currentDeviceMemoryOffset % requirements.alignment)) % requirements.alignment);
+    //resulting offset
+    VkDeviceSize offset = m_currentDeviceMemoryOffset;
+    //increase offset by size
+    m_currentDeviceMemoryOffset += requirements.size;
+
+    if (m_currentDeviceMemoryOffset > m_deviceMemoryChunkSize) {
+        throw("Oh my god we just ran out of memory... maybe invest time into proper memory management?");
+    }
+
+    return offset;
 }
 
 /*
@@ -2254,6 +2098,228 @@ VkImageView RenderBackend::createImageView(const Image image, const VkImageViewT
 
 /*
 =========
+createMeshInternal
+=========
+*/
+
+MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const std::vector<RenderPassHandle>& passes) {
+    std::vector<uint32_t> queueFamilies = { m_context.queueFamilies.graphicsQueueIndex };
+    Mesh mesh;
+    mesh.indexCount = data.indices.size();
+
+    /*
+    index buffer
+    */
+    VkDeviceSize indexDataSize = data.indices.size() * sizeof(uint32_t);
+    mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    fillBuffer(mesh.indexBuffer, data.indices.data(), indexDataSize);
+
+    /*
+    vertex buffer per pass
+    */
+    for (const auto passHandle : passes) {
+
+        assert(m_renderPasses.isGraphicPassHandle(passHandle));
+        const auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+
+        /*
+        check if there exists a buffer with the required vertex input
+        only add new vertex buffer if thats not the case
+        */
+        bool foundSameInput = false;
+        for (auto& buffer : mesh.vertexBuffers) {
+            if (pass.vertexInputFlags == buffer.flags) {
+                foundSameInput = true;
+                break;
+            }
+        }
+        if (foundSameInput) {
+            continue;
+        }
+
+        /*
+        create new buffer
+        */
+        std::vector<float> vertexData;
+
+        size_t nVertices = 0;
+        if (pass.vertexInputFlags & VERTEX_INPUT_POSITION_BIT) {
+            nVertices = data.positions.size();
+        }
+        else if (pass.vertexInputFlags & VERTEX_INPUT_UV_BIT) {
+            nVertices = data.uvs.size();
+        }
+        else if (pass.vertexInputFlags & VERTEX_INPUT_NORMAL_BIT) {
+            nVertices = data.normals.size();
+        }
+        else if (pass.vertexInputFlags & VERTEX_INPUT_TANGENT_BIT) {
+            nVertices = data.tangents.size();
+        }
+        else if (pass.vertexInputFlags & VERTEX_INPUT_BITANGENT_BIT) {
+            nVertices = data.bitangents.size();
+        }
+
+        /*
+        fill in vertex data
+        */
+        for (size_t i = 0; i < nVertices; i++) {
+            if (pass.vertexInputFlags & VERTEX_INPUT_POSITION_BIT) {
+                vertexData.push_back(data.positions[i].x);
+                vertexData.push_back(data.positions[i].y);
+                vertexData.push_back(data.positions[i].z);
+            }
+            if (pass.vertexInputFlags & VERTEX_INPUT_UV_BIT) {
+                vertexData.push_back(data.uvs[i].x);
+                vertexData.push_back(data.uvs[i].y);
+            }
+            if (pass.vertexInputFlags & VERTEX_INPUT_NORMAL_BIT) {
+                vertexData.push_back(data.normals[i].x);
+                vertexData.push_back(data.normals[i].y);
+                vertexData.push_back(data.normals[i].z);
+            }
+            if (pass.vertexInputFlags & VERTEX_INPUT_TANGENT_BIT) {
+                vertexData.push_back(data.tangents[i].x);
+                vertexData.push_back(data.tangents[i].y);
+                vertexData.push_back(data.tangents[i].z);
+            }
+            if (pass.vertexInputFlags & VERTEX_INPUT_BITANGENT_BIT) {
+                vertexData.push_back(data.bitangents[i].x);
+                vertexData.push_back(data.bitangents[i].y);
+                vertexData.push_back(data.bitangents[i].z);
+            }
+        }
+
+        /*
+        create vertex buffer
+        */
+        MeshVertexBuffer buffer;
+        buffer.flags = pass.vertexInputFlags;
+        VkDeviceSize vertexDataSize = vertexData.size() * sizeof(float);
+
+        buffer.vertexBuffer = createBufferInternal(vertexDataSize, queueFamilies,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        fillBuffer(buffer.vertexBuffer, vertexData.data(), vertexDataSize);
+
+        mesh.vertexBuffers.push_back(buffer);
+    }
+
+    /*
+    material per pass
+    */
+    std::optional<ImageHandle> albedoTexture = data.diffuseTexture;
+    std::optional<ImageHandle> normalTexture = data.normalTexture;
+    std::optional<ImageHandle> specularTexture = data.specularTexture;
+
+    std::optional<SamplerHandle> albedoSampler;
+    std::optional<SamplerHandle> normalSampler;
+    std::optional<SamplerHandle> specularSampler;
+
+    for (const auto passHandle : passes) {
+
+        const auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+
+        /*
+        check if there exists a material with the required features
+        only add new material if thats not the case
+        */
+        bool foundSameMaterial = false;
+        for (auto& material : mesh.materials) {
+            if (pass.materialFeatures == material.flags) {
+                foundSameMaterial = true;
+                break;
+            }
+        }
+        if (foundSameMaterial) {
+            continue;
+        }
+
+        /*
+        create resources
+        */
+        RenderPassResources resources;
+
+        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE) {
+            if (!albedoSampler.has_value()) {
+                SamplerDescription albedoSamplerDesc;
+                albedoSamplerDesc.interpolation = SamplerInterpolation::Linear;
+                albedoSamplerDesc.wrapping = SamplerWrapping::Repeat;
+                albedoSamplerDesc.maxMip = m_images[albedoTexture.value()].viewPerMip.size();
+                albedoSamplerDesc.useAnisotropy = true;
+                albedoSampler = createSampler(albedoSamplerDesc);
+            }
+            const auto albedoTextureResource = ImageResource(
+                albedoTexture.value(),
+                0,
+                3);
+
+            const auto albedoSamplerResource = SamplerResource(
+                albedoSampler.value(),
+                0);
+
+            resources.sampledImages.push_back(albedoTextureResource);
+            resources.samplers.push_back(albedoSamplerResource);
+        }
+        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE) {
+            if (!normalSampler.has_value()) {
+                SamplerDescription normalSamplerDesc;
+                normalSamplerDesc.interpolation = SamplerInterpolation::Linear;
+                normalSamplerDesc.wrapping = SamplerWrapping::Repeat;
+                normalSamplerDesc.maxMip = m_images[normalTexture.value()].viewPerMip.size();
+                normalSamplerDesc.useAnisotropy = true;
+                normalSampler = createSampler(normalSamplerDesc);
+            }
+            const auto normalTextureResource = ImageResource(
+                normalTexture.value(),
+                0,
+                4);
+
+            const auto normalSamplerResource = SamplerResource(
+                normalSampler.value(),
+                1);
+
+            resources.sampledImages.push_back(normalTextureResource);
+            resources.samplers.push_back(normalSamplerResource);
+        }
+        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE) {
+            if (!specularSampler.has_value()) {
+                SamplerDescription specularSamplerDesc;
+                specularSamplerDesc.interpolation = SamplerInterpolation::Linear;
+                specularSamplerDesc.wrapping = SamplerWrapping::Repeat;
+                specularSamplerDesc.maxMip = m_images[normalTexture.value()].viewPerMip.size();
+                specularSamplerDesc.useAnisotropy = true;
+                specularSampler = createSampler(specularSamplerDesc);
+            }
+            const auto specularTextureResource = ImageResource(
+                specularTexture.value(),
+                0,
+                5);
+
+            const auto specularSamplerResource = SamplerResource(
+                specularSampler.value(),
+                2);
+
+            resources.sampledImages.push_back(specularTextureResource);
+            resources.samplers.push_back(specularSamplerResource);
+        }
+        MeshMaterial material;
+        material.flags = pass.materialFeatures;
+        material.descriptorSet = allocateDescriptorSet(pass.materialSetLayout);
+        updateDescriptorSet(material.descriptorSet, resources);
+
+        mesh.materials.push_back(material);
+    }
+
+    /*
+    save and return handle
+    */
+    MeshHandle handle = m_meshes.size();
+    m_meshes.push_back(mesh);
+
+    return handle;
+}
+
+/*
+=========
 createBufferInternal
 =========
 */
@@ -2291,14 +2357,11 @@ Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::v
     auto res = vkCreateBuffer(m_context.device, &bufferInfo, nullptr, &buffer.vulkanHandle);
     assert(res == VK_SUCCESS);
 
-    //allocate memory
+    //memory
     VkMemoryRequirements memoryRequirements;
     vkGetBufferMemoryRequirements(m_context.device, buffer.vulkanHandle, &memoryRequirements);
-
-    buffer.memory = allocateMemory(memoryRequirements, memoryFlags);
-
-    //attach memory to buffer
-    res = vkBindBufferMemory(m_context.device, buffer.vulkanHandle, buffer.memory, 0);
+    VkDeviceSize memoryOffset = getDeviceMemoryOffset(memoryRequirements);
+    res = vkBindBufferMemory(m_context.device, buffer.vulkanHandle, m_deviceMemoryChunk, memoryOffset);
     assert(res == VK_SUCCESS);
 
     return buffer;
@@ -2325,44 +2388,158 @@ transferDataIntoImage
 */
 void RenderBackend::transferDataIntoImage(Image& target, const void* data, const VkDeviceSize size) {
 
-    //create stagin buffer with image data
-    Buffer stagingBuffer = createStagingBuffer(data, size);
+    //BCn compressed formats have certain properties that have to be considered when copying data
+    bool isBCnCompressed = false;
 
-    //begin command buffer for copying
-    VkCommandBuffer copyBuffer = beginOneTimeUseCommandBuffer();
+    //bytePerPixel is a float because compressed formats can have less than one byte per pixel
+    float bytePerPixel = 0;
+    if (target.desc.format == ImageFormat::R8) {
+        bytePerPixel = 1;
+    }
+    else if (target.desc.format == ImageFormat::R11G11B10_uFloat) {
+        bytePerPixel = 4;
+    }
+    else if (target.desc.format == ImageFormat::RG16_sFloat) {
+        bytePerPixel = 4;
+    }
+    else if (target.desc.format == ImageFormat::RG8) {
+        bytePerPixel = 2;
+    }
+    else if (target.desc.format == ImageFormat::RGBA16_sFloat) {
+        bytePerPixel = 8;
+    }
+    else if (target.desc.format == ImageFormat::RGBA32_sFloat) {
+        bytePerPixel = 16;
+    }
+    else if (target.desc.format == ImageFormat::RGBA8) {
+        bytePerPixel = 4;
+    }
+    else if (target.desc.format == ImageFormat::BC1) {
+        isBCnCompressed = true;
+        bytePerPixel = 0.5;
+    }
+    else if (target.desc.format == ImageFormat::BC3) {
+        isBCnCompressed = true;
+        bytePerPixel = 1;
+    }
+    else if (target.desc.format == ImageFormat::BC5) {
+        isBCnCompressed = true;
+        bytePerPixel = 1;
+    }
+    else {
+        throw("Unsupported format");
+    }
+
+    VkDeviceSize bytesPerRow = target.extent.width * bytePerPixel;
+
+    //if size is bigger than mip level 0 automatically switch to next mip level
+    uint32_t mipLevel = 0;
+    uint32_t currentMipWidth = target.extent.width;
+    uint32_t currentMipHeight = target.extent.height;
+    VkDeviceSize currentMipSize = currentMipWidth * currentMipHeight * bytePerPixel;
+
+    //memory offset per mip is tracked separately to check if a mip border is reached
+    uint32_t mipMemoryOffset = 0;
+
+    //total offset is used to check if entire data has been copied
+    VkDeviceSize totalMemoryOffset = 0;
 
     /*
-    layout transition
+    if the image data is bigger than the staging buffer multiple copies are needed
+    use a while loop because currentMemoryOffset is increased by copySize, which can vary at mip borders
     */
-    const auto toTransferDstBarrier = createImageBarriers(target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
-        VK_ACCESS_TRANSFER_READ_BIT, 0, target.viewPerMip.size());
+    //TODO: creation of cmd buffer and fence in loop is somewhat inefficient
+    while (totalMemoryOffset < size) {
 
-    barriersCommand(copyBuffer, toTransferDstBarrier, std::vector<VkBufferMemoryBarrier> {});
+        //check if mip border is reached
+        if (mipMemoryOffset >= currentMipSize) {
+            mipLevel++;
+            //resoltion is halved at every mip level
+            currentMipWidth /= 2;
+            currentMipHeight /= 2;
+            bytesPerRow /= 2;
 
-    //copy command
-    VkBufferImageCopy region = {};
-    region.bufferOffset = 0;
-    region.bufferRowLength = target.extent.width;
-    region.bufferImageHeight = target.extent.height; 
-    region.imageSubresource = createSubresourceLayers(target, 0);
-    region.imageOffset = { 0, 0, 0 };
-    region.imageExtent = target.extent;
+            //halving resolution means size is quartered
+            currentMipSize /= 4;
 
-    vkCmdCopyBufferToImage(copyBuffer, stagingBuffer.vulkanHandle, target.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+            //memory offset per mip is reset
+            mipMemoryOffset = 0;
 
-    vkEndCommandBuffer(copyBuffer);
+            //BCn compressed textures store at least a 4x4 pixel block, resulting in at least a 4 pixel row
+            if (isBCnCompressed) {
+                bytesPerRow = std::max(bytesPerRow, (VkDeviceSize)(4 * bytePerPixel));
+                currentMipSize = std::max(currentMipSize, (VkDeviceSize)(4 * 4 * bytePerPixel));
+            }
+        }
 
-    VkFence fence = submitOneTimeUseCmdBuffer(copyBuffer, m_context.transferQueue);
+        /*
+        the size to copy is limited either by
+        -the staging buffer size
+        -the size left to copy on the current mip level
+        */
+        VkDeviceSize copySize = std::min(m_stagingBufferSize, currentMipSize - mipMemoryOffset);
 
-    vkWaitForFences(m_context.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        //copy data to staging buffer
+        void* mappedData;
+        vkMapMemory(m_context.device, m_stagingBufferMemory, 0, copySize, 0, (void**)&mappedData);
+        memcpy(mappedData, (char*)data + totalMemoryOffset, copySize);
+        vkUnmapMemory(m_context.device, m_stagingBufferMemory);
 
-    //cleanup
-    vkDestroyFence(m_context.device, fence, nullptr);
-    destroyBuffer(stagingBuffer);
-    vkFreeCommandBuffers(m_context.device, m_transientCommandPool, 1, &copyBuffer);
+        //begin command buffer for copying
+        VkCommandBuffer copyBuffer = beginOneTimeUseCommandBuffer();
+
+        //layout transition to transfer_dst the first time
+        if (totalMemoryOffset == 0) {
+            const auto toTransferDstBarrier = createImageBarriers(target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_ACCESS_TRANSFER_READ_BIT, 0, target.viewPerMip.size());
+
+            barriersCommand(copyBuffer, toTransferDstBarrier, std::vector<VkBufferMemoryBarrier> {});
+        }
+        
+
+        //calculate which region to copy
+        VkBufferImageCopy region = {};
+        region.bufferOffset = 0;
+        region.imageSubresource = createSubresourceLayers(target, mipLevel);
+        //entire rows are copied, so the starting row(offset.y) is the current mip offset divided by the row size
+        region.imageOffset = { 0, (int32_t)(mipMemoryOffset / bytesPerRow), 0 };
+        region.bufferRowLength = currentMipWidth; 
+        region.bufferImageHeight = currentMipHeight;
+        //copy as many rows as fit into the copy size, without going over the mip height
+        region.imageExtent.height = std::min(copySize / bytesPerRow, (VkDeviceSize)currentMipHeight);
+        region.imageExtent.width = currentMipWidth;
+        region.imageExtent.depth = 1;
+
+        //BCn compressed textures are stored in 4x4 pixel blocks, so that is the minimum buffer size
+        if (isBCnCompressed) {
+            region.bufferRowLength      = std::max(region.bufferRowLength,      (uint32_t)4);;
+            region.bufferImageHeight    = std::max(region.bufferImageHeight,    (uint32_t)4);;
+        }
+
+        //issue for commands, then wait
+        vkCmdCopyBufferToImage(copyBuffer, m_stagingBuffer, target.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        vkEndCommandBuffer(copyBuffer);
+        VkFence fence = submitOneTimeUseCmdBuffer(copyBuffer, m_context.transferQueue);
+        vkWaitForFences(m_context.device, 1, &fence, VK_TRUE, UINT64_MAX);
+
+        //cleanup
+        vkDestroyFence(m_context.device, fence, nullptr);
+        vkFreeCommandBuffers(m_context.device, m_transientCommandPool, 1, &copyBuffer);
+
+        //update memory offsets
+        //BCn compressed textures store at least a 4x4 pixel block
+        if (isBCnCompressed) {
+            mipMemoryOffset     += std::max(copySize, (VkDeviceSize)(4 * 4 * bytePerPixel));
+            totalMemoryOffset   += std::max(copySize, (VkDeviceSize)(4 * 4 * bytePerPixel));
+        }
+        else {
+            mipMemoryOffset     += copySize;
+            totalMemoryOffset   += copySize;
+        }
+    }
 }
 
-void RenderBackend::generateMipChain(Image& image, const VkImageLayout oldLayout, const VkImageLayout newLayout) {
+void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout) {
 
     /*
     check for linear filtering support
@@ -2457,13 +2634,36 @@ fillBuffer
 */
 void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSize size) {
 
-    Buffer stagingBuffer = createStagingBuffer(data, size);
+    //TODO: creation of cmd buffer and fence in loop is somewhat inefficient
+    for (VkDeviceSize currentMemoryOffset = 0; currentMemoryOffset < size; currentMemoryOffset += m_stagingBufferSize) {
 
-    //copy into target
-    copyBuffer(stagingBuffer, target, size);
+        VkDeviceSize copySize = std::min(m_stagingBufferSize, size - currentMemoryOffset);
 
-    vkDestroyBuffer(m_context.device, stagingBuffer.vulkanHandle, nullptr);
-    vkFreeMemory(m_context.device, stagingBuffer.memory, nullptr);
+        //copy data to staging buffer
+        void* mappedData;
+        vkMapMemory(m_context.device, m_stagingBufferMemory, 0, copySize, 0, (void**)&mappedData);
+        memcpy(mappedData, (char*)data + currentMemoryOffset, copySize);
+        vkUnmapMemory(m_context.device, m_stagingBufferMemory);
+
+        //copy staging buffer to dst
+        VkCommandBuffer copyCmdBuffer = beginOneTimeUseCommandBuffer();
+
+        //copy command
+        VkBufferCopy region = {};
+        region.srcOffset = 0;
+        region.dstOffset = currentMemoryOffset;
+        region.size = copySize;
+        vkCmdCopyBuffer(copyCmdBuffer, m_stagingBuffer, target.vulkanHandle, 1, &region);
+        vkEndCommandBuffer(copyCmdBuffer);       
+
+        //submit and wait
+        VkFence fence = submitOneTimeUseCmdBuffer(copyCmdBuffer, m_context.transferQueue);
+        vkWaitForFences(m_context.device, 1, &fence, VK_TRUE, UINT64_MAX);
+
+        //cleanup
+        vkDestroyFence(m_context.device, fence, nullptr);
+        vkFreeCommandBuffers(m_context.device, m_transientCommandPool, 1, &copyCmdBuffer);
+    }
 }
 
 /*
@@ -2471,47 +2671,25 @@ void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSi
 createStagingBuffer
 =========
 */
-Buffer RenderBackend::createStagingBuffer(const void* data, const VkDeviceSize size) {
-    //create staging buffer
-    uint32_t memoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    Buffer stagingBuffer = createBufferInternal(size, std::vector<uint32_t>{m_context.queueFamilies.transferQueueFamilyIndex}, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memoryFlags);
+void RenderBackend::createStagingBuffer() {
 
-    //fill staging buffer
-    void* mappedData;
-    vkMapMemory(m_context.device, stagingBuffer.memory, 0, size, 0, (void**)&mappedData);
-    memcpy(mappedData, data, size);
-    vkUnmapMemory(m_context.device, stagingBuffer.memory);
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.pNext = nullptr;
+    bufferInfo.flags = 0;
+    bufferInfo.size = m_stagingBufferSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    return stagingBuffer;
-}
+    bufferInfo.queueFamilyIndexCount = 1;
+    bufferInfo.pQueueFamilyIndices = &m_context.queueFamilies.transferQueueFamilyIndex;
 
-/*
-=========
-copyBuffer
-=========
-*/
-void RenderBackend::copyBuffer(const Buffer src, const Buffer dst, const VkDeviceSize size) {
+    auto res = vkCreateBuffer(m_context.device, &bufferInfo, nullptr, &m_stagingBuffer);
+    assert(res == VK_SUCCESS);
 
-    VkCommandBuffer copyCmdBuffer = beginOneTimeUseCommandBuffer();
-
-    //copy command
-    VkBufferCopy region = {};
-    region.srcOffset = 0;
-    region.dstOffset = 0;
-    region.size = size;
-    vkCmdCopyBuffer(copyCmdBuffer, src.vulkanHandle, dst.vulkanHandle, 1, &region);
-
-    //end recording
-    vkEndCommandBuffer(copyCmdBuffer);
-
-    //submit
-    VkFence fence = submitOneTimeUseCmdBuffer(copyCmdBuffer, m_context.transferQueue);
-
-    vkWaitForFences(m_context.device, 1, &fence, VK_TRUE, UINT64_MAX);
-
-    //cleanup
-    vkDestroyFence(m_context.device, fence, nullptr);
-    vkFreeCommandBuffers(m_context.device, m_transientCommandPool, 1, &copyCmdBuffer);
+    //memory
+    res = vkBindBufferMemory(m_context.device, m_stagingBuffer, m_stagingBufferMemory, 0);
+    assert(res == VK_SUCCESS);
 }
 
 /*
@@ -2980,19 +3158,15 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     ShaderLayout shaderLayout;
     if (reflection.materialFeatures & MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE) {
         shaderLayout.samplerBindings.push_back(0);
-        shaderLayout.sampledImageBindings.push_back(4);
+        shaderLayout.sampledImageBindings.push_back(3);
     }
     if (reflection.materialFeatures & MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE) {
         shaderLayout.samplerBindings.push_back(1);
-        shaderLayout.sampledImageBindings.push_back(5);
+        shaderLayout.sampledImageBindings.push_back(4);
     }
-    if (reflection.materialFeatures & MATERIAL_FEATURE_FLAG_METALIC_TEXTURE) {
+    if (reflection.materialFeatures & MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE) {
         shaderLayout.samplerBindings.push_back(2);
-        shaderLayout.sampledImageBindings.push_back(6);
-    }
-    if (reflection.materialFeatures & MATERIAL_FEATURE_FLAG_ROUGHNESS_TEXTURE) {
-        shaderLayout.samplerBindings.push_back(3);
-        shaderLayout.sampledImageBindings.push_back(7);
+        shaderLayout.sampledImageBindings.push_back(5);
     }
     pass.materialSetLayout = createDescriptorSetLayout(shaderLayout);
     pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, pass.materialSetLayout, true);
@@ -3459,7 +3633,7 @@ VkPipelineRasterizationStateCreateInfo RenderBackend::createRasterizationState(c
     rasterization.rasterizerDiscardEnable = VK_FALSE;
     rasterization.polygonMode = polygonMode;
     rasterization.cullMode = cullFlags;
-    rasterization.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterization.depthBiasEnable = VK_FALSE;
     rasterization.depthBiasConstantFactor = 0.f;
     rasterization.depthBiasClamp = 0.f;
@@ -3760,11 +3934,9 @@ void RenderBackend::destroyImage(const ImageHandle handle) {
     they are deleted by the swapchain
     view has to be destroyed manually though
     */
-    if (image.memory == VK_NULL_HANDLE) {
-        return;
+    if (!image.isSwapchainImage) {
+        vkDestroyImage(m_context.device, image.vulkanHandle, nullptr);
     }
-    vkFreeMemory(m_context.device, image.memory, nullptr);
-    vkDestroyImage(m_context.device, image.vulkanHandle, nullptr);
 }
 
 /*
@@ -3774,7 +3946,6 @@ destroyBuffer
 */
 void RenderBackend::destroyBuffer(const Buffer& buffer) {
     vkDestroyBuffer(m_context.device, buffer.vulkanHandle, nullptr);
-    vkFreeMemory(m_context.device, buffer.memory, nullptr);
 }
 
 /*

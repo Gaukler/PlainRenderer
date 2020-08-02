@@ -19,7 +19,7 @@ public:
 	float m_speed = 1.f;
 	float m_mouseSensitivity = 20.f;
 	float m_controllerSensitivity = 100.f;
-	float m_speedMod = 3.f;
+	float m_speedMod = 10.f;
 
 private:
 	float m_pitch = 0.f;

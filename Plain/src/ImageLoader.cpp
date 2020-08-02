@@ -13,7 +13,11 @@ ImageDescription loadImage(const std::filesystem::path& path, const bool isFullP
         fullPath = path;
     }
     else {
-        fullPath = DirectoryUtils::getResourceDirectory() / path;
+        fullPath = DirectoryUtils::getResourceDirectory() / path;        
+    }
+
+    if (path.extension().string() == ".dds") {
+        return loadDDSFile(path);
     }
 
 	int width, height, components;
@@ -31,7 +35,7 @@ ImageDescription loadImage(const std::filesystem::path& path, const bool isFullP
     size_t dataSize = width * height * components * bytesPerComponent; //in bytes
 
 	if (data == nullptr) {
-		std::cout << "failed to open image: " << path << std::endl;
+		std::cout << "failed to open image: " << fullPath << std::endl;
 		throw std::runtime_error("handle me"); //FIXME proper error handling
 	}
 
@@ -50,6 +54,7 @@ ImageDescription loadImage(const std::filesystem::path& path, const bool isFullP
     else {
         switch (components) {
         case(1): format = ImageFormat::R8;      break;
+        case(2): format = ImageFormat::RG8;     break;
         case(3): format = ImageFormat::RGBA8;   break;
         case(4): format = ImageFormat::RGBA8;   break;
         default: throw std::runtime_error("unsupported image component number");
@@ -71,7 +76,7 @@ ImageDescription loadImage(const std::filesystem::path& path, const bool isFullP
     /*
     simple copy 
     */
-    if (components == 4 || components == 1) {
+    if (components == 4 || components == 1 || components == 2) {
         image.initialData.resize(dataSize);
         memcpy(image.initialData.data(), data, dataSize);
     }
@@ -115,4 +120,111 @@ ImageDescription loadImage(const std::filesystem::path& path, const bool isFullP
 
 	stbi_image_free(data);
 	return image;
+}
+
+/*
+========
+DDS loading
+========
+*/
+
+//reference: https://docs.microsoft.com/en-us/windows/win32/direct3ddds/dx-graphics-dds-reference
+struct DDS_PixelFormat {
+    uint32_t infoSize;
+    uint32_t flags;
+    uint32_t compressionCode;
+    uint32_t RGBBitCount;
+    uint32_t RBitMask;
+    uint32_t GBitMask;
+    uint32_t BBitMask;
+    uint32_t ABitMask;
+};
+
+struct DDS_Header {
+    uint32_t        headerSize;
+    uint32_t        Flags;
+    uint32_t        height;
+    uint32_t        width;
+    uint32_t        pitchOrLinearSize;
+    uint32_t        depth;
+    uint32_t        mipMapCount;
+    uint32_t        reserved1[11];
+    DDS_PixelFormat pixelFormat;
+    uint32_t        caps;
+    uint32_t        caps2;
+    uint32_t        caps3;
+    uint32_t        caps4;
+    uint32_t        reserved2;
+} ;
+
+ImageDescription loadDDSFile(const std::filesystem::path& filename) {
+
+    //open file
+    std::fstream file;
+    file.open(filename, std::ios::binary | std::ios::in | std::ios::ate);
+    if (!file.is_open()) {
+        std::cout << "failed to open image: " << filename << std::endl;
+        throw std::runtime_error("handle me"); //FIXME proper error handling
+    }
+
+    //file is opened at the end so current position is file size
+    uint32_t fileSize = file.tellg();
+    file.seekg(0, file.beg); //go to file start
+
+    //validate magic number
+    {
+        uint32_t magicNumber;
+        file.read((char*)&magicNumber, 4);
+        assert(magicNumber == 0x20534444);
+    }
+
+    //read header
+    DDS_Header header;
+    file.read((char*)&header, sizeof(header));
+    
+    ImageDescription desc;
+    desc.width = header.width;
+    desc.height = header.height;
+    desc.depth = std::max(header.depth, (uint32_t)1);
+    desc.type = ImageType::Type2D;
+    desc.mipCount = MipCount::FullChain;
+    desc.autoCreateMips = false;
+    desc.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+
+    /*
+    only specific compressed dds formats are supported at the moment
+    more formats will be added as needed
+    */
+    if (!(header.pixelFormat.flags & 0x4)) {
+        std::cout << "Only compressed DDS files are supported: " << filename << std::endl;
+        throw("Image loading error");
+    }
+
+    //find image format
+    const uint32_t bc1Code = 827611204;
+    const uint32_t bc3Code = 894720068;
+    const uint32_t bc5Code = 843666497;
+    if (header.pixelFormat.compressionCode == bc1Code) {
+        desc.format = ImageFormat::BC1;
+    }
+    else if (header.pixelFormat.compressionCode == bc3Code) {
+        desc.format = ImageFormat::BC3;
+    }
+    else if (header.pixelFormat.compressionCode == bc5Code) {
+        desc.format = ImageFormat::BC5;
+    }
+    else {
+        std::cout << "Unsupported texture format: " << filename << std::endl;
+        throw("Image loading error");
+    }
+
+    //data size is size of file without header and magic number
+    size_t dataSize = fileSize - (sizeof(header) + sizeof(uint32_t));
+
+    //copy data
+    desc.initialData.resize(dataSize);
+    file.read((char*)desc.initialData.data(), dataSize);
+
+    file.close();
+    return desc;
 }

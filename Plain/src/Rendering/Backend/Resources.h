@@ -21,7 +21,6 @@ image
 */
 struct Image {
     VkImage                     vulkanHandle = VK_NULL_HANDLE;
-    VkDeviceMemory              memory = VK_NULL_HANDLE;
     std::vector<VkImageView>    viewPerMip;
     VkFormat                    format;
     VkExtent3D                  extent;
@@ -38,6 +37,8 @@ struct Image {
     description backup in case of resize
     */
     ImageDescription desc;
+
+    bool isSwapchainImage = false;
 };
 
 /*
@@ -45,7 +46,7 @@ buffer
 */
 struct Buffer {
     VkBuffer        vulkanHandle;
-    VkDeviceMemory  memory;
+    //VkDeviceMemory  memory;
     VkDeviceSize    size;
 };
 
@@ -58,8 +59,7 @@ the same is true for material features
 typedef enum MaterialFeatureFlags {
     MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE = 0x00000001,
     MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE = 0x00000002,
-    MATERIAL_FEATURE_FLAG_METALIC_TEXTURE = 0x00000004,
-    MATERIAL_FEATURE_FLAG_ROUGHNESS_TEXTURE = 0x00000008
+    MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE = 0x00000004,
 } MaterialFeatureFlags;
 
 struct MeshVertexBuffer {
