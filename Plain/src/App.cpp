@@ -20,9 +20,15 @@ App::App() {
     m_renderer.setup(m_window);
 
     {
-        const auto mesh = m_renderer.createMeshes(loadModel("Models\\Sponza\\Sponza.obj"));
-        //const auto mesh = m_renderer.createMeshes(loadModel("Models\\DamagedHelmet\\DamagedHelmet.obj"));
-        //const auto mesh = m_renderer.createMeshes(loadModel("Models\\Bistro\\exterior.obj"));
+        std::filesystem::path modelPath = "Models\\DamagedHelmet\\DamagedHelmet.obj";
+        //std::filesystem::path modelPath = "Models\\Sponza\\Sponza.obj";
+        //std::filesystem::path modelPath = "Models\\Bistro\\exterior.obj";
+
+        std::vector<MeshHandle> mesh;
+        std::vector<MeshData> meshData;
+        if (loadModel(modelPath, &meshData)) {
+            mesh = m_renderer.createMeshes(meshData);
+        }
 
         m_meshes.insert(m_meshes.end(), mesh.begin(), mesh.end());
     }

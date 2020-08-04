@@ -12,7 +12,7 @@
 loadModel
 =========
 */
-std::vector<MeshData> loadModel(const std::filesystem::path& filename){
+bool loadModel(const std::filesystem::path& filename, std::vector<MeshData>* outData){
 
     const std::filesystem::path fullPath = DirectoryUtils::getResourceDirectory() / filename;
 
@@ -35,10 +35,10 @@ std::vector<MeshData> loadModel(const std::filesystem::path& filename){
     }
 
     if (!success) {
-        throw std::runtime_error("couldn't open file");
+        return false;
     }
 
-    std::vector<MeshData> meshes(materials.size());
+    outData->resize(materials.size());
 
     //iterate over models
     for (uint32_t shapeIndex = 0; shapeIndex < shapes.size(); shapeIndex++) {
@@ -55,30 +55,30 @@ std::vector<MeshData> loadModel(const std::filesystem::path& filename){
             size_t normalIndex = indices.normal_index;
             size_t uvIndex = indices.texcoord_index;
 
-            meshes[materialIndex].positions.push_back(glm::vec3(
+            (*outData)[materialIndex].positions.push_back(glm::vec3(
                 attributes.vertices[vertexIndex * 3],
                 attributes.vertices[vertexIndex * 3 + 1],
                 -attributes.vertices[vertexIndex * 3 + 2]));
 
-            meshes[materialIndex].normals.push_back(glm::vec3(
+            (*outData)[materialIndex].normals.push_back(glm::vec3(
                 attributes.normals[normalIndex * 3],
                 attributes.normals[normalIndex * 3 + 1],
                 attributes.normals[normalIndex * 3 + 2]));
 
-            meshes[materialIndex].uvs.push_back(glm::vec2(
+            (*outData)[materialIndex].uvs.push_back(glm::vec2(
                 attributes.texcoords[uvIndex * 2],
                 1.f - attributes.texcoords[uvIndex * 2 + 1]));
 
             //correct for vulkan coordinate system
-            meshes[materialIndex].positions.back().y *= -1.f;
-            meshes[materialIndex].normals.back().y *= -1.f;
+            (*outData)[materialIndex].positions.back().y *= -1.f;
+            (*outData)[materialIndex].normals.back().y *= -1.f;
         }
     }
 
     const auto modelDirectory = fullPath.parent_path();
-    for (size_t i = 0; i < meshes.size(); i++) {
-        computeTangentBitangent(&meshes[i]);
-        meshes[i] = buildIndexedData(meshes[i]);
+    for (size_t i = 0; i < outData->size(); i++) {
+        computeTangentBitangent(&(*outData)[i]);
+        (*outData)[i] = buildIndexedData((*outData)[i]);
 
         const auto cleanPath = [](std::string path) {
 
@@ -98,32 +98,30 @@ std::vector<MeshData> loadModel(const std::filesystem::path& filename){
 
         if (materials[i].diffuse_texname.length() != 0) {
             std::filesystem::path diffuseTexture = cleanPath(materials[i].diffuse_texname);
-            meshes[i].material.albedoTexturePath = modelDirectory / diffuseTexture;
+            (*outData)[i].material.albedoTexturePath = modelDirectory / diffuseTexture;
         }
         else {
-            meshes[i].material.albedoTexturePath = "";
+            (*outData)[i].material.albedoTexturePath = "";
         }
 
         if (materials[i].bump_texname.length() != 0) {
             std::string normalTexture = cleanPath(materials[i].bump_texname);
-            meshes[i].material.normalTexturePath = modelDirectory / normalTexture;
+            (*outData)[i].material.normalTexturePath = modelDirectory / normalTexture;
         }
         else {
-            meshes[i].material.normalTexturePath = "";
+            (*outData)[i].material.normalTexturePath = "";
         }
 
         if (materials[i].specular_texname.length() != 0) {
             std::string specularTexture = cleanPath(materials[i].specular_texname);
-            meshes[i].material.specularTexturePath = modelDirectory / specularTexture;
+            (*outData)[i].material.specularTexturePath = modelDirectory / specularTexture;
         }
         else {
-            meshes[i].material.specularTexturePath = "";
+            (*outData)[i].material.specularTexturePath = "";
         }
     }
     
-    //necessary, otherwise code after meshes allocation is skipped... compiler error?
-    const auto test = meshes;
-    return test;
+    return true;
 }
 
 /*
