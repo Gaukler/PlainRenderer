@@ -9,6 +9,7 @@
 #include "VertexInput.h"
 #include "ShaderIO.h"
 #include "Utilities/GeneralUtils.h"
+#include "Utilities/MathUtils.h"
 
 #include <imgui/imgui.h>
 #include <imgui/examples/imgui_impl_glfw.h>
@@ -876,7 +877,7 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
     switch (desc.mipCount) {
     case(MipCount::One): mipCount = 1; break;
     case(MipCount::Manual): mipCount = desc.manualMipCount; break;
-    case(MipCount::FullChain): mipCount = 1 + std::floor(std::log2(std::max(std::max(desc.width, desc.height), desc.depth))); break;
+    case(MipCount::FullChain): mipCount = mipCountFromResolution(desc.width, desc.height, desc.depth); break;
     default: throw std::runtime_error("Unsuported mipCoun enum");
     }
 
@@ -2206,9 +2207,9 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
     /*
     material per pass
     */
-    std::optional<ImageHandle> albedoTexture = data.diffuseTexture;
-    std::optional<ImageHandle> normalTexture = data.normalTexture;
-    std::optional<ImageHandle> specularTexture = data.specularTexture;
+    ImageHandle albedoTexture = data.diffuseTexture;
+    ImageHandle normalTexture = data.normalTexture;
+    ImageHandle specularTexture = data.specularTexture;
 
     std::optional<SamplerHandle> albedoSampler;
     std::optional<SamplerHandle> normalSampler;
@@ -2238,68 +2239,82 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
         */
         RenderPassResources resources;
 
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE) {
-            if (!albedoSampler.has_value()) {
+        //texture is required but has no value yet(sampler and texture assigned at the same time)
+        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE && !albedoSampler.has_value()) {
+            if (albedoTexture != InvalidImageHandle) {
+
                 SamplerDescription albedoSamplerDesc;
                 albedoSamplerDesc.interpolation = SamplerInterpolation::Linear;
                 albedoSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                albedoSamplerDesc.maxMip = m_images[albedoTexture.value()].viewPerMip.size();
+                albedoSamplerDesc.maxMip = m_images[albedoTexture].viewPerMip.size();
                 albedoSamplerDesc.useAnisotropy = true;
                 albedoSampler = createSampler(albedoSamplerDesc);
+
+                const auto albedoTextureResource = ImageResource(
+                    albedoTexture,
+                    0,
+                    3);
+
+                const auto albedoSamplerResource = SamplerResource(
+                    albedoSampler.value(),
+                    0);
+
+                resources.sampledImages.push_back(albedoTextureResource);
+                resources.samplers.push_back(albedoSamplerResource);
             }
-            const auto albedoTextureResource = ImageResource(
-                albedoTexture.value(),
-                0,
-                3);
-
-            const auto albedoSamplerResource = SamplerResource(
-                albedoSampler.value(),
-                0);
-
-            resources.sampledImages.push_back(albedoTextureResource);
-            resources.samplers.push_back(albedoSamplerResource);
+            else {
+                std::cout << "Mesh misses required albedo texture \n";
+            }
         }
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE) {
-            if (!normalSampler.has_value()) {
+        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE && !normalSampler.has_value()) {
+            if (normalTexture != InvalidImageHandle) {
                 SamplerDescription normalSamplerDesc;
                 normalSamplerDesc.interpolation = SamplerInterpolation::Linear;
                 normalSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                normalSamplerDesc.maxMip = m_images[normalTexture.value()].viewPerMip.size();
+                normalSamplerDesc.maxMip = m_images[normalTexture].viewPerMip.size();
                 normalSamplerDesc.useAnisotropy = true;
                 normalSampler = createSampler(normalSamplerDesc);
+
+                const auto normalTextureResource = ImageResource(
+                    normalTexture,
+                    0,
+                    4);
+
+                const auto normalSamplerResource = SamplerResource(
+                    normalSampler.value(),
+                    1);
+
+                resources.sampledImages.push_back(normalTextureResource);
+                resources.samplers.push_back(normalSamplerResource);
             }
-            const auto normalTextureResource = ImageResource(
-                normalTexture.value(),
-                0,
-                4);
-
-            const auto normalSamplerResource = SamplerResource(
-                normalSampler.value(),
-                1);
-
-            resources.sampledImages.push_back(normalTextureResource);
-            resources.samplers.push_back(normalSamplerResource);
+            else {
+                std::cout << "Mesh misses required normal texture \n";
+            }
         }
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE) {
-            if (!specularSampler.has_value()) {
+        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE && !specularSampler.has_value()) {
+            if (specularTexture != InvalidImageHandle) {
                 SamplerDescription specularSamplerDesc;
                 specularSamplerDesc.interpolation = SamplerInterpolation::Linear;
                 specularSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                specularSamplerDesc.maxMip = m_images[normalTexture.value()].viewPerMip.size();
+                specularSamplerDesc.maxMip = m_images[normalTexture].viewPerMip.size();
                 specularSamplerDesc.useAnisotropy = true;
                 specularSampler = createSampler(specularSamplerDesc);
+
+                const auto specularTextureResource = ImageResource(
+                    specularTexture,
+                    0,
+                    5);
+
+                const auto specularSamplerResource = SamplerResource(
+                    specularSampler.value(),
+                    2);
+
+                resources.sampledImages.push_back(specularTextureResource);
+                resources.samplers.push_back(specularSamplerResource);
             }
-            const auto specularTextureResource = ImageResource(
-                specularTexture.value(),
-                0,
-                5);
-
-            const auto specularSamplerResource = SamplerResource(
-                specularSampler.value(),
-                2);
-
-            resources.sampledImages.push_back(specularTextureResource);
-            resources.samplers.push_back(specularSamplerResource);
+            else {
+                std::cout << "Mesh misses required specular texture \n";
+            }
         }
         MeshMaterial material;
         material.flags = pass.materialFeatures;

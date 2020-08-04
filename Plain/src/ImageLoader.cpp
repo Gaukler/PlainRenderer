@@ -6,7 +6,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-ImageDescription loadImage(const std::filesystem::path& path, const bool isFullPath) {
+bool loadImage(const std::filesystem::path& path, const bool isFullPath, ImageDescription* outImage) {
 
     std::filesystem::path fullPath;
     if (isFullPath) {
@@ -17,7 +17,7 @@ ImageDescription loadImage(const std::filesystem::path& path, const bool isFullP
     }
 
     if (path.extension().string() == ".dds") {
-        return loadDDSFile(path);
+        return loadDDSFile(path, outImage);
     }
 
 	int width, height, components;
@@ -36,7 +36,7 @@ ImageDescription loadImage(const std::filesystem::path& path, const bool isFullP
 
 	if (data == nullptr) {
 		std::cout << "failed to open image: " << fullPath << std::endl;
-		throw std::runtime_error("handle me"); //FIXME proper error handling
+        return false;
 	}
 
     if (isHdr) {
@@ -61,43 +61,42 @@ ImageDescription loadImage(const std::filesystem::path& path, const bool isFullP
         }
     }
 
-    ImageDescription image;
-    image.width = (uint32_t)width;
-    image.height = (uint32_t)height;
-    image.depth = 1;
-    image.mipCount = MipCount::FullChain;
-    image.autoCreateMips = true;
-    image.type = ImageType::Type2D;
-    image.format = format;
-    image.autoCreateMips = true;
-    image.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+    outImage->width = (uint32_t)width;
+    outImage->height = (uint32_t)height;
+    outImage->depth = 1;
+    outImage->mipCount = MipCount::FullChain;
+    outImage->autoCreateMips = true;
+    outImage->type = ImageType::Type2D;
+    outImage->format = format;
+    outImage->autoCreateMips = true;
+    outImage->usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
     
 
     /*
     simple copy 
     */
     if (components == 4 || components == 1 || components == 2) {
-        image.initialData.resize(dataSize);
-        memcpy(image.initialData.data(), data, dataSize);
+        outImage->initialData.resize(dataSize);
+        memcpy(outImage->initialData.data(), data, dataSize);
     }
     /*
     requires padding to 4 compontens
     */
     else {
-        image.initialData.reserve(dataSize * 1.25);
+        outImage->initialData.reserve(dataSize * 1.25);
         if (isHdr) {
             for (int i = 0; i < dataSize; i += 12) {
                 /*
                 12 bytes data for rgb
                 */
                 for (int j = 0; j < 12; j++) {
-                    image.initialData.push_back(data[i + j]);
+                    outImage->initialData.push_back(data[i + j]);
                 }
                 /*
                 4 byte padding for alpha channel
                 */
                 for (int j = 0; j < 4; j++) {
-                    image.initialData.push_back(1);
+                    outImage->initialData.push_back(1);
                 }
             }
         }
@@ -106,20 +105,20 @@ ImageDescription loadImage(const std::filesystem::path& path, const bool isFullP
                 /*
                 3 bytes data for rgb
                 */
-                image.initialData.push_back(data[i]);
-                image.initialData.push_back(data[i + 1]);
-                image.initialData.push_back(data[i + 2]);
+                outImage->initialData.push_back(data[i]);
+                outImage->initialData.push_back(data[i + 1]);
+                outImage->initialData.push_back(data[i + 2]);
                 /*
                 single byte padding for alpha
                 */
-                image.initialData.push_back(1);
+                outImage->initialData.push_back(1);
             }
         }
     }
     
 
 	stbi_image_free(data);
-	return image;
+	return true;
 }
 
 /*
@@ -157,14 +156,14 @@ struct DDS_Header {
     uint32_t        reserved2;
 } ;
 
-ImageDescription loadDDSFile(const std::filesystem::path& filename) {
+bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outImage) {
 
     //open file
     std::fstream file;
     file.open(filename, std::ios::binary | std::ios::in | std::ios::ate);
     if (!file.is_open()) {
         std::cout << "failed to open image: " << filename << std::endl;
-        throw std::runtime_error("handle me"); //FIXME proper error handling
+        return false;
     }
 
     //file is opened at the end so current position is file size
@@ -182,14 +181,13 @@ ImageDescription loadDDSFile(const std::filesystem::path& filename) {
     DDS_Header header;
     file.read((char*)&header, sizeof(header));
     
-    ImageDescription desc;
-    desc.width = header.width;
-    desc.height = header.height;
-    desc.depth = std::max(header.depth, (uint32_t)1);
-    desc.type = ImageType::Type2D;
-    desc.mipCount = MipCount::FullChain;
-    desc.autoCreateMips = false;
-    desc.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+    outImage->width = header.width;
+    outImage->height = header.height;
+    outImage->depth = std::max(header.depth, (uint32_t)1);
+    outImage->type = ImageType::Type2D;
+    outImage->mipCount = MipCount::FullChain;
+    outImage->autoCreateMips = false;
+    outImage->usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
 
     /*
     only specific compressed dds formats are supported at the moment
@@ -205,26 +203,26 @@ ImageDescription loadDDSFile(const std::filesystem::path& filename) {
     const uint32_t bc3Code = 894720068;
     const uint32_t bc5Code = 843666497;
     if (header.pixelFormat.compressionCode == bc1Code) {
-        desc.format = ImageFormat::BC1;
+        outImage->format = ImageFormat::BC1;
     }
     else if (header.pixelFormat.compressionCode == bc3Code) {
-        desc.format = ImageFormat::BC3;
+        outImage->format = ImageFormat::BC3;
     }
     else if (header.pixelFormat.compressionCode == bc5Code) {
-        desc.format = ImageFormat::BC5;
+        outImage->format = ImageFormat::BC5;
     }
     else {
         std::cout << "Unsupported texture format: " << filename << std::endl;
-        throw("Image loading error");
+        return false;
     }
 
     //data size is size of file without header and magic number
     size_t dataSize = fileSize - (sizeof(header) + sizeof(uint32_t));
 
     //copy data
-    desc.initialData.resize(dataSize);
-    file.read((char*)desc.initialData.data(), dataSize);
+    outImage->initialData.resize(dataSize);
+    file.read((char*)outImage->initialData.data(), dataSize);
 
     file.close();
-    return desc;
+    return true;
 }

@@ -16,7 +16,7 @@ struct MeshDataInternal {
     std::vector<glm::vec3> bitangents;
     std::vector<glm::vec2> uvs;
 
-    std::optional<ImageHandle> diffuseTexture;
-    std::optional<ImageHandle> normalTexture;
-    std::optional<ImageHandle> specularTexture;
+    ImageHandle diffuseTexture  = InvalidImageHandle;
+    ImageHandle normalTexture   = InvalidImageHandle;
+    ImageHandle specularTexture = InvalidImageHandle;
 };

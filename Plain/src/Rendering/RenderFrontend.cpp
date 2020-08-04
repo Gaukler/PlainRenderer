@@ -36,41 +36,18 @@ void RenderFrontend::setup(GLFWwindow* window) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, resizeCallback);
 
-    {
-        const auto cubeSamplerDesc = SamplerDescription(
-            SamplerInterpolation::Linear,
-            SamplerWrapping::Clamp,
-            false,
-            1,
-            SamplerBorderColor::Black,
-            0);
-        m_cubeSampler = m_backend.createSampler(cubeSamplerDesc);
+    createDefaultTextures();
+
+    //load skybox
+    ImageDescription hdrCapture;
+    if (loadImage("textures\\sunset_in_the_chalk_quarry_2k.hdr", false, &hdrCapture)) {
+        m_environmentMapSrc = m_backend.createImage(hdrCapture);
+    }
+    else {
+        m_environmentMapSrc = m_defaultSkyTexture;
     }
     
-    {
-        const auto skySamplerDesc = SamplerDescription(
-            SamplerInterpolation::Linear,
-            SamplerWrapping::Clamp,
-            false,
-            0,
-            SamplerBorderColor::Black,
-            m_skyTextureMipCount);
-        m_skySamplerWithMips = m_backend.createSampler(skySamplerDesc);
-    }
-
-    {
-        const auto texelSamplerDesc = SamplerDescription(
-            SamplerInterpolation::Nearest,
-            SamplerWrapping::Clamp,
-            false,
-            0,
-            SamplerBorderColor::Black,
-            0
-        );
-        m_defaultTexelSampler = m_backend.createSampler(texelSamplerDesc);
-    }
-    
-
+    createDefaultSamplers();
     createShadowPass();
     createMainPass(width, height);
     createSkyPass();
@@ -80,7 +57,6 @@ void RenderFrontend::setup(GLFWwindow* window) {
     createDiffuseConvolutionPass();
     createBRDFLutPreparationPass();
     createHistogramPasses();
-    createDefaultTexture();
 }
 
 /*
@@ -177,9 +153,15 @@ std::vector<MeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>
         mesh.tangents = data.tangents;
         mesh.bitangents = data.bitangents;
 
-        mesh.diffuseTexture = getImageFromPath(data.material.albedoTexturePath);
-        mesh.normalTexture = getImageFromPath(data.material.normalTexturePath);
-        mesh.specularTexture = getImageFromPath(data.material.specularTexturePath);
+        if (!getImageFromPath(data.material.albedoTexturePath, &mesh.diffuseTexture)) {
+            mesh.diffuseTexture = m_defaultDiffuseTexture;
+        }
+        if (!getImageFromPath(data.material.normalTexturePath, &mesh.normalTexture)) {
+            mesh.normalTexture = m_defaultNormalTexture;
+        }
+        if (!getImageFromPath(data.material.specularTexturePath, &mesh.specularTexture)) {
+            mesh.specularTexture = m_defaultSpecularTexture;
+        }
 
         dataInternal.push_back(mesh);
     }
@@ -365,22 +347,29 @@ void RenderFrontend::renderFrame() {
 
 /*
 =========
-firstFramePreparation
+getImageFromPath
 =========
 */
-ImageHandle RenderFrontend::getImageFromPath(std::filesystem::path path) {
+bool RenderFrontend::getImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
 
     if (path == "") {
-        return m_defaultTexture;
+        return false;
     }
 
     if (m_textureMap.find(path) == m_textureMap.end()) {
-        ImageHandle textureHandle = m_backend.createImage(loadImage(path, true));
-        m_textureMap[path] = textureHandle;
-        return textureHandle;
+        ImageDescription image;
+        if (loadImage(path, true, &image)) {
+            *outImageHandle = m_backend.createImage(image);
+            m_textureMap[path] = *outImageHandle;
+            return true;
+        }
+        else {
+            return false;
+        }
     }
     else {
-        return m_textureMap[path];
+        *outImageHandle = m_textureMap[path];
+        return true;
     }
 }
 
@@ -391,8 +380,8 @@ firstFramePreparation
 */
 void RenderFrontend::firstFramePreparation() {
     /*
-        write to sky texture
-        */
+    write to sky texture
+    */
     const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
     const auto hdrCaptureResource = ImageResource(m_environmentMapSrc, 0, 1);
     const auto hdrSamplerResource = SamplerResource(m_cubeSampler, 2);
@@ -678,10 +667,7 @@ void RenderFrontend::createSkyTexturePreparationPasses() {
     for (uint32_t i = 0; i < m_skyTextureMipCount - 1; i++) {
         m_cubemapMipPasses.push_back(m_backend.createComputePass(cubemapMipPassDesc));
     }
-
-    ImageDescription hdrCapture = loadImage("textures\\sunset_in_the_chalk_quarry_2k.hdr", false);
-    m_environmentMapSrc = m_backend.createImage(hdrCapture);
-
+    
      const auto hdriSamplerDesc = SamplerDescription(
         SamplerInterpolation::Linear,
         SamplerWrapping::Clamp,
@@ -690,8 +676,6 @@ void RenderFrontend::createSkyTexturePreparationPasses() {
         SamplerBorderColor::Black,
         0);
      m_hdriSampler = m_backend.createSampler(hdriSamplerDesc);
-
-
 }
 
 /*
@@ -927,20 +911,111 @@ void RenderFrontend::createHistogramPasses() {
 createSkyCubeMesh
 =========
 */
-void RenderFrontend::createDefaultTexture() {
-    ImageDescription defaultImage;
-    defaultImage.autoCreateMips = true;
-    defaultImage.depth = 1;
-    defaultImage.format = ImageFormat::R8;
-    defaultImage.initialData = { 0xf };
-    defaultImage.manualMipCount = 1;
-    defaultImage.mipCount = MipCount::FullChain;
-    defaultImage.type = ImageType::Type2D;
-    defaultImage.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
-    defaultImage.width = 1;
-    defaultImage.height = 1;
+void RenderFrontend::createDefaultTextures() {
+    {
+        ImageDescription defaultDiffuseDesc;
+        defaultDiffuseDesc.autoCreateMips = true;
+        defaultDiffuseDesc.depth = 1;
+        defaultDiffuseDesc.format = ImageFormat::RGBA8;
+        defaultDiffuseDesc.initialData = { (char)255, (char)255, (char)255, (char)255 };
+        defaultDiffuseDesc.manualMipCount = 1;
+        defaultDiffuseDesc.mipCount = MipCount::FullChain;
+        defaultDiffuseDesc.type = ImageType::Type2D;
+        defaultDiffuseDesc.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+        defaultDiffuseDesc.width = 1;
+        defaultDiffuseDesc.height = 1;
 
-    m_defaultTexture = m_backend.createImage(defaultImage);
+        m_defaultDiffuseTexture = m_backend.createImage(defaultDiffuseDesc);
+    }
+    
+    {
+        ImageDescription defaultSpecularDesc;
+        defaultSpecularDesc.autoCreateMips = true;
+        defaultSpecularDesc.depth = 1;
+        defaultSpecularDesc.format = ImageFormat::RGBA8;
+        defaultSpecularDesc.initialData = { (char)0, (char)128, (char)255, (char)0 };
+        defaultSpecularDesc.manualMipCount = 1;
+        defaultSpecularDesc.mipCount = MipCount::FullChain;
+        defaultSpecularDesc.type = ImageType::Type2D;
+        defaultSpecularDesc.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+        defaultSpecularDesc.width = 1;
+        defaultSpecularDesc.height = 1;
+
+        m_defaultSpecularTexture = m_backend.createImage(defaultSpecularDesc);
+    }
+
+    {
+        ImageDescription defaultNormalDesc;
+        defaultNormalDesc.autoCreateMips = true;
+        defaultNormalDesc.depth = 1;
+        defaultNormalDesc.format = ImageFormat::RG8;
+        defaultNormalDesc.initialData = { (char)128, (char)128 };
+        defaultNormalDesc.manualMipCount = 1;
+        defaultNormalDesc.mipCount = MipCount::FullChain;
+        defaultNormalDesc.type = ImageType::Type2D;
+        defaultNormalDesc.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+        defaultNormalDesc.width = 1;
+        defaultNormalDesc.height = 1;
+
+        m_defaultNormalTexture = m_backend.createImage(defaultNormalDesc);
+    }
+
+    {
+        ImageDescription defaultCubemapDesc;
+        defaultCubemapDesc.autoCreateMips = true;
+        defaultCubemapDesc.depth = 1;
+        defaultCubemapDesc.format = ImageFormat::RGBA8;
+        defaultCubemapDesc.initialData = { (char)255, (char)255, (char)255, (char)255 };
+        defaultCubemapDesc.manualMipCount = 1;
+        defaultCubemapDesc.mipCount = MipCount::FullChain;
+        defaultCubemapDesc.type = ImageType::Type2D;
+        defaultCubemapDesc.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+        defaultCubemapDesc.width = 1;
+        defaultCubemapDesc.height = 1;
+
+        m_defaultSkyTexture = m_backend.createImage(defaultCubemapDesc);
+    }
+}
+
+/*
+=========
+createDefaultSamplers
+=========
+*/
+void RenderFrontend::createDefaultSamplers() {
+    {
+        const auto cubeSamplerDesc = SamplerDescription(
+            SamplerInterpolation::Linear,
+            SamplerWrapping::Clamp,
+            false,
+            1,
+            SamplerBorderColor::Black,
+            0);
+        m_cubeSampler = m_backend.createSampler(cubeSamplerDesc);
+    }
+
+    {
+        const auto skySamplerDesc = SamplerDescription(
+            SamplerInterpolation::Linear,
+            SamplerWrapping::Clamp,
+            false,
+            0,
+            SamplerBorderColor::Black,
+            m_skyTextureMipCount);
+        m_skySamplerWithMips = m_backend.createSampler(skySamplerDesc);
+    }
+
+    {
+        const auto texelSamplerDesc = SamplerDescription(
+            SamplerInterpolation::Nearest,
+            SamplerWrapping::Clamp,
+            false,
+            0,
+            SamplerBorderColor::Black,
+            0
+        );
+        m_defaultTexelSampler = m_backend.createSampler(texelSamplerDesc);
+    }
 }
 
 /*

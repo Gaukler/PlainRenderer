@@ -31,7 +31,7 @@ private:
     returns image from file
     checks a map of all loaded images if it is avaible, returns existing image if possible
     */
-    ImageHandle getImageFromPath(std::filesystem::path path);
+    bool getImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);
     std::map<std::filesystem::path, ImageHandle> m_textureMap;
 
     void firstFramePreparation();
@@ -146,9 +146,14 @@ private:
     void createSpecularConvolutionPass();
     void createBRDFLutPreparationPass();
     void createHistogramPasses();
-    void createDefaultTexture();
+    void createDefaultTextures();
+    void createDefaultSamplers();
 
-    ImageHandle m_defaultTexture;
+    //default textures
+    ImageHandle m_defaultDiffuseTexture;
+    ImageHandle m_defaultSpecularTexture;
+    ImageHandle m_defaultNormalTexture;
+    ImageHandle m_defaultSkyTexture;
 
     /*
     sun

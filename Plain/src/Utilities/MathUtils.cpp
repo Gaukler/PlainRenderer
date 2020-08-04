@@ -49,3 +49,12 @@ glm::mat4 projectionMatrixFromCameraIntrinsic(const CameraIntrinsic& intrinsic) 
 
     return coordinateSystemCorrection * projectionMatrix;
 }
+
+/*
+=========
+mipCountFromResolution
+=========
+*/
+uint32_t mipCountFromResolution(const uint32_t width, const uint32_t height, const uint32_t depth) {
+    return 1 + std::floor(std::log2(std::max(std::max(width, height), depth)));
+}
