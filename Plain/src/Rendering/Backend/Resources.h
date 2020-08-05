@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 #include "VertexInput.h"
 #include "Rendering/ResourceDescriptions.h"
+#include "VulkanAllocation.h"
 
 /*
 shader bindings
@@ -39,6 +40,7 @@ struct Image {
     ImageDescription desc;
 
     bool isSwapchainImage = false;
+    VulkanAllocation memory;
 };
 
 /*
@@ -46,8 +48,8 @@ buffer
 */
 struct Buffer {
     VkBuffer        vulkanHandle;
-    //VkDeviceMemory  memory;
     VkDeviceSize    size;
+    VulkanAllocation memory;
 };
 
 /*

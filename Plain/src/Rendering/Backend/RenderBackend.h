@@ -6,27 +6,10 @@
 #include "Rendering/ResourceDescriptions.h"
 #include "Resources.h"
 #include "Rendering/MeshDataInternal.h"
+#include "VulkanContext.h"
+#include "VkMemoryAllocator.h"
 
 struct GLFWwindow;
-
-struct QueueFamilies {
-    uint32_t graphicsQueueIndex;
-    uint32_t presentationQueueIndex;
-    uint32_t computeQueueIndex;
-    uint32_t transferQueueFamilyIndex;
-};
-
-struct RenderContext {
-    VkInstance vulkanInstance = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    VkDevice device = VK_NULL_HANDLE;
-
-    QueueFamilies queueFamilies;
-    VkQueue graphicQueue = VK_NULL_HANDLE;
-    VkQueue presentQueue = VK_NULL_HANDLE;
-    VkQueue computeQueue = VK_NULL_HANDLE;
-    VkQueue transferQueue = VK_NULL_HANDLE;
-};
 
 struct Swapchain {
     VkSurfaceKHR                    surface = VK_NULL_HANDLE;
@@ -170,7 +153,9 @@ public:
     StorageBufferHandle     createStorageBuffer(const BufferDescription& description);
     SamplerHandle           createSampler(const SamplerDescription& description);
 
-    void                    setSwapchainInputImage(ImageHandle image);
+    void setSwapchainInputImage(ImageHandle image);
+
+    void getMemoryStats(uint32_t* outAllocatedSize, uint32_t* outUsedSize);
 
 private:
 
@@ -195,7 +180,6 @@ private:
     context
     =========
     */
-    RenderContext               m_context;
     VkDebugReportCallbackEXT    m_debugCallback = VK_NULL_HANDLE;
 
     /*
@@ -258,6 +242,8 @@ private:
     resources
     =========
     */
+    VkMemoryAllocator m_vkAllocator;
+
     RenderPasses            m_renderPasses;
     std::vector<Image>      m_images;
     std::vector<Mesh>       m_meshes;
@@ -272,14 +258,7 @@ private:
 
     UniformBufferHandle m_globalShaderInfoBuffer;
 
-    //allocates one big chunk of device memory + staging buffer
-    uint32_t findMemoryIndex(const VkMemoryPropertyFlags flags);
-    void allocateMemory();
-    VkDeviceMemory m_deviceMemoryChunk;
-    const VkDeviceSize m_deviceMemoryChunkSize = 5368709120; //5gb
-    VkDeviceSize m_currentDeviceMemoryOffset = 0;
-    VkDeviceSize getDeviceMemoryOffset(const VkMemoryRequirements& requirements);
-
+    //staging buffer
     VkDeviceMemory m_stagingBufferMemory;
     VkDeviceSize m_stagingBufferSize = 1048576; //1mb
     VkBuffer m_stagingBuffer;

@@ -1081,6 +1081,18 @@ drawUi
 void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
     ImGui::Text(("FrameTime: " + std::to_string(m_globalShaderInfo.delteTime * 1000) + "ms").c_str());
+
+    uint32_t allocatedMemorySizeByte;
+    uint32_t usedMemorySizeByte;
+    m_backend.getMemoryStats(&allocatedMemorySizeByte, &usedMemorySizeByte);
+
+    const float byteToMbDivider = 1048576;
+    const float allocatedMemorySizeMegaByte  = allocatedMemorySizeByte   / byteToMbDivider;
+    const float usedMemorySizeMegaByte       = usedMemorySizeByte        / byteToMbDivider;
+
+    ImGui::Text(("Allocated memory: " + std::to_string(allocatedMemorySizeMegaByte) + "mb").c_str());
+    ImGui::Text(("Used memory: " + std::to_string(usedMemorySizeMegaByte) + "mb").c_str());
+
     ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
     ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
     ImGui::DragFloat("Exposure offset EV", &m_globalShaderInfo.exposureOffset, 0.1f);
