@@ -84,19 +84,18 @@ void main(){
     float roughnessTexel = specularTexel.g;
     
 	vec3 albedo = pow(albedoTexel, vec3(2.2f)); //gamma correction
-    
-	//normalTexel = normalTexel * 2.f - 1.f;
+
 	vec3 normalTexelReconstructed = vec3(normalTexel, sqrt(normalTexel.r * normalTexel.r + normalTexel.g * normalTexel.g));
     normalTexelReconstructed = normalTexelReconstructed * 2.f - 1.f;
     
-	float r = roughnessTexel;//// * roughnessTexel; //remapping
+	float r = roughnessTexel;// * roughnessTexel; //remapping
 	r = max(r, 0.045f);
     
 	vec3 N = normalize(passTBN * normalTexelReconstructed);    
 	vec3 L = normalize(g_sunDirection.xyz);
 	vec3 V = normalize(g_cameraPosition.xyz - passPos.xyz);
 	vec3 H = normalize(V + L);
-	vec3 R = reflect(V, N);
+	vec3 R = reflect(-V, N);
 	
 	const float NoH = max(dot(N, H), 0);
 	const float NoL = max(dot(N, L), 0);
@@ -162,7 +161,7 @@ void main(){
         vec3 multiScattering = energyMultiScattering * fresnelMultiScattering;
         
         vec3 energyDiffuseMultiScattering = 1.f - (singleScattering + multiScattering);
-        vec3 diffuseCorrection = (1.f - metalic) * albedo * energyDiffuseMultiScattering * diffuseBRDFIntegral;
+        vec3 diffuseCorrection = diffuseColor * energyDiffuseMultiScattering;
         
         lightingIndirect = singleScattering * environmentSample + (multiScattering + diffuseCorrection) * irradiance;
     }
