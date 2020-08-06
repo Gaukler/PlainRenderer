@@ -77,21 +77,17 @@ float EnergyAverage(float roughness){
 void main(){
 	vec3 albedoTexel 		= texture(sampler2D(colorTexture, 		colorSampler), 		passUV).rgb;
 	vec3 specularTexel 		= texture(sampler2D(specularTexture, 	specularSampler), 	passUV).rgb;
-	vec2 normalTexel 		= texture(sampler2D(normalTexture, 		normalSampler), 	passUV).rg;
-	
+	vec3 normalTexel 		= texture(sampler2D(normalTexture, 		normalSampler), 	passUV).rgb;
+    
     float microAO = specularTexel.r; //not used
     float metalic = specularTexel.b;
-    float roughnessTexel = specularTexel.g;
+    float r = specularTexel.g;
+    r = max(r * r, 0.0045f);
     
 	vec3 albedo = pow(albedoTexel, vec3(2.2f)); //gamma correction
 
-	vec3 normalTexelReconstructed = vec3(normalTexel, sqrt(normalTexel.r * normalTexel.r + normalTexel.g * normalTexel.g));
-    normalTexelReconstructed = normalTexelReconstructed * 2.f - 1.f;
-    
-	float r = roughnessTexel;// * roughnessTexel; //remapping
-	r = max(r, 0.045f);
-    
-	vec3 N = normalize(passTBN * normalTexelReconstructed);    
+    normalTexel = normalTexel * 2.f - 1.f;
+	vec3 N = normalize(passTBN * normalTexel);   
 	vec3 L = normalize(g_sunDirection.xyz);
 	vec3 V = normalize(g_cameraPosition.xyz - passPos.xyz);
 	vec3 H = normalize(V + L);
