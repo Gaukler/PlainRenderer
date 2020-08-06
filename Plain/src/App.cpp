@@ -20,7 +20,7 @@ App::App() {
     m_renderer.setup(m_window);
 
     {
-        std::filesystem::path modelPath = "Models\\DamagedHelmet\\DamagedHelmet.obj";
+        std::filesystem::path modelPath = "Models\\cerberus\\cerberus.obj";
         //std::filesystem::path modelPath = "Models\\Sponza\\Sponza.obj";
         //std::filesystem::path modelPath = "Models\\Bistro\\exterior.obj";
 
