@@ -44,6 +44,6 @@ void main(){
             samplesTaken += 1.f;
         }
 	}
-	color /= samplesTaken * 3.1415; //division by pi because we divide every sample by pdf which is NoL / pi, so we end up with pi * integral
+	color /= samplesTaken; 
 	imageStore(cubeOut, storageCo, vec4(color, 1.f)); 
 }
