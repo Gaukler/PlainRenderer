@@ -159,7 +159,7 @@ void main(){
         vec3 energyDiffuseMultiScattering = 1.f - (singleScattering + multiScattering);
         vec3 diffuseCorrection = diffuseColor * energyDiffuseMultiScattering;
         
-        lightingIndirect = singleScattering * environmentSample + (multiScattering + diffuseCorrection) * irradiance;
+        lightingIndirect = singleScattering * environmentSample + (multiScattering + diffuseCorrection * diffuseBRDFIntegral) * irradiance;
     }
 	
     
