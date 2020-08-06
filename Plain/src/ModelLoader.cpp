@@ -63,7 +63,7 @@ bool loadModel(const std::filesystem::path& filename, std::vector<MeshData>* out
             (*outData)[materialIndex].normals.push_back(glm::vec3(
                 attributes.normals[normalIndex * 3],
                 attributes.normals[normalIndex * 3 + 1],
-                attributes.normals[normalIndex * 3 + 2]));
+                -attributes.normals[normalIndex * 3 + 2]));
 
             (*outData)[materialIndex].uvs.push_back(glm::vec2(
                 attributes.texcoords[uvIndex * 2],
