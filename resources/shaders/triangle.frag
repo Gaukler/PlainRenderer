@@ -138,7 +138,7 @@ void main(){
 	
     //indirect specular
     vec3 lightingIndirect;
-    vec3 environmentSample = textureLod(samplerCube(specularProbe, specularProbeSampler), R, r * 6.f).rgb;
+    vec3 environmentSample = textureLod(samplerCube(specularProbe, specularProbeSampler), R, r * 5.f).rgb;
     vec3 irradiance = texture(samplerCube(diffuseProbe, cubeSampler), N).rgb;
     vec3 fresnelAverage = f0 + (1-f0) / 21.f;
     
