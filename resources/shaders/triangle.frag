@@ -32,7 +32,8 @@ layout(set=2, binding = 5) uniform texture2D specularTexture;
 layout(location = 0) in vec2 passUV;
 layout(location = 1) in vec3 passNormal;
 layout(location = 2) in vec4 passPos;
-layout(location = 3) in mat3 passTBN;
+layout(location = 3) in vec3 passV;
+layout(location = 4) in mat3 passTBN;
 
 layout(location = 0) out vec3 color;
 
@@ -82,6 +83,7 @@ void main(){
     float microAO = specularTexel.r; //not used
     float metalic = specularTexel.b;
     float r = specularTexel.g;
+    
     r = max(r * r, 0.0045f);
     
 	vec3 albedo = pow(albedoTexel, vec3(2.2f)); //gamma correction
@@ -89,7 +91,7 @@ void main(){
     normalTexel = normalTexel * 2.f - 1.f;
 	vec3 N = normalize(passTBN * normalTexel);   
 	vec3 L = normalize(g_sunDirection.xyz);
-	vec3 V = normalize(g_cameraPosition.xyz - passPos.xyz);
+	vec3 V = normalize(passV);
 	vec3 H = normalize(V + L);
 	vec3 R = reflect(-V, N);
 	
