@@ -5,48 +5,6 @@
 VulkanContext vkContext;
 
 /*
-=========
-findMemoryIndex
-=========
-*/
-uint32_t findMemoryIndex(const VkMemoryPropertyFlags flags, const uint32_t memoryTypeBitsRequirement) {
-
-    VkPhysicalDeviceMemoryProperties memoryProperties = {};
-    vkGetPhysicalDeviceMemoryProperties(vkContext.physicalDevice, &memoryProperties);
-
-    const auto findIndex = [&memoryProperties, memoryTypeBitsRequirement](const VkMemoryPropertyFlags flags, uint32_t* outIndex) {
-        for (uint32_t memoryIndex = 0; memoryIndex < memoryProperties.memoryTypeCount; memoryIndex++) {
-            const bool hasRequiredProperties = (flags == 0) || (memoryProperties.memoryTypes[memoryIndex].propertyFlags & flags);
-
-            const uint32_t memoryTypeBits = (1 << memoryIndex);
-            const bool isRequiredMemoryType = memoryTypeBitsRequirement & memoryTypeBits;
-            if (hasRequiredProperties && isRequiredMemoryType) {
-                *outIndex = memoryIndex;
-                return true;
-            }
-        }
-        return false;
-    };
-
-    //first try
-    uint32_t memoryIndex = 0;
-    if (findIndex(flags, &memoryIndex)) {
-        return memoryIndex;
-    }
-    
-    //if device local is a property try finding memory without it
-    //this way it works on machines without dedicated memory, like integrated GPUs
-    if (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
-        const VkMemoryPropertyFlags flagWithoutDeviceLocal = flags & !VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        if (findIndex(flagWithoutDeviceLocal, &memoryIndex)) {
-            return memoryIndex;
-        }
-    }
-
-    throw std::runtime_error("failed to find adequate memory type for allocation");
-}
-
-/*
 ==================
 
 VkMemoryPool
@@ -325,4 +283,46 @@ void VkMemoryAllocator::getMemoryStats(uint32_t* outAllocatedSize, uint32_t* out
             *outUsedSize += pool.getUsedMemorySize();
         }
     }
+}
+
+/*
+=========
+findMemoryIndex
+=========
+*/
+uint32_t VkMemoryAllocator::findMemoryIndex(const VkMemoryPropertyFlags flags, const uint32_t memoryTypeBitsRequirement) {
+
+    VkPhysicalDeviceMemoryProperties memoryProperties = {};
+    vkGetPhysicalDeviceMemoryProperties(vkContext.physicalDevice, &memoryProperties);
+
+    const auto findIndex = [&memoryProperties, memoryTypeBitsRequirement](const VkMemoryPropertyFlags flags, uint32_t* outIndex) {
+        for (uint32_t memoryIndex = 0; memoryIndex < memoryProperties.memoryTypeCount; memoryIndex++) {
+            const bool hasRequiredProperties = (flags == 0) || (memoryProperties.memoryTypes[memoryIndex].propertyFlags & flags);
+
+            const uint32_t memoryTypeBits = (1 << memoryIndex);
+            const bool isRequiredMemoryType = memoryTypeBitsRequirement & memoryTypeBits;
+            if (hasRequiredProperties && isRequiredMemoryType) {
+                *outIndex = memoryIndex;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    //first try
+    uint32_t memoryIndex = 0;
+    if (findIndex(flags, &memoryIndex)) {
+        return memoryIndex;
+    }
+
+    //if device local is a property try finding memory without it
+    //this way it works on machines without dedicated memory, like integrated GPUs
+    if (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+        const VkMemoryPropertyFlags flagWithoutDeviceLocal = flags & !VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        if (findIndex(flagWithoutDeviceLocal, &memoryIndex)) {
+            return memoryIndex;
+        }
+    }
+
+    throw std::runtime_error("failed to find adequate memory type for allocation");
 }
