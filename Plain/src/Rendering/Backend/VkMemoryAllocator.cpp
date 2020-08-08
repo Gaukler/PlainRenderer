@@ -9,28 +9,41 @@ VulkanContext vkContext;
 findMemoryIndex
 =========
 */
-uint32_t findMemoryIndex(const VkMemoryPropertyFlags flags) {
-
-    uint32_t memoryIndex = 0;
-    bool foundMemory = false;
+uint32_t findMemoryIndex(const VkMemoryPropertyFlags flags, const uint32_t memoryTypeBitsRequirement) {
 
     VkPhysicalDeviceMemoryProperties memoryProperties = {};
     vkGetPhysicalDeviceMemoryProperties(vkContext.physicalDevice, &memoryProperties);
 
-    //search for appropriate memory type
-    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
-        if ((flags == 0) || (memoryProperties.memoryTypes[i].propertyFlags & flags)) {
-            memoryIndex = i;
-            foundMemory = true;
-            break;
+    const auto findIndex = [&memoryProperties, memoryTypeBitsRequirement](const VkMemoryPropertyFlags flags, uint32_t* outIndex) {
+        for (uint32_t memoryIndex = 0; memoryIndex < memoryProperties.memoryTypeCount; memoryIndex++) {
+            const bool hasRequiredProperties = (flags == 0) || (memoryProperties.memoryTypes[memoryIndex].propertyFlags & flags);
+
+            const uint32_t memoryTypeBits = (1 << memoryIndex);
+            const bool isRequiredMemoryType = memoryTypeBitsRequirement & memoryTypeBits;
+            if (hasRequiredProperties && isRequiredMemoryType) {
+                *outIndex = memoryIndex;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    //first try
+    uint32_t memoryIndex = 0;
+    if (findIndex(flags, &memoryIndex)) {
+        return memoryIndex;
+    }
+    
+    //if device local is a property try finding memory without it
+    //this way it works on machines without dedicated memory, like integrated GPUs
+    if (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+        const VkMemoryPropertyFlags flagWithoutDeviceLocal = flags & !VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        if (findIndex(flagWithoutDeviceLocal, &memoryIndex)) {
+            return memoryIndex;
         }
     }
 
-    if (!foundMemory) {
-        throw std::runtime_error("failed to find adequate memory type for allocation");
-    }
-
-    return memoryIndex;
+    throw std::runtime_error("failed to find adequate memory type for allocation");
 }
 
 /*
@@ -46,13 +59,13 @@ VkMemoryPool
 create
 =========
 */
-bool VkMemoryPool::create() {
+bool VkMemoryPool::create(const uint32_t memoryIndex) {
     VkMemoryAllocateInfo allocateInfo = {};
     allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocateInfo.pNext = nullptr;
     allocateInfo.allocationSize = m_initialSize;
 
-    allocateInfo.memoryTypeIndex = findMemoryIndex(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    allocateInfo.memoryTypeIndex = memoryIndex;
 
     const auto res = vkAllocateMemory(vkContext.device, &allocateInfo, nullptr, &m_vulkanMemory);
     bool success = res == VK_SUCCESS;
@@ -208,7 +221,7 @@ void VkMemoryPool::free(const VulkanAllocation& allocation) {
 getUsedMemorySize
 =========
 */
-uint32_t VkMemoryPool::getUsedMemorySize() {
+uint32_t VkMemoryPool::getUsedMemorySize() const{
     return m_initialSize - m_freeMemorySize;
 }
 
@@ -217,7 +230,7 @@ uint32_t VkMemoryPool::getUsedMemorySize() {
 getAllocatedMemorySize
 =========
 */
-uint32_t VkMemoryPool::getAllocatedMemorySize() {
+uint32_t VkMemoryPool::getAllocatedMemorySize() const {
     return m_initialSize;
 }
 
@@ -234,11 +247,10 @@ VkMemoryAllocator
 create
 =========
 */
-bool VkMemoryAllocator::create() {
-    VkMemoryPool pool;
-    bool success = pool.create();
-    m_memoryPools.push_back(pool);
-    return success;
+void VkMemoryAllocator::create() {
+    VkPhysicalDeviceMemoryProperties memoryProperties = {};
+    vkGetPhysicalDeviceMemoryProperties(vkContext.physicalDevice, &memoryProperties);
+    m_memoryPoolsPerMemoryIndex.resize(memoryProperties.memoryTypeCount);
 }
 
 /*
@@ -247,8 +259,10 @@ destroy
 =========
 */
 void VkMemoryAllocator::destroy() {
-    for (auto& pool : m_memoryPools) {
-        pool.destroy();
+    for (auto& poolList : m_memoryPoolsPerMemoryIndex) {
+        for (auto& pool : poolList) {
+            pool.destroy();
+        }
     }
 }
 
@@ -257,22 +271,27 @@ void VkMemoryAllocator::destroy() {
 allocate
 =========
 */
-bool VkMemoryAllocator::allocate(const VkDeviceSize size, const VkDeviceSize alignment, VulkanAllocation* outAllocation) {
+bool VkMemoryAllocator::allocate(const VkMemoryRequirements& requirements, const VkMemoryPropertyFlags flags, VulkanAllocation* outAllocation) {
+
+    //find memory index
+    outAllocation->memoryIndex = findMemoryIndex(flags, requirements.memoryTypeBits);
+
     //try to allocate with the existing pools
-    uint32_t i = 0;
-    for (auto& pool : m_memoryPools) {
-        if (pool.allocate(size, alignment, outAllocation)) {
-            outAllocation->poolIndex = i;
+    auto& poolList = m_memoryPoolsPerMemoryIndex[outAllocation->memoryIndex];
+    uint32_t poolIndex = 0;
+    for (auto& pool : poolList) {
+        if (pool.allocate(requirements.size, requirements.alignment, outAllocation)) {
+            outAllocation->poolIndex = poolIndex;
             return true;
         }
-        i++;
+        poolIndex++;
     }
     //try allocation with a new pool
     VkMemoryPool newPool;
-    if (newPool.create()) {
-        m_memoryPools.push_back(newPool);
-        bool success = m_memoryPools.back().allocate(size, alignment, outAllocation);
-        outAllocation->poolIndex = m_memoryPools.size() - 1;
+    if (newPool.create(outAllocation->memoryIndex)) {
+        poolList.push_back(newPool);
+        bool success = poolList.back().allocate(requirements.size, requirements.alignment, outAllocation);
+        outAllocation->poolIndex = poolList.size() - 1;
         return success;
     }
     else {
@@ -286,7 +305,8 @@ free
 =========
 */
 void VkMemoryAllocator::free(const VulkanAllocation& allocation) {
-    m_memoryPools[allocation.poolIndex].free(allocation);
+    auto& poolList = m_memoryPoolsPerMemoryIndex[allocation.memoryIndex];
+    poolList[allocation.poolIndex].free(allocation);
 }
 
 /*
@@ -299,8 +319,10 @@ void VkMemoryAllocator::getMemoryStats(uint32_t* outAllocatedSize, uint32_t* out
     assert(outUsedSize != nullptr);
     *outAllocatedSize = 0;
     *outUsedSize = 0;
-    for (auto& pool : m_memoryPools) {
-        *outAllocatedSize += pool.getAllocatedMemorySize();
-        *outUsedSize += pool.getUsedMemorySize();
+    for (const auto& poolList : m_memoryPoolsPerMemoryIndex) {
+        for (const auto& pool : poolList) {
+            *outAllocatedSize += pool.getAllocatedMemorySize();
+            *outUsedSize += pool.getUsedMemorySize();
+        }
     }
 }

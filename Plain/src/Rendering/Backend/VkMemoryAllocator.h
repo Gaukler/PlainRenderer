@@ -5,7 +5,7 @@
 
 //move into allocator later
 //curently needed from backend because it handles the staging buffer manually
-uint32_t findMemoryIndex(const VkMemoryPropertyFlags flags);
+uint32_t findMemoryIndex(const VkMemoryPropertyFlags flags, const uint32_t memoryTypeBitsRequirement);
 
 //kept internally, forms a linked list
 struct VulkanAllocationInternal {
@@ -24,14 +24,14 @@ when a block is freed the neighbours are checked and merged if possible
 class VkMemoryPool {
 public:
     //must be called before allocation
-    bool create();
+    bool create(const uint32_t memoryIndex);
     void destroy();
 
     bool allocate(const VkDeviceSize size, const VkDeviceSize alignment, VulkanAllocation* outAllocation);
     void free(const VulkanAllocation& allocation);
 
-    uint32_t getUsedMemorySize();
-    uint32_t getAllocatedMemorySize();
+    uint32_t getUsedMemorySize() const;
+    uint32_t getAllocatedMemorySize() const;
 private:
     const VkDeviceSize m_initialSize = 268435456; //256 mb
     VkDeviceSize m_freeMemorySize = m_initialSize;
@@ -46,13 +46,13 @@ for now device local memory only, staging buffer is handled by backend manually
 */
 class VkMemoryAllocator {
 public:
-    bool create();
+    void create();
     void destroy();
 
-    bool allocate(const VkDeviceSize size, const VkDeviceSize alignment, VulkanAllocation* outAllocation);
+    bool allocate(const VkMemoryRequirements& requirements, const VkMemoryPropertyFlags flags, VulkanAllocation* outAllocation);
     void free(const VulkanAllocation& allocation);
 
     void getMemoryStats(uint32_t* outAllocatedSize, uint32_t* outUsedSize);
 private:
-    std::vector<VkMemoryPool> m_memoryPools;
+    std::vector<std::vector<VkMemoryPool>> m_memoryPoolsPerMemoryIndex;
 };

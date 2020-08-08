@@ -274,10 +274,8 @@ private:
     UniformBufferHandle m_globalShaderInfoBuffer;
 
     //staging buffer
-    VkDeviceMemory m_stagingBufferMemory;
     VkDeviceSize m_stagingBufferSize = 1048576; //1mb
-    VkBuffer m_stagingBuffer;
-    void createStagingBuffer();
+    Buffer m_stagingBuffer;
 
     VkImageView createImageView(const Image image, const VkImageViewType viewType, const uint32_t baseMip, const uint32_t mipLevels, const VkImageAspectFlags aspectMask);
     Buffer      createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);

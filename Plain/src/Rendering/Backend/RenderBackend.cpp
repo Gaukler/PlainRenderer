@@ -265,12 +265,16 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_renderFinishedSemaphore = createSemaphore();
     m_renderFinishedFence = createFence();
 
-    if (!m_vkAllocator.create()) {
-        throw("Could not create vulkan memory allocator");
+    m_vkAllocator.create();
+
+    //staging buffer
+    {
+        const auto stagingBufferUsageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        const auto stagingBufferMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        const std::vector<uint32_t> stagingBufferQueueFamilies = { vkContext.queueFamilies.transferQueueFamilyIndex };
+        m_stagingBuffer = createBufferInternal(m_stagingBufferSize, stagingBufferQueueFamilies, stagingBufferUsageFlags, stagingBufferMemoryFlags);
     }
-
-    createStagingBuffer();
-
+    
     /*
     create common descriptor set layouts
     */
@@ -376,10 +380,7 @@ void RenderBackend::teardown() {
     vkDestroyRenderPass(vkContext.device, m_ui.renderPass, nullptr);
     ImGui_ImplVulkan_Shutdown();
 
-    //destroy staging buffer
-    vkDestroyBuffer(vkContext.device, m_stagingBuffer, nullptr);
-
-    vkFreeMemory(vkContext.device, m_stagingBufferMemory, nullptr);
+    destroyBuffer(m_stagingBuffer);
 
     for (const auto& pool : m_descriptorPools) {
         vkDestroyDescriptorPool(vkContext.device, pool.vkPool, nullptr);
@@ -934,7 +935,8 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
     //bind memory
     VkMemoryRequirements memoryRequirements;
     vkGetImageMemoryRequirements(vkContext.device, image.vulkanHandle, &memoryRequirements);
-    if (!m_vkAllocator.allocate(memoryRequirements.size, memoryRequirements.alignment, &image.memory)) {
+    const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &image.memory)) {
         throw("Could not allocate image memory");
     }
     vkBindImageMemory(vkContext.device, image.vulkanHandle, image.memory.vkMemory, image.memory.offset);
@@ -2306,7 +2308,7 @@ Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::v
     //memory
     VkMemoryRequirements memoryRequirements;
     vkGetBufferMemoryRequirements(vkContext.device, buffer.vulkanHandle, &memoryRequirements);
-    if (!m_vkAllocator.allocate(memoryRequirements.size, memoryRequirements.alignment, &buffer.memory)) {
+    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &buffer.memory)) {
         throw("Could not allocate buffer memory");
     }
     res = vkBindBufferMemory(vkContext.device, buffer.vulkanHandle, buffer.memory.vkMemory, buffer.memory.offset);
@@ -2429,9 +2431,9 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
 
         //copy data to staging buffer
         void* mappedData;
-        vkMapMemory(vkContext.device, m_stagingBufferMemory, 0, copySize, 0, (void**)&mappedData);
+        vkMapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory, 0, copySize, 0, (void**)&mappedData);
         memcpy(mappedData, (char*)data + totalMemoryOffset, copySize);
-        vkUnmapMemory(vkContext.device, m_stagingBufferMemory);
+        vkUnmapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory);
 
         //begin command buffer for copying
         VkCommandBuffer copyBuffer = beginOneTimeUseCommandBuffer();
@@ -2465,7 +2467,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         }
 
         //issue for commands, then wait
-        vkCmdCopyBufferToImage(copyBuffer, m_stagingBuffer, target.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        vkCmdCopyBufferToImage(copyBuffer, m_stagingBuffer.vulkanHandle, target.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         vkEndCommandBuffer(copyBuffer);
         VkFence fence = submitOneTimeUseCmdBuffer(copyBuffer, vkContext.transferQueue);
         vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
@@ -2589,9 +2591,9 @@ void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSi
 
         //copy data to staging buffer
         void* mappedData;
-        vkMapMemory(vkContext.device, m_stagingBufferMemory, 0, copySize, 0, (void**)&mappedData);
+        vkMapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory, 0, copySize, 0, (void**)&mappedData);
         memcpy(mappedData, (char*)data + currentMemoryOffset, copySize);
-        vkUnmapMemory(vkContext.device, m_stagingBufferMemory);
+        vkUnmapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory);
 
         //copy staging buffer to dst
         VkCommandBuffer copyCmdBuffer = beginOneTimeUseCommandBuffer();
@@ -2601,7 +2603,7 @@ void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSi
         region.srcOffset = 0;
         region.dstOffset = currentMemoryOffset;
         region.size = copySize;
-        vkCmdCopyBuffer(copyCmdBuffer, m_stagingBuffer, target.vulkanHandle, 1, &region);
+        vkCmdCopyBuffer(copyCmdBuffer, m_stagingBuffer.vulkanHandle, target.vulkanHandle, 1, &region);
         vkEndCommandBuffer(copyCmdBuffer);       
 
         //submit and wait
@@ -2612,41 +2614,6 @@ void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSi
         vkDestroyFence(vkContext.device, fence, nullptr);
         vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &copyCmdBuffer);
     }
-}
-
-/*
-=========
-createStagingBuffer
-=========
-*/
-void RenderBackend::createStagingBuffer() {
-
-    VkMemoryAllocateInfo allocateInfo = {};
-    allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocateInfo.pNext = nullptr;
-    allocateInfo.allocationSize = m_stagingBufferSize;
-
-    allocateInfo.memoryTypeIndex = findMemoryIndex(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    auto res = vkAllocateMemory(vkContext.device, &allocateInfo, nullptr, &m_stagingBufferMemory);
-    assert(res == VK_SUCCESS);
-
-    VkBufferCreateInfo bufferInfo = {};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.pNext = nullptr;
-    bufferInfo.flags = 0;
-    bufferInfo.size = m_stagingBufferSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    bufferInfo.queueFamilyIndexCount = 1;
-    bufferInfo.pQueueFamilyIndices = &vkContext.queueFamilies.transferQueueFamilyIndex;
-
-    res = vkCreateBuffer(vkContext.device, &bufferInfo, nullptr, &m_stagingBuffer);
-    assert(res == VK_SUCCESS);
-
-    //memory
-    res = vkBindBufferMemory(vkContext.device, m_stagingBuffer, m_stagingBufferMemory, 0);
-    assert(res == VK_SUCCESS);
 }
 
 /*
