@@ -580,6 +580,7 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
     m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(indirectMultiscatterBRDFDefaultSelection);
 
     GraphicPassDescription mainPassDesc;
+    mainPassDesc.name = "Forward shading";
     mainPassDesc.shaderDescriptions = m_mainPassShaderConfig;
     mainPassDesc.attachments = { colorAttachment, depthAttachment };
     mainPassDesc.depthTest.function = DepthFunction::LessEqual;
@@ -637,6 +638,7 @@ void RenderFrontend::createShadowPass() {
         AttachmentLoadOp::Clear);
 
     GraphicPassDescription shadowPassConfig;
+    shadowPassConfig.name = "Shadow map";
     shadowPassConfig.attachments = { shadowMapAttachment };
     shadowPassConfig.shaderDescriptions.vertex.srcPathRelative   = "shadow.vert";
     shadowPassConfig.shaderDescriptions.fragment.srcPathRelative = "shadow.frag";
@@ -656,10 +658,12 @@ createSkyTexturePreparationPasses
 void RenderFrontend::createSkyTexturePreparationPasses() {
 
     ComputePassDescription cubeWriteDesc;
+    cubeWriteDesc.name = "Copy sky to cubemap";
     cubeWriteDesc.shaderDescription.srcPathRelative = "copyToCube.comp";
     m_toCubemapPass = m_backend.createComputePass(cubeWriteDesc);
 
     ComputePassDescription cubemapMipPassDesc;
+    cubemapMipPassDesc.name = "Sky mip creation";
     cubemapMipPassDesc.shaderDescription.srcPathRelative = "cubemapMip.comp";
     /*
     first map is written to by different shader
@@ -687,6 +691,7 @@ void RenderFrontend::createSpecularConvolutionPass() {
 
     for (uint32_t i = 0; i < m_specularProbeMipCount; i++) {
         ComputePassDescription specularConvolutionDesc;
+        specularConvolutionDesc.name = "Specular probe convolution";
         specularConvolutionDesc.shaderDescription.srcPathRelative = "specularCubeConvolution.comp";
         m_specularConvolutionPerMipPasses.push_back(m_backend.createComputePass(specularConvolutionDesc));
     }
@@ -712,6 +717,7 @@ createDiffuseConvolutionPass
 */
 void RenderFrontend::createDiffuseConvolutionPass() {
     ComputePassDescription diffuseConvolutionDesc;
+    diffuseConvolutionDesc.name = "Diffuse probe convolution";
     diffuseConvolutionDesc.shaderDescription.srcPathRelative = "diffuseCubeConvolution.comp";
     m_diffuseConvolutionPass = m_backend.createComputePass(diffuseConvolutionDesc);
 
@@ -752,6 +758,7 @@ void RenderFrontend::createSkyPass() {
     const auto depthAttachment = Attachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Load);
 
     GraphicPassDescription skyPassConfig;
+    skyPassConfig.name = "Skybox render";
     skyPassConfig.attachments = { colorAttachment, depthAttachment };
     skyPassConfig.shaderDescriptions.vertex.srcPathRelative   = "sky.vert";
     skyPassConfig.shaderDescriptions.fragment.srcPathRelative = "sky.frag";
@@ -777,6 +784,7 @@ void RenderFrontend::createBRDFLutPreparationPass() {
     m_brdfLutPassShaderConfig.specialisationConstants.values.push_back(m_diffuseBRDFDefaultSelection);
 
     ComputePassDescription brdfLutPassDesc;
+    brdfLutPassDesc.name = "BRDF Lut creation";
     brdfLutPassDesc.shaderDescription = m_brdfLutPassShaderConfig;
     m_brdfLutPass = m_backend.createComputePass(brdfLutPassDesc);
 
@@ -846,6 +854,7 @@ void RenderFrontend::createHistogramPasses() {
 
     {
         ComputePassDescription histogramPerTileDesc;
+        histogramPerTileDesc.name = "Histogram per tile";
         histogramPerTileDesc.shaderDescription.srcPathRelative = "histogramPerTile.comp";
 
         const uint32_t maxTilesSpecialisationConstantID = 4;
@@ -867,6 +876,7 @@ void RenderFrontend::createHistogramPasses() {
 
     {
         ComputePassDescription resetDesc;
+        resetDesc.name = "Histogram reset";
         resetDesc.shaderDescription.srcPathRelative = "histogramReset.comp";
         resetDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
         resetDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
@@ -877,6 +887,7 @@ void RenderFrontend::createHistogramPasses() {
         const uint32_t maxTilesSpecialisationConstantID = 1;
 
         ComputePassDescription histogramCombineDesc;
+        histogramCombineDesc.name = "Histogram combine tiles";
         histogramCombineDesc.shaderDescription.srcPathRelative = "histogramCombineTiles.comp";
 
         histogramCombineDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
@@ -890,6 +901,7 @@ void RenderFrontend::createHistogramPasses() {
 
     {
         ComputePassDescription preExposeLightsDesc;
+        preExposeLightsDesc.name = "Pre-expose lights";
         preExposeLightsDesc.shaderDescription.srcPathRelative = "preExposeLights.comp";
 
         preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);

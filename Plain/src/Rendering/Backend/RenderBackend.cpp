@@ -311,6 +311,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     create swapchain copy pass
     */
     ComputePassDescription copyPass;
+    copyPass.name = "Copy image to swapchain";
     copyPass.shaderDescription.srcPathRelative = "imageCopy.comp";
     m_swapchain.copyToSwapchainPass = createComputePass(copyPass);
 }
@@ -702,34 +703,15 @@ void RenderBackend::renderFrame() {
 
     vkResetCommandBuffer(currentCommandBuffer, 0);
     vkBeginCommandBuffer(currentCommandBuffer, &beginInfo);
-   
-    const VkDebugUtilsLabelEXT mainLabel =
-    {
-        VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-        nullptr,
-        "Scene",
-        { 1.0f, 1.0f, 1.0f, 1.0f },
-    };
-    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT(currentCommandBuffer, &mainLabel);
 
     for (const auto& execution : m_renderPassInternalExecutions) {
         submitRenderPass(execution, currentCommandBuffer);
     }
 
-    m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT(currentCommandBuffer);
-
     /*
     imgui
     */
-    const VkDebugUtilsLabelEXT uiLabel =
-    {
-        VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-        nullptr,
-        "IMGui",
-        { 1.0f, 1.0f, 1.0f, 1.0f },
-    };
-    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT(currentCommandBuffer, &uiLabel);
-
+    startDebugLabel(currentCommandBuffer, "ImGui");
     ImGui::Render();
 
     vkCmdPipelineBarrier(currentCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
@@ -738,7 +720,8 @@ void RenderBackend::renderFrame() {
     vkCmdBeginRenderPass(currentCommandBuffer, &m_ui.passBeginInfos[imageIndex], VK_SUBPASS_CONTENTS_INLINE);
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentCommandBuffer);
     vkCmdEndRenderPass(currentCommandBuffer);
-    m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT(currentCommandBuffer);
+
+    endDebugLabel(currentCommandBuffer);
 
     /*
     transition swapchain image to present
@@ -1343,6 +1326,7 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
     if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
 
         auto& pass = m_renderPasses.getGraphicPassRefByHandle(execution.handle);
+        startDebugLabel(commandBuffer, pass.graphicPassDesc.name);
 
         /*
         update pointer: might become invalid if pass vector was changed
@@ -1379,14 +1363,17 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
             vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, 0, 0, 0);
         }
         vkCmdEndRenderPass(commandBuffer);
+        endDebugLabel(commandBuffer);
     }
     else {
         auto& pass = m_renderPasses.getComputePassRefByHandle(execution.handle);
+        startDebugLabel(commandBuffer, pass.computePassDesc.name);
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
         VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet };
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 2, sets, 0, nullptr);
         vkCmdDispatch(commandBuffer, execution.dispatches[0], execution.dispatches[1], execution.dispatches[2]);
+        endDebugLabel(commandBuffer);
     }
 }
 
@@ -2755,6 +2742,32 @@ VkFence RenderBackend::submitOneTimeUseCmdBuffer(VkCommandBuffer cmdBuffer, VkQu
 
     return fence;
 }
+
+/*
+=========
+SubmitOneTimeUseCmdBuffer
+=========
+*/
+void RenderBackend::startDebugLabel(const VkCommandBuffer cmdBuffer, const std::string& name) {
+    const VkDebugUtilsLabelEXT uiLabel =
+    {
+        VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+        nullptr,
+        name.c_str(),
+        { 1.0f, 1.0f, 1.0f, 1.0f },
+    };
+    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT(cmdBuffer, &uiLabel);
+}
+
+/*
+=========
+endDebugLabel
+=========
+*/
+void RenderBackend::endDebugLabel(const VkCommandBuffer cmdBuffer) {
+    m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT(cmdBuffer);
+}
+
 
 /*
 ==================

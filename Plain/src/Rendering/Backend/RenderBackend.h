@@ -314,6 +314,8 @@ private:
     */
     VkFence submitOneTimeUseCmdBuffer(VkCommandBuffer cmdBuffer, VkQueue queue);
 
+    void startDebugLabel(const VkCommandBuffer cmdBuffer, const std::string& name);
+    void endDebugLabel(const VkCommandBuffer cmdBuffer);
 
     /*
     =========

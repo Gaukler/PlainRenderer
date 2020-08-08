@@ -156,10 +156,13 @@ struct GraphicPassDescription {
     RasterizationConfig     rasterization;
     BlendState              blending;
     DepthTest               depthTest;
+
+    std::string name; //used for debug labels
 };
 
 struct ComputePassDescription {
     ShaderDescription shaderDescription;
+    std::string name; //used for debug labels
 };
 
 /*
