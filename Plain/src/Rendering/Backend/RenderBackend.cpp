@@ -2794,6 +2794,7 @@ createImguiDescriptorPool
 =========
 */
 void RenderBackend::createImguiDescriptorPool() {
+    //taken from imgui vulkan example, could not find any info if imgui can work with less allocations
     VkDescriptorPoolSize pool_sizes[] =
     {
         { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
