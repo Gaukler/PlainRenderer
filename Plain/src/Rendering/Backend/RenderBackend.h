@@ -8,6 +8,7 @@
 #include "Rendering/MeshDataInternal.h"
 #include "VulkanContext.h"
 #include "VkMemoryAllocator.h"
+#include "Rendering/Backend/SpirvReflection.h"
 
 struct GLFWwindow;
 
@@ -47,6 +48,20 @@ struct VulkanDebugUtilsFunctions {
     PFN_vkSetDebugUtilsObjectNameEXT    vkSetDebugUtilsObjectNameEXT;
     PFN_vkSetDebugUtilsObjectTagEXT     vkSetDebugUtilsObjectTagEXT;
     PFN_vkSubmitDebugUtilsMessageEXT    vkSubmitDebugUtilsMessageEXT;
+};
+
+struct DescriptorPoolAllocationSizes {
+    uint32_t setCount       = 0;
+    uint32_t imageSampled   = 0;
+    uint32_t imageStorage   = 0;
+    uint32_t uniformBuffer  = 0;
+    uint32_t storageBuffer  = 0;
+    uint32_t sampler        = 0;
+};
+
+struct DescriptorPool {
+    VkDescriptorPool vkPool;
+    DescriptorPoolAllocationSizes freeAllocations;
 };
 
 /*
@@ -324,14 +339,36 @@ private:
     */
     VkDescriptorSet m_globalDescriptorSet;     
 
-    /*
-    FIXME make sure desciptor pool doesn't run out of allocations
-    */
-    VkDescriptorPool        m_descriptorPool;
-    VkDescriptorSetLayout   m_globalDescriptorSetLayout;    //contains global info, always bound to set 0
+    //discriptor pools are added as existing ones run out
+    std::vector<DescriptorPool> m_descriptorPools;
 
-    VkDescriptorPool        createDescriptorPool(const uint32_t maxSets);
-    VkDescriptorSet         allocateDescriptorSet(const VkDescriptorSetLayout setLayout);
+    //the imgui pool is just passed to the library, no need for allocation counting
+    VkDescriptorPool m_imguiDescriptorPool;
+
+    //imgui requires a single sizeable pool, so it's handled separately
+    void createImguiDescriptorPool();
+
+    //create pool using m_descriptorPoolInitialAllocationSizes and add to m_descriptorPools
+    void createDescriptorPool();
+
+    //how many types of descriptors are allocated from a new pool
+    const DescriptorPoolAllocationSizes m_descriptorPoolInitialAllocationSizes = {
+        128, //set count
+        128, //imageSampled
+        128, //imageStorage
+        128, //uniformBuffer
+        128, //storageBuffer
+        128  //sampler
+    };    
+
+    VkDescriptorSetLayout m_globalDescriptorSetLayout;    //contains global info, always bound to set 0
+
+    DescriptorPoolAllocationSizes descriptorSetAllocationSizeFromShaderReflection(const ShaderReflection& reflection);
+    DescriptorPoolAllocationSizes descriptorSetAllocationSizeFromMaterialFlags(const MaterialFeatureFlags& flags);
+
+    //creates new descriptor pool if needed
+    //currently now way to free descriptor set
+    VkDescriptorSet         allocateDescriptorSet(const VkDescriptorSetLayout setLayout, const DescriptorPoolAllocationSizes& requiredSizes);
     void                    updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources);
     VkDescriptorSetLayout   createDescriptorSetLayout(const ShaderLayout& shaderLayout);
 

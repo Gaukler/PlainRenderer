@@ -260,7 +260,6 @@ void RenderBackend::setup(GLFWwindow* window) {
 
     m_commandPool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     m_transientCommandPool = createCommandPool(vkContext.queueFamilies.transferQueueFamilyIndex, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
-    m_descriptorPool = createDescriptorPool(10000); //fixme make dynamic
 
     m_swapchain.imageAvaible = createSemaphore();
     m_renderFinishedSemaphore = createSemaphore();
@@ -296,11 +295,17 @@ void RenderBackend::setup(GLFWwindow* window) {
     /*
     create global info descriptor set
     */
-    RenderPassResources globalResources;
-    UniformBufferResource globalBufferResource(m_globalShaderInfoBuffer, true, 0);
-    globalResources.uniformBuffers.push_back(globalBufferResource);
-    m_globalDescriptorSet = allocateDescriptorSet(m_globalDescriptorSetLayout);
-    updateDescriptorSet(m_globalDescriptorSet, globalResources);
+    {
+        RenderPassResources globalResources;
+        UniformBufferResource globalBufferResource(m_globalShaderInfoBuffer, true, 0);
+        globalResources.uniformBuffers.push_back(globalBufferResource);
+
+        DescriptorPoolAllocationSizes globalDescriptorSetSizes;
+        globalDescriptorSetSizes.uniformBuffer = 1;
+
+        m_globalDescriptorSet = allocateDescriptorSet(m_globalDescriptorSetLayout, globalDescriptorSetSizes);
+        updateDescriptorSet(m_globalDescriptorSet, globalResources);
+    }
 
     /*
     imgui
@@ -376,7 +381,11 @@ void RenderBackend::teardown() {
 
     vkFreeMemory(vkContext.device, m_stagingBufferMemory, nullptr);
 
-    vkDestroyDescriptorPool(vkContext.device, m_descriptorPool, nullptr);
+    for (const auto& pool : m_descriptorPools) {
+        vkDestroyDescriptorPool(vkContext.device, pool.vkPool, nullptr);
+    }
+    vkDestroyDescriptorPool(vkContext.device, m_imguiDescriptorPool, nullptr);
+
     vkDestroyDescriptorSetLayout(vkContext.device, m_globalDescriptorSetLayout, nullptr);
 
     vkDestroyCommandPool(vkContext.device, m_commandPool, nullptr);
@@ -1893,6 +1902,7 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
         AttachmentLoadOp::Load);
 
     m_ui.renderPass = createVulkanRenderPass(std::vector<Attachment> {colorBuffer});
+    createImguiDescriptorPool();
 
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = vkContext.vulkanInstance;
@@ -1901,7 +1911,7 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
     init_info.QueueFamily = vkContext.queueFamilies.graphicsQueueIndex;
     init_info.Queue = vkContext.graphicQueue;
     init_info.PipelineCache = VK_NULL_HANDLE;
-    init_info.DescriptorPool = m_descriptorPool;
+    init_info.DescriptorPool = m_imguiDescriptorPool;
     init_info.Allocator = nullptr;
     init_info.MinImageCount = m_swapchain.minImageCount;
     init_info.ImageCount = m_swapchain.imageHandles.size();
@@ -2238,7 +2248,8 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
         }
         MeshMaterial material;
         material.flags = pass.materialFeatures;
-        material.descriptorSet = allocateDescriptorSet(pass.materialSetLayout);
+        const auto setSizes = descriptorSetAllocationSizeFromMaterialFlags(pass.materialFeatures);
+        material.descriptorSet = allocateDescriptorSet(pass.materialSetLayout, setSizes);
         updateDescriptorSet(material.descriptorSet, resources);
 
         mesh.materials.push_back(material);
@@ -2779,29 +2790,118 @@ descriptors and layouts
 
 /*
 =========
+createImguiDescriptorPool
+=========
+*/
+void RenderBackend::createImguiDescriptorPool() {
+    VkDescriptorPoolSize pool_sizes[] =
+    {
+        { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+        { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
+    };
+    VkDescriptorPoolCreateInfo pool_info = {};
+    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    pool_info.maxSets = 1000 * IM_ARRAYSIZE(pool_sizes);
+    pool_info.poolSizeCount = (uint32_t)IM_ARRAYSIZE(pool_sizes);
+    pool_info.pPoolSizes = pool_sizes;
+    auto res = vkCreateDescriptorPool(vkContext.device, &pool_info, nullptr, &m_imguiDescriptorPool);
+    assert(res == VK_SUCCESS);
+}
+
+/*
+=========
 createDescriptorPool
 =========
 */
-VkDescriptorPool RenderBackend::createDescriptorPool(const uint32_t maxSets) {
+void RenderBackend::createDescriptorPool() {
+
+    const auto& initialSizes = m_descriptorPoolInitialAllocationSizes;
+
+    const uint32_t typeCount = 5;
 
     VkDescriptorPoolCreateInfo poolInfo;
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.pNext = nullptr;
     poolInfo.flags = 0;
-    poolInfo.maxSets = maxSets;
-    poolInfo.poolSizeCount = 1;
+    poolInfo.maxSets = m_descriptorPoolInitialAllocationSizes.setCount;
+    poolInfo.poolSizeCount = typeCount;
 
-    VkDescriptorPoolSize poolSize;
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = maxSets;
+    VkDescriptorPoolSize poolSize[typeCount];
+    poolSize[0].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    poolSize[0].descriptorCount = initialSizes.imageSampled;
 
-    poolInfo.pPoolSizes = &poolSize;
+    poolSize[1].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    poolSize[1].descriptorCount = initialSizes.imageStorage;
 
-    VkDescriptorPool pool;
-    auto res = vkCreateDescriptorPool(vkContext.device, &poolInfo, nullptr, &pool);
+    poolSize[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSize[2].descriptorCount = initialSizes.uniformBuffer;
+
+    poolSize[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSize[3].descriptorCount = initialSizes.storageBuffer;
+
+    poolSize[4].type = VK_DESCRIPTOR_TYPE_SAMPLER;
+    poolSize[4].descriptorCount = initialSizes.sampler;
+
+    poolInfo.pPoolSizes = poolSize;
+
+    DescriptorPool pool;
+    pool.freeAllocations = initialSizes;
+    auto res = vkCreateDescriptorPool(vkContext.device, &poolInfo, nullptr, &pool.vkPool);
     assert(res == VK_SUCCESS);
+    
+    m_descriptorPools.push_back(pool);
+}
 
-    return pool;
+/*
+=========
+descriptorSetAllocationSizeFromShaderReflection
+=========
+*/
+DescriptorPoolAllocationSizes RenderBackend::descriptorSetAllocationSizeFromShaderReflection(const ShaderReflection& reflection) {
+    DescriptorPoolAllocationSizes sizes;
+    sizes.setCount = 1;
+    const auto& shaderLayout = reflection.shaderLayout;
+    sizes.imageSampled = shaderLayout.sampledImageBindings.size();
+    sizes.imageStorage = shaderLayout.storageImageBindings.size();
+    sizes.storageBuffer = shaderLayout.storageBufferBindings.size();
+    sizes.uniformBuffer = shaderLayout.uniformBufferBindings.size();
+    sizes.sampler = shaderLayout.samplerBindings.size();
+    return sizes;
+}
+
+/*
+=========
+descriptorSetAllocationSizeFromMaterialFlags
+=========
+*/
+DescriptorPoolAllocationSizes RenderBackend::descriptorSetAllocationSizeFromMaterialFlags(const MaterialFeatureFlags& flags) {
+    
+    DescriptorPoolAllocationSizes sizes;
+    sizes.setCount = 1;
+
+    const MaterialFeatureFlags materialFlagsBits[] = {
+        MaterialFeatureFlags::MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE,
+        MaterialFeatureFlags::MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE,
+        MaterialFeatureFlags::MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE
+    };
+    for (const MaterialFeatureFlags feature : materialFlagsBits) {
+        if (flags & feature) {
+            //every material flag corresponds to a sampled texture and it's sampler
+            sizes.imageSampled += 1;
+            sizes.sampler += 1;
+        }
+    }
+    return sizes;
 }
 
 /*
@@ -2809,14 +2909,50 @@ VkDescriptorPool RenderBackend::createDescriptorPool(const uint32_t maxSets) {
 allocateDescriptorSet
 =========
 */
-VkDescriptorSet RenderBackend::allocateDescriptorSet(const VkDescriptorSetLayout setLayout) {
+VkDescriptorSet RenderBackend::allocateDescriptorSet(const VkDescriptorSetLayout setLayout, const DescriptorPoolAllocationSizes& requiredSizes) {
 
     VkDescriptorSetAllocateInfo setInfo;
     setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     setInfo.pNext = nullptr;
-    setInfo.descriptorPool = m_descriptorPool;
+    setInfo.descriptorPool = VK_NULL_HANDLE;
     setInfo.descriptorSetCount = 1;
     setInfo.pSetLayouts = &setLayout;
+
+    //find descriptor pool with enough free allocations
+    const auto hasPoolEnoughFreeAllocations = [](const DescriptorPool& pool, const DescriptorPoolAllocationSizes& requiredSizes) {
+        return
+            pool.freeAllocations.setCount       >= requiredSizes.setCount &&
+            pool.freeAllocations.imageSampled   >= requiredSizes.imageSampled &&
+            pool.freeAllocations.imageStorage   >= requiredSizes.imageStorage &&
+            pool.freeAllocations.storageBuffer  >= requiredSizes.storageBuffer &&
+            pool.freeAllocations.uniformBuffer  >= requiredSizes.uniformBuffer &&
+            pool.freeAllocations.sampler        >= requiredSizes.sampler;
+    };
+
+    //returns size of first - second
+    const auto subtractDescriptorPoolSizes = [](const DescriptorPoolAllocationSizes & first, const DescriptorPoolAllocationSizes & second) {
+        DescriptorPoolAllocationSizes result;
+        result.setCount         = first.setCount        - second.setCount;
+        result.imageSampled     = first.imageSampled    - second.imageSampled;
+        result.imageStorage     = first.imageStorage    - second.imageStorage;
+        result.storageBuffer    = first.storageBuffer   - second.storageBuffer;
+        result.uniformBuffer    = first.uniformBuffer   - second.uniformBuffer;
+        result.sampler          = first.sampler         - second.sampler;
+        return result;
+    };
+
+    for (auto& pool : m_descriptorPools) {
+        if (hasPoolEnoughFreeAllocations(pool, requiredSizes)) {
+            setInfo.descriptorPool = pool.vkPool;
+            pool.freeAllocations = subtractDescriptorPoolSizes(pool.freeAllocations, requiredSizes);
+        }
+    }
+
+    //if none has been found allocate a new pool
+    if (setInfo.descriptorPool == VK_NULL_HANDLE) {
+        createDescriptorPool();
+        setInfo.descriptorPool = m_descriptorPools.back().vkPool;
+    }
 
     VkDescriptorSet descriptorSet;
     vkAllocateDescriptorSets(vkContext.device, &setInfo, &descriptorSet);
@@ -3056,7 +3192,8 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     /*
     descriptor set
     */
-    pass.descriptorSet = allocateDescriptorSet(pass.descriptorSetLayout);
+    const auto setSizes = descriptorSetAllocationSizeFromShaderReflection(reflection);
+    pass.descriptorSet = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
 
     return pass;
 }
@@ -3361,7 +3498,8 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     /*
     descriptor set
     */
-    pass.descriptorSet = allocateDescriptorSet(pass.descriptorSetLayout);
+    const auto setSizes = descriptorSetAllocationSizeFromShaderReflection(reflection);
+    pass.descriptorSet = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
 
     return pass;
 }
