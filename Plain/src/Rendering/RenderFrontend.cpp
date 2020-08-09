@@ -4,6 +4,7 @@
 #include <imgui/imgui.h>
 #include <Utilities/MathUtils.h>
 #include "Utilities/Timer.h"
+#include "ViewFrustum.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -349,8 +350,15 @@ void RenderFrontend::renderFrame() {
         m_backend.setRenderPassExecution(mainPassExecution);
     }
 
-    //update and render debug geometry
-    bool debugPassDrawn = false;
+    bool drawDebugPass = false;
+
+    //update view frustum debug model
+    if (m_freezeAndDrawCameraFrustum) {
+        m_backend.drawDynamicMeshes({ m_cameraFrustumModel }, { glm::mat4(1.f) }, { m_debugGeoPass });
+        drawDebugPass = true;
+    }
+
+    //update bounding box debug models
     if(m_drawBBs && m_bbsToDebugDraw.size() > 0) {
         std::vector<std::vector<glm::vec3>> positionsPerMesh;
         positionsPerMesh.reserve(m_bbDebugMeshes.size());
@@ -362,11 +370,15 @@ void RenderFrontend::renderFrame() {
         m_backend.updateDynamicMeshes(m_bbDebugMeshes, positionsPerMesh);
         m_backend.drawDynamicMeshes(m_bbDebugMeshes, std::vector<glm::mat4> (m_bbDebugMeshes.size(), glm::mat4(1.f)), {m_debugGeoPass});
 
+        drawDebugPass = true;
+    }
+
+    //debug pass
+    if (drawDebugPass) {
         RenderPassExecution debugPassExecution;
         debugPassExecution.handle = m_debugGeoPass;
         debugPassExecution.parents = { m_mainPass };
         m_backend.setRenderPassExecution(debugPassExecution);
-        debugPassDrawn = true;
     }
 
     /*
@@ -386,7 +398,7 @@ void RenderFrontend::renderFrame() {
         if (m_firstFrame) {
             skyPassExecution.parents.push_back(m_toCubemapPass);
         }
-        if (debugPassDrawn) {
+        if (drawDebugPass) {
             skyPassExecution.parents.push_back(m_debugGeoPass);
         }
         m_backend.setRenderPassExecution(skyPassExecution);
@@ -865,7 +877,7 @@ createDebugGeoPass
 =========
 */
 void RenderFrontend::createDebugGeoPass() {
-
+    //render pass
     const auto colorAttachment = Attachment(m_colorBuffer, 0, 0, AttachmentLoadOp::Load);
     const auto depthAttachment = Attachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Load);
 
@@ -881,6 +893,9 @@ void RenderFrontend::createDebugGeoPass() {
     debugPassConfig.blending = BlendState::None;
 
     m_debugGeoPass = m_backend.createGraphicPass(debugPassConfig);
+
+    //meshes
+    m_cameraFrustumModel = m_backend.createDynamicMeshes({ 20 }).front();
 }
 
 /*
@@ -1213,6 +1228,12 @@ void RenderFrontend::drawUi() {
         directMultiscatterBRDFOptions, 4);
 
     ImGui::Checkbox("Draw bounding boxes", &m_drawBBs);
+    if (ImGui::Checkbox("Freeze and draw camera frustum", &m_freezeAndDrawCameraFrustum)) {
+        //update frustum model now to keep fixed
+        const auto cameraFrustum = computeViewFrustum(m_camera);
+        const auto frustumPoints = frustumToLineStrip(cameraFrustum);
+        m_backend.updateDynamicMeshes({ m_cameraFrustumModel }, { frustumPoints });
+    }
 
     ImGui::End();
 }

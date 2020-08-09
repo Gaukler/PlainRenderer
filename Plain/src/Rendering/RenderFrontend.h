@@ -43,6 +43,7 @@ private:
     bool m_minimized = false;
     bool m_firstFrame = true;
     bool m_drawBBs = false; //debug rendering of bounding boxes
+    bool m_freezeAndDrawCameraFrustum = false;
 
     //probably not the most efficient way
     //relying on the MeshHandle being indices could break if the backend changes or mesh deletion is added so use map for now
@@ -106,8 +107,9 @@ private:
     SamplerHandle m_lutSampler;
     SamplerHandle m_defaultTexelSampler;
 
-    MeshHandle          m_skyCube;
+    MeshHandle m_skyCube;
 
+    DynamicMeshHandle m_cameraFrustumModel;
     std::vector<DynamicMeshHandle> m_bbDebugMeshes; //bounding box debug mesh
     std::vector<AxisAlignedBoundingBox> m_bbsToDebugDraw; //bounding boxes for debug rendering this frame
 
