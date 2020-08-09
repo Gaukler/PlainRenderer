@@ -3503,6 +3503,9 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     if (desc.rasterization.mode == RasterizationeMode::Line) {
         inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
     }
+    else if (desc.rasterization.mode == RasterizationeMode::Point) {
+        inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+    }
 
     /*
     dynamic state
