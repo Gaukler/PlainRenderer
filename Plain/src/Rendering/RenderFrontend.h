@@ -4,6 +4,7 @@
 #include "Backend/RenderBackend.h"
 #include "RenderHandles.h"
 #include "Camera.h"
+#include "BoundingBox.h"
 
 struct GLFWwindow;
 
@@ -27,43 +28,34 @@ public:
     void renderFrame();
 private:
 
-    /*
-    returns image from file
-    checks a map of all loaded images if it is avaible, returns existing image if possible
-    */
+    //returns image from file
+    //checks a map of all loaded images if it is avaible, returns existing image if possible    
     bool getImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);
     std::map<std::filesystem::path, ImageHandle> m_textureMap;
 
     void firstFramePreparation();
     void computeBRDFLut();
 
-    /*
-    stored for resizing
-    */
-    GLFWwindow* m_window;
+    uint32_t    m_screenWidth;
+    uint32_t    m_screenHeight;
 
+    bool m_didResolutionChange = false;
+    bool m_minimized = false;
     bool m_firstFrame = true;
+    bool m_drawBBs = false; //debug rendering of bounding boxes
 
-    /*
-    backend
-    */
+    //probably not the most efficient way
+    //relying on the MeshHandle being indices could break if the backend changes or mesh deletion is added so use map for now
+    std::unordered_map<MeshHandle, AxisAlignedBoundingBox> m_meshHandleToBoundingBox;
+
+    //stored for resizing
+    GLFWwindow* m_window;
     RenderBackend m_backend;
-
-    /*
-    camera
-    */
-    Camera m_camera;
-
-    /*
-    light and camera values
-    */
-    float m_exposureOffset = 0.f;
-
-    /*
-    resources
-    */
     GlobalShaderInfo m_globalShaderInfo;
 
+    Camera m_camera;    
+    float m_exposureOffset = 0.f;
+    
     /*
     passes
     */
@@ -115,7 +107,9 @@ private:
     SamplerHandle m_defaultTexelSampler;
 
     MeshHandle          m_skyCube;
-    DynamicMeshHandle   m_debugGeo;
+
+    std::vector<DynamicMeshHandle> m_bbDebugMeshes; //bounding box debug mesh
+    std::vector<AxisAlignedBoundingBox> m_bbsToDebugDraw; //bounding boxes for debug rendering this frame
 
     StorageBufferHandle m_histogramPerTileBuffer;
     StorageBufferHandle m_histogramBuffer;
@@ -158,20 +152,10 @@ private:
     ImageHandle m_defaultNormalTexture;
     ImageHandle m_defaultSkyTexture;
 
-    /*
-    sun
-    */
+    //sun
     glm::vec2 m_sunDirection = glm::vec2(-120.f, 150.f);
-
     void updateSun();
 
-    /*
-    ui
-    */
+    //ui    
     void drawUi();
-
-    uint32_t    m_screenWidth;
-    uint32_t    m_screenHeight;
-    bool        m_didResolutionChange = false;
-    bool        m_minimized = false;
 };

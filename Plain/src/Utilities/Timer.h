@@ -8,6 +8,7 @@ public:
 	double getDeltaTime();
 	float getDeltaTimeFloat();
 	double getTime();
+    float getTimeFloat();
 private:
 	Timer();
 	Timer(Timer const&) = delete;

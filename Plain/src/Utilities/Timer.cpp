@@ -35,6 +35,10 @@ double Timer::getTime() {
 	return glfwGetTime();
 }
 
+float Timer::getTimeFloat() {
+    return glfwGetTime();
+}
+
 float Timer::getDeltaTimeFloat() {
 	return m_deltaTimeFloat;
 }

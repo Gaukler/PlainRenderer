@@ -99,6 +99,8 @@ void RenderFrontend::newFrame() {
     m_backend.updateShaderCode();
 
     m_backend.newFrame();
+
+    m_bbsToDebugDraw.clear();
 }
 
 /*
@@ -168,7 +170,22 @@ std::vector<MeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>
         dataInternal.push_back(mesh);
     }
 
-    return m_backend.createMeshes(dataInternal, std::vector<RenderPassHandle> { m_mainPass, m_shadowPass });
+    const auto handles = m_backend.createMeshes(dataInternal, std::vector<RenderPassHandle> { m_mainPass, m_shadowPass });
+
+    //compute and store bounding boxes
+    assert(handles.size() == dataInternal.size());
+    for (uint32_t i = 0; i < handles.size(); i++) {
+        const auto& meshData = dataInternal[i];
+        const auto& handle = handles[i];
+        const auto bb = axisAlignedBoundingBoxFromPositions(meshData.positions);
+        m_meshHandleToBoundingBox[handle] = bb;
+
+        //create debug mesh for rendering
+        const auto debugMesh = m_backend.createDynamicMeshes({ axisAlignedBoundingBoxVerticesPerMesh }).back();
+        m_bbDebugMeshes.push_back(debugMesh);
+    }
+
+    return handles;
 }
 
 /*
@@ -176,8 +193,23 @@ std::vector<MeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>
 issueMeshDraw
 =========
 */
-void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshs, const std::vector<glm::mat4>& modelMatrices) {
-    m_backend.drawMeshes(meshs, modelMatrices, std::vector<RenderPassHandle> { m_mainPass, m_shadowPass });
+void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const std::vector<glm::mat4>& modelMatrices) {
+    if (meshes.size() != modelMatrices.size()) {
+        std::cout << "Error: RenderFrontend::issueMeshDraws mesh and model matrix count do not match\n";
+    }
+    //transform and render bounding boxes
+    if (m_drawBBs) {
+        for (uint32_t i = 0; i < std::min(meshes.size(), modelMatrices.size()); i++) {
+            const auto handle = meshes[i];
+            const auto& bb = m_meshHandleToBoundingBox[handle];
+
+            //must account for transform
+            const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, modelMatrices[i]);
+
+            m_bbsToDebugDraw.push_back(bbTransformed);
+        }
+    }
+    m_backend.drawMeshes(meshes, modelMatrices, std::vector<RenderPassHandle> { m_mainPass, m_shadowPass });
 }
 
 /*
@@ -318,24 +350,23 @@ void RenderFrontend::renderFrame() {
     }
 
     //update and render debug geometry
-    {
-        auto& timer = Timer::getReference();
-        const auto cosT = glm::cos(timer.getTime());
-        const auto sinT = glm::sin(timer.getTime());
-        const auto cosTOffset = glm::cos(timer.getTime() + 3.1415f * 0.5f);
-        const auto sinTOffset = glm::sin(timer.getTime() + 3.1415f * 0.5f);
-        std::vector<glm::vec3> positions = { 
-            glm::vec3(0.f, 0.f, 0.f),
-            glm::vec3(cosT, 0.f, sinT),
-            glm::vec3(cosTOffset, 0.f, sinTOffset),
-            glm::vec3(0.f, 0.f, 0.f) };
-        m_backend.updateDynamicMeshes({ m_debugGeo }, { positions });
-        m_backend.drawDynamicMeshes({ m_debugGeo }, { glm::translate(glm::mat4(1.f), glm::vec3(0.f, sinT, 0.f)) }, {m_debugGeoPass});
+    bool debugPassDrawn = false;
+    if(m_drawBBs && m_bbsToDebugDraw.size() > 0) {
+        std::vector<std::vector<glm::vec3>> positionsPerMesh;
+        positionsPerMesh.reserve(m_bbDebugMeshes.size());
+        for (const auto& bb : m_bbsToDebugDraw) {
+            const auto vertices = axisAlignedBoundingBoxToLineStrip(bb);
+            positionsPerMesh.push_back(vertices);
+        }
+
+        m_backend.updateDynamicMeshes(m_bbDebugMeshes, positionsPerMesh);
+        m_backend.drawDynamicMeshes(m_bbDebugMeshes, std::vector<glm::mat4> (m_bbDebugMeshes.size(), glm::mat4(1.f)), {m_debugGeoPass});
 
         RenderPassExecution debugPassExecution;
         debugPassExecution.handle = m_debugGeoPass;
         debugPassExecution.parents = { m_mainPass };
         m_backend.setRenderPassExecution(debugPassExecution);
+        debugPassDrawn = true;
     }
 
     /*
@@ -351,9 +382,12 @@ void RenderFrontend::renderFrame() {
         skyPassExecution.resources.storageBuffers = { lightBufferResource };
         skyPassExecution.resources.sampledImages = { skyTextureResource };
         skyPassExecution.resources.samplers = { skySamplerResource };
-        skyPassExecution.parents = { m_mainPass, m_debugGeoPass };
+        skyPassExecution.parents = { m_mainPass };
         if (m_firstFrame) {
-            skyPassExecution.parents = { m_mainPass, m_toCubemapPass };
+            skyPassExecution.parents.push_back(m_toCubemapPass);
+        }
+        if (debugPassDrawn) {
+            skyPassExecution.parents.push_back(m_debugGeoPass);
         }
         m_backend.setRenderPassExecution(skyPassExecution);
     }
@@ -847,8 +881,6 @@ void RenderFrontend::createDebugGeoPass() {
     debugPassConfig.blending = BlendState::None;
 
     m_debugGeoPass = m_backend.createGraphicPass(debugPassConfig);
-
-    m_debugGeo = m_backend.createDynamicMeshes(std::vector<uint32_t> {100}).front();
 }
 
 /*
@@ -1179,6 +1211,8 @@ void RenderFrontend::drawUi() {
     m_isMainPassShaderDescriptionStale |= ImGui::Combo("Direct Multiscatter BRDF",
         &m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantDirectMultiscatterBRDFIndex], 
         directMultiscatterBRDFOptions, 4);
+
+    ImGui::Checkbox("Draw bounding boxes", &m_drawBBs);
 
     ImGui::End();
 }
