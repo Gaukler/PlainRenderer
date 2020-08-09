@@ -355,6 +355,9 @@ void RenderBackend::teardown() {
     for (const auto& mesh : m_meshes) {
         destroyMesh(mesh);
     }
+    for (const auto& mesh : m_dynamicMeshes) {
+        destroyDynamicMesh(mesh);
+    }
     for (const auto& buffer : m_uniformBuffers) {
         destroyBuffer(buffer);
     }
@@ -608,15 +611,17 @@ void RenderBackend::setRenderPassExecution(const RenderPassExecution& execution)
 
 /*
 =========
-drawMesh
+drawMeshes
 =========
 */
-void RenderBackend::drawMeshs(const std::vector<MeshHandle> meshHandles, const std::vector<glm::mat4>& modelMatrices, const std::vector<RenderPassHandle>& passes) {
+void RenderBackend::drawMeshes(const std::vector<MeshHandle> handles, const std::vector<glm::mat4>& modelMatrices, 
+    const std::vector<RenderPassHandle>& passes) {
+    if (handles.size() != modelMatrices.size()) {
+        std::cout << "Error: drawMeshes handle and modelMatrix count does not match\n";
+    }
+    for (uint32_t i = 0; i < std::min(handles.size(), modelMatrices.size()); i++) {
 
-    assert(meshHandles.size() == modelMatrices.size());
-    for (uint32_t i = 0; i < meshHandles.size(); i++) {
-
-        const auto meshHandle = meshHandles[i];
+        const auto meshHandle = handles[i];
         const auto mesh = m_meshes[meshHandle];
         MeshRenderCommand command;
         command.indexBuffer = mesh.indexBuffer.vulkanHandle;
@@ -633,10 +638,32 @@ void RenderBackend::drawMeshs(const std::vector<MeshHandle> meshHandles, const s
             }
             for (const auto& vertexBuffer : mesh.vertexBuffers) {
                 if (vertexBuffer.flags == pass.vertexInputFlags) {
-                    command.vertexBuffer = vertexBuffer.vertexBuffer.vulkanHandle;
+                    command.vertexBuffer = vertexBuffer.buffer.vulkanHandle;
                 }
             }
-            pass.currentMeshRenderCommands.push_back(command);
+            pass.meshRenderCommands.push_back(command);
+        }
+    }
+}
+
+void RenderBackend::drawDynamicMeshes(const std::vector<DynamicMeshHandle> handles, 
+    const std::vector<glm::mat4>& modelMatrices, const std::vector<RenderPassHandle>& passes) {
+    if (handles.size() != modelMatrices.size()) {
+        std::cout << "Error: drawMeshes handle and modelMatrix count does not match\n";
+    }
+    for (uint32_t i = 0; i < std::min(handles.size(), modelMatrices.size()); i++) {
+
+        const auto meshHandle = handles[i];
+        const auto mesh = m_dynamicMeshes[meshHandle];
+        DynamicMeshRenderCommand command;
+        command.indexCount = mesh.indexCount;
+        command.modelMatrix = modelMatrices[i];
+        command.vertexBuffer = mesh.vertexBuffer.buffer.vulkanHandle;
+
+        for (const auto& passHandle : passes) {
+            assert(m_renderPasses.isGraphicPassHandle(passHandle));
+            auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+            pass.dynamicMeshRenderCommands.push_back(command);
         }
     }
 }
@@ -771,7 +798,8 @@ void RenderBackend::renderFrame() {
     cleanup
     */
     for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
-        m_renderPasses.getGraphicPassRefByIndex(i).currentMeshRenderCommands.clear();
+        m_renderPasses.getGraphicPassRefByIndex(i).meshRenderCommands.clear();
+        m_renderPasses.getGraphicPassRefByIndex(i).dynamicMeshRenderCommands.clear();
     }
 }
 
@@ -828,6 +856,51 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshDataIn
         handles.push_back(createMeshInternal(data, passes));
     }
     return handles;
+}
+
+/*
+=========
+createDynamicMeshes
+=========
+*/
+std::vector<DynamicMeshHandle> RenderBackend::createDynamicMeshes(const std::vector<uint32_t>& maxPositions) {
+    std::vector<MeshHandle> handles;
+    for (const auto& max : maxPositions) {
+        handles.push_back(createDynamicMeshInternal(max));
+    }
+    return handles;
+}
+
+/*
+=========
+updateDynamicMeshes
+=========
+*/
+void RenderBackend::updateDynamicMeshes(const std::vector<DynamicMeshHandle>& handles, 
+    const std::vector<std::vector<glm::vec3>>& positionsPerMesh) {
+    if (handles.size() != positionsPerMesh.size()) {
+        std::cout << "Error: updateDynamicMeshes handle and position vector sizes do not match\n";
+    };
+    for (uint32_t i = 0; i < std::min(handles.size(), positionsPerMesh.size()); i++) {
+        const auto handle = handles[i];
+        const auto& positions = positionsPerMesh[i];
+        auto& mesh = m_dynamicMeshes[handle];
+
+        //validate and update index count
+        mesh.indexCount = positions.size();
+
+        const uint32_t floatPerPosition = 3; //xyz
+        const uint32_t maxIndexCount = mesh.vertexBuffer.buffer.size / (sizeof(float) * floatPerPosition);
+        if (positions.size() > maxIndexCount) {
+            std::cout << "Error: updateDynamicMeshes position count exceeds allocated vertex buffer size\n";
+            mesh.indexCount = maxIndexCount;
+        }
+
+        //update vertex buffer, it's memory is host visible so it can be mapped and copied
+        //copy size is calculated from index count to respect buffer size, as it has just been validated
+        const VkDeviceSize copySize = mesh.indexCount * sizeof(float) * floatPerPosition;
+        fillHostVisibleCoherentBuffer(mesh.vertexBuffer.buffer, (char*)positions.data(), copySize);
+    }
 }
 
 /*
@@ -1350,29 +1423,39 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
         vkCmdSetViewport(commandBuffer, 0, 1, &pass.viewport);
         vkCmdSetScissor(commandBuffer, 0, 1, &pass.scissor);
 
-        for (const auto& mesh : pass.currentMeshRenderCommands) {
+        //meshes
+        for (const auto& mesh : pass.meshRenderCommands) {
 
-            /*
-            vertex/index buffers
-            */
+            //vertex/index buffers            
             VkDeviceSize offset[] = { 0 };
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer, offset);
             vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer, offset[0], VK_INDEX_TYPE_UINT32);
 
-            /*
-            update push constants
-            */
+            //update push constants
             glm::mat4 matrices[2] = { pass.viewProjectionMatrix * mesh.modelMatrix, mesh.modelMatrix };
             vkCmdPushConstants(commandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(matrices), &matrices);
 
-            /*
-            materials
-            */
+            //materials            
             VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, mesh.materialSet };
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
             vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, 0, 0, 0);
         }
+
+        //dynamic meshes
+        for (const auto& mesh : pass.dynamicMeshRenderCommands) {
+
+            //vertex buffer
+            VkDeviceSize offset[] = { 0 };
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer, offset);
+            
+            //update push constants
+            glm::mat4 matrices[2] = { pass.viewProjectionMatrix * mesh.modelMatrix, mesh.modelMatrix };
+            vkCmdPushConstants(commandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(matrices), &matrices);
+
+            vkCmdDraw(commandBuffer, mesh.indexCount, 1, 0, 0);
+        }
+
         vkCmdEndRenderPass(commandBuffer);
         endDebugLabel(commandBuffer);
     }
@@ -1536,7 +1619,7 @@ hasRequiredDeviceFeatures
 bool RenderBackend::hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDevice) {
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physicalDevice, &features);
-    return features.samplerAnisotropy && features.imageCubeArray && features.fragmentStoresAndAtomics;
+    return features.samplerAnisotropy && features.imageCubeArray && features.fragmentStoresAndAtomics && features.fillModeNonSolid;
 }
 
 /*
@@ -1662,6 +1745,7 @@ void RenderBackend::createLogicalDevice() {
     VkPhysicalDeviceFeatures features = {};
     features.samplerAnisotropy = true;
     features.fragmentStoresAndAtomics = true;
+    features.fillModeNonSolid = true;
 
     //device info
     VkDeviceCreateInfo deviceInfo = {};
@@ -2034,7 +2118,6 @@ VkImageView RenderBackend::createImageView(const Image image, const VkImageViewT
 createMeshInternal
 =========
 */
-
 MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const std::vector<RenderPassHandle>& passes) {
     std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphicsQueueIndex };
     Mesh mesh;
@@ -2129,9 +2212,9 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
         buffer.flags = pass.vertexInputFlags;
         VkDeviceSize vertexDataSize = vertexData.size() * sizeof(float);
 
-        buffer.vertexBuffer = createBufferInternal(vertexDataSize, queueFamilies,
+        buffer.buffer = createBufferInternal(vertexDataSize, queueFamilies,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        fillBuffer(buffer.vertexBuffer, vertexData.data(), vertexDataSize);
+        fillBuffer(buffer.buffer, vertexData.data(), vertexDataSize);
 
         mesh.vertexBuffers.push_back(buffer);
     }
@@ -2262,6 +2345,31 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
     */
     MeshHandle handle = m_meshes.size();
     m_meshes.push_back(mesh);
+
+    return handle;
+}
+
+/*
+=========
+createDynamicMeshInternal
+=========
+*/
+DynamicMeshHandle RenderBackend::createDynamicMeshInternal(const uint32_t maxPositions) {
+    
+    DynamicMesh mesh;
+    mesh.indexCount = 0;
+
+    //create vertex buffer    
+    mesh.vertexBuffer.flags = VERTEX_INPUT_POSITION_BIT;
+    const uint32_t floatsPerPosition = 3; //xyz
+    VkDeviceSize vertexDataSize = maxPositions * sizeof(float) * floatsPerPosition;
+    std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphicsQueueIndex };
+    mesh.vertexBuffer.buffer = createBufferInternal(vertexDataSize, queueFamilies,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    //save and return handle
+    DynamicMeshHandle handle = m_dynamicMeshes.size();
+    m_dynamicMeshes.push_back(mesh);
 
     return handle;
 }
@@ -2431,9 +2539,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
 
         //copy data to staging buffer
         void* mappedData;
-        vkMapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory, 0, copySize, 0, (void**)&mappedData);
-        memcpy(mappedData, (char*)data + totalMemoryOffset, copySize);
-        vkUnmapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory);
+        fillHostVisibleCoherentBuffer(m_stagingBuffer, (char*)data + totalMemoryOffset, copySize);
 
         //begin command buffer for copying
         VkCommandBuffer copyBuffer = beginOneTimeUseCommandBuffer();
@@ -2614,6 +2720,18 @@ void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSi
         vkDestroyFence(vkContext.device, fence, nullptr);
         vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &copyCmdBuffer);
     }
+}
+
+/*
+=========
+fillHostVisibleCoherentBuffer
+=========
+*/
+void RenderBackend::fillHostVisibleCoherentBuffer(Buffer target, const void* data, const VkDeviceSize size) {
+    void* mappedData;
+    vkMapMemory(vkContext.device, target.memory.vkMemory, target.memory.offset, size, 0, (void**)&mappedData);
+    memcpy(mappedData, data, size);
+    vkUnmapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory);
 }
 
 /*
@@ -3379,8 +3497,12 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     const auto rasterizationState = createRasterizationState(desc.rasterization);
     const auto multisamplingState = createDefaultMultisamplingInfo();
     const auto depthStencilState = createDepthStencilState(desc.depthTest);
-    const auto inputAssemblyState = createDefaultInputAssemblyInfo();
     const auto tesselationState = desc.shaderDescriptions.tesselationControl.has_value() ? &createTesselationState(desc.patchControlPoints) : nullptr;
+    auto inputAssemblyState = createDefaultInputAssemblyInfo();
+
+    if (desc.rasterization.mode == RasterizationeMode::Line) {
+        inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+    }
 
     /*
     dynamic state
@@ -4035,9 +4157,18 @@ destroyMesh
 */
 void RenderBackend::destroyMesh(const Mesh& mesh) {
     for (const auto& buffer : mesh.vertexBuffers) {
-        destroyBuffer(buffer.vertexBuffer);
+        destroyBuffer(buffer.buffer);
     }
     destroyBuffer(mesh.indexBuffer);
+}
+
+/*
+=========
+destroyDynamicMesh
+=========
+*/
+void RenderBackend::destroyDynamicMesh(const DynamicMesh& mesh) {
+    destroyBuffer(mesh.vertexBuffer.buffer);
 }
 
 /*

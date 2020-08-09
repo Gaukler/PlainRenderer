@@ -79,6 +79,7 @@ private:
     RenderPassHandle m_histogramCombinePass;
     RenderPassHandle m_histogramResetPass;
     RenderPassHandle m_preExposeLightsPass;
+    RenderPassHandle m_debugGeoPass;
 
     /*
     resources
@@ -113,7 +114,8 @@ private:
     SamplerHandle m_lutSampler;
     SamplerHandle m_defaultTexelSampler;
 
-    MeshHandle      m_skyCube;
+    MeshHandle          m_skyCube;
+    DynamicMeshHandle   m_debugGeo;
 
     StorageBufferHandle m_histogramPerTileBuffer;
     StorageBufferHandle m_histogramBuffer;
@@ -145,6 +147,7 @@ private:
     void createDiffuseConvolutionPass();
     void createSpecularConvolutionPass();
     void createBRDFLutPreparationPass();
+    void createDebugGeoPass();
     void createHistogramPasses();
     void createDefaultTextures();
     void createDefaultSamplers();

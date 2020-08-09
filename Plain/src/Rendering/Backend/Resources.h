@@ -65,7 +65,7 @@ typedef enum MaterialFeatureFlags {
 } MaterialFeatureFlags;
 
 struct MeshVertexBuffer {
-    Buffer              vertexBuffer;
+    Buffer              buffer;
     VertexInputFlags    flags;
 };
 
@@ -77,8 +77,14 @@ struct MeshMaterial {
 struct Mesh {
     uint32_t                        indexCount = 0;
     Buffer                          indexBuffer;
-    std::vector<MeshVertexBuffer>   vertexBuffers;
-    std::vector<MeshMaterial>      materials;
+    std::vector<MeshVertexBuffer>   vertexBuffers;  //one vertex buffer per render pass with unique vertex input
+    std::vector<MeshMaterial>       materials;      //one material per render pass with unique material feature set
+};
+
+//can be updated, limited feature set
+struct DynamicMesh {
+    uint32_t            indexCount = 0;
+    MeshVertexBuffer    vertexBuffer;
 };
 
 struct MeshRenderCommand {
@@ -86,6 +92,13 @@ struct MeshRenderCommand {
     VkBuffer        vertexBuffer;
     uint32_t        indexCount;
     VkDescriptorSet materialSet;
+    glm::mat4       modelMatrix;
+};
+
+//lacks material and index buffer
+struct DynamicMeshRenderCommand {
+    VkBuffer        vertexBuffer;
+    uint32_t        indexCount;
     glm::mat4       modelMatrix;
 };
 
@@ -117,7 +130,10 @@ struct GraphicPass {
     VkRect2D                        scissor;
     glm::mat4                       viewProjectionMatrix = glm::mat4(1.f);
     VertexInputFlags                vertexInputFlags = VertexInputFlags(0);
-    std::vector<MeshRenderCommand>  currentMeshRenderCommands;
+
+    std::vector<MeshRenderCommand>          meshRenderCommands;
+    std::vector<DynamicMeshRenderCommand>   dynamicMeshRenderCommands;
+
     std::vector<VkClearValue>       clearValues;
     std::vector<ImageHandle>        attachments;
 

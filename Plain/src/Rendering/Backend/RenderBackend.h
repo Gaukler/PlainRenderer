@@ -140,7 +140,9 @@ public:
     actual draw command is deferred until renderFrame is called
     meshHandle must be obtained from createMesh function
     */
-    void drawMeshs(const std::vector<MeshHandle> meshHandles, const std::vector<glm::mat4>& modelMatrices, const std::vector<RenderPassHandle>& passes);
+    void drawMeshes(const std::vector<MeshHandle> meshHandles, const std::vector<glm::mat4>& modelMatrices, const std::vector<RenderPassHandle>& passes);
+    void drawDynamicMeshes(const std::vector<DynamicMeshHandle> handles, const std::vector<glm::mat4>& modelMatrices, const std::vector<RenderPassHandle>& passes);
+
 
     void setViewProjectionMatrix(const glm::mat4& viewProjection, const RenderPassHandle pass);
     void setGlobalShaderInfo(const GlobalShaderInfo& info);
@@ -163,6 +165,15 @@ public:
     RenderPassHandle    createGraphicPass(const GraphicPassDescription& desc);
 
     std::vector<MeshHandle> createMeshes(const std::vector<MeshDataInternal>& meshes, const std::vector<RenderPassHandle>& passes);
+
+    //dynamic meshes can be updated
+    //they use host visible memory which makes the update fast but rendering slow
+    //only positions are supported
+    //intended to use for debug visualisation which are updated per frame
+    std::vector<DynamicMeshHandle> createDynamicMeshes(const std::vector<uint32_t>& maxPositions);
+    void updateDynamicMeshes(const std::vector<DynamicMeshHandle>& handles, 
+        const std::vector<std::vector<glm::vec3>>& positionsPerMesh);
+
     ImageHandle             createImage(const ImageDescription& description);
     UniformBufferHandle     createUniformBuffer(const BufferDescription& description);
     StorageBufferHandle     createStorageBuffer(const BufferDescription& description);
@@ -262,6 +273,7 @@ private:
     RenderPasses            m_renderPasses;
     std::vector<Image>      m_images;
     std::vector<Mesh>       m_meshes;
+    std::vector<DynamicMesh>m_dynamicMeshes;
     std::vector<VkSampler>  m_samplers;
     std::vector<Buffer>     m_uniformBuffers;
     std::vector<Buffer>     m_storageBuffers;
@@ -280,6 +292,7 @@ private:
     VkImageView createImageView(const Image image, const VkImageViewType viewType, const uint32_t baseMip, const uint32_t mipLevels, const VkImageAspectFlags aspectMask);
     Buffer      createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
     MeshHandle  createMeshInternal(const MeshDataInternal data, const std::vector<RenderPassHandle>& passes);
+    DynamicMeshHandle  createDynamicMeshInternal(const uint32_t maxPositions);
 
     VkImageSubresourceLayers createSubresourceLayers(const Image& image, const uint32_t mipLevel);
 
@@ -293,6 +306,7 @@ private:
     fills buffer using the staging buffer
     */
     void fillBuffer(Buffer target, const void* data, const VkDeviceSize size);
+    void fillHostVisibleCoherentBuffer(Buffer target, const void* data, const VkDeviceSize size);
 
     /*
     =========
@@ -449,6 +463,7 @@ private:
     void destroyImage(const ImageHandle handle);
     void destroyBuffer(const Buffer& buffer);
     void destroyMesh(const Mesh& mesh);
+    void destroyDynamicMesh(const DynamicMesh& mesh);
     void destroyGraphicPass(const GraphicPass& pass);
     void destroyComputePass(const ComputePass& pass);
 };

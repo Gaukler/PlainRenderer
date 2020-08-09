@@ -56,6 +56,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     createSpecularConvolutionPass();
     createDiffuseConvolutionPass();
     createBRDFLutPreparationPass();
+    createDebugGeoPass();
     createHistogramPasses();
 }
 
@@ -131,6 +132,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     const glm::mat4 viewProjectionMatrix = projectionMatrix * viewMatrix;
     m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_mainPass);
     m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_skyPass);
+    m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_debugGeoPass);
 }
 
 /*
@@ -175,7 +177,7 @@ issueMeshDraw
 =========
 */
 void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshs, const std::vector<glm::mat4>& modelMatrices) {
-    m_backend.drawMeshs(meshs, modelMatrices, std::vector<RenderPassHandle> { m_mainPass, m_shadowPass });
+    m_backend.drawMeshes(meshs, modelMatrices, std::vector<RenderPassHandle> { m_mainPass, m_shadowPass });
 }
 
 /*
@@ -315,6 +317,27 @@ void RenderFrontend::renderFrame() {
         m_backend.setRenderPassExecution(mainPassExecution);
     }
 
+    //update and render debug geometry
+    {
+        auto& timer = Timer::getReference();
+        const auto cosT = glm::cos(timer.getTime());
+        const auto sinT = glm::sin(timer.getTime());
+        const auto cosTOffset = glm::cos(timer.getTime() + 3.1415f * 0.5f);
+        const auto sinTOffset = glm::sin(timer.getTime() + 3.1415f * 0.5f);
+        std::vector<glm::vec3> positions = { 
+            glm::vec3(0.f, 0.f, 0.f),
+            glm::vec3(cosT, 0.f, sinT),
+            glm::vec3(cosTOffset, 0.f, sinTOffset),
+            glm::vec3(0.f, 0.f, 0.f) };
+        m_backend.updateDynamicMeshes({ m_debugGeo }, { positions });
+        m_backend.drawDynamicMeshes({ m_debugGeo }, { glm::translate(glm::mat4(1.f), glm::vec3(0.f, sinT, 0.f)) }, {m_debugGeoPass});
+
+        RenderPassExecution debugPassExecution;
+        debugPassExecution.handle = m_debugGeoPass;
+        debugPassExecution.parents = { m_mainPass };
+        m_backend.setRenderPassExecution(debugPassExecution);
+    }
+
     /*
     render sky
     */
@@ -328,7 +351,7 @@ void RenderFrontend::renderFrame() {
         skyPassExecution.resources.storageBuffers = { lightBufferResource };
         skyPassExecution.resources.sampledImages = { skyTextureResource };
         skyPassExecution.resources.samplers = { skySamplerResource };
-        skyPassExecution.parents = { m_mainPass };
+        skyPassExecution.parents = { m_mainPass, m_debugGeoPass };
         if (m_firstFrame) {
             skyPassExecution.parents = { m_mainPass, m_toCubemapPass };
         }
@@ -341,7 +364,7 @@ void RenderFrontend::renderFrame() {
     drawUi();
     updateSun();
     updateGlobalShaderInfo();
-    m_backend.drawMeshs(std::vector<MeshHandle> {m_skyCube}, std::vector<glm::mat4> { glm::mat4(1.f)}, std::vector<RenderPassHandle> { m_skyPass });
+    m_backend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, std::vector<glm::mat4> { glm::mat4(1.f)}, std::vector<RenderPassHandle> { m_skyPass });
     m_backend.renderFrame();
 }
 
@@ -804,6 +827,32 @@ void RenderFrontend::createBRDFLutPreparationPass() {
 
 /*
 =========
+createDebugGeoPass
+=========
+*/
+void RenderFrontend::createDebugGeoPass() {
+
+    const auto colorAttachment = Attachment(m_colorBuffer, 0, 0, AttachmentLoadOp::Load);
+    const auto depthAttachment = Attachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Load);
+
+    GraphicPassDescription debugPassConfig;
+    debugPassConfig.name = "Debug geometry";
+    debugPassConfig.attachments = { colorAttachment, depthAttachment };
+    debugPassConfig.shaderDescriptions.vertex.srcPathRelative = "debug.vert";
+    debugPassConfig.shaderDescriptions.fragment.srcPathRelative = "debug.frag";
+    debugPassConfig.depthTest.function = DepthFunction::LessEqual;
+    debugPassConfig.depthTest.write = true;
+    debugPassConfig.rasterization.cullMode = CullMode::None;
+    debugPassConfig.rasterization.mode = RasterizationeMode::Line;
+    debugPassConfig.blending = BlendState::None;
+
+    m_debugGeoPass = m_backend.createGraphicPass(debugPassConfig);
+
+    m_debugGeo = m_backend.createDynamicMeshes(std::vector<uint32_t> {100}).front();
+}
+
+/*
+=========
 createHistogramPasses
 =========
 */
@@ -841,7 +890,6 @@ void RenderFrontend::createHistogramPasses() {
     /*
     create renderpasses
     */
-
     const uint32_t nBinsSpecialisationConstantID = 0;
     const uint32_t minLumininanceSpecialisationConstantID = 1;
     const uint32_t maxLumininanceSpecialisationConstantID = 2;

@@ -2,6 +2,7 @@
 #include "pch.h"
 
 typedef uint32_t MeshHandle;
+typedef uint32_t DynamicMeshHandle;
 typedef uint32_t RenderPassHandle;
 
 typedef uint32_t ImageHandle;
