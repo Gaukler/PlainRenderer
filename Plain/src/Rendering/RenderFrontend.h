@@ -77,10 +77,11 @@ private:
     /*
     resources
     */
+    uint32_t m_specularProbeMipCount = 0;
+
     const uint32_t m_shadowMapRes = 1024;
     const uint32_t m_skyTextureRes = 1024;
     const uint32_t m_specularProbeRes = 512;
-    const uint32_t m_specularProbeMipCount = 6;
     const uint32_t m_diffuseProbeRes = 256;
     const uint32_t m_skyTextureMipCount = 8;
     const uint32_t m_brdfLutRes = 512;

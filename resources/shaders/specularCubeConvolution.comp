@@ -11,49 +11,47 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(set=1, binding = 0, r11f_g11f_b10f)	uniform imageCube	cubeOut;
 layout(set=1, binding = 1) 					uniform textureCube	cubeTexture;
 layout(set=1, binding = 2) 					uniform sampler 	cubeSampler;
-layout(set=1, binding = 3) 					uniform indexBuffer{
-	int mipLevel;
-};
+
+layout(constant_id = 0) const int mipCount = 0;
+layout(constant_id = 1) const int mipLevel = 0;
 
 void main(){
 	ivec3 storageCo = ivec3(gl_GlobalInvocationID.xyz);
 	
-	float maxMipLevel = 6.f;
-	float r = max(float(mipLevel) / (maxMipLevel - 1), 0.0001f);
-	vec3 R = cubemapCoordinateToDirection(storageCo, imageSize(cubeOut).x);
-	vec3 N = R;
-	vec3 V = R;
+    //r clamped to filter lowest mip slightly to avoid aliasing when the env map has high frequency detail
+	float r = max(float(mipLevel) / float(mipCount - 1), 0.05f); 
+	vec3 V = cubemapCoordinateToDirection(storageCo, imageSize(cubeOut).x);
+	vec3 N = V;
 	
 	int samples = 1024;
 	vec3 color = vec3(0.f);
 	float weight = 0.f;
-	
+
 	for(int i = 0; i < samples; i++){
 		
-		vec2 xi = hammersley2d(i, samples);
+		vec2 xi = hammersley2d(i, samples); 
 		vec3 H = importanceSampleGGX(xi, r, N);
-		vec3 L = 2.f * dot(V, H ) * H - V;
+		vec3 L = normalize(2.f * dot(V, H ) * H - V); 
 
 		float NoL = max(dot(N, L), 0.f);
 		float NoH = max(dot(N, H), 0.f);
 		float VoH = max(dot(V, H), 0.f);
 		
 		if(NoL > 0.f){
-			/*
-			compute load for pre-filtering
-			*/
 			float K = 4.f;
-			float pdf = VoH / (D_GGX(NoH, r) * NoH);
-			float omega_s = 1.f / pdf;
+			float pdf = max(D_GGX(NoH, r) * NoH / (VoH * 4.f), 0.001f);
+			float omega_s = 1.f / (pdf * samples);
 			float cubeRes = float(textureSize(samplerCube(cubeTexture, cubeSampler), 0).x);
 			float omega_p = 4.f * 3.1415f / (6.f * cubeRes * cubeRes);
 			
-			float lod = 0.5f * log2(K * omega_s / omega_p);
-			color += textureLod(samplerCube(cubeTexture, cubeSampler), L, max(lod, 0.f)).rgb * NoL;
-			weight += NoL;
+            //log_4(2) = 2, as log_2(x) / log_2(y) = log_y(x) we can use log2(x) * 0.5 = log4(x) 
+			float lod = log2(K * omega_s / omega_p) * 0.5f;
+            
+            //maximum value avoids fireflies caused by very bright pixels
+			color += min(textureLod(samplerCube(cubeTexture, cubeSampler), L, max(lod, 0.f)).rgb, 10.f) * NoL;
+			weight += NoL; 
 		}	
 	}
 	color /= weight;
-	 
 	imageStore(cubeOut, storageCo, vec4(color, 1.f));
 }

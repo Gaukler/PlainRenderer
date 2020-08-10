@@ -41,7 +41,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
 
     //load skybox
     ImageDescription hdrCapture;
-    if (loadImage("textures\\shanghai_bund_2k.hdr", false, &hdrCapture)) {
+    if (loadImage("textures\\sunset_in_the_chalk_quarry_2k.hdr", false, &hdrCapture)) {
         m_environmentMapSrc = m_backend.createImage(hdrCapture);
     }
     else {
@@ -49,16 +49,18 @@ void RenderFrontend::setup(GLFWwindow* window) {
     }
     
     createDefaultSamplers();
-    createShadowPass();
-    createMainPass(width, height);
-    createSkyPass();
-    createSkyCubeMesh();
+
     createSkyTexturePreparationPasses();
     createSpecularConvolutionPass();
     createDiffuseConvolutionPass();
     createBRDFLutPreparationPass();
-    createDebugGeoPass();
     createHistogramPasses();
+
+    createShadowPass();
+    createMainPass(width, height);
+    createSkyPass();
+    createSkyCubeMesh();
+    createDebugGeoPass();
 }
 
 /*
@@ -511,27 +513,18 @@ void RenderFrontend::firstFramePreparation() {
     /*
     specular probe convolution
     */
-    for (uint32_t i = 0; i < m_specularProbeMipCount; i++) {
+    for (uint32_t mipLevel = 0; mipLevel < m_specularProbeMipCount; mipLevel++) {
 
-        int mipLevel = i;
-        BufferDescription mipLevelBufferDesc;
-        mipLevelBufferDesc.initialData = &mipLevel;
-        mipLevelBufferDesc.size = sizeof(mipLevel);
-        mipLevelBufferDesc.type = BufferType::Uniform;
-        const auto mipLevelBuffer = m_backend.createUniformBuffer(mipLevelBufferDesc);
-
-        const auto specularProbeResource = ImageResource(m_specularProbe, i, 0);
+        const auto specularProbeResource = ImageResource(m_specularProbe, mipLevel, 0);
         const auto specularConvolutionSrcResource = ImageResource(m_skyTexture, 0, 1);
         const auto specCubeSamplerResource = SamplerResource(m_skySamplerWithMips, 2);
-        const auto mipBufferResource = UniformBufferResource(mipLevelBuffer, true, 3);
 
         RenderPassExecution specularConvolutionExecution;
-        specularConvolutionExecution.handle = m_specularConvolutionPerMipPasses[i];
+        specularConvolutionExecution.handle = m_specularConvolutionPerMipPasses[mipLevel];
         specularConvolutionExecution.parents = { m_toCubemapPass, m_cubemapMipPasses.back() };
         specularConvolutionExecution.resources.storageImages = { specularProbeResource };
         specularConvolutionExecution.resources.sampledImages = { specularConvolutionSrcResource };
         specularConvolutionExecution.resources.samplers = { specCubeSamplerResource };
-        specularConvolutionExecution.resources.uniformBuffers = { mipBufferResource };
         specularConvolutionExecution.dispatchCount[0] = m_specularProbeRes / 8;
         specularConvolutionExecution.dispatchCount[1] = m_specularProbeRes / 8;
         specularConvolutionExecution.dispatchCount[2] = 6;
@@ -649,6 +642,10 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
     m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantGeometricAAIndex);
     m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(useGeometricAADefaultSelection);
 
+    const uint32_t specularProbeMipCountConstantIndex = 4;
+    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(specularProbeMipCountConstantIndex);
+    m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(m_specularProbeMipCount);
+    
     GraphicPassDescription mainPassDesc;
     mainPassDesc.name = "Forward shading";
     mainPassDesc.shaderDescriptions = m_mainPassShaderConfig;
@@ -759,10 +756,26 @@ createDiffuseConvolutionPass
 */
 void RenderFrontend::createSpecularConvolutionPass() {
 
+    m_specularProbeMipCount = mipCountFromResolution(m_specularProbeRes, m_specularProbeRes, 1);
+    //don't use the last few mips as they are too small
+    const uint32_t mipsTooSmallCount = 4;
+    if (m_specularProbeMipCount > mipsTooSmallCount) {
+        m_specularProbeMipCount -= mipsTooSmallCount;
+    }
+
     for (uint32_t i = 0; i < m_specularProbeMipCount; i++) {
         ComputePassDescription specularConvolutionDesc;
         specularConvolutionDesc.name = "Specular probe convolution";
         specularConvolutionDesc.shaderDescription.srcPathRelative = "specularCubeConvolution.comp";
+
+        const uint32_t mipCountConstantIndex = 0;
+        specularConvolutionDesc.shaderDescription.specialisationConstants.locationIDs.push_back(mipCountConstantIndex);
+        specularConvolutionDesc.shaderDescription.specialisationConstants.values.push_back(m_specularProbeMipCount);
+
+        const uint32_t mipLevelConstantIndex = 1;
+        specularConvolutionDesc.shaderDescription.specialisationConstants.locationIDs.push_back(mipLevelConstantIndex);
+        specularConvolutionDesc.shaderDescription.specialisationConstants.values.push_back(i);
+
         m_specularConvolutionPerMipPasses.push_back(m_backend.createComputePass(specularConvolutionDesc));
     }
 

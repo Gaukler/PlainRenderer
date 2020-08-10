@@ -1,9 +1,8 @@
 vec3 importanceSampleGGX(vec2 xi, float r, vec3 N){
-	
 	float r_2 = r * r;
-	float cosTheta = sqrt((1.f - xi.x) / (1.f + (r_2 - 1.f) * xi.x));
+	float cosTheta = sqrt((1.f - xi.y) / (1.f + (r_2 * r_2 - 1.f) * xi.y));
     float sinTheta = sqrt(1 - cosTheta * cosTheta);
-	float phi = 2.f * 3.1415 * xi.y;
+	float phi = 2.f * 3.1415 * xi.x;
 	vec3 sampleHemisphere = vec3(cos(phi)*sinTheta, sin(phi)*sinTheta, cosTheta);
 	
 	/*
@@ -52,6 +51,6 @@ float radicalInverse_VdC(uint bits) {
      return float(bits) * 2.3283064365386963e-10; // / 0x100000000
  }
  
- vec2 hammersley2d(uint i, uint N) {
-     return vec2(float(i)/float(N), radicalInverse_VdC(i));
- }
+vec2 hammersley2d(uint i, uint N) {
+    return vec2(float(i)/float(N), radicalInverse_VdC(i));
+}

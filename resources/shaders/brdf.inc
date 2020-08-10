@@ -1,8 +1,7 @@
 float D_GGX(const float NoH, const float r){
-	float roughness = r;
-	float PI = 3.1415;
-	float a = NoH * roughness;
-    float k = roughness / (1.0 - NoH * NoH + a * a);
+	float PI = 3.1415;    
+	float a = NoH * r;
+    float k = r / (1.0 - NoH * NoH + a * a);
     return k * k * (1.0 / PI);
 }
 

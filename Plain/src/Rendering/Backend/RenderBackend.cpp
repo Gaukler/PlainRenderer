@@ -820,7 +820,7 @@ RenderPassHandle RenderBackend::createComputePass(const ComputePassDescription& 
 
     std::vector<uint32_t> spirV;
     if (!loadShader(desc.shaderDescription, &spirV)) {
-        std::cout << "Initial shader loading failed" << std::endl; //loadShaders provides details trough cout
+        std::cout << "Initial shader loading failed" << std::endl; //loadShaders provides error details trough cout
         throw;
     }
 
@@ -2536,6 +2536,9 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         -the size left to copy on the current mip level
         */
         VkDeviceSize copySize = std::min(m_stagingBufferSize, currentMipSize - mipMemoryOffset);
+
+        //always copy entire rows
+        copySize = copySize / bytesPerRow * bytesPerRow;
 
         //copy data to staging buffer
         void* mappedData;

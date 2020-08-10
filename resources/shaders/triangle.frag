@@ -58,6 +58,8 @@ layout(constant_id = 2) const int indirectMultiscatterBRDF = 0;
 //1: enabled
 layout(constant_id = 3) const int geometricAA = 0;
 
+layout(constant_id = 4) const int specularProbeMipCount = 0;
+
 float calcShadow(vec3 pos){
 	vec4 posLightSpace = g_lightMatrix * vec4(pos, 1.f);
 	posLightSpace /= posLightSpace.w;
@@ -149,7 +151,8 @@ void main(){
 	
     //indirect specular
     vec3 lightingIndirect;
-    vec3 environmentSample = textureLod(samplerCube(specularProbe, specularProbeSampler), R, r * 5.f).rgb;
+    float probeLoD = specularProbeMipCount * r;
+    vec3 environmentSample = textureLod(samplerCube(specularProbe, specularProbeSampler), R, probeLoD).rgb;
     vec3 irradiance = texture(samplerCube(diffuseProbe, cubeSampler), N).rgb;
     vec3 fresnelAverage = f0 + (1-f0) / 21.f;
     
