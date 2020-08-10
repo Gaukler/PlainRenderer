@@ -113,7 +113,7 @@ void main(){
 	const vec3 f0 = mix(vec3(0.04f), albedo, metalic);
     
     //sun light
-	vec3 directLighting = max(dot(N, L), 0.f) * vec3(1.f);// * calcShadow(passPos.xyz / passPos.w) * g_sunColor.rgb;
+	vec3 directLighting = max(dot(N, L), 0.f) * calcShadow(passPos.xyz / passPos.w) * g_sunColor.rgb;
     
     //direct diffuse
     vec3 diffuseColor = (1.f - metalic) * albedo;
