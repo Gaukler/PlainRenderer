@@ -89,10 +89,6 @@ void main(){
     float metalic = specularTexel.b;
     float r = specularTexel.g;
     
-    //r = 0.1f;
-    //metalic = 1;
-    //albedoTexel = vec3(1.f);
-    
     r = max(r * r, 0.0045f);
     
 	vec3 albedo = pow(albedoTexel, vec3(2.2f)); //gamma correction
@@ -219,7 +215,4 @@ void main(){
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
 	color = (diffuseDirect + specularDirect) * sunStrengthExposed + lightingIndirect * skyStrengthExposed;
-    //color = singleScatteringLobe;
-    //color = vec3(lengthN_U2 + lengthN_V2);
-    //color = vec3(r);
 }
