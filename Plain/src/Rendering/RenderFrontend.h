@@ -123,6 +123,7 @@ private:
     const int m_mainPassSpecilisationConstantDiffuseBRDFIndex = 0;
     const int m_mainPassSpecilisationConstantDirectMultiscatterBRDFIndex = 1;
     const int m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex = 2;
+    const int m_mainPassSpecilisationConstantGeometricAAIndex = 3;
 
     const int m_brdfLutSpecilisationConstantDiffuseBRDFIndex = 0;
 

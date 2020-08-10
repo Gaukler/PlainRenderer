@@ -41,7 +41,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
 
     //load skybox
     ImageDescription hdrCapture;
-    if (loadImage("textures\\sunset_in_the_chalk_quarry_2k.hdr", false, &hdrCapture)) {
+    if (loadImage("textures\\shanghai_bund_2k.hdr", false, &hdrCapture)) {
         m_environmentMapSrc = m_backend.createImage(hdrCapture);
     }
     else {
@@ -634,19 +634,20 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
     m_mainPassShaderConfig.vertex.srcPathRelative   = "triangle.vert";
     m_mainPassShaderConfig.fragment.srcPathRelative = "triangle.frag";
 
-    const int diffuseBRDFConstantID = 0;
-    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(diffuseBRDFConstantID);
+    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantDiffuseBRDFIndex);
     m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(m_diffuseBRDFDefaultSelection);
 
-    const int directMultiscatterBRDFID = 1;
     const int directMultiscatterBRDFDefaultSelection = 0;
-    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(directMultiscatterBRDFID);
+    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantDirectMultiscatterBRDFIndex);
     m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(directMultiscatterBRDFDefaultSelection);
 
-    const int indirectMultiscatterBRDFID = 2;
     const int indirectMultiscatterBRDFDefaultSelection = 1;
-    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(indirectMultiscatterBRDFID);
+    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex);
     m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(indirectMultiscatterBRDFDefaultSelection);
+
+    const int useGeometricAADefaultSelection = 1;
+    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantGeometricAAIndex);
+    m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(useGeometricAADefaultSelection);
 
     GraphicPassDescription mainPassDesc;
     mainPassDesc.name = "Forward shading";
@@ -1226,6 +1227,14 @@ void RenderFrontend::drawUi() {
     m_isMainPassShaderDescriptionStale |= ImGui::Combo("Direct Multiscatter BRDF",
         &m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantDirectMultiscatterBRDFIndex], 
         directMultiscatterBRDFOptions, 4);
+
+    static bool geometricAASelection =
+        m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantGeometricAAIndex] == 1;
+    if (ImGui::Checkbox("Geometric AA", &geometricAASelection)) {
+        m_isMainPassShaderDescriptionStale = true;
+        m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantGeometricAAIndex]
+            = geometricAASelection ? 1 : 0;
+    }
 
     ImGui::Checkbox("Draw bounding boxes", &m_drawBBs);
     if (ImGui::Checkbox("Freeze and draw camera frustum", &m_freezeAndDrawCameraFrustum)) {

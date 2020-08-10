@@ -3,6 +3,7 @@
 #extension GL_GOOGLE_include_directive : enable
 #include "brdf.inc"
 #include "global.inc" 
+#include "GeometricAA.inc"
 
 layout(set=1, binding = 0) uniform texture2D depthTexture;
 layout(set=1, binding = 1) uniform sampler depthSampler;
@@ -53,6 +54,10 @@ layout(constant_id = 1) const int directMultiscatterBRDF = 0;
 //1: enabled
 layout(constant_id = 2) const int indirectMultiscatterBRDF = 0;
 
+//0: disabled
+//1: enabled
+layout(constant_id = 3) const int geometricAA = 0;
+
 float calcShadow(vec3 pos){
 	vec4 posLightSpace = g_lightMatrix * vec4(pos, 1.f);
 	posLightSpace /= posLightSpace.w;
@@ -78,11 +83,15 @@ float EnergyAverage(float roughness){
 void main(){
 	vec3 albedoTexel 		= texture(sampler2D(colorTexture, 		colorSampler), 		passUV).rgb;
 	vec3 specularTexel 		= texture(sampler2D(specularTexture, 	specularSampler), 	passUV).rgb;
-	vec3 normalTexel 		= texture(sampler2D(normalTexture, 		normalSampler), 	passUV).rgb;
+	vec3 normalTexel 		= texture(sampler2D(normalTexture, 		normalSampler), 	passUV).rgb;    
     
     float microAO = specularTexel.r; //not used
     float metalic = specularTexel.b;
     float r = specularTexel.g;
+    
+    //r = 0.1f;
+    //metalic = 1;
+    //albedoTexel = vec3(1.f);
     
     r = max(r * r, 0.0045f);
     
@@ -94,7 +103,11 @@ void main(){
 	vec3 V = normalize(passV);
 	vec3 H = normalize(V + L);
 	vec3 R = reflect(-V, N);
-	
+    
+    if(geometricAA == 1){
+        r = modifiedRoughnessGeometricAA(N, r);
+    }
+    
 	const float NoH = max(dot(N, H), 0);
 	const float NoL = max(dot(N, L), 0);
 	const float NoV = abs(dot(N, V));
@@ -102,9 +115,9 @@ void main(){
     const float LoV = max(dot(L, V), 0.f);
 	
 	const vec3 f0 = mix(vec3(0.04f), albedo, metalic);
-	
+    
     //sun light
-	vec3 directLighting = max(dot(N, L), 0.f) * calcShadow(passPos.xyz / passPos.w) * g_sunColor.rgb;
+	vec3 directLighting = max(dot(N, L), 0.f) * vec3(1.f);// * calcShadow(passPos.xyz / passPos.w) * g_sunColor.rgb;
     
     //direct diffuse
     vec3 diffuseColor = (1.f - metalic) * albedo;
@@ -163,7 +176,6 @@ void main(){
         
         lightingIndirect = singleScattering * environmentSample + (multiScattering + diffuseCorrection * diffuseBRDFIntegral) * irradiance;
     }
-	
     
     //direct specular
 	const float D = D_GGX(NoH, r);
@@ -207,4 +219,7 @@ void main(){
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
 	color = (diffuseDirect + specularDirect) * sunStrengthExposed + lightingIndirect * skyStrengthExposed;
+    //color = singleScatteringLobe;
+    //color = vec3(lengthN_U2 + lengthN_V2);
+    //color = vec3(r);
 }

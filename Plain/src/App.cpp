@@ -51,9 +51,9 @@ void App::run() {
 		cameraController.update(m_window);
 
         m_renderer.setCameraExtrinsic(cameraController.getExtrinsic());
-        if (m_modelMatrices.size() == 1) { //only rotate when loading single test model
-            m_modelMatrices[0] = glm::rotate(glm::mat4(1.f), timer.getTimeFloat(), glm::vec3(0.f, -1.f, 0.f));
-        }
+        //if (m_modelMatrices.size() == 1) { //only rotate when loading single test model
+        //    m_modelMatrices[0] = glm::rotate(glm::mat4(1.f), timer.getTimeFloat(), glm::vec3(0.f, -1.f, 0.f));
+        //}
         m_renderer.issueMeshDraws(m_meshes, m_modelMatrices);
 		m_renderer.renderFrame();
 
