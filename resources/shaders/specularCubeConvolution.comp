@@ -19,7 +19,7 @@ void main(){
 	ivec3 storageCo = ivec3(gl_GlobalInvocationID.xyz);
 	
 	float maxMipLevel = 6.f;
-	float r = 1.f * (float(mipLevel) / (maxMipLevel - 1));
+	float r = max(float(mipLevel) / (maxMipLevel - 1), 0.0001f);
 	vec3 R = cubemapCoordinateToDirection(storageCo, imageSize(cubeOut).x);
 	vec3 N = R;
 	vec3 V = R;
