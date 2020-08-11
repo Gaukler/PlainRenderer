@@ -646,6 +646,11 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> handles, const std:
     }
 }
 
+/*
+=========
+drawDynamicMeshes
+=========
+*/
 void RenderBackend::drawDynamicMeshes(const std::vector<DynamicMeshHandle> handles, 
     const std::vector<glm::mat4>& modelMatrices, const std::vector<RenderPassHandle>& passes) {
     if (handles.size() != modelMatrices.size()) {
@@ -659,6 +664,7 @@ void RenderBackend::drawDynamicMeshes(const std::vector<DynamicMeshHandle> handl
         command.indexCount = mesh.indexCount;
         command.modelMatrix = modelMatrices[i];
         command.vertexBuffer = mesh.vertexBuffer.buffer.vulkanHandle;
+        command.indexBuffer = mesh.indexBuffer.vulkanHandle;
 
         for (const auto& passHandle : passes) {
             assert(m_renderPasses.isGraphicPassHandle(passHandle));
@@ -863,10 +869,17 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshDataIn
 createDynamicMeshes
 =========
 */
-std::vector<DynamicMeshHandle> RenderBackend::createDynamicMeshes(const std::vector<uint32_t>& maxPositions) {
+std::vector<DynamicMeshHandle> RenderBackend::createDynamicMeshes(const std::vector<uint32_t>& maxPositionsPerMesh, 
+    const std::vector<uint32_t>& maxIndicesPerMesh) {
+    if (maxPositionsPerMesh.size() != maxIndicesPerMesh.size()) {
+        std::cout << "Warning: RenderBackend::createDynamicMeshes, maxPosition and maxIndices vector sizes do not match\n";
+    }
+
     std::vector<MeshHandle> handles;
-    for (const auto& max : maxPositions) {
-        handles.push_back(createDynamicMeshInternal(max));
+    for (uint32_t i = 0; i < std::min(maxPositionsPerMesh.size(), maxIndicesPerMesh.size()); i++) {
+        const auto& maxPositions = maxPositionsPerMesh[i];
+        const auto& maxIndices = maxIndicesPerMesh[i];
+        handles.push_back(createDynamicMeshInternal(maxPositions, maxIndices));
     }
     return handles;
 }
@@ -877,29 +890,45 @@ updateDynamicMeshes
 =========
 */
 void RenderBackend::updateDynamicMeshes(const std::vector<DynamicMeshHandle>& handles, 
-    const std::vector<std::vector<glm::vec3>>& positionsPerMesh) {
-    if (handles.size() != positionsPerMesh.size()) {
-        std::cout << "Error: updateDynamicMeshes handle and position vector sizes do not match\n";
+    const std::vector<std::vector<glm::vec3>>& positionsPerMesh, 
+    const std::vector<std::vector<uint32_t>>&  indicesPerMesh) {
+
+    if (handles.size() != positionsPerMesh.size() && handles.size() != indicesPerMesh.size()) {
+        std::cout << "Warning: RenderBackend::updateDynamicMeshes handle, position and index vector sizes do not match\n";
     };
-    for (uint32_t i = 0; i < std::min(handles.size(), positionsPerMesh.size()); i++) {
+
+    const uint32_t meshCount = std::min(std::min(handles.size(), positionsPerMesh.size()), indicesPerMesh.size());
+    for (uint32_t i = 0; i < meshCount; i++) {
         const auto handle = handles[i];
         const auto& positions = positionsPerMesh[i];
+        const auto& indices = indicesPerMesh[i];
         auto& mesh = m_dynamicMeshes[handle];
 
-        //validate and update index count
-        mesh.indexCount = positions.size();
+        mesh.indexCount = indices.size();
 
+        //validate position count
         const uint32_t floatPerPosition = 3; //xyz
-        const uint32_t maxIndexCount = mesh.vertexBuffer.buffer.size / (sizeof(float) * floatPerPosition);
-        if (positions.size() > maxIndexCount) {
-            std::cout << "Error: updateDynamicMeshes position count exceeds allocated vertex buffer size\n";
+        const uint32_t maxPositionCount = mesh.vertexBuffer.buffer.size / (sizeof(float) * floatPerPosition);
+
+        if (positions.size() > maxPositionCount) {
+            std::cout << "Warning: RenderBackend::updateDynamicMeshes position count exceeds allocated vertex buffer size\n";
+        }
+
+        //validate index count
+        const uint32_t maxIndexCount = mesh.indexBuffer.size / sizeof(uint32_t);
+        if (indices.size() > maxIndexCount) {
+            std::cout << "Warning: RenderBackend::updateDynamicMeshes index count exceeds allocated index buffer size\n";
             mesh.indexCount = maxIndexCount;
         }
 
-        //update vertex buffer, it's memory is host visible so it can be mapped and copied
-        //copy size is calculated from index count to respect buffer size, as it has just been validated
-        const VkDeviceSize copySize = mesh.indexCount * sizeof(float) * floatPerPosition;
-        fillHostVisibleCoherentBuffer(mesh.vertexBuffer.buffer, (char*)positions.data(), copySize);
+        //update buffers
+        //there memory is host visible so it can be mapped and copied
+        const VkDeviceSize vertexCopySize = std::min(positions.size(), (size_t)maxPositionCount) * sizeof(float) * floatPerPosition;
+        fillHostVisibleCoherentBuffer(mesh.vertexBuffer.buffer, (char*)positions.data(), vertexCopySize);
+
+        //index count has already been validated
+        const VkDeviceSize indexCopySize = mesh.indexCount * sizeof(uint32_t);
+        fillHostVisibleCoherentBuffer(mesh.indexBuffer, (char*)indices.data(), indexCopySize);
     }
 }
 
@@ -1445,15 +1474,16 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
         //dynamic meshes
         for (const auto& mesh : pass.dynamicMeshRenderCommands) {
 
-            //vertex buffer
+            //vertex/index buffers
             VkDeviceSize offset[] = { 0 };
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer, offset);
-            
+            vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer, offset[0], VK_INDEX_TYPE_UINT32);
+
             //update push constants
             glm::mat4 matrices[2] = { pass.viewProjectionMatrix * mesh.modelMatrix, mesh.modelMatrix };
             vkCmdPushConstants(commandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(matrices), &matrices);
 
-            vkCmdDraw(commandBuffer, mesh.indexCount, 1, 0, 0);
+            vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, 0, 0, 0);
         }
 
         vkCmdEndRenderPass(commandBuffer);
@@ -2354,18 +2384,25 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
 createDynamicMeshInternal
 =========
 */
-DynamicMeshHandle RenderBackend::createDynamicMeshInternal(const uint32_t maxPositions) {
+DynamicMeshHandle RenderBackend::createDynamicMeshInternal(const uint32_t maxPositions, const uint32_t maxIndices) {
     
     DynamicMesh mesh;
     mesh.indexCount = 0;
+
+    std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphicsQueueIndex };
+    const uint32_t memoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
     //create vertex buffer    
     mesh.vertexBuffer.flags = VERTEX_INPUT_POSITION_BIT;
     const uint32_t floatsPerPosition = 3; //xyz
     VkDeviceSize vertexDataSize = maxPositions * sizeof(float) * floatsPerPosition;
-    std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphicsQueueIndex };
+
     mesh.vertexBuffer.buffer = createBufferInternal(vertexDataSize, queueFamilies,
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, memoryFlags);
+
+    //create index buffer
+    VkDeviceSize indexDataSize = maxIndices * sizeof(uint32_t);
+    mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, memoryFlags);
 
     //save and return handle
     DynamicMeshHandle handle = m_dynamicMeshes.size();
@@ -3504,7 +3541,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     auto inputAssemblyState = createDefaultInputAssemblyInfo();
 
     if (desc.rasterization.mode == RasterizationeMode::Line) {
-        inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+        inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
     }
     else if (desc.rasterization.mode == RasterizationeMode::Point) {
         inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
@@ -4175,6 +4212,7 @@ destroyDynamicMesh
 */
 void RenderBackend::destroyDynamicMesh(const DynamicMesh& mesh) {
     destroyBuffer(mesh.vertexBuffer.buffer);
+    destroyBuffer(mesh.indexBuffer);
 }
 
 /*

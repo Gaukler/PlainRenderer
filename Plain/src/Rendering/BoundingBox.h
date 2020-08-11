@@ -9,8 +9,12 @@ struct AxisAlignedBoundingBox {
 AxisAlignedBoundingBox axisAlignedBoundingBoxFromPositions(const std::vector<glm::vec3>& positions);
 AxisAlignedBoundingBox axisAlignedBoundingBoxTransformed(const AxisAlignedBoundingBox& bb, const glm::mat4& m);
 
-//vertex count that axisAlignedBoundingBoxToLineStrip produces
-const uint32_t axisAlignedBoundingBoxVerticesPerMesh = 20;
+std::array<glm::vec3, 8> getAxisAlignedBoundingBoxPoints(const AxisAlignedBoundingBox& bb);
 
-//useful for debug rendering
-std::vector<glm::vec3> axisAlignedBoundingBoxToLineStrip(const AxisAlignedBoundingBox& bb);
+//vertex count that axisAlignedBoundingBoxToLineStrip produces
+const uint32_t axisAlignedBoundingBoxPositionsPerMesh = 8;
+const uint32_t axisAlignedBoundingBoxIndicesPerMesh = 24;
+
+//useful for debug rendering, indices are line list
+void axisAlignedBoundingBoxToLineMesh(const AxisAlignedBoundingBox& bb, 
+    std::vector<glm::vec3>* outPositions, std::vector<uint32_t>* outIndices);

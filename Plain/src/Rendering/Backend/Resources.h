@@ -85,6 +85,7 @@ struct Mesh {
 struct DynamicMesh {
     uint32_t            indexCount = 0;
     MeshVertexBuffer    vertexBuffer;
+    Buffer              indexBuffer;
 };
 
 struct MeshRenderCommand {
@@ -95,8 +96,9 @@ struct MeshRenderCommand {
     glm::mat4       modelMatrix;
 };
 
-//lacks material and index buffer
+//lacks materials
 struct DynamicMeshRenderCommand {
+    VkBuffer        indexBuffer;
     VkBuffer        vertexBuffer;
     uint32_t        indexCount;
     glm::mat4       modelMatrix;

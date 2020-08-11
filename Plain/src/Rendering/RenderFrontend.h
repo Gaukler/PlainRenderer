@@ -36,8 +36,10 @@ private:
     void firstFramePreparation();
     void computeBRDFLut();
 
-    uint32_t    m_screenWidth;
-    uint32_t    m_screenHeight;
+    uint32_t m_screenWidth;
+    uint32_t m_screenHeight;
+
+    uint32_t m_currentFrameMainPassDrawcallCount = 0;
 
     bool m_didResolutionChange = false;
     bool m_minimized = false;

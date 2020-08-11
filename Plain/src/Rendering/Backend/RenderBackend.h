@@ -164,15 +164,18 @@ public:
     RenderPassHandle    createComputePass(const ComputePassDescription& desc);
     RenderPassHandle    createGraphicPass(const GraphicPassDescription& desc);
 
-    std::vector<MeshHandle> createMeshes(const std::vector<MeshDataInternal>& meshes, const std::vector<RenderPassHandle>& passes);
+    std::vector<MeshHandle> createMeshes(const std::vector<MeshDataInternal>& meshes, 
+        const std::vector<RenderPassHandle>& passes);
 
     //dynamic meshes can be updated
     //they use host visible memory which makes the update fast but rendering slow
     //only positions are supported
     //intended to use for debug visualisation which are updated per frame
-    std::vector<DynamicMeshHandle> createDynamicMeshes(const std::vector<uint32_t>& maxPositions);
+    std::vector<DynamicMeshHandle> createDynamicMeshes(const std::vector<uint32_t>& maxPositionsPerMesh,
+        const std::vector<uint32_t>& maxIndicesPerMesh);
     void updateDynamicMeshes(const std::vector<DynamicMeshHandle>& handles, 
-        const std::vector<std::vector<glm::vec3>>& positionsPerMesh);
+        const std::vector<std::vector<glm::vec3>>& positionsPerMesh,
+        const std::vector<std::vector<uint32_t>>&  indicesPerMesh);
 
     ImageHandle             createImage(const ImageDescription& description);
     UniformBufferHandle     createUniformBuffer(const BufferDescription& description);
@@ -292,7 +295,7 @@ private:
     VkImageView createImageView(const Image image, const VkImageViewType viewType, const uint32_t baseMip, const uint32_t mipLevels, const VkImageAspectFlags aspectMask);
     Buffer      createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
     MeshHandle  createMeshInternal(const MeshDataInternal data, const std::vector<RenderPassHandle>& passes);
-    DynamicMeshHandle  createDynamicMeshInternal(const uint32_t maxPositions);
+    DynamicMeshHandle  createDynamicMeshInternal(const uint32_t maxPositions, const uint32_t maxIndices);
 
     VkImageSubresourceLayers createSubresourceLayers(const Image& image, const uint32_t mipLevel);
 

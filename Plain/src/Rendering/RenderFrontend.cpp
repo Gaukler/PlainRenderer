@@ -5,6 +5,7 @@
 #include <Utilities/MathUtils.h>
 #include "Utilities/Timer.h"
 #include "ViewFrustum.h"
+#include "Culling.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -86,6 +87,8 @@ void RenderFrontend::newFrame() {
     if (m_minimized) {
         return;
     }
+
+    m_currentFrameMainPassDrawcallCount = 0;
 
     if (m_isMainPassShaderDescriptionStale) {
         m_backend.updateGraphicPassShaderDescription(m_mainPass, m_mainPassShaderConfig);
@@ -184,7 +187,8 @@ std::vector<MeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>
         m_meshHandleToBoundingBox[handle] = bb;
 
         //create debug mesh for rendering
-        const auto debugMesh = m_backend.createDynamicMeshes({ axisAlignedBoundingBoxVerticesPerMesh }).back();
+        const auto debugMesh = m_backend.createDynamicMeshes(
+            { axisAlignedBoundingBoxPositionsPerMesh }, { axisAlignedBoundingBoxIndicesPerMesh }).back();
         m_bbDebugMeshes.push_back(debugMesh);
     }
 
@@ -200,19 +204,40 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
     if (meshes.size() != modelMatrices.size()) {
         std::cout << "Error: RenderFrontend::issueMeshDraws mesh and model matrix count do not match\n";
     }
-    //transform and render bounding boxes
-    if (m_drawBBs) {
-        for (uint32_t i = 0; i < std::min(meshes.size(), modelMatrices.size()); i++) {
-            const auto handle = meshes[i];
-            const auto& bb = m_meshHandleToBoundingBox[handle];
 
-            //must account for transform
-            const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, modelMatrices[i]);
+    const auto& cameraFrustum = computeViewFrustum(m_camera);
 
+    std::vector<MeshHandle> culledMainPassMeshes;
+    std::vector<glm::mat4> culledMainPassTransforms;
+
+    //frustum culling
+    for (uint32_t i = 0; i < std::min(meshes.size(), modelMatrices.size()); i++) {
+        const auto handle = meshes[i];
+        const auto& bb = m_meshHandleToBoundingBox[handle];
+        const auto& transform = modelMatrices[i];
+
+        //account for transform
+        const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, transform);
+        const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(cameraFrustum, bb);
+
+        if (renderMesh) {
+            m_currentFrameMainPassDrawcallCount++;
+
+            culledMainPassMeshes.push_back(handle);
+            culledMainPassTransforms.push_back(transform);
+
+            //FIXME move draw BBs back here after debugging   
+        }
+        if (m_drawBBs) {
             m_bbsToDebugDraw.push_back(bbTransformed);
         }
     }
-    m_backend.drawMeshes(meshes, modelMatrices, std::vector<RenderPassHandle> { m_mainPass, m_shadowPass });
+
+    //all meshes drawn in shadow pass for now
+    m_backend.drawMeshes(meshes, modelMatrices, { m_shadowPass });
+
+    //main pass is culled
+    m_backend.drawMeshes(culledMainPassMeshes, culledMainPassTransforms, std::vector<RenderPassHandle> { m_mainPass });
 }
 
 /*
@@ -363,13 +388,21 @@ void RenderFrontend::renderFrame() {
     //update bounding box debug models
     if(m_drawBBs && m_bbsToDebugDraw.size() > 0) {
         std::vector<std::vector<glm::vec3>> positionsPerMesh;
+        std::vector<std::vector<uint32_t>>  indicesPerMesh;
+
         positionsPerMesh.reserve(m_bbDebugMeshes.size());
+        indicesPerMesh.reserve(m_bbDebugMeshes.size());
         for (const auto& bb : m_bbsToDebugDraw) {
-            const auto vertices = axisAlignedBoundingBoxToLineStrip(bb);
+            std::vector<glm::vec3> vertices;
+            std::vector<uint32_t> indices;
+
+            axisAlignedBoundingBoxToLineMesh(bb, &vertices, &indices);
+
             positionsPerMesh.push_back(vertices);
+            indicesPerMesh.push_back(indices);
         }
 
-        m_backend.updateDynamicMeshes(m_bbDebugMeshes, positionsPerMesh);
+        m_backend.updateDynamicMeshes(m_bbDebugMeshes, positionsPerMesh, indicesPerMesh);
         m_backend.drawDynamicMeshes(m_bbDebugMeshes, std::vector<glm::mat4> (m_bbDebugMeshes.size(), glm::mat4(1.f)), {m_debugGeoPass});
 
         drawDebugPass = true;
@@ -909,7 +942,8 @@ void RenderFrontend::createDebugGeoPass() {
     m_debugGeoPass = m_backend.createGraphicPass(debugPassConfig);
 
     //meshes
-    m_cameraFrustumModel = m_backend.createDynamicMeshes({ 20 }).front();
+    m_cameraFrustumModel = m_backend.createDynamicMeshes(
+        { positionsInViewFrustumLineMesh }, { indicesInViewFrustumLineMesh }).front();
 }
 
 /*
@@ -1202,6 +1236,7 @@ drawUi
 void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
     ImGui::Text(("FrameTime: " + std::to_string(m_globalShaderInfo.delteTime * 1000) + "ms").c_str());
+    ImGui::Text(("Main pass drawcalls: " + std::to_string(m_currentFrameMainPassDrawcallCount)).c_str());
 
     uint32_t allocatedMemorySizeByte;
     uint32_t usedMemorySizeByte;
@@ -1253,8 +1288,12 @@ void RenderFrontend::drawUi() {
     if (ImGui::Checkbox("Freeze and draw camera frustum", &m_freezeAndDrawCameraFrustum)) {
         //update frustum model now to keep fixed
         const auto cameraFrustum = computeViewFrustum(m_camera);
-        const auto frustumPoints = frustumToLineStrip(cameraFrustum);
-        m_backend.updateDynamicMeshes({ m_cameraFrustumModel }, { frustumPoints });
+
+        std::vector<glm::vec3> frustumPoints;
+        std::vector<uint32_t> frustumIndices;
+
+        frustumToLineMesh(cameraFrustum, &frustumPoints, &frustumIndices);
+        m_backend.updateDynamicMeshes({ m_cameraFrustumModel }, { frustumPoints }, { frustumIndices });
     }
 
     ImGui::End();

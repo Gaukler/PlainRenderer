@@ -2,21 +2,36 @@
 #include "pch.h"
 #include "Camera.h"
 
-//stores view frustum points
-//naming scheme: plane(n:near, f:far)_vertical(u:upper,l: lower)_horizontal(l:left, r:right)
-struct ViewFrustum {
-    glm::vec3 n_u_l;
-    glm::vec3 n_u_r;
-    glm::vec3 n_l_l;
-    glm::vec3 n_l_r;
+//naming scheme: l/r(left/right)_u/l(upper/lower)_n/f(_near/far)
+struct ViewFrustumPoints {
+    glm::vec3 l_l_n;
+    glm::vec3 l_l_f;
+    glm::vec3 l_u_n;
+    glm::vec3 l_u_f;
+    glm::vec3 r_l_n;
+    glm::vec3 r_l_f;
+    glm::vec3 r_u_n;
+    glm::vec3 r_u_f;
+};
 
-    glm::vec3 f_u_l;
-    glm::vec3 f_u_r;
-    glm::vec3 f_l_l;
-    glm::vec3 f_l_r;
+struct ViewFrustumNormals {
+    glm::vec3 top;
+    glm::vec3 bot;
+    glm::vec3 right;
+    glm::vec3 left;
+    glm::vec3 near;
+    glm::vec3 far;
+};
+
+struct ViewFrustum {
+    ViewFrustumPoints points;
+    ViewFrustumNormals normals;
 };
 
 ViewFrustum computeViewFrustum(const Camera& camera);
 
-const uint32_t verticesInViewFrustumLineStrip = 20;
-std::vector<glm::vec3> frustumToLineStrip(const ViewFrustum& frustum);
+const uint32_t positionsInViewFrustumLineMesh = 20;
+const uint32_t indicesInViewFrustumLineMesh = 84;
+
+void frustumToLineMesh(const ViewFrustum& frustum, 
+    std::vector<glm::vec3>* outPositions, std::vector<uint32_t>* outIndices);
