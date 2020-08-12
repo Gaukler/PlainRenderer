@@ -2295,82 +2295,91 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
         */
         RenderPassResources resources;
 
-        //texture is required but has no value yet(sampler and texture assigned at the same time)
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE && !albedoSampler.has_value()) {
-            if (albedoTexture != InvalidImageHandle) {
+        //add resources depending on material flags
+        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE) {
 
-                SamplerDescription albedoSamplerDesc;
-                albedoSamplerDesc.interpolation = SamplerInterpolation::Linear;
-                albedoSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                albedoSamplerDesc.maxMip = m_images[albedoTexture].viewPerMip.size();
-                albedoSamplerDesc.useAnisotropy = true;
-                albedoSampler = createSampler(albedoSamplerDesc);
+            //create sampler if needed
+            if (!albedoSampler.has_value()) {
+                if (albedoTexture != InvalidImageHandle) {
 
-                const auto albedoTextureResource = ImageResource(
-                    albedoTexture,
-                    0,
-                    3);
-
-                const auto albedoSamplerResource = SamplerResource(
-                    albedoSampler.value(),
-                    0);
-
-                resources.sampledImages.push_back(albedoTextureResource);
-                resources.samplers.push_back(albedoSamplerResource);
+                    SamplerDescription albedoSamplerDesc;
+                    albedoSamplerDesc.interpolation = SamplerInterpolation::Linear;
+                    albedoSamplerDesc.wrapping = SamplerWrapping::Repeat;
+                    albedoSamplerDesc.maxMip = m_images[albedoTexture].viewPerMip.size();
+                    albedoSamplerDesc.useAnisotropy = true;
+                    albedoSampler = createSampler(albedoSamplerDesc);
+                }
+                else {
+                    std::cout << "Mesh misses required albedo texture \n";
+                }
             }
-            else {
-                std::cout << "Mesh misses required albedo texture \n";
-            }
+
+            const auto albedoTextureResource = ImageResource(
+                albedoTexture,
+                0,
+                3);
+
+            const auto albedoSamplerResource = SamplerResource(
+                albedoSampler.value(),
+                0);
+
+            resources.sampledImages.push_back(albedoTextureResource);
+            resources.samplers.push_back(albedoSamplerResource);
         }
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE && !normalSampler.has_value()) {
-            if (normalTexture != InvalidImageHandle) {
-                SamplerDescription normalSamplerDesc;
-                normalSamplerDesc.interpolation = SamplerInterpolation::Linear;
-                normalSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                normalSamplerDesc.maxMip = m_images[normalTexture].viewPerMip.size();
-                normalSamplerDesc.useAnisotropy = true;
-                normalSampler = createSampler(normalSamplerDesc);
-
-                const auto normalTextureResource = ImageResource(
-                    normalTexture,
-                    0,
-                    4);
-
-                const auto normalSamplerResource = SamplerResource(
-                    normalSampler.value(),
-                    1);
-
-                resources.sampledImages.push_back(normalTextureResource);
-                resources.samplers.push_back(normalSamplerResource);
+        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE) {
+            if (!normalSampler.has_value()) {
+                if (normalTexture != InvalidImageHandle) {
+                    SamplerDescription normalSamplerDesc;
+                    normalSamplerDesc.interpolation = SamplerInterpolation::Linear;
+                    normalSamplerDesc.wrapping = SamplerWrapping::Repeat;
+                    normalSamplerDesc.maxMip = m_images[normalTexture].viewPerMip.size();
+                    normalSamplerDesc.useAnisotropy = true;
+                    normalSampler = createSampler(normalSamplerDesc);
+                }
+                else {
+                    std::cout << "Mesh misses required normal texture \n";
+                }
             }
-            else {
-                std::cout << "Mesh misses required normal texture \n";
-            }
+
+            const auto normalTextureResource = ImageResource(
+                normalTexture,
+                0,
+                4);
+
+            const auto normalSamplerResource = SamplerResource(
+                normalSampler.value(),
+                1);
+
+            resources.sampledImages.push_back(normalTextureResource);
+            resources.samplers.push_back(normalSamplerResource);
+
         }
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE && !specularSampler.has_value()) {
-            if (specularTexture != InvalidImageHandle) {
-                SamplerDescription specularSamplerDesc;
-                specularSamplerDesc.interpolation = SamplerInterpolation::Linear;
-                specularSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                specularSamplerDesc.maxMip = m_images[normalTexture].viewPerMip.size();
-                specularSamplerDesc.useAnisotropy = true;
-                specularSampler = createSampler(specularSamplerDesc);
-
-                const auto specularTextureResource = ImageResource(
-                    specularTexture,
-                    0,
-                    5);
-
-                const auto specularSamplerResource = SamplerResource(
-                    specularSampler.value(),
-                    2);
-
-                resources.sampledImages.push_back(specularTextureResource);
-                resources.samplers.push_back(specularSamplerResource);
+        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE) {
+            if (!specularSampler.has_value()) {
+                if (specularTexture != InvalidImageHandle) {
+                    SamplerDescription specularSamplerDesc;
+                    specularSamplerDesc.interpolation = SamplerInterpolation::Linear;
+                    specularSamplerDesc.wrapping = SamplerWrapping::Repeat;
+                    specularSamplerDesc.maxMip = m_images[normalTexture].viewPerMip.size();
+                    specularSamplerDesc.useAnisotropy = true;
+                    specularSampler = createSampler(specularSamplerDesc);
+                }
+                else {
+                    std::cout << "Mesh misses required specular texture \n";
+                }
             }
-            else {
-                std::cout << "Mesh misses required specular texture \n";
-            }
+
+            const auto specularTextureResource = ImageResource(
+                specularTexture,
+                0,
+                5);
+
+            const auto specularSamplerResource = SamplerResource(
+                specularSampler.value(),
+                2);
+
+            resources.sampledImages.push_back(specularTextureResource);
+            resources.samplers.push_back(specularSamplerResource);
         }
         MeshMaterial material;
         material.flags = pass.materialFeatures;
