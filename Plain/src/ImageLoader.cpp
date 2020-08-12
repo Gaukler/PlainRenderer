@@ -111,7 +111,7 @@ bool loadImage(const std::filesystem::path& path, const bool isFullPath, ImageDe
                 /*
                 single byte padding for alpha
                 */
-                outImage->initialData.push_back(1);
+                outImage->initialData.push_back(0xff); //fill with 1, otherwise section will be cut out by alpha clipping
             }
         }
     }
