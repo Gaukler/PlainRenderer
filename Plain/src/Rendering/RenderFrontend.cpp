@@ -61,6 +61,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     createSkyPass();
     createSkyCubeMesh();
     createDebugGeoPass();
+    createDepthPrePass();
 }
 
 /*
@@ -140,6 +141,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_mainPass);
     m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_skyPass);
     m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_debugGeoPass);
+    m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_depthPrePass);
 
     if (!m_freezeAndDrawCameraFrustum) {
         updateCameraFrustum();
@@ -238,7 +240,7 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
     m_backend.drawMeshes(meshes, modelMatrices, { m_shadowPass });
 
     //main pass is culled
-    m_backend.drawMeshes(culledMainPassMeshes, culledMainPassTransforms, std::vector<RenderPassHandle> { m_mainPass });
+    m_backend.drawMeshes(culledMainPassMeshes, culledMainPassTransforms, { m_mainPass, m_depthPrePass });
 }
 
 /*
@@ -353,6 +355,12 @@ void RenderFrontend::renderFrame() {
         m_backend.setRenderPassExecution(preExposeLightsExecution);
     }
     
+    //depth prepass
+    {
+        RenderPassExecution prepassExe;
+        prepassExe.handle = m_depthPrePass;
+        m_backend.setRenderPassExecution(prepassExe);
+    }
 
     /*
     render scene geometry
@@ -373,7 +381,7 @@ void RenderFrontend::renderFrame() {
         mainPassExecution.resources.storageBuffers = { lightBufferResource };
         mainPassExecution.resources.sampledImages = { shadowMapResource, diffuseProbeResource, brdfLutResource, specularProbeResource };
         mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource, cubeSamplerMipsResource, lustSamplerResource };
-        mainPassExecution.parents = { m_shadowPass, m_preExposeLightsPass };
+        mainPassExecution.parents = { m_shadowPass, m_preExposeLightsPass, m_depthPrePass };
         mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
         m_backend.setRenderPassExecution(mainPassExecution);
     }
@@ -669,7 +677,7 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
         m_depthBuffer,
         0,
         0,
-        AttachmentLoadOp::Clear);
+        AttachmentLoadOp::Load);
 
     
     m_mainPassShaderConfig.vertex.srcPathRelative   = "triangle.vert";
@@ -698,7 +706,7 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
     mainPassDesc.name = "Forward shading";
     mainPassDesc.shaderDescriptions = m_mainPassShaderConfig;
     mainPassDesc.attachments = { colorAttachment, depthAttachment };
-    mainPassDesc.depthTest.function = DepthFunction::LessEqual;
+    mainPassDesc.depthTest.function = DepthFunction::Equal;
     mainPassDesc.depthTest.write = true;
     mainPassDesc.rasterization.cullMode = CullMode::Back;
     mainPassDesc.rasterization.mode = RasterizationeMode::Fill;
@@ -1079,7 +1087,29 @@ void RenderFrontend::createHistogramPasses() {
 
 /*
 =========
-createSkyCubeMesh
+createDepthPrePass
+=========
+*/
+void RenderFrontend::createDepthPrePass() {
+
+    Attachment depthAttachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Clear);
+
+    GraphicPassDescription desc;
+    desc.attachments = { depthAttachment };
+    desc.blending = BlendState::None;
+    desc.depthTest.function = DepthFunction::LessEqual;
+    desc.depthTest.write = true;
+    desc.name = "Depth prepass";
+    desc.rasterization.cullMode = CullMode::Back;
+    desc.shaderDescriptions.vertex.srcPathRelative = "depthPrepass.vert";
+    desc.shaderDescriptions.fragment.srcPathRelative = "depthPrepass.frag";
+
+    m_depthPrePass = m_backend.createGraphicPass(desc);
+}
+
+/*
+=========
+createDefaultTextures
 =========
 */
 void RenderFrontend::createDefaultTextures() {

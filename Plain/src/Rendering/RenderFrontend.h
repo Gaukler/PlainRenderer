@@ -79,6 +79,7 @@ private:
     RenderPassHandle m_histogramResetPass;
     RenderPassHandle m_preExposeLightsPass;
     RenderPassHandle m_debugGeoPass;
+    RenderPassHandle m_depthPrePass;
 
     /*
     resources
@@ -153,6 +154,7 @@ private:
     void createBRDFLutPreparationPass();
     void createDebugGeoPass();
     void createHistogramPasses();
+    void createDepthPrePass();
     void createDefaultTextures();
     void createDefaultSamplers();
 
