@@ -763,8 +763,8 @@ void RenderFrontend::createShadowPass() {
     GraphicPassDescription shadowPassConfig;
     shadowPassConfig.name = "Shadow map";
     shadowPassConfig.attachments = { shadowMapAttachment };
-    shadowPassConfig.shaderDescriptions.vertex.srcPathRelative   = "shadow.vert";
-    shadowPassConfig.shaderDescriptions.fragment.srcPathRelative = "shadow.frag";
+    shadowPassConfig.shaderDescriptions.vertex.srcPathRelative   = "depthOnly.vert";
+    shadowPassConfig.shaderDescriptions.fragment.srcPathRelative = "depthOnly.frag";
     shadowPassConfig.depthTest.function = DepthFunction::LessEqual;
     shadowPassConfig.depthTest.write = true;
     shadowPassConfig.rasterization.cullMode = CullMode::Front;
@@ -1101,8 +1101,8 @@ void RenderFrontend::createDepthPrePass() {
     desc.depthTest.write = true;
     desc.name = "Depth prepass";
     desc.rasterization.cullMode = CullMode::Back;
-    desc.shaderDescriptions.vertex.srcPathRelative = "depthPrepass.vert";
-    desc.shaderDescriptions.fragment.srcPathRelative = "depthPrepass.frag";
+    desc.shaderDescriptions.vertex.srcPathRelative = "depthOnly.vert";
+    desc.shaderDescriptions.fragment.srcPathRelative = "depthOnly.frag";
 
     m_depthPrePass = m_backend.createGraphicPass(desc);
 }
