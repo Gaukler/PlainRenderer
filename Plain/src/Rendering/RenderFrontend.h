@@ -5,6 +5,7 @@
 #include "RenderHandles.h"
 #include "Camera.h"
 #include "BoundingBox.h"
+#include "ViewFrustum.h"
 
 struct GLFWwindow;
 
@@ -57,8 +58,11 @@ private:
     GlobalShaderInfo m_globalShaderInfo;
 
     Camera m_camera;    
+    ViewFrustum m_cameraFrustum;
     float m_exposureOffset = 0.f;
     
+    void updateCameraFrustum();
+
     /*
     passes
     */

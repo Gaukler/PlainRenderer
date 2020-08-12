@@ -4,7 +4,6 @@
 #include <imgui/imgui.h>
 #include <Utilities/MathUtils.h>
 #include "Utilities/Timer.h"
-#include "ViewFrustum.h"
 #include "Culling.h"
 
 #define GLFW_INCLUDE_VULKAN
@@ -141,6 +140,10 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_mainPass);
     m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_skyPass);
     m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_debugGeoPass);
+
+    if (!m_freezeAndDrawCameraFrustum) {
+        updateCameraFrustum();
+    }
 }
 
 /*
@@ -205,8 +208,6 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
         std::cout << "Error: RenderFrontend::issueMeshDraws mesh and model matrix count do not match\n";
     }
 
-    const auto& cameraFrustum = computeViewFrustum(m_camera);
-
     std::vector<MeshHandle> culledMainPassMeshes;
     std::vector<glm::mat4> culledMainPassTransforms;
 
@@ -218,7 +219,7 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
 
         //account for transform
         const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, transform);
-        const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(cameraFrustum, bb);
+        const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, bb);
 
         if (renderMesh) {
             m_currentFrameMainPassDrawcallCount++;
@@ -585,6 +586,20 @@ void RenderFrontend::computeBRDFLut() {
     m_backend.setRenderPassExecution(brdfLutExecution);
 }
 
+/*
+=========
+updateCameraFrustum
+=========
+*/
+void RenderFrontend::updateCameraFrustum() {
+    m_cameraFrustum = computeViewFrustum(m_camera);
+
+    std::vector<glm::vec3> frustumPoints;
+    std::vector<uint32_t> frustumIndices;
+
+    frustumToLineMesh(m_cameraFrustum, &frustumPoints, &frustumIndices);
+    m_backend.updateDynamicMeshes({ m_cameraFrustumModel }, { frustumPoints }, { frustumIndices });
+}
 
 /*
 =========
@@ -1285,16 +1300,7 @@ void RenderFrontend::drawUi() {
     }
 
     ImGui::Checkbox("Draw bounding boxes", &m_drawBBs);
-    if (ImGui::Checkbox("Freeze and draw camera frustum", &m_freezeAndDrawCameraFrustum)) {
-        //update frustum model now to keep fixed
-        const auto cameraFrustum = computeViewFrustum(m_camera);
-
-        std::vector<glm::vec3> frustumPoints;
-        std::vector<uint32_t> frustumIndices;
-
-        frustumToLineMesh(cameraFrustum, &frustumPoints, &frustumIndices);
-        m_backend.updateDynamicMeshes({ m_cameraFrustumModel }, { frustumPoints }, { frustumIndices });
-    }
+    ImGui::Checkbox("Freeze and draw camera frustum", &m_freezeAndDrawCameraFrustum);
 
     ImGui::End();
 }
