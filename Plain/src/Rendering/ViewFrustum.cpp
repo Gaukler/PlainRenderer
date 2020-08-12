@@ -49,6 +49,11 @@ ViewFrustum computeViewFrustum(const Camera& camera) {
     return frustum;
 }
 
+/*
+=========
+frustumToLineMesh
+=========
+*/
 void frustumToLineMesh(const ViewFrustum& frustum,
     std::vector<glm::vec3>* outPositions, std::vector<uint32_t>* outIndices) {
 
@@ -212,4 +217,22 @@ void frustumToLineMesh(const ViewFrustum& frustum,
 
     (*outIndices)[82] = 18;
     (*outIndices)[83] = 19;
+}
+
+/*
+=========
+getFrustumPoints
+=========
+*/
+std::array<glm::vec3, 8> getFrustumPoints(const ViewFrustum& frustum) {
+    return {
+        frustum.points.l_l_f,
+        frustum.points.l_l_n,
+        frustum.points.r_l_f,
+        frustum.points.r_l_n,
+        frustum.points.l_u_f,
+        frustum.points.l_u_n,
+        frustum.points.r_u_f,
+        frustum.points.r_u_n,
+    };
 }

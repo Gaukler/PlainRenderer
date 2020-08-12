@@ -1231,6 +1231,11 @@ private functions
 ==================
 */
 
+/*
+=========
+prepareRenderPasses
+=========
+*/
 void RenderBackend::prepareRenderPasses(const ImageHandle swapchainOutputImage) {
 
     /*
@@ -1649,7 +1654,12 @@ hasRequiredDeviceFeatures
 bool RenderBackend::hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDevice) {
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physicalDevice, &features);
-    return features.samplerAnisotropy && features.imageCubeArray && features.fragmentStoresAndAtomics && features.fillModeNonSolid;
+    return 
+        features.samplerAnisotropy && 
+        features.imageCubeArray && 
+        features.fragmentStoresAndAtomics && 
+        features.fillModeNonSolid &&
+        features.depthClamp;
 }
 
 /*
@@ -1776,6 +1786,7 @@ void RenderBackend::createLogicalDevice() {
     features.samplerAnisotropy = true;
     features.fragmentStoresAndAtomics = true;
     features.fillModeNonSolid = true;
+    features.depthClamp = true;
 
     //device info
     VkDeviceCreateInfo deviceInfo = {};
@@ -3872,7 +3883,7 @@ VkPipelineRasterizationStateCreateInfo RenderBackend::createRasterizationState(c
     rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterization.pNext = nullptr;
     rasterization.flags = 0;
-    rasterization.depthClampEnable = VK_FALSE;
+    rasterization.depthClampEnable = raster.clampDepth;
     rasterization.rasterizerDiscardEnable = VK_FALSE;
     rasterization.polygonMode = polygonMode;
     rasterization.cullMode = cullFlags;

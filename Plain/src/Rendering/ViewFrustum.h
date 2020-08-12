@@ -35,3 +35,6 @@ const uint32_t indicesInViewFrustumLineMesh = 84;
 
 void frustumToLineMesh(const ViewFrustum& frustum, 
     std::vector<glm::vec3>* outPositions, std::vector<uint32_t>* outIndices);
+
+//convencie function that returns all frustum points in an array for easy iterating
+std::array<glm::vec3, 8> getFrustumPoints(const ViewFrustum& frustum);

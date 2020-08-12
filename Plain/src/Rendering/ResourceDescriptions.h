@@ -92,6 +92,7 @@ enum class CullMode { None, Front, Back };
 struct RasterizationConfig {
     RasterizationeMode  mode = RasterizationeMode::Fill;
     CullMode            cullMode = CullMode::None;
+    bool                clampDepth = false;
 };
 
 /*
