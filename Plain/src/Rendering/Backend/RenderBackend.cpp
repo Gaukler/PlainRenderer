@@ -946,6 +946,7 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
     case ImageFormat::RG8:              format = VK_FORMAT_R8G8_UNORM;              aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RGBA8:            format = VK_FORMAT_R8G8B8A8_UNORM;          aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RG16_sFloat:      format = VK_FORMAT_R16G16_SFLOAT;           aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
+    case ImageFormat::RG32_sFloat:      format = VK_FORMAT_R32G32_SFLOAT;           aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RGBA16_sFloat:    format = VK_FORMAT_R16G16B16A16_SFLOAT;     aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::R11G11B10_uFloat: format = VK_FORMAT_B10G11R11_UFLOAT_PACK32; aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RGBA32_sFloat:    format = VK_FORMAT_R32G32B32A32_SFLOAT;     aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
@@ -1105,6 +1106,11 @@ createUniformBuffer
 =========
 */
 StorageBufferHandle RenderBackend::createUniformBuffer(const BufferDescription& description) {
+
+    if (description.type != BufferType::Uniform) {
+        std::cout << "Warning: RenderBackend::createStorageBuffer received a uniform Buffer description\n";
+    }
+
     std::vector<uint32_t> queueFamilies = {
         vkContext.queueFamilies.transferQueueFamilyIndex,
         vkContext.queueFamilies.graphicsQueueIndex,
@@ -1128,6 +1134,11 @@ createStorageBuffer
 =========
 */
 StorageBufferHandle RenderBackend::createStorageBuffer(const BufferDescription& description) {
+
+    if (description.type != BufferType::Storage) {
+        std::cout << "Warning: RenderBackend::createStorageBuffer received a uniform Buffer description\n";
+    }
+
     std::vector<uint32_t> queueFamilies = {
         vkContext.queueFamilies.transferQueueFamilyIndex,
         vkContext.queueFamilies.graphicsQueueIndex,
@@ -1361,7 +1372,8 @@ void RenderBackend::prepareRenderPasses(const ImageHandle swapchainOutputImage) 
             }
 
             if ((image.currentlyWriting || needsLayoutTransition) && !hasBarrierAlready) {
-                const auto& layoutBarriers = createImageBarriers(image, requiredLayout, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, 0, image.layoutPerMip.size());
+                const auto& layoutBarriers = createImageBarriers(image, requiredLayout,
+                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, 0, image.layoutPerMip.size());
                 barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
                 image.currentlyWriting = true;
             }
@@ -1371,12 +1383,28 @@ void RenderBackend::prepareRenderPasses(const ImageHandle swapchainOutputImage) 
         sampled images
         */
         for (auto& sampledImage : resources.sampledImages) {
+
+            //use general layout if image is used as a storage image too
+            bool isUsedAsStorageImage = false;
+            {
+                for (auto& storageImage : resources.storageImages) {
+                    if (storageImage.image == sampledImage.image) {
+                        isUsedAsStorageImage = true;
+                        break;
+                    }
+                }
+            }
+            if (isUsedAsStorageImage) {
+                continue;
+            }
+
             Image& image = m_images[sampledImage.image];
 
             /*
             check if any mip levels need a layout transition
             */
-            const VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
             bool needsLayoutTransition = false;
             for (const auto& layout : image.layoutPerMip) {
                 if (layout != requiredLayout) {
@@ -1385,7 +1413,8 @@ void RenderBackend::prepareRenderPasses(const ImageHandle swapchainOutputImage) 
             }
 
             if (image.currentlyWriting | needsLayoutTransition) {
-                const auto& layoutBarriers = createImageBarriers(image, requiredLayout, VK_ACCESS_SHADER_READ_BIT, 0, image.viewPerMip.size());
+                const auto& layoutBarriers = createImageBarriers(image, requiredLayout, VK_ACCESS_SHADER_READ_BIT, 
+                    0, image.viewPerMip.size());
                 barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
             }
         }
@@ -2517,6 +2546,9 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
     else if (target.desc.format == ImageFormat::RG16_sFloat) {
         bytePerPixel = 4;
     }
+    else if (target.desc.format == ImageFormat::RG32_sFloat) {
+        bytePerPixel = 8;
+    }
     else if (target.desc.format == ImageFormat::RG8) {
         bytePerPixel = 2;
     }
@@ -3108,7 +3140,7 @@ VkDescriptorSet RenderBackend::allocateDescriptorSet(const VkDescriptorSetLayout
 
 /*
 =========
-createDescriptorSet
+updateDescriptorSet
 =========
 */
 void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources) {
@@ -3159,7 +3191,19 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
     */
     for (const auto& resource : resources.sampledImages) {
         VkDescriptorImageInfo imageInfo;
+
+        bool isUsedAsStorageImage = false;
+        for (const auto storageResources : resources.storageImages) {
+            if (storageResources.image == resource.image) {
+                isUsedAsStorageImage = true;
+            }
+        }
+
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        if (isUsedAsStorageImage) {
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        }
+
         imageInfo.imageView = m_images[resource.image].viewPerMip[resource.mipLevel];
         imageInfos[imageInfoIndex] = imageInfo;
         const auto writeSet = createWriteDescriptorSet(resource.binding, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, nullptr, &imageInfos[imageInfoIndex]);
@@ -4090,8 +4134,6 @@ std::vector<VkImageMemoryBarrier> RenderBackend::createImageBarriers(Image& imag
             barriers.push_back(barrier);
         }
     }
-
-    
 
     /*
     update image properties

@@ -80,6 +80,7 @@ private:
     RenderPassHandle m_preExposeLightsPass;
     RenderPassHandle m_debugGeoPass;
     RenderPassHandle m_depthPrePass;
+    RenderPassHandle m_depthPyramidPass;
 
     /*
     resources
@@ -107,6 +108,7 @@ private:
     ImageHandle m_diffuseProbe;
     ImageHandle m_specularProbe;
     ImageHandle m_brdfLut;
+    ImageHandle m_minMaxDepthPyramid;
 
     SamplerHandle m_shadowSampler;
     SamplerHandle m_hdriSampler;
@@ -114,6 +116,7 @@ private:
     SamplerHandle m_skySamplerWithMips;
     SamplerHandle m_lutSampler;
     SamplerHandle m_defaultTexelSampler;
+    SamplerHandle m_clampedDepthSampler;
 
     MeshHandle m_skyCube;
 
@@ -124,6 +127,7 @@ private:
     StorageBufferHandle m_histogramPerTileBuffer;
     StorageBufferHandle m_histogramBuffer;
     StorageBufferHandle m_lightBuffer; //contains previous exposure and exposured light values
+    UniformBufferHandle m_depthPyramidSyncBuffer;
     
     const int m_diffuseBRDFDefaultSelection = 3;
 
@@ -135,9 +139,15 @@ private:
 
     const int m_brdfLutSpecilisationConstantDiffuseBRDFIndex = 0;
 
+    const int m_depthPyramidSpecialisationConstantMipCountIndex = 0;
+    const int m_depthPyramidSpecialisationConstantDepthResX = 1;
+    const int m_depthPyramidSpecialisationConstantDepthResY = 2;
+    const int m_depthPyramidSpecialisationConstantGroupCount = 3;
+
     //cached to reuse to change for changig specialisation constants
     GraphicPassShaderDescriptions   m_mainPassShaderConfig;
     ShaderDescription               m_brdfLutPassShaderConfig;
+    ShaderDescription               m_depthPyramidShaderConfig;
 
     bool m_isMainPassShaderDescriptionStale = false;
     bool m_isBRDFLutShaderDescriptionStale = false;
@@ -155,8 +165,13 @@ private:
     void createDebugGeoPass();
     void createHistogramPasses();
     void createDepthPrePass();
+    void createDepthPyramidPass();
     void createDefaultTextures();
     void createDefaultSamplers();
+
+    //sets resolution dependant specialisation constants
+    void updateDepthPyramidShaderDescription();
+    glm::ivec2 computeDepthPyramidDispatchCount();
 
     //default textures
     ImageHandle m_defaultDiffuseTexture;

@@ -62,6 +62,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     createSkyCubeMesh();
     createDebugGeoPass();
     createDepthPrePass();
+    createDepthPyramidPass();
 }
 
 /*
@@ -81,8 +82,12 @@ newFrame
 void RenderFrontend::newFrame() {
     if (m_didResolutionChange) {
         m_backend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
-        m_backend.resizeImages( std::vector<ImageHandle>{ m_colorBuffer, m_depthBuffer }, m_screenWidth, m_screenHeight);
+        m_backend.resizeImages( { m_colorBuffer, m_depthBuffer }, m_screenWidth, m_screenHeight);
+        m_backend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
+
+        updateDepthPyramidShaderDescription();
+        m_backend.updateComputePassShaderDescription(m_depthPyramidPass, m_depthPyramidShaderConfig);
     }
     if (m_minimized) {
         return;
@@ -362,6 +367,42 @@ void RenderFrontend::renderFrame() {
         m_backend.setRenderPassExecution(prepassExe);
     }
 
+    //depth pyramid
+    {
+        RenderPassExecution exe;
+        exe.handle = m_depthPyramidPass;
+        exe.parents = { m_depthPrePass };
+        const auto dispatchCount = computeDepthPyramidDispatchCount();
+        exe.dispatchCount[0] = dispatchCount.x;
+        exe.dispatchCount[1] = dispatchCount.y;
+        exe.dispatchCount[2] = 1;
+
+        ImageResource depthBufferResource(m_depthBuffer, 0, 13);
+        ImageResource depthPyramidResource(m_minMaxDepthPyramid, 0, 15);
+
+        exe.resources.sampledImages = { depthBufferResource, depthPyramidResource };
+
+        SamplerResource clampedDepthSamplerResource(m_clampedDepthSampler, 14);
+        exe.resources.samplers = { clampedDepthSamplerResource };
+        
+        StorageBufferResource syncBuffer(m_depthPyramidSyncBuffer, false, 16);
+        exe.resources.storageBuffers = { syncBuffer };
+
+        const uint32_t mipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
+        const uint32_t maxMipCount = 11; //see shader for details
+        if (mipCount > maxMipCount) {
+            std::cout << "Warning: depth pyramid mip count exceeds calculation shader max\n";
+        }
+        exe.resources.storageImages.reserve(maxMipCount);
+        const uint32_t unusedMipCount = maxMipCount - mipCount;
+        for (uint32_t i = 0; i < maxMipCount; i++) {
+            const uint32_t mipLevel = i >= unusedMipCount ?  i - unusedMipCount : 0;
+            ImageResource pyramidMip(m_minMaxDepthPyramid, mipLevel, i);
+            exe.resources.storageImages.push_back(pyramidMip);
+        }
+        m_backend.setRenderPassExecution(exe);
+    }
+
     /*
     render scene geometry
     */
@@ -637,8 +678,7 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
         1,
         ImageType::Type2D,
         ImageFormat::R11G11B10_uFloat,
-        (ImageUsageFlags)(ImageUsageFlags::IMAGE_USAGE_ATTACHMENT | ImageUsageFlags::IMAGE_USAGE_STORAGE | 
-            ImageUsageFlags::IMAGE_USAGE_SAMPLED),
+        (ImageUsageFlags)(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_STORAGE | IMAGE_USAGE_SAMPLED),
         MipCount::One,
         0,
         false);
@@ -651,7 +691,7 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
         1,
         ImageType::Type2D,
         ImageFormat::Depth32,
-        IMAGE_USAGE_ATTACHMENT,
+        ImageUsageFlags(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED),
         MipCount::One,
         0,
         false
@@ -748,7 +788,7 @@ void RenderFrontend::createShadowPass() {
         1,
         ImageType::Type2D,
         ImageFormat::Depth16,
-        (ImageUsageFlags)(ImageUsageFlags::IMAGE_USAGE_ATTACHMENT | ImageUsageFlags::IMAGE_USAGE_SAMPLED),
+        (ImageUsageFlags)(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED),
         MipCount::One,
         1,
         false);
@@ -1109,6 +1149,55 @@ void RenderFrontend::createDepthPrePass() {
 
 /*
 =========
+createDepthPyramidPass
+=========
+*/
+void RenderFrontend::createDepthPyramidPass() {
+    //texture
+    {
+        ImageDescription desc;
+        desc.autoCreateMips = false;
+        desc.width = m_screenWidth / 2;
+        desc.height = m_screenHeight / 2;
+        desc.depth = 1;
+        desc.mipCount = MipCount::FullChain;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::RG32_sFloat;
+        desc.usageFlags = ImageUsageFlags(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+        m_minMaxDepthPyramid = m_backend.createImage(desc);
+    }
+
+    //render pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Depth min/max pyramid creation";
+
+        updateDepthPyramidShaderDescription();
+        desc.shaderDescription = m_depthPyramidShaderConfig;
+
+        m_depthPyramidPass = m_backend.createComputePass(desc);
+    }
+    //sampler
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Nearest;
+        desc.maxMip = 11;
+        desc.useAnisotropy = false;
+        desc.wrapping = SamplerWrapping::Clamp;
+        m_clampedDepthSampler = m_backend.createSampler(desc);
+    }    
+    //storage buffer for syncing
+    {
+        BufferDescription desc;
+        desc.size = sizeof(uint32_t);
+        desc.type = BufferType::Storage;
+        desc.initialData = { (uint32_t)0 };
+        m_depthPyramidSyncBuffer = m_backend.createStorageBuffer(desc);
+    }
+}
+
+/*
+=========
 createDefaultTextures
 =========
 */
@@ -1122,7 +1211,7 @@ void RenderFrontend::createDefaultTextures() {
         defaultDiffuseDesc.manualMipCount = 1;
         defaultDiffuseDesc.mipCount = MipCount::FullChain;
         defaultDiffuseDesc.type = ImageType::Type2D;
-        defaultDiffuseDesc.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+        defaultDiffuseDesc.usageFlags = IMAGE_USAGE_SAMPLED;
         defaultDiffuseDesc.width = 1;
         defaultDiffuseDesc.height = 1;
 
@@ -1138,7 +1227,7 @@ void RenderFrontend::createDefaultTextures() {
         defaultSpecularDesc.manualMipCount = 1;
         defaultSpecularDesc.mipCount = MipCount::FullChain;
         defaultSpecularDesc.type = ImageType::Type2D;
-        defaultSpecularDesc.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+        defaultSpecularDesc.usageFlags = IMAGE_USAGE_SAMPLED;
         defaultSpecularDesc.width = 1;
         defaultSpecularDesc.height = 1;
 
@@ -1154,7 +1243,7 @@ void RenderFrontend::createDefaultTextures() {
         defaultNormalDesc.manualMipCount = 1;
         defaultNormalDesc.mipCount = MipCount::FullChain;
         defaultNormalDesc.type = ImageType::Type2D;
-        defaultNormalDesc.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+        defaultNormalDesc.usageFlags = IMAGE_USAGE_SAMPLED;
         defaultNormalDesc.width = 1;
         defaultNormalDesc.height = 1;
 
@@ -1170,7 +1259,7 @@ void RenderFrontend::createDefaultTextures() {
         defaultCubemapDesc.manualMipCount = 1;
         defaultCubemapDesc.mipCount = MipCount::FullChain;
         defaultCubemapDesc.type = ImageType::Type2D;
-        defaultCubemapDesc.usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+        defaultCubemapDesc.usageFlags = IMAGE_USAGE_SAMPLED;
         defaultCubemapDesc.width = 1;
         defaultCubemapDesc.height = 1;
 
@@ -1216,6 +1305,62 @@ void RenderFrontend::createDefaultSamplers() {
             0
         );
         m_defaultTexelSampler = m_backend.createSampler(texelSamplerDesc);
+    }
+}
+
+/*
+=========
+updateDepthPyramidShaderDescription
+=========
+*/
+void RenderFrontend::updateDepthPyramidShaderDescription() {
+
+    m_depthPyramidShaderConfig.srcPathRelative = "depthHiZPyramid.comp";
+
+    m_depthPyramidShaderConfig.specialisationConstants.locationIDs.resize(4);
+    m_depthPyramidShaderConfig.specialisationConstants.values.resize(4);
+
+    m_depthPyramidShaderConfig.specialisationConstants.locationIDs[0] = m_depthPyramidSpecialisationConstantMipCountIndex;
+    m_depthPyramidShaderConfig.specialisationConstants.locationIDs[1] = m_depthPyramidSpecialisationConstantDepthResX;
+    m_depthPyramidShaderConfig.specialisationConstants.locationIDs[2] = m_depthPyramidSpecialisationConstantDepthResY;
+    m_depthPyramidShaderConfig.specialisationConstants.locationIDs[3] = m_depthPyramidSpecialisationConstantGroupCount;
+
+    const uint32_t depthMipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
+    m_depthPyramidShaderConfig.specialisationConstants.values[0] = depthMipCount;
+    m_depthPyramidShaderConfig.specialisationConstants.values[1] = m_screenWidth;
+    m_depthPyramidShaderConfig.specialisationConstants.values[2] = m_screenHeight;
+
+    const auto dispatchCount = computeDepthPyramidDispatchCount();
+    m_depthPyramidShaderConfig.specialisationConstants.values[3] = dispatchCount.x * dispatchCount.y;
+}
+
+/*
+=========
+computeDepthPyramidDispatchCount
+=========
+*/
+glm::ivec2 RenderFrontend::computeDepthPyramidDispatchCount() {
+    glm::ivec2 count;
+
+    //shader can process up to 11 mip levels
+    //thread group extent ranges from 16 to 1 depending on how many mips are used
+    const uint32_t mipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
+    const uint32_t maxMipCount = 11;
+    const uint32_t unusedMips = maxMipCount - mipCount;
+
+    //last 6 mips are processed by single thread group
+    if (unusedMips >= 6) {
+        return glm::ivec2(1, 1);
+    }
+    else {
+        //group size of 16x16 can compute up to a 32x32 area in mip0
+        const uint32_t localThreadGroupExtent = 32 / pow((uint32_t)2, unusedMips);
+
+        //pyramid mip0 is half screen resolution
+        count.x = std::ceil((float)m_screenWidth / 2 / localThreadGroupExtent);
+        count.y = std::ceil((float)m_screenHeight / 2 / localThreadGroupExtent);
+
+        return count;
     }
 }
 
