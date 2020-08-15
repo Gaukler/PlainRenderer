@@ -1,0 +1,98 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "global.inc"
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set=1, binding = 0, std430) buffer sunShadowInfo{
+    mat4 lightMatrix;
+};
+
+layout(set=1, binding = 1, rg32f) uniform image2D depthMinMaxLowestMip;
+
+#define FLOAT_MAX 3.402823466e+38
+#define FLOAT_MIN 1.175494351e-38
+
+//reference: https://stackoverflow.com/questions/51108596/linearize-depth
+float linearizeDepth(float depth, float near, float far)
+{
+    return near * far / (far + depth * (near - far));
+}
+
+//reference: http://www.lighthouse3d.com/tutorials/view-frustum-culling/geometric-approach-extracting-the-planes/
+void computeFrustumPoints(inout vec3[8] frustumPoints, float near, float far){
+    vec3 nearPlaneCenter = g_cameraPosition.xyz - g_cameraForward.xyz * near;
+    vec3 farPlaneCenter = g_cameraPosition.xyz - g_cameraForward.xyz * far;
+
+    float heightNear = g_cameraTanFovHalf * near;
+    float heightFar  = g_cameraTanFovHalf * far;
+
+    float widthNear = heightNear * g_cameraAspectRatio;
+    float widthFar  = heightFar * g_cameraAspectRatio;    
+    
+    frustumPoints[0] = farPlaneCenter + g_cameraUp.xyz * heightFar + g_cameraRight.xyz * widthFar;
+    frustumPoints[1] = farPlaneCenter + g_cameraUp.xyz * heightFar - g_cameraRight.xyz * widthFar;
+    frustumPoints[2] = farPlaneCenter - g_cameraUp.xyz * heightFar + g_cameraRight.xyz * widthFar;
+    frustumPoints[3] = farPlaneCenter - g_cameraUp.xyz * heightFar - g_cameraRight.xyz * widthFar;
+
+    frustumPoints[4] = nearPlaneCenter + g_cameraUp.xyz * heightNear + g_cameraRight.xyz * widthNear;
+    frustumPoints[5] = nearPlaneCenter + g_cameraUp.xyz * heightNear - g_cameraRight.xyz * widthNear;
+    frustumPoints[6] = nearPlaneCenter - g_cameraUp.xyz * heightNear + g_cameraRight.xyz * widthNear;
+    frustumPoints[7] = nearPlaneCenter - g_cameraUp.xyz * heightNear - g_cameraRight.xyz * widthNear;
+}
+
+//reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
+//z-coordinate is tightly fitted, rendering pass uses depth clamping
+void main(){
+    
+    mat4 coordinateSystemCorrection = {
+        {1.0f, 0.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 0.5f, 0.f},
+        {0.0f, 0.0f, 0.5f, 1.0f}};
+    
+    mat4 V = mat4(1.f);
+    vec3 forward = -g_sunDirection.xyz;
+    vec3 up = abs(forward.y) < 0.9999f ? vec3(0.f, -1.f, 0.f) : vec3(0.f, 0.f, -1.f);
+    vec3 right = cross(forward, up);
+    up = cross(forward, right);
+    V[0].xyz = normalize(right);
+    V[1].xyz = normalize(up);
+    V[2].xyz = forward;
+    V[3][3] = 1.f;
+    V = transpose(V);
+    
+    vec3 minP = vec3(FLOAT_MAX);
+    vec3 maxP = vec3(FLOAT_MIN);
+    
+    vec3 frustumPoints[8];
+    
+    vec2 depthMinMax = imageLoad(depthMinMaxLowestMip, ivec2(0)).rg;
+    float depthMinLinear = linearizeDepth(depthMinMax.x, g_nearPlane, g_farPlane);
+    float depthMaxLinear = linearizeDepth(depthMinMax.y, g_nearPlane, g_farPlane);
+    
+    computeFrustumPoints(frustumPoints, depthMinLinear, depthMaxLinear);
+    
+    for(int i = 0; i < 8; i++) {
+        vec3 p = frustumPoints[i];
+        vec3 pTransformed = (V * vec4(p, 1.f)).xyz;
+        minP = min(minP, pTransformed);
+        maxP = max(maxP, pTransformed);
+    }
+    
+    vec3 scale = vec3(2.f) / (maxP - minP);
+    vec3 offset = -0.5f * (maxP + minP) * scale;
+    
+    mat4 P = mat4(0.f);
+    P[0][0] = scale.x;
+    P[1][1] = scale.y;
+    P[2][2] = scale.z;
+    P[3][0] = offset.x;
+    P[3][1] = offset.y;
+    P[3][2] = offset.z;
+    P[3][3] = 1.f;
+    
+    lightMatrix = coordinateSystemCorrection * P * V; 
+}

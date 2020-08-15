@@ -22,6 +22,10 @@ layout(set=1, binding = 8, std430) buffer lightBuffer{
     float skyStrengthExposed;
 };
 
+layout(set=1, binding = 9, std430) buffer sunShadowInfo{
+    mat4 lightMatrix;
+};
+
 layout(set=2, binding = 0) uniform sampler colorSampler;
 layout(set=2, binding = 1) uniform sampler normalSampler;
 layout(set=2, binding = 2) uniform sampler specularSampler;
@@ -61,7 +65,7 @@ layout(constant_id = 3) const int geometricAA = 0;
 layout(constant_id = 4) const int specularProbeMipCount = 0;
 
 float calcShadow(vec3 pos){
-	vec4 posLightSpace = g_lightMatrix * vec4(pos, 1.f);
+	vec4 posLightSpace = lightMatrix * vec4(pos, 1.f);
 	posLightSpace /= posLightSpace.w;
 	posLightSpace.xy = posLightSpace.xy * 0.5f + 0.5f;
 	float actualDepth = clamp(posLightSpace.z, 0.f, 1.f);
@@ -116,7 +120,7 @@ void main(){
     
     //sun light
 	vec3 directLighting = max(dot(N, L), 0.f) * calcShadow(passPos.xyz / passPos.w) * g_sunColor.rgb;
-    
+
     //direct diffuse
     vec3 diffuseColor = (1.f - metalic) * albedo;
     

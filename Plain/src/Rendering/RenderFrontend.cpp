@@ -63,6 +63,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     createDebugGeoPass();
     createDepthPrePass();
     createDepthPyramidPass();
+    createLightMatrixPass();
 }
 
 /*
@@ -289,6 +290,11 @@ void RenderFrontend::renderFrame() {
     {
         RenderPassExecution shadowPassExecution;
         shadowPassExecution.handle = m_shadowPass;
+        shadowPassExecution.parents = { m_lightMatrixPass };
+
+        StorageBufferResource lightMatrixBufferResource(m_sunLightMatrixBuffer, true, 0);
+        shadowPassExecution.resources.storageBuffers = { lightMatrixBufferResource };
+
         m_backend.setRenderPassExecution(shadowPassExecution);
     }
     
@@ -403,6 +409,25 @@ void RenderFrontend::renderFrame() {
         m_backend.setRenderPassExecution(exe);
     }
 
+    //compute light matrix
+    {
+        RenderPassExecution exe;
+        exe.handle = m_lightMatrixPass;
+        exe.parents = { m_depthPyramidPass };
+        exe.dispatchCount[0] = 1;
+        exe.dispatchCount[1] = 1;
+        exe.dispatchCount[2] = 1;
+
+        const uint32_t depthPyramidMipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
+        ImageResource depthPyramidLowestMipResource(m_minMaxDepthPyramid, depthPyramidMipCount-1, 1);
+        exe.resources.storageImages = { depthPyramidLowestMipResource };
+
+        StorageBufferResource lightMatrixBuffer(m_sunLightMatrixBuffer, false, 0);
+        exe.resources.storageBuffers = { lightMatrixBuffer };
+
+        m_backend.setRenderPassExecution(exe);
+    }
+
     /*
     render scene geometry
     */
@@ -416,13 +441,14 @@ void RenderFrontend::renderFrame() {
         const auto cubeSamplerMipsResource = SamplerResource(m_skySamplerWithMips, 6);
         const auto lustSamplerResource = SamplerResource(m_lutSampler, 7);
         const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 8);
+        const auto lightMatrixBuffer = StorageBufferResource(m_sunLightMatrixBuffer, true, 9);
 
         RenderPassExecution mainPassExecution;
         mainPassExecution.handle = m_mainPass;
-        mainPassExecution.resources.storageBuffers = { lightBufferResource };
+        mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
         mainPassExecution.resources.sampledImages = { shadowMapResource, diffuseProbeResource, brdfLutResource, specularProbeResource };
         mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource, cubeSamplerMipsResource, lustSamplerResource };
-        mainPassExecution.parents = { m_shadowPass, m_preExposeLightsPass, m_depthPrePass };
+        mainPassExecution.parents = { m_shadowPass, m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
         mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
         m_backend.setRenderPassExecution(mainPassExecution);
     }
@@ -659,7 +685,15 @@ void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.cameraPos = glm::vec4(m_camera.extrinsic.position, 1.f);
 
     Timer& timer = Timer::getReference();
-    m_globalShaderInfo.delteTime = timer.getDeltaTimeFloat();
+    m_globalShaderInfo.deltaTime = timer.getDeltaTimeFloat();
+    m_globalShaderInfo.nearPlane = m_camera.intrinsic.near;
+    m_globalShaderInfo.farPlane = m_camera.intrinsic.far;
+
+    m_globalShaderInfo.cameraRight      = glm::vec4(m_camera.extrinsic.right, 0);
+    m_globalShaderInfo.cameraUp         = glm::vec4(m_camera.extrinsic.up, 0);
+    m_globalShaderInfo.cameraForward    = glm::vec4(m_camera.extrinsic.forward, 0);
+    m_globalShaderInfo.cameraTanFovHalf = glm::tan(glm::radians(m_camera.intrinsic.fov) * 0.5f);
+    m_globalShaderInfo.cameraAspectRatio = m_camera.intrinsic.aspectRatio;
 
     m_backend.setGlobalShaderInfo(m_globalShaderInfo);
 }
@@ -803,8 +837,8 @@ void RenderFrontend::createShadowPass() {
     GraphicPassDescription shadowPassConfig;
     shadowPassConfig.name = "Shadow map";
     shadowPassConfig.attachments = { shadowMapAttachment };
-    shadowPassConfig.shaderDescriptions.vertex.srcPathRelative   = "depthOnly.vert";
-    shadowPassConfig.shaderDescriptions.fragment.srcPathRelative = "depthOnly.frag";
+    shadowPassConfig.shaderDescriptions.vertex.srcPathRelative   = "sunShadow.vert";
+    shadowPassConfig.shaderDescriptions.fragment.srcPathRelative = "sunShadow.frag";
     shadowPassConfig.depthTest.function = DepthFunction::LessEqual;
     shadowPassConfig.depthTest.write = true;
     shadowPassConfig.rasterization.cullMode = CullMode::Front;
@@ -1141,8 +1175,8 @@ void RenderFrontend::createDepthPrePass() {
     desc.depthTest.write = true;
     desc.name = "Depth prepass";
     desc.rasterization.cullMode = CullMode::Back;
-    desc.shaderDescriptions.vertex.srcPathRelative = "depthOnly.vert";
-    desc.shaderDescriptions.fragment.srcPathRelative = "depthOnly.frag";
+    desc.shaderDescriptions.vertex.srcPathRelative = "depthPrepass.vert";
+    desc.shaderDescriptions.fragment.srcPathRelative = "depthPrepass.frag";
 
     m_depthPrePass = m_backend.createGraphicPass(desc);
 }
@@ -1193,6 +1227,28 @@ void RenderFrontend::createDepthPyramidPass() {
         desc.type = BufferType::Storage;
         desc.initialData = { (uint32_t)0 };
         m_depthPyramidSyncBuffer = m_backend.createStorageBuffer(desc);
+    }
+}
+
+/*
+=========
+createLightMatrixPass
+=========
+*/
+void RenderFrontend::createLightMatrixPass() {
+    //pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Compute light matrix";
+        desc.shaderDescription.srcPathRelative = "lightMatrix.comp";
+        m_lightMatrixPass = m_backend.createComputePass(desc);
+    }
+    //buffer
+    {
+        BufferDescription desc;
+        desc.size = sizeof(glm::mat4);
+        desc.type = BufferType::Storage;
+        m_sunLightMatrixBuffer = m_backend.createStorageBuffer(desc);
     }
 }
 
@@ -1413,31 +1469,31 @@ void RenderFrontend::updateSun() {
 
     //reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
     //z-coordinate is tightly fitted, rendering pass uses depth clamping
-    const glm::mat4 V = glm::lookAt(-glm::vec3(m_globalShaderInfo.sunDirection), glm::vec3(0.f), glm::vec3(0.f, -1.f, 0.f));
-    glm::vec3 maxP = glm::vec3(std::numeric_limits<float>::min());
-    glm::vec3 minP = glm::vec3(std::numeric_limits<float>::max());
-
-    for (const auto& p : getFrustumPoints(m_cameraFrustum)) {
-        const glm::vec3 pTransformed = V * glm::vec4(p, 1.f);
-        minP = glm::min(minP, pTransformed);
-        maxP = glm::max(maxP, pTransformed);
-    }
-
-    const glm::vec3 scale = glm::vec3(2.f) / (maxP - minP);
-    const glm::vec3 offset = -0.5f * (maxP + minP) * scale;
-
-    glm::mat4 P = glm::mat4(1.f);
-    P[0][0] = scale.x;
-    P[1][1] = scale.y;
-    P[2][2] = scale.z;
-    P[3][0] = offset.x;
-    P[3][1] = offset.y;
-    P[3][2] = offset.z;
-
-    const glm::mat4 L = coordinateSystemCorrection * P * V;
-    m_backend.setViewProjectionMatrix(L, m_shadowPass);
-
-    m_globalShaderInfo.lightMatrix = L;
+    //const glm::mat4 V = glm::lookAt(-glm::vec3(m_globalShaderInfo.sunDirection), glm::vec3(0.f), glm::vec3(0.f, -1.f, 0.f));
+    //glm::vec3 maxP = glm::vec3(std::numeric_limits<float>::min());
+    //glm::vec3 minP = glm::vec3(std::numeric_limits<float>::max());
+    //
+    //for (const auto& p : getFrustumPoints(m_cameraFrustum)) {
+    //    const glm::vec3 pTransformed = V * glm::vec4(p, 1.f);
+    //    minP = glm::min(minP, pTransformed);
+    //    maxP = glm::max(maxP, pTransformed);
+    //}
+    //
+    //const glm::vec3 scale = glm::vec3(2.f) / (maxP - minP);
+    //const glm::vec3 offset = -0.5f * (maxP + minP) * scale;
+    //
+    //glm::mat4 P = glm::mat4(1.f);
+    //P[0][0] = scale.x;
+    //P[1][1] = scale.y;
+    //P[2][2] = scale.z;
+    //P[3][0] = offset.x;
+    //P[3][1] = offset.y;
+    //P[3][2] = offset.z;
+    //
+    //const glm::mat4 L = coordinateSystemCorrection * P * V;
+    //m_backend.setViewProjectionMatrix(L, m_shadowPass);
+    //
+    //m_globalShaderInfo.lightMatrix = L;
 }
 
 /*
@@ -1447,7 +1503,7 @@ drawUi
 */
 void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
-    ImGui::Text(("FrameTime: " + std::to_string(m_globalShaderInfo.delteTime * 1000) + "ms").c_str());
+    ImGui::Text(("FrameTime: " + std::to_string(m_globalShaderInfo.deltaTime * 1000) + "ms").c_str());
     ImGui::Text(("Main pass drawcalls: " + std::to_string(m_currentFrameMainPassDrawcallCount)).c_str());
 
     uint32_t allocatedMemorySizeByte;

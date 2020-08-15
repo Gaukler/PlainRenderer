@@ -81,6 +81,7 @@ private:
     RenderPassHandle m_debugGeoPass;
     RenderPassHandle m_depthPrePass;
     RenderPassHandle m_depthPyramidPass;
+    RenderPassHandle m_lightMatrixPass;
 
     /*
     resources
@@ -127,6 +128,7 @@ private:
     StorageBufferHandle m_histogramPerTileBuffer;
     StorageBufferHandle m_histogramBuffer;
     StorageBufferHandle m_lightBuffer; //contains previous exposure and exposured light values
+    StorageBufferHandle m_sunLightMatrixBuffer; //contains light matrix
     UniformBufferHandle m_depthPyramidSyncBuffer;
     
     const int m_diffuseBRDFDefaultSelection = 3;
@@ -166,6 +168,8 @@ private:
     void createHistogramPasses();
     void createDepthPrePass();
     void createDepthPyramidPass();
+    void createLightMatrixPass();
+
     void createDefaultTextures();
     void createDefaultSamplers();
 

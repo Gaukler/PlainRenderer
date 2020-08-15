@@ -279,11 +279,17 @@ Global shader info
 struct GlobalShaderInfo {
     glm::vec4 sunColor = glm::vec4(1.f);
     glm::vec4 sunDirection = glm::vec4(0.f, -1.f, 0.f, 0.f);
-    glm::mat4 lightMatrix = glm::mat4(1.f);
     glm::vec4 cameraPos = glm::vec4(0.f);
+    glm::vec4 cameraRight;
+    glm::vec4 cameraUp;
+    glm::vec4 cameraForward;
+    float cameraTanFovHalf;
+    float cameraAspectRatio;
+    float nearPlane = 0.1f;
+    float farPlane = 100.f;
     float sunIlluminanceLux = 80000.f;
     float skyIlluminanceLux = 30000.f;
     float exposureOffset = 0.f;
     float exposureAdaptionSpeedEvPerSec = 2.f;
-    float delteTime = 0.016f;
+    float deltaTime = 0.016f;
 };
