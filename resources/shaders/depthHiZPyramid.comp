@@ -44,6 +44,9 @@ bool isOdd(int i){
 }
 
 //extra rows and columns are needed when the src resolution is odd, as that means three texels lie in the footprint
+//max comparisons reject depth value that are exactly 1 as they are most likely sky texels
+//this might cause problems when using it as a acceleration structure
+//in that case the pyramid will need an extra channel to compute max with/without sky
 vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2 srcRes, bool extraRow, bool extraColumn){
     ivec2 offsets[4] = { ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1) };
     
@@ -59,12 +62,12 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
         if(fromDepthBuffer){
             float depthTexel = textureLod(sampler2D(depthBuffer, depthSampler), uv, srcMipLevel).r;
             depthMin = min(depthMin, depthTexel);
-            depthMax = max(depthMax, depthTexel);
+            depthMax = max(depthMax, depthTexel * float(depthTexel != 1.f));
         }
         else{
             vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, depthSampler), uv, srcMipLevel).rg;
             depthMin = min(depthMin, previousMinMax.r);
-            depthMax = max(depthMax, previousMinMax.g);
+            depthMax = max(depthMax, previousMinMax.g * float(previousMinMax.g != 1.f));
         }
     }
 
@@ -75,12 +78,12 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
             if(fromDepthBuffer){
                 float depthTexel = textureLod(sampler2D(depthBuffer, depthSampler), uv, srcMipLevel).r;
                 depthMin = min(depthMin, depthTexel);
-                depthMax = max(depthMax, depthTexel);
+                depthMax = max(depthMax, depthTexel * float(depthTexel != 1.f));
             }
             else{
                 vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, depthSampler), uv, srcMipLevel).rg;
                 depthMin = min(depthMin, previousMinMax.r);
-                depthMax = max(depthMax, previousMinMax.g);
+                depthMax = max(depthMax, previousMinMax.g * float(previousMinMax.g != 1.f));
             }
         }
     }
@@ -92,12 +95,12 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
             if(fromDepthBuffer){
                 float depthTexel = textureLod(sampler2D(depthBuffer, depthSampler), uv, srcMipLevel).r;
                 depthMin = min(depthMin, depthTexel);
-                depthMax = max(depthMax, depthTexel);
+                depthMax = max(depthMax, depthTexel * float(depthTexel != 1.f));
             }
             else{
                 vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, depthSampler), uv, srcMipLevel).rg;
                 depthMin = min(depthMin, previousMinMax.r);
-                depthMax = max(depthMax, previousMinMax.g);
+                depthMax = max(depthMax, previousMinMax.g * float(previousMinMax.g != 1.f));
             }
         }
     }
@@ -107,12 +110,12 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
         if(fromDepthBuffer){
             float depthTexel = textureLod(sampler2D(depthBuffer, depthSampler), uv, srcMipLevel).r;
             depthMin = min(depthMin, depthTexel);
-            depthMax = max(depthMax, depthTexel);
+            depthMax = max(depthMax, depthTexel * float(depthTexel != 1.f));
         }
         else{
             vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, depthSampler), uv, srcMipLevel).rg;
             depthMin = min(depthMin, previousMinMax.r);
-            depthMax = max(depthMax, previousMinMax.g);
+            depthMax = max(depthMax, previousMinMax.g * float(previousMinMax.g != 1.f));
         }
         
     }
