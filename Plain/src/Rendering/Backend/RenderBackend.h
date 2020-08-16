@@ -178,8 +178,8 @@ public:
         const std::vector<std::vector<uint32_t>>&  indicesPerMesh);
 
     ImageHandle             createImage(const ImageDescription& description);
-    UniformBufferHandle     createUniformBuffer(const BufferDescription& description);
-    StorageBufferHandle     createStorageBuffer(const BufferDescription& description);
+    UniformBufferHandle     createUniformBuffer(const UniformBufferDescription& desc);
+    StorageBufferHandle     createStorageBuffer(const StorageBufferDescription& desc);
     SamplerHandle           createSampler(const SamplerDescription& description);
 
     void setSwapchainInputImage(ImageHandle image);

@@ -26,9 +26,8 @@ struct UniformBufferResource {
     UniformBufferResource(
         const UniformBufferHandle   buffer,
         const bool                  readOnly,
-        const uint32_t              binding) : buffer(buffer), readOnly(readOnly), binding(binding) {};
+        const uint32_t              binding) : buffer(buffer), binding(binding) {};
     UniformBufferHandle buffer;
-    bool                readOnly;
     uint32_t            binding;
 };
 
@@ -226,12 +225,14 @@ Buffer
 =========
 */
 
-enum class BufferType { Storage, Uniform };
+struct UniformBufferDescription {
+    size_t  size;
+    void*   initialData = nullptr;
+};
 
-struct BufferDescription {
-    BufferType  type;
-    size_t      size;
-    void*       initialData = nullptr;
+struct StorageBufferDescription {
+    size_t  size;
+    void*   initialData = nullptr;
 };
 
 /*

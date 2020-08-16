@@ -1062,17 +1062,15 @@ void RenderFrontend::createHistogramPasses() {
     create ssbos
     */
     {
-        BufferDescription histogramBufferDesc;
+        StorageBufferDescription histogramBufferDesc;
         histogramBufferDesc.size = m_nHistogramBins * sizeof(uint32_t);
-        histogramBufferDesc.type = BufferType::Storage;
         m_histogramBuffer = m_backend.createStorageBuffer(histogramBufferDesc);
     }
    
     {
-        float initialLightBufferData[3] = { 1.f, 1.f, 1.f };
-        BufferDescription lightBufferDesc;
+        float initialLightBufferData[3] = { 0.f, 0.f, 0.f };
+        StorageBufferDescription lightBufferDesc;
         lightBufferDesc.size = 3 * sizeof(uint32_t);
-        lightBufferDesc.type = BufferType::Storage;
         lightBufferDesc.initialData = initialLightBufferData;
         m_lightBuffer = m_backend.createStorageBuffer(lightBufferDesc);
     }
@@ -1081,9 +1079,8 @@ void RenderFrontend::createHistogramPasses() {
     uint32_t nMaxTiles = 1920 * 1080 / pixelsPerTile; //FIXME: update buffer on rescale
 
     {
-        BufferDescription histogramPerTileBufferDesc;
+        StorageBufferDescription histogramPerTileBufferDesc;
         histogramPerTileBufferDesc.size = nMaxTiles * m_nHistogramBins * sizeof(uint32_t);
-        histogramPerTileBufferDesc.type = BufferType::Storage;
         m_histogramPerTileBuffer = m_backend.createStorageBuffer(histogramPerTileBufferDesc);
     }
 
@@ -1229,9 +1226,8 @@ void RenderFrontend::createDepthPyramidPass() {
     }    
     //storage buffer for syncing
     {
-        BufferDescription desc;
+        StorageBufferDescription desc;
         desc.size = sizeof(uint32_t);
-        desc.type = BufferType::Storage;
         desc.initialData = { (uint32_t)0 };
         m_depthPyramidSyncBuffer = m_backend.createStorageBuffer(desc);
     }
@@ -1252,9 +1248,8 @@ void RenderFrontend::createLightMatrixPass() {
     }
     //buffer
     {
-        BufferDescription desc;
+        StorageBufferDescription desc;
         desc.size = sizeof(glm::mat4);
-        desc.type = BufferType::Storage;
         m_sunLightMatrixBuffer = m_backend.createStorageBuffer(desc);
     }
 }

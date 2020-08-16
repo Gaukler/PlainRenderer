@@ -290,9 +290,8 @@ void RenderBackend::setup(GLFWwindow* window) {
     */
     std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphicsQueueIndex, vkContext.queueFamilies.computeQueueIndex };
     GlobalShaderInfo defaultInfo;
-    BufferDescription globalShaderBufferDesc;
+    UniformBufferDescription globalShaderBufferDesc;
     globalShaderBufferDesc.size = sizeof(GlobalShaderInfo);
-    globalShaderBufferDesc.type = BufferType::Uniform;
     globalShaderBufferDesc.initialData = &defaultInfo;
     m_globalShaderInfoBuffer = createUniformBuffer(globalShaderBufferDesc);
 
@@ -1105,22 +1104,18 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
 createUniformBuffer
 =========
 */
-StorageBufferHandle RenderBackend::createUniformBuffer(const BufferDescription& description) {
-
-    if (description.type != BufferType::Uniform) {
-        std::cout << "Warning: RenderBackend::createStorageBuffer received a uniform Buffer description\n";
-    }
+StorageBufferHandle RenderBackend::createUniformBuffer(const UniformBufferDescription& desc) {
 
     std::vector<uint32_t> queueFamilies = {
         vkContext.queueFamilies.transferQueueFamilyIndex,
         vkContext.queueFamilies.graphicsQueueIndex,
         vkContext.queueFamilies.computeQueueIndex };
 
-    Buffer uniformBuffer = createBufferInternal(description.size, queueFamilies,
+    Buffer uniformBuffer = createBufferInternal(desc.size, queueFamilies,
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-    if (description.initialData != nullptr) {
-        fillBuffer(uniformBuffer, description.initialData, description.size);
+    if (desc.initialData != nullptr) {
+        fillBuffer(uniformBuffer, desc.initialData, desc.size);
     }
 
     StorageBufferHandle handle = m_uniformBuffers.size();
@@ -1133,19 +1128,19 @@ StorageBufferHandle RenderBackend::createUniformBuffer(const BufferDescription& 
 createStorageBuffer
 =========
 */
-StorageBufferHandle RenderBackend::createStorageBuffer(const BufferDescription& description) {
-
-    if (description.type != BufferType::Storage) {
-        std::cout << "Warning: RenderBackend::createStorageBuffer received a uniform Buffer description\n";
-    }
+StorageBufferHandle RenderBackend::createStorageBuffer(const StorageBufferDescription& desc) {
 
     std::vector<uint32_t> queueFamilies = {
         vkContext.queueFamilies.transferQueueFamilyIndex,
         vkContext.queueFamilies.graphicsQueueIndex,
         vkContext.queueFamilies.computeQueueIndex};
 
-    Buffer storageBuffer = createBufferInternal(description.size, queueFamilies, 
+    Buffer storageBuffer = createBufferInternal(desc.size, queueFamilies, 
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (desc.initialData != nullptr) {
+        fillBuffer(storageBuffer, desc.initialData, desc.size);
+    }
 
     StorageBufferHandle handle = m_storageBuffers.size();
     m_storageBuffers.push_back(storageBuffer);
