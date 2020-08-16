@@ -40,13 +40,17 @@ private:
     uint32_t m_screenWidth;
     uint32_t m_screenHeight;
 
-    uint32_t m_currentFrameMainPassDrawcallCount = 0;
+    //drawcall stats
+    uint32_t m_currentMeshCount = 0;                //mesh commands received
+    uint32_t m_currentMainPassDrawcallCount = 0;    //executed after camera culling
+    uint32_t m_currentShadowPassDrawcallCount = 0;  //executed after shadow frustum culling
 
     bool m_didResolutionChange = false;
     bool m_minimized = false;
     bool m_firstFrame = true;
     bool m_drawBBs = false; //debug rendering of bounding boxes
     bool m_freezeAndDrawCameraFrustum = false;
+    bool m_drawShadowFrustum = false;
 
     //probably not the most efficient way
     //relying on the MeshHandle being indices could break if the backend changes or mesh deletion is added so use map for now
@@ -122,6 +126,7 @@ private:
     MeshHandle m_skyCube;
 
     DynamicMeshHandle m_cameraFrustumModel;
+    DynamicMeshHandle m_shadowFrustumModel;
     std::vector<DynamicMeshHandle> m_bbDebugMeshes; //bounding box debug mesh
     std::vector<AxisAlignedBoundingBox> m_bbsToDebugDraw; //bounding boxes for debug rendering this frame
 

@@ -94,7 +94,9 @@ void RenderFrontend::newFrame() {
         return;
     }
 
-    m_currentFrameMainPassDrawcallCount = 0;
+    m_currentMeshCount = 0;
+    m_currentMainPassDrawcallCount = 0;
+    m_currentShadowPassDrawcallCount = 0;
 
     if (m_isMainPassShaderDescriptionStale) {
         m_backend.updateGraphicPassShaderDescription(m_mainPass, m_mainPassShaderConfig);
@@ -151,6 +153,16 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
 
     if (!m_freezeAndDrawCameraFrustum) {
         updateCameraFrustum();
+    }
+
+    //update shadow frustum
+    {
+        std::vector<glm::vec3> frustumPoints;
+        std::vector<uint32_t> frustumIndices;
+
+        const auto shadowFrustum = computeOrthogonalFrustumFittedToCamera(m_cameraFrustum, directionToVector(m_sunDirection));
+        frustumToLineMesh(shadowFrustum, &frustumPoints, &frustumIndices);
+        m_backend.updateDynamicMeshes({ m_shadowFrustumModel }, { frustumPoints }, { frustumIndices });
     }
 }
 
@@ -223,36 +235,78 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
         std::cout << "Error: RenderFrontend::issueMeshDraws mesh and model matrix count do not match\n";
     }
 
-    std::vector<MeshHandle> culledMainPassMeshes;
-    std::vector<glm::mat4> culledMainPassTransforms;
+    m_currentMeshCount += meshes.size();
 
-    //frustum culling
-    for (uint32_t i = 0; i < std::min(meshes.size(), modelMatrices.size()); i++) {
-        const auto handle = meshes[i];
-        const auto& bb = m_meshHandleToBoundingBox[handle];
-        const auto& transform = modelMatrices[i];
+    //main pass
+    {
+        std::vector<MeshHandle> culledMeshes;
+        std::vector<glm::mat4> culledTransforms;
 
-        //account for transform
-        const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, transform);
-        const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, bb);
+        //frustum culling
+        for (uint32_t i = 0; i < std::min(meshes.size(), modelMatrices.size()); i++) {
+            const auto handle = meshes[i];
+            const auto& bb = m_meshHandleToBoundingBox[handle];
+            const auto& transform = modelMatrices[i];
 
-        if (renderMesh) {
-            m_currentFrameMainPassDrawcallCount++;
+            //account for transform
+            const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, transform);
+            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, bb);
 
-            culledMainPassMeshes.push_back(handle);
-            culledMainPassTransforms.push_back(transform);
+            if (renderMesh) {
+                m_currentMainPassDrawcallCount++;
 
-            if (m_drawBBs) {
-                m_bbsToDebugDraw.push_back(bbTransformed);
+                culledMeshes.push_back(handle);
+                culledTransforms.push_back(transform);
+
+                if (m_drawBBs) {
+                    m_bbsToDebugDraw.push_back(bbTransformed);
+                }
             }
         }
+        m_backend.drawMeshes(culledMeshes, culledTransforms, { m_mainPass, m_depthPrePass });
     }
+    
+    //shadow pass
+    {
+        std::vector<MeshHandle> culledMeshes;
+        std::vector<glm::mat4> culledTransforms;
 
-    //all meshes drawn in shadow pass for now
-    m_backend.drawMeshes(meshes, modelMatrices, { m_shadowPass });
+        const glm::vec3 sunDirection = directionToVector(m_sunDirection);
+        auto shadowFrustum = computeOrthogonalFrustumFittedToCamera(m_cameraFrustum, sunDirection);
+        //we must not cull behind the shadow frustum near plane, as objects there cast shadows into the visible area
+        //for now we simply offset the near plane points very far into the light direction
+        //this means that all objects in that direction within the moved distance will intersect our frustum and aren't culled
+        const float nearPlaneExtensionLength = 10000.f;
+        const glm::vec3 nearPlaneOffset = sunDirection * nearPlaneExtensionLength;
+        shadowFrustum.points.l_l_n += nearPlaneOffset;
+        shadowFrustum.points.r_l_n += nearPlaneOffset;
+        shadowFrustum.points.l_u_n += nearPlaneOffset;
+        shadowFrustum.points.r_u_n += nearPlaneOffset;
 
-    //main pass is culled
-    m_backend.drawMeshes(culledMainPassMeshes, culledMainPassTransforms, { m_mainPass, m_depthPrePass });
+        //coarse frustum culling for shadow rendering, assuming shadow frustum if fitted to camera frustum
+        //actual frustum is fitted tightly to depth buffer values, but that is done on the GPU
+        for (uint32_t i = 0; i < std::min(meshes.size(), modelMatrices.size()); i++) {
+            const auto handle = meshes[i];
+            const auto& bb = m_meshHandleToBoundingBox[handle];
+            const auto& transform = modelMatrices[i];
+
+            //account for transform
+            const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, transform);
+            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(shadowFrustum, bb);
+
+            if (renderMesh) {
+                m_currentShadowPassDrawcallCount++;
+
+                culledMeshes.push_back(handle);
+                culledTransforms.push_back(transform);
+
+                if (m_drawBBs) {
+                    m_bbsToDebugDraw.push_back(bbTransformed);
+                }
+            }
+        }
+        m_backend.drawMeshes(culledMeshes, culledTransforms, { m_shadowPass });
+    }    
 }
 
 /*
@@ -466,6 +520,10 @@ void RenderFrontend::renderFrame() {
         m_backend.drawDynamicMeshes({ m_cameraFrustumModel }, { glm::mat4(1.f) }, { m_debugGeoPass });
         drawDebugPass = true;
     }
+    if (m_drawShadowFrustum) {
+        m_backend.drawDynamicMeshes({ m_shadowFrustumModel }, { glm::mat4(1.f) }, { m_debugGeoPass });
+        drawDebugPass = true;
+    }
 
     //update bounding box debug models
     if(m_drawBBs && m_bbsToDebugDraw.size() > 0) {
@@ -675,11 +733,14 @@ updateCameraFrustum
 void RenderFrontend::updateCameraFrustum() {
     m_cameraFrustum = computeViewFrustum(m_camera);
 
-    std::vector<glm::vec3> frustumPoints;
-    std::vector<uint32_t> frustumIndices;
+    //camera frustum
+    {
+        std::vector<glm::vec3> frustumPoints;
+        std::vector<uint32_t> frustumIndices;
 
-    frustumToLineMesh(m_cameraFrustum, &frustumPoints, &frustumIndices);
-    m_backend.updateDynamicMeshes({ m_cameraFrustumModel }, { frustumPoints }, { frustumIndices });
+        frustumToLineMesh(m_cameraFrustum, &frustumPoints, &frustumIndices);
+        m_backend.updateDynamicMeshes({ m_cameraFrustumModel }, { frustumPoints }, { frustumIndices });
+    }
 }
 
 /*
@@ -1047,6 +1108,8 @@ void RenderFrontend::createDebugGeoPass() {
 
     //meshes
     m_cameraFrustumModel = m_backend.createDynamicMeshes(
+        { positionsInViewFrustumLineMesh }, { indicesInViewFrustumLineMesh }).front();
+    m_shadowFrustumModel = m_backend.createDynamicMeshes(
         { positionsInViewFrustumLineMesh }, { indicesInViewFrustumLineMesh }).front();
 }
 
@@ -1467,7 +1530,9 @@ drawUi
 void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
     ImGui::Text(("FrameTime: " + std::to_string(m_globalShaderInfo.deltaTime * 1000) + "ms").c_str());
-    ImGui::Text(("Main pass drawcalls: " + std::to_string(m_currentFrameMainPassDrawcallCount)).c_str());
+    ImGui::Text(("Mesh count: " + std::to_string(m_currentMeshCount)).c_str());
+    ImGui::Text(("Main pass drawcalls: " + std::to_string(m_currentMainPassDrawcallCount)).c_str());
+    ImGui::Text(("Shadow map drawcalls: " + std::to_string(m_currentShadowPassDrawcallCount)).c_str());
 
     uint32_t allocatedMemorySizeByte;
     uint32_t usedMemorySizeByte;
@@ -1517,6 +1582,7 @@ void RenderFrontend::drawUi() {
 
     ImGui::Checkbox("Draw bounding boxes", &m_drawBBs);
     ImGui::Checkbox("Freeze and draw camera frustum", &m_freezeAndDrawCameraFrustum);
+    ImGui::Checkbox("Draw shadow frustum", &m_drawShadowFrustum);
 
     ImGui::End();
 }

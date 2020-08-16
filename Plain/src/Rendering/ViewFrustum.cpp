@@ -36,17 +36,28 @@ ViewFrustum computeViewFrustum(const Camera& camera) {
     frustum.points.r_l_n = nearPlaneCenter - up * heightNear + right * widthNear;
     frustum.points.l_l_n = nearPlaneCenter - up * heightNear - right * widthNear;
 
-    const auto& p = frustum.points;
-    frustum.normals.top = glm::normalize(glm::cross(p.r_u_n - p.l_u_n, p.r_u_f - p.r_u_n));
-    frustum.normals.bot = glm::normalize(glm::cross(p.r_l_f - p.r_l_n, p.r_l_n - p.l_l_n));
-
-    frustum.normals.right = glm::normalize(glm::cross(p.r_l_f - p.r_l_n, p.r_u_n - p.r_l_n));
-    frustum.normals.left  = glm::normalize(glm::cross(p.l_u_n - p.l_l_n, p.l_l_f - p.l_l_n));
-
-    frustum.normals.near = glm::normalize(glm::cross(p.r_l_n - p.l_l_n, p.r_u_n - p.r_l_n));
-    frustum.normals.far  = glm::normalize(glm::cross(p.r_u_f - p.r_l_f, p.r_l_f - p.l_l_f));
-
+    frustum.normals = computeViewFrustumNormals(frustum.points);
+    
     return frustum;
+}
+
+/*
+=========
+frustumToLineMesh
+=========
+*/
+ViewFrustumNormals computeViewFrustumNormals(const ViewFrustumPoints& p) {
+    ViewFrustumNormals normals;
+    normals.top = glm::normalize(glm::cross(p.r_u_n - p.l_u_n, p.r_u_f - p.r_u_n));
+    normals.bot = glm::normalize(glm::cross(p.r_l_f - p.r_l_n, p.r_l_n - p.l_l_n));
+
+    normals.right = glm::normalize(glm::cross(p.r_l_f - p.r_l_n, p.r_u_n - p.r_l_n));
+    normals.left = glm::normalize(glm::cross(p.l_u_n - p.l_l_n, p.l_l_f - p.l_l_n));
+
+    normals.near = glm::normalize(glm::cross(p.r_l_n - p.l_l_n, p.r_u_n - p.r_l_n));
+    normals.far = glm::normalize(glm::cross(p.r_u_f - p.r_l_f, p.r_l_f - p.l_l_f));
+
+    return normals;
 }
 
 /*
@@ -235,4 +246,51 @@ std::array<glm::vec3, 8> getFrustumPoints(const ViewFrustum& frustum) {
         frustum.points.r_u_f,
         frustum.points.r_u_n,
     };
+}
+
+/*
+=========
+getFrustumPoints
+=========
+*/
+ViewFrustum computeOrthogonalFrustumFittedToCamera(const ViewFrustum& cameraFrustum, const glm::vec3& lightDirection) {
+
+    //reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
+    //reference: https://lwjglgamedev.gitbooks.io/3d-game-development-with-lwjgl/content/chapter26/chapter26.html
+    glm::vec3 up = abs(lightDirection.y) < 0.999f ? glm::vec3(0.f, -1.f, 0.f) : glm::vec3(0.f, 0.f, -1.f);
+
+    const glm::mat4 V = glm::lookAt(-lightDirection, glm::vec3(0.f), up);
+    glm::vec3 maxP = glm::vec3(std::numeric_limits<float>::min());
+    glm::vec3 minP = glm::vec3(std::numeric_limits<float>::max());
+
+    for (const auto& p : getFrustumPoints(cameraFrustum)) {
+        const glm::vec3 pTransformed = V * glm::vec4(p, 1.f);
+        minP = glm::min(minP, pTransformed);
+        maxP = glm::max(maxP, pTransformed);
+    }
+    
+    glm::vec3 scale = 2.f / (maxP - minP);
+    const glm::vec3 offset = -0.5f * (maxP + minP) * scale;
+
+    glm::mat4 clip(1.f);
+    clip[0][0] = scale.x;
+    clip[1][1] = scale.y;
+    clip[2][2] = scale.z;
+    clip[3] = glm::vec4(offset, 1);
+
+    glm::mat4 clipToWorld = glm::inverse(clip * V);
+
+    ViewFrustum result;
+    result.points.l_l_n = clipToWorld * glm::vec4(-1,  1, -1, 1);
+    result.points.r_l_n = clipToWorld * glm::vec4( 1,  1, -1, 1);
+    result.points.l_u_n = clipToWorld * glm::vec4(-1, -1, -1, 1);
+    result.points.r_u_n = clipToWorld * glm::vec4( 1, -1, -1, 1);
+    result.points.l_l_f = clipToWorld * glm::vec4(-1,  1,  1, 1);
+    result.points.r_l_f = clipToWorld * glm::vec4( 1,  1,  1, 1);
+    result.points.l_u_f = clipToWorld * glm::vec4(-1, -1,  1, 1);
+    result.points.r_u_f = clipToWorld * glm::vec4( 1, -1,  1, 1);
+
+    result.normals = computeViewFrustumNormals(result.points);
+
+    return result;
 }

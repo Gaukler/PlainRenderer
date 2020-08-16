@@ -29,6 +29,7 @@ struct ViewFrustum {
 };
 
 ViewFrustum computeViewFrustum(const Camera& camera);
+ViewFrustumNormals computeViewFrustumNormals(const ViewFrustumPoints& p);
 
 const uint32_t positionsInViewFrustumLineMesh = 20;
 const uint32_t indicesInViewFrustumLineMesh = 84;
@@ -38,3 +39,5 @@ void frustumToLineMesh(const ViewFrustum& frustum,
 
 //convencie function that returns all frustum points in an array for easy iterating
 std::array<glm::vec3, 8> getFrustumPoints(const ViewFrustum& frustum);
+
+ViewFrustum computeOrthogonalFrustumFittedToCamera(const ViewFrustum& cameraFrustum, const glm::vec3& lightDirection);
