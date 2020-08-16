@@ -242,10 +242,9 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
             culledMainPassMeshes.push_back(handle);
             culledMainPassTransforms.push_back(transform);
 
-            //FIXME move draw BBs back here after debugging   
-        }
-        if (m_drawBBs) {
-            m_bbsToDebugDraw.push_back(bbTransformed);
+            if (m_drawBBs) {
+                m_bbsToDebugDraw.push_back(bbTransformed);
+            }
         }
     }
 
@@ -1457,45 +1456,7 @@ updateSun
 =========
 */
 void RenderFrontend::updateSun() {
-
     m_globalShaderInfo.sunDirection = glm::vec4(directionToVector(m_sunDirection), 0.f);
-
-    /*
-    set shadow pass matrix
-    */
-    const glm::mat4 coordinateSystemCorrection = glm::mat4(
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.5f, 0.0f,
-        0.0f, 0.0f, 0.5f, 1.0f);
-
-    //reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
-    //z-coordinate is tightly fitted, rendering pass uses depth clamping
-    //const glm::mat4 V = glm::lookAt(-glm::vec3(m_globalShaderInfo.sunDirection), glm::vec3(0.f), glm::vec3(0.f, -1.f, 0.f));
-    //glm::vec3 maxP = glm::vec3(std::numeric_limits<float>::min());
-    //glm::vec3 minP = glm::vec3(std::numeric_limits<float>::max());
-    //
-    //for (const auto& p : getFrustumPoints(m_cameraFrustum)) {
-    //    const glm::vec3 pTransformed = V * glm::vec4(p, 1.f);
-    //    minP = glm::min(minP, pTransformed);
-    //    maxP = glm::max(maxP, pTransformed);
-    //}
-    //
-    //const glm::vec3 scale = glm::vec3(2.f) / (maxP - minP);
-    //const glm::vec3 offset = -0.5f * (maxP + minP) * scale;
-    //
-    //glm::mat4 P = glm::mat4(1.f);
-    //P[0][0] = scale.x;
-    //P[1][1] = scale.y;
-    //P[2][2] = scale.z;
-    //P[3][0] = offset.x;
-    //P[3][1] = offset.y;
-    //P[3][2] = offset.z;
-    //
-    //const glm::mat4 L = coordinateSystemCorrection * P * V;
-    //m_backend.setViewProjectionMatrix(L, m_shadowPass);
-    //
-    //m_globalShaderInfo.lightMatrix = L;
 }
 
 /*
