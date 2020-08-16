@@ -132,6 +132,8 @@ void main(){
     //lambert
     if(diffuseBRDF == 0){
         diffuseDirect = diffuseColor / 3.1415f * directLighting;
+        //even though lambert is constant the in/out fresnel terms need to be taken into account, these are integrated into the LUT
+        diffuseBRDFIntegral = vec3(brdfLut.z);
     }
     //disney diffuse
 	else if (diffuseBRDF == 1){
@@ -149,9 +151,23 @@ void main(){
     else if (diffuseBRDF == 3){
         vec3 diffuseTitanfall2 = Titanfall2Diffuse(diffuseColor, NoL, LoV, NoV, NoH, r);
         diffuseDirect = diffuseTitanfall2 * directLighting;
-        float multiIntegral = 0.1159f * r * 3.1415;
+        
+        //"multi" part of the BRDF has non-linear dependence on albedo, so it can't be integrated into the LUT
+        //however the expression is very simple and can be integrated analytically
+        float multiIntegral = 0.1159f * r * 3.1415 * 2.f;
+        //in/out fresnel has to be taken into account for multi part as well
+        //metals have no diffuse part, non-metals all use F0 of 0.04
+        vec3 F0Diffuse = vec3(0.04f);
+        //out fresnel only depends on NoV which is constant
+        multiIntegral *= (1.f - F_Schlick(F0Diffuse, vec3(1.f), NoV).r);
+        //in fresnel can be integrated numerically and multiplied onto the rest as the rest is constant
+        multiIntegral *= 0.94291f;
+        
         diffuseBRDFIntegral = min(vec3(brdfLut.z + diffuseColor * multiIntegral), vec3(1.f));
     }
+    //need to account for incoming and outgoing fresnel effect
+    //see: https://seblagarde.wordpress.com/2011/08/17/hello-world/#comment-2405
+    diffuseDirect *= (1.f - F_Schlick(f0, vec3(1.f), NoV)) * (1.f - F_Schlick(f0, vec3(1.f), NoL));
 	
     //indirect specular
     vec3 lightingIndirect;

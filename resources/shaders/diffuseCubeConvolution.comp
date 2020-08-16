@@ -45,5 +45,10 @@ void main(){
         }
 	}
 	color /= samplesTaken; 
+    //we must divide the sample trough the pdf which is (NoL / pi)
+    //the NoL from the PDF is compensated with the NoL of the light direction
+    //what is left is division with 1 / pi which equals multiplication with pi and can be pulled out of the loop
+    //lambert = albedo / pi compensates exactly that
+    color *= 3.1415;
 	imageStore(cubeOut, storageCo, vec4(color, 1.f)); 
 }

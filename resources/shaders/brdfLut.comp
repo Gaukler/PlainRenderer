@@ -63,34 +63,39 @@ void main(){
             float NoL = max(L.z, 0);
             float NoH = max(H.z, 0);
             
-            /*
-            DisneyDiffuse and CoDWWIIDiffuse return vec3 but that is just multiplication with the diffuse color, so just take one component
-            diffuse color is effectively ignored by setting it to (1, 1, 1) and is added back when shading 
-            */
             
-            //lambert, not actually used, just as visualisation for comparing
+            //DisneyDiffuse and CoDWWIIDiffuse return vec3 but that is just multiplication with the diffuse color, so just take one component
+            //diffuse color is effectively ignored by setting it to (1, 1, 1) and is added back when shading 
+            //ingoing and outgoing fresnel must be taken into account
+            //see: https://seblagarde.wordpress.com/2011/08/17/hello-world/#comment-2405
+            //the indirect diffuse is only used for non-metals, whose F0 is hardcoded to 0.04
+            //this means the Fresnel effect is only dependant on the in/out angles, meaning it can be simply computed in this integral
+            vec3 F0Diffuse = vec3(0.04);
+            //as F0Diffuse has same components for rgb the resulting fresnel terms also have same rgb, meaning we can take one component
+            float fresnelInOut = (1.f - F_Schlick(F0Diffuse, vec3(1.f), NoV).r) * (1.f - F_Schlick(F0Diffuse, vec3(1.f), NoL).r);
+            
             if(diffuseBRDF == 0){                
-                result.z += 1.f;
+                result.z += (1.f / 3.1415) * fresnelInOut;
             }
             //disney diffuse
             else if(diffuseBRDF == 1){                
-                result.z += DisneyDiffuse(vec3(1.f), NoL, VoH, NoV, r).x;
+                result.z += DisneyDiffuse(vec3(1.f), NoL, VoH, NoV, r).x * fresnelInOut;
             }
             //CoDWWII
             else if(diffuseBRDF == 2){
-                result.z += CoDWWIIDiffuse(vec3(1.f), NoL, VoH, NoV, NoH, r).x; 
+                result.z += CoDWWIIDiffuse(vec3(1.f), NoL, VoH, NoV, NoH, r).x * fresnelInOut; 
             }
             //Titanfall 2, only compute single component, rest can be computed analatically 
             else if(diffuseBRDF == 3){
                 float LoV = clamp(dot(L, V), 0.f, 1.f);
-                result.z += Titanfall2DiffuseSingleComponent(NoL, LoV, NoV, NoH, r);
+                result.z += Titanfall2DiffuseSingleComponent(NoL, LoV, NoV, NoH, r) * fresnelInOut;
             }
         }
 	}
 	result /= float(samples);
+    
+    //must compensate divison by 4 from visibility term
     result.xy *= 4.f;
-    if(diffuseBRDF != 0){
-        result.z *= 3.1415f; //must compensate for 1/pi in diffuse BRDFs
-    }
+    
 	imageStore(lut, uv, vec4(result, 0.f));
 }
