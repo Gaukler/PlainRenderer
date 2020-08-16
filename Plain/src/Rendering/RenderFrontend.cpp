@@ -212,6 +212,13 @@ issueMeshDraw
 =========
 */
 void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const std::vector<glm::mat4>& modelMatrices) {
+
+    //if we prepare render commands without consuming them we will save up a huge amount of commands
+    //so commands are not recorded if minmized in the first place
+    if (m_minimized) {
+        return;
+    }
+
     if (meshes.size() != modelMatrices.size()) {
         std::cout << "Error: RenderFrontend::issueMeshDraws mesh and model matrix count do not match\n";
     }
