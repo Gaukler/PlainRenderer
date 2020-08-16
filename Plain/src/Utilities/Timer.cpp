@@ -11,11 +11,9 @@
 #pragma warning(pop)
 #endif
 
-
-Timer& Timer::getReference() {
-	static Timer timer;
-	return timer;
-}
+double Timer::m_deltaTime;
+double Timer::m_lastFrameTime;
+float  Timer::m_deltaTimeFloat;
 
 void Timer::markNewFrame() {
 	double currentTime = getTime();
@@ -42,5 +40,3 @@ float Timer::getTimeFloat() {
 float Timer::getDeltaTimeFloat() {
 	return m_deltaTimeFloat;
 }
-
-Timer::Timer() : m_lastFrameTime(getTime()) {}

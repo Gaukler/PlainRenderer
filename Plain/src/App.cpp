@@ -37,14 +37,13 @@ App::App() {
 
 void App::run() {
 
-	Timer& timer = Timer::getReference();
 	CameraController cameraController(m_window);	
 
 	while (!glfwWindowShouldClose(m_window)) {
 
-		timer.markNewFrame();
-		float deltaTime = timer.getDeltaTimeFloat();
-        float time = timer.getTime();
+        Timer::markNewFrame();
+		float deltaTime = Timer::getDeltaTimeFloat();
+        float time = Timer::getTime();
 
         m_renderer.newFrame();
 

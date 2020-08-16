@@ -31,8 +31,7 @@ update
 */
 void CameraController::update(GLFWwindow* inputWindow) {
 
-	Timer& timer = Timer::getReference();
-	float deltaTime = timer.getDeltaTimeFloat();
+	float deltaTime = Timer::getDeltaTimeFloat();
 
 	//compute mouse delta
 	double mouseX, mouseY;

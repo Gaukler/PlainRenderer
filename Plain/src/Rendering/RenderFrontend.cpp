@@ -751,8 +751,7 @@ updateGlobalShaderInfo
 void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.cameraPos = glm::vec4(m_camera.extrinsic.position, 1.f);
 
-    Timer& timer = Timer::getReference();
-    m_globalShaderInfo.deltaTime = timer.getDeltaTimeFloat();
+    m_globalShaderInfo.deltaTime = Timer::getDeltaTimeFloat();
     m_globalShaderInfo.nearPlane = m_camera.intrinsic.near;
     m_globalShaderInfo.farPlane = m_camera.intrinsic.far;
 
