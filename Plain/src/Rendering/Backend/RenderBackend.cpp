@@ -320,7 +320,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     */
     ComputePassDescription copyPass;
     copyPass.name = "Copy image to swapchain";
-    copyPass.shaderDescription.srcPathRelative = "imageCopy.comp";
+    copyPass.shaderDescription.srcPathRelative = "copyToSwapchain.comp";
     m_swapchain.copyToSwapchainPass = createComputePass(copyPass);
 }
 
