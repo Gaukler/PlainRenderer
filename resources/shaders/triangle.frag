@@ -64,6 +64,28 @@ layout(constant_id = 3) const int geometricAA = 0;
 
 layout(constant_id = 4) const int specularProbeMipCount = 0;
 
+float shadowTest(vec2 uv, float actualDepth){
+    vec4 depthTexels = textureGather(sampler2D(depthTexture, depthSampler), uv, 0);
+    
+    vec4 tests;
+    tests.r = float(actualDepth <= depthTexels.r);
+    tests.g = float(actualDepth <= depthTexels.g);
+    tests.b = float(actualDepth <= depthTexels.b);
+    tests.a = float(actualDepth <= depthTexels.a);
+    
+    ivec2 shadowMapRes = textureSize(sampler2D(depthTexture, depthSampler), 0);
+    vec2 sampleImageCoordinates = vec2(shadowMapRes) * uv + 0.502f;
+    vec2 coordinatesFloored = floor(sampleImageCoordinates);
+    vec2 interpolation = sampleImageCoordinates - coordinatesFloored;
+    
+	float interpolationLeft = mix(tests.b, tests.g, interpolation.y);
+    float interpolationRight  = mix(tests.a, tests.r, interpolation.y);
+    
+    float shadow = mix(interpolationRight, interpolationLeft, interpolation.x);
+
+    return shadow;
+}
+
 float calcShadow(vec3 pos, float LoV){
     //normal used for bias
     //referenc: http://c0de517e.blogspot.com/2011/05/shadowmap-bias-notes.html
@@ -80,25 +102,21 @@ float calcShadow(vec3 pos, float LoV){
 	posLightSpace.xy = posLightSpace.xy * 0.5f + 0.5f;
 	float actualDepth = clamp(posLightSpace.z, 0.f, 1.f);
     
-    vec4 depthTexels = textureGather(sampler2D(depthTexture, depthSampler), posLightSpace.xy, 0);
+    vec2 texelSize = vec2(1.f) / textureSize(sampler2D(depthTexture, depthSampler), 0);
+    float radius = 1.f;
     
-    vec4 tests;
-    tests.r = float(actualDepth <= depthTexels.r);
-    tests.g = float(actualDepth <= depthTexels.g);
-    tests.b = float(actualDepth <= depthTexels.b);
-    tests.a = float(actualDepth <= depthTexels.a);
+    float shadow = 0;
+    shadow += shadowTest(posLightSpace.xy, actualDepth);
+    shadow += shadowTest(posLightSpace.xy + vec2( 1,  1) * texelSize * radius, actualDepth);
+    shadow += shadowTest(posLightSpace.xy + vec2( 1, -1) * texelSize * radius, actualDepth);
+    shadow += shadowTest(posLightSpace.xy + vec2(-1,  1) * texelSize * radius, actualDepth);
+    shadow += shadowTest(posLightSpace.xy + vec2(-1, -1) * texelSize * radius, actualDepth);
+    shadow += shadowTest(posLightSpace.xy + vec2( 1,  0) * texelSize * radius, actualDepth);
+    shadow += shadowTest(posLightSpace.xy + vec2(-1,  0) * texelSize * radius, actualDepth);
+    shadow += shadowTest(posLightSpace.xy + vec2( 0,  1) * texelSize * radius, actualDepth);
+    shadow += shadowTest(posLightSpace.xy + vec2( 0, -1) * texelSize * radius, actualDepth);
     
-    ivec2 shadowMapRes = textureSize(sampler2D(depthTexture, depthSampler), 0);
-    vec2 sampleImageCoordinates = vec2(shadowMapRes) * posLightSpace.xy + 0.502f;
-    vec2 coordinatesFloored = floor(sampleImageCoordinates);
-    vec2 interpolation = sampleImageCoordinates - coordinatesFloored;
-    
-	float interpolationLeft = mix(tests.b, tests.g, interpolation.y);
-    float interpolationRight  = mix(tests.a, tests.r, interpolation.y);
-    
-    float shadow = mix(interpolationRight, interpolationLeft, interpolation.x);
-
-    return shadow;
+    return shadow / 9.f;
 }
 
 //mathematical fit from: "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
