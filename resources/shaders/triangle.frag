@@ -1,6 +1,8 @@
 #version 460
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
+
+#include "colorConversion.inc"
 #include "brdf.inc"
 #include "global.inc" 
 #include "GeometricAA.inc"
@@ -141,8 +143,7 @@ void main(){
     float r = specularTexel.g;
     
     r = max(r * r, 0.0045f);
-    
-	vec3 albedo = pow(albedoTexel, vec3(2.2f)); //gamma correction
+    vec3 albedo = sRGBToLinear(albedoTexel);
 
 	vec3 N = normalize(passTBN * normalTexelReconstructed);   
 	vec3 L = normalize(g_sunDirection.xyz);
