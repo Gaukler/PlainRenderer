@@ -64,16 +64,41 @@ layout(constant_id = 3) const int geometricAA = 0;
 
 layout(constant_id = 4) const int specularProbeMipCount = 0;
 
-float calcShadow(vec3 pos){
-	vec4 posLightSpace = lightMatrix * vec4(pos, 1.f);
+float calcShadow(vec3 pos, float LoV){
+    //normal used for bias
+    //referenc: http://c0de517e.blogspot.com/2011/05/shadowmap-bias-notes.html
+    float biasMin = 0.001f;
+    float biasMax = 0.03f;
+    float bias = mix(biasMax, biasMin, LoV);
+    
+    //we don't want vector from normal map as this is a geometric operation
+    vec3 N = normalize(passNormal);
+    vec3 offsetPos = pos + N * bias;
+    
+	vec4 posLightSpace = lightMatrix * vec4(offsetPos, 1.f);
 	posLightSpace /= posLightSpace.w;
 	posLightSpace.xy = posLightSpace.xy * 0.5f + 0.5f;
 	float actualDepth = clamp(posLightSpace.z, 0.f, 1.f);
-	float shadowMapDepth = texture(sampler2D(depthTexture, depthSampler), posLightSpace.xy).r;
-	if(actualDepth <= shadowMapDepth){
-		return 1.f;
-	}
-	return 0.f;
+    
+    vec4 depthTexels = textureGather(sampler2D(depthTexture, depthSampler), posLightSpace.xy, 0);
+    
+    vec4 tests;
+    tests.r = float(actualDepth <= depthTexels.r);
+    tests.g = float(actualDepth <= depthTexels.g);
+    tests.b = float(actualDepth <= depthTexels.b);
+    tests.a = float(actualDepth <= depthTexels.a);
+    
+    ivec2 shadowMapRes = textureSize(sampler2D(depthTexture, depthSampler), 0);
+    vec2 sampleImageCoordinates = vec2(shadowMapRes) * posLightSpace.xy + 0.502f;
+    vec2 coordinatesFloored = floor(sampleImageCoordinates);
+    vec2 interpolation = sampleImageCoordinates - coordinatesFloored;
+    
+	float interpolationLeft = mix(tests.b, tests.g, interpolation.y);
+    float interpolationRight  = mix(tests.a, tests.r, interpolation.y);
+    
+    float shadow = mix(interpolationRight, interpolationLeft, interpolation.x);
+
+    return shadow;
 }
 
 //mathematical fit from: "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
@@ -119,7 +144,7 @@ void main(){
 	const vec3 f0 = mix(vec3(0.04f), albedo, metalic);
     
     //sun light
-	vec3 directLighting = max(dot(N, L), 0.f) * calcShadow(passPos.xyz / passPos.w) * g_sunColor.rgb;
+	vec3 directLighting = max(dot(N, L), 0.f) * calcShadow(passPos.xyz, LoV) * g_sunColor.rgb;
 
     //direct diffuse
     vec3 diffuseColor = (1.f - metalic) * albedo;
