@@ -10,10 +10,8 @@ layout(location = 3) in vec3 inTangent;
 layout(location = 4) in vec3 inBitangent;
 
 layout(location = 0) out vec2 passUV;
-layout(location = 1) out vec3 passNormal;
-layout(location = 2) out vec4 passPos;
-layout(location = 3) out vec3 passV;
-layout(location = 4) out mat3 passTBN;
+layout(location = 1) out vec3 passPos;
+layout(location = 2) out mat3 passTBN; 
 
 
 layout(push_constant) uniform MatrixBlock {
@@ -24,11 +22,7 @@ layout(push_constant) uniform MatrixBlock {
 void main(){
 	gl_Position = translation.mvp * vec4(inPos, 1.f);
 	passUV = inUv;
-	passNormal = inNormal;
-	passPos = translation.model * vec4(inPos, 1.f);
-    
-    //must be normalized in fragment shader anyways, not needed here
-    passV = (g_cameraPosition.xyz - passPos.xyz); 
+	passPos = (translation.model * vec4(inPos, 1.f)).xyz;
 
 	vec3 T = normalize(mat3(translation.model) * inTangent);
     vec3 N = normalize(mat3(translation.model) * inNormal);

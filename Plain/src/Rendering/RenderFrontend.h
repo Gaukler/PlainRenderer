@@ -71,7 +71,7 @@ private:
     passes
     */
     RenderPassHandle m_mainPass;
-    RenderPassHandle m_shadowPass;
+    std::vector<RenderPassHandle> m_shadowPasses;
     RenderPassHandle m_skyPass;
     RenderPassHandle m_toCubemapPass;
     RenderPassHandle m_diffuseConvolutionPass;
@@ -101,19 +101,21 @@ private:
     const uint32_t m_nHistogramBins = 128;
     const float m_histogramMin = 0.001f;
     const float m_histogramMax = 200000.f;
+    const uint32_t m_shadowCascadeCount = 4;
 
     const uint32_t m_histogramTileSizeX = 32;
     const uint32_t m_histogramTileSizeY = 32;
 
     ImageHandle m_colorBuffer;
     ImageHandle m_depthBuffer;
-    ImageHandle m_shadowMap;
     ImageHandle m_environmentMapSrc;
     ImageHandle m_skyTexture;
     ImageHandle m_diffuseProbe;
     ImageHandle m_specularProbe;
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
+
+    std::vector<ImageHandle> m_shadowMaps;
 
     SamplerHandle m_shadowSampler;
     SamplerHandle m_hdriSampler;
@@ -133,7 +135,7 @@ private:
     StorageBufferHandle m_histogramPerTileBuffer;
     StorageBufferHandle m_histogramBuffer;
     StorageBufferHandle m_lightBuffer; //contains previous exposure and exposured light values
-    StorageBufferHandle m_sunLightMatrixBuffer; //contains light matrix
+    StorageBufferHandle m_sunShadowInfoBuffer; //contains light matrices and cascade splits
     UniformBufferHandle m_depthPyramidSyncBuffer;
     
     const int m_diffuseBRDFDefaultSelection = 3;
@@ -162,7 +164,7 @@ private:
     void updateGlobalShaderInfo();
 
     void createMainPass(const uint32_t width, const uint32_t height);
-    void createShadowPass();
+    void createShadowPasses();
     void createSkyPass();
     void createSkyCubeMesh();
     void createSkyTexturePreparationPasses();

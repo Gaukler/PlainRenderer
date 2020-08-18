@@ -6,43 +6,12 @@
 #include "brdf.inc"
 #include "global.inc" 
 #include "GeometricAA.inc"
+#include "shadowCascadeConstants.inc"
+#include "linearDepth.inc"
 
-layout(set=1, binding = 0) uniform texture2D depthTexture;
-layout(set=1, binding = 1) uniform sampler depthSampler;
-
-layout(set=1, binding = 2) 	uniform textureCube	diffuseProbe;
-layout(set=1, binding = 3) 	uniform sampler 	cubeSampler;
-
-layout(set=1, binding = 4) 	uniform texture2D 	brdfLutTexture;
-layout(set=1, binding = 5) 	uniform textureCube	specularProbe;
-layout(set=1, binding = 6) 	uniform sampler 	specularProbeSampler;
-layout(set=1, binding = 7) 	uniform sampler 	lutSampler;
-
-layout(set=1, binding = 8, std430) buffer lightBuffer{
-    float previousFrameExposure;
-    float sunStrengthExposed;
-    float skyStrengthExposed;
-};
-
-layout(set=1, binding = 9, std430) buffer sunShadowInfo{
-    mat4 lightMatrix;
-};
-
-layout(set=2, binding = 0) uniform sampler colorSampler;
-layout(set=2, binding = 1) uniform sampler normalSampler;
-layout(set=2, binding = 2) uniform sampler specularSampler;
-
-layout(set=2, binding = 3) uniform texture2D colorTexture;
-layout(set=2, binding = 4) uniform texture2D normalTexture;
-layout(set=2, binding = 5) uniform texture2D specularTexture;
-
-layout(location = 0) in vec2 passUV;
-layout(location = 1) in vec3 passNormal;
-layout(location = 2) in vec4 passPos;
-layout(location = 3) in vec3 passV;
-layout(location = 4) in mat3 passTBN;
-
-layout(location = 0) out vec3 color;
+/*
+specialisation constants
+*/
 
 //0: lambert
 //1: disney
@@ -66,8 +35,49 @@ layout(constant_id = 3) const int geometricAA = 0;
 
 layout(constant_id = 4) const int specularProbeMipCount = 0;
 
-float shadowTest(vec2 uv, float actualDepth){
-    vec4 depthTexels = textureGather(sampler2D(depthTexture, depthSampler), uv, 0);
+layout(set=1, binding = 0) uniform sampler depthSampler;
+
+layout(set=1, binding = 1) 	uniform textureCube	diffuseProbe;
+layout(set=1, binding = 2) 	uniform sampler 	cubeSampler;
+
+layout(set=1, binding = 3) 	uniform texture2D 	brdfLutTexture;
+layout(set=1, binding = 4) 	uniform textureCube	specularProbe;
+layout(set=1, binding = 5) 	uniform sampler 	specularProbeSampler;
+layout(set=1, binding = 6) 	uniform sampler 	lutSampler;
+
+layout(set=1, binding = 7, std430) buffer lightBuffer{
+    float previousFrameExposure;
+    float sunStrengthExposed;
+    float skyStrengthExposed;
+};
+
+layout(set=1, binding = 8, std430) buffer sunShadowInfo{
+    vec4 cascadeSplits;
+    mat4 lightMatrices[cascadeCount];
+};
+
+//bindings currently limit cascade count to 6, however should always be enough 4 anyway
+layout(set=1, binding = 9)  uniform texture2D shadowMapCascade0;
+layout(set=1, binding = 10) uniform texture2D shadowMapCascade1;
+layout(set=1, binding = 11) uniform texture2D shadowMapCascade2;
+layout(set=1, binding = 12) uniform texture2D shadowMapCascade3;
+
+layout(set=2, binding = 0) uniform sampler colorSampler;
+layout(set=2, binding = 1) uniform sampler normalSampler;
+layout(set=2, binding = 2) uniform sampler specularSampler;
+
+layout(set=2, binding = 3) uniform texture2D colorTexture;
+layout(set=2, binding = 4) uniform texture2D normalTexture;
+layout(set=2, binding = 5) uniform texture2D specularTexture;
+
+layout(location = 0) in vec2 passUV;
+layout(location = 1) in vec3 passPos;
+layout(location = 2) in mat3 passTBN; 
+
+layout(location = 0) out vec3 color;
+
+float shadowTest(texture2D shadowMap, vec2 uv, float actualDepth){
+    vec4 depthTexels = textureGather(sampler2D(shadowMap, depthSampler), uv, 0);
     
     vec4 tests;
     tests.r = float(actualDepth <= depthTexels.r);
@@ -75,7 +85,7 @@ float shadowTest(vec2 uv, float actualDepth){
     tests.b = float(actualDepth <= depthTexels.b);
     tests.a = float(actualDepth <= depthTexels.a);
     
-    ivec2 shadowMapRes = textureSize(sampler2D(depthTexture, depthSampler), 0);
+    ivec2 shadowMapRes = textureSize(sampler2D(shadowMap, depthSampler), 0);
     vec2 sampleImageCoordinates = vec2(shadowMapRes) * uv + 0.502f;
     vec2 coordinatesFloored = floor(sampleImageCoordinates);
     vec2 interpolation = sampleImageCoordinates - coordinatesFloored;
@@ -88,7 +98,7 @@ float shadowTest(vec2 uv, float actualDepth){
     return shadow;
 }
 
-float calcShadow(vec3 pos, float LoV){
+float calcShadow(vec3 pos, float LoV, texture2D shadowMap, mat4 lightMatrix){
     //normal used for bias
     //referenc: http://c0de517e.blogspot.com/2011/05/shadowmap-bias-notes.html
     float biasMin = 0.001f;
@@ -96,7 +106,7 @@ float calcShadow(vec3 pos, float LoV){
     float bias = mix(biasMax, biasMin, LoV);
     
     //we don't want vector from normal map as this is a geometric operation
-    vec3 N = normalize(passNormal);
+    vec3 N = normalize(passTBN[2]);
     vec3 offsetPos = pos + N * bias;
     
 	vec4 posLightSpace = lightMatrix * vec4(offsetPos, 1.f);
@@ -104,19 +114,19 @@ float calcShadow(vec3 pos, float LoV){
 	posLightSpace.xy = posLightSpace.xy * 0.5f + 0.5f;
 	float actualDepth = clamp(posLightSpace.z, 0.f, 1.f);
     
-    vec2 texelSize = vec2(1.f) / textureSize(sampler2D(depthTexture, depthSampler), 0);
+    vec2 texelSize = vec2(1.f) / textureSize(sampler2D(shadowMap, depthSampler), 0);
     float radius = 1.f;
     
     float shadow = 0;
-    shadow += shadowTest(posLightSpace.xy, actualDepth);
-    shadow += shadowTest(posLightSpace.xy + vec2( 1,  1) * texelSize * radius, actualDepth);
-    shadow += shadowTest(posLightSpace.xy + vec2( 1, -1) * texelSize * radius, actualDepth);
-    shadow += shadowTest(posLightSpace.xy + vec2(-1,  1) * texelSize * radius, actualDepth);
-    shadow += shadowTest(posLightSpace.xy + vec2(-1, -1) * texelSize * radius, actualDepth);
-    shadow += shadowTest(posLightSpace.xy + vec2( 1,  0) * texelSize * radius, actualDepth);
-    shadow += shadowTest(posLightSpace.xy + vec2(-1,  0) * texelSize * radius, actualDepth);
-    shadow += shadowTest(posLightSpace.xy + vec2( 0,  1) * texelSize * radius, actualDepth);
-    shadow += shadowTest(posLightSpace.xy + vec2( 0, -1) * texelSize * radius, actualDepth);
+    shadow += shadowTest(shadowMap, posLightSpace.xy, actualDepth);
+    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2( 1,  1) * texelSize * radius, actualDepth);
+    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2( 1, -1) * texelSize * radius, actualDepth);
+    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2(-1,  1) * texelSize * radius, actualDepth);
+    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2(-1, -1) * texelSize * radius, actualDepth);
+    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2( 1,  0) * texelSize * radius, actualDepth);
+    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2(-1,  0) * texelSize * radius, actualDepth);
+    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2( 0,  1) * texelSize * radius, actualDepth);
+    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2( 0, -1) * texelSize * radius, actualDepth);
     
     return shadow / 9.f;
 }
@@ -147,7 +157,11 @@ void main(){
 
 	vec3 N = normalize(passTBN * normalTexelReconstructed);   
 	vec3 L = normalize(g_sunDirection.xyz);
-	vec3 V = normalize(passV);
+    
+	vec3 V = g_cameraPosition.xyz - passPos;
+    float pixelDistance = dot(V, g_cameraForward.xyz); 
+    V = normalize(V);
+    
 	vec3 H = normalize(V + L);
 	vec3 R = reflect(-V, N);
     
@@ -164,7 +178,25 @@ void main(){
 	const vec3 f0 = mix(vec3(0.04f), albedo, metalic);
     
     //sun light
-	vec3 directLighting = max(dot(N, L), 0.f) * calcShadow(passPos.xyz, LoV) * g_sunColor.rgb;
+    float sunShadow;
+    int cascadeIndex = 0;
+    for(int cascade = 0; cascade < cascadeCount - 1; cascade++){
+        cascadeIndex += int(pixelDistance >= cascadeSplits[cascade]);
+    }
+
+    if(cascadeIndex == 0){
+        sunShadow = calcShadow(passPos, LoV, shadowMapCascade0, lightMatrices[cascadeIndex]);
+    }
+    else if(cascadeIndex == 1){
+        sunShadow = calcShadow(passPos, LoV, shadowMapCascade1, lightMatrices[cascadeIndex]);
+    }
+    else if(cascadeIndex == 2){
+        sunShadow = calcShadow(passPos, LoV, shadowMapCascade2, lightMatrices[cascadeIndex]);
+    }
+    else if(cascadeIndex == 3){
+        sunShadow = calcShadow(passPos, LoV, shadowMapCascade3, lightMatrices[cascadeIndex]);
+    }
+	vec3 directLighting = max(dot(N, L), 0.f) * sunShadow * g_sunColor.rgb;
 
     //direct diffuse
     vec3 diffuseColor = (1.f - metalic) * albedo;
@@ -283,4 +315,11 @@ void main(){
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
 	color = (diffuseDirect + specularDirect) * sunStrengthExposed + lightingIndirect * skyStrengthExposed;
+    
+    vec3 cascadeTestColor[4] = { 
+    vec3(1, 0, 0), 
+    vec3(0, 1, 0), 
+    vec3(0, 0, 1), 
+    vec3(1, 1, 0)};
+    //color *= cascadeTestColor[cascadeIndex];
 }

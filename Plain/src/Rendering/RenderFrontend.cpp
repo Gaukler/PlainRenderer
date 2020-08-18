@@ -56,7 +56,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     createBRDFLutPreparationPass();
     createHistogramPasses();
 
-    createShadowPass();
+    createShadowPasses();
     createMainPass(width, height);
     createSkyPass();
     createSkyCubeMesh();
@@ -198,8 +198,10 @@ std::vector<MeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>
 
         dataInternal.push_back(mesh);
     }
-
-    const auto handles = m_backend.createMeshes(dataInternal, std::vector<RenderPassHandle> { m_mainPass, m_shadowPass });
+    
+    auto passList = m_shadowPasses;
+    passList.push_back(m_mainPass);
+    const auto handles = m_backend.createMeshes(dataInternal, passList);
 
     //compute and store bounding boxes
     assert(handles.size() == dataInternal.size());
@@ -305,7 +307,7 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
                 }
             }
         }
-        m_backend.drawMeshes(culledMeshes, culledTransforms, { m_shadowPass });
+        m_backend.drawMeshes(culledMeshes, culledTransforms, m_shadowPasses);
     }    
 }
 
@@ -348,14 +350,16 @@ void RenderFrontend::renderFrame() {
     render sun shadow
     */
     {
-        RenderPassExecution shadowPassExecution;
-        shadowPassExecution.handle = m_shadowPass;
-        shadowPassExecution.parents = { m_lightMatrixPass };
+        for (uint32_t i = 0; i < m_shadowCascadeCount; i++) {
+            RenderPassExecution shadowPassExecution;
+            shadowPassExecution.handle = m_shadowPasses[i];
+            shadowPassExecution.parents = { m_lightMatrixPass };
 
-        StorageBufferResource lightMatrixBufferResource(m_sunLightMatrixBuffer, true, 0);
-        shadowPassExecution.resources.storageBuffers = { lightMatrixBufferResource };
+            StorageBufferResource lightMatrixBufferResource(m_sunShadowInfoBuffer, true, 0);
+            shadowPassExecution.resources.storageBuffers = { lightMatrixBufferResource };
 
-        m_backend.setRenderPassExecution(shadowPassExecution);
+            m_backend.setRenderPassExecution(shadowPassExecution);
+        }
     }
     
     /*
@@ -482,7 +486,7 @@ void RenderFrontend::renderFrame() {
         ImageResource depthPyramidLowestMipResource(m_minMaxDepthPyramid, depthPyramidMipCount-1, 1);
         exe.resources.storageImages = { depthPyramidLowestMipResource };
 
-        StorageBufferResource lightMatrixBuffer(m_sunLightMatrixBuffer, false, 0);
+        StorageBufferResource lightMatrixBuffer(m_sunShadowInfoBuffer, false, 0);
         exe.resources.storageBuffers = { lightMatrixBuffer };
 
         m_backend.setRenderPassExecution(exe);
@@ -492,23 +496,30 @@ void RenderFrontend::renderFrame() {
     render scene geometry
     */
     {
-        const auto shadowMapResource = ImageResource(m_shadowMap, 0, 0);
-        const auto shadowSamplerResource = SamplerResource(m_shadowSampler, 1);
-        const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 2);
-        const auto cubeSamplerResource = SamplerResource(m_cubeSampler, 3);
-        const auto brdfLutResource = ImageResource(m_brdfLut, 0, 4);
-        const auto specularProbeResource = ImageResource(m_specularProbe, 0, 5);
-        const auto cubeSamplerMipsResource = SamplerResource(m_skySamplerWithMips, 6);
-        const auto lustSamplerResource = SamplerResource(m_lutSampler, 7);
-        const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 8);
-        const auto lightMatrixBuffer = StorageBufferResource(m_sunLightMatrixBuffer, true, 9);
+        const auto shadowSamplerResource = SamplerResource(m_shadowSampler, 0);
+        const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 1);
+        const auto cubeSamplerResource = SamplerResource(m_cubeSampler, 2);
+        const auto brdfLutResource = ImageResource(m_brdfLut, 0, 3);
+        const auto specularProbeResource = ImageResource(m_specularProbe, 0, 4);
+        const auto cubeSamplerMipsResource = SamplerResource(m_skySamplerWithMips, 5);
+        const auto lustSamplerResource = SamplerResource(m_lutSampler, 6);
+        const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
+        const auto lightMatrixBuffer = StorageBufferResource(m_sunShadowInfoBuffer, true, 8);
 
         RenderPassExecution mainPassExecution;
         mainPassExecution.handle = m_mainPass;
         mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
-        mainPassExecution.resources.sampledImages = { shadowMapResource, diffuseProbeResource, brdfLutResource, specularProbeResource };
+        mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource };
+
+        //add shadow map cascade resources
+        for (uint32_t i = 0; i < m_shadowCascadeCount; i++) {
+            const auto shadowMapResource = ImageResource(m_shadowMaps[i], 0, 9+i);
+            mainPassExecution.resources.sampledImages.push_back(shadowMapResource);
+        }
+
         mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource, cubeSamplerMipsResource, lustSamplerResource };
-        mainPassExecution.parents = { m_shadowPass, m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
+        mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
+        mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
         mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
         m_backend.setRenderPassExecution(mainPassExecution);
     }
@@ -841,7 +852,7 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
     const uint32_t specularProbeMipCountConstantIndex = 4;
     m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(specularProbeMipCountConstantIndex);
     m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(m_specularProbeMipCount);
-    
+
     GraphicPassDescription mainPassDesc;
     mainPassDesc.name = "Forward shading";
     mainPassDesc.shaderDescriptions = m_mainPassShaderConfig;
@@ -876,10 +887,10 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
 
 /*
 =========
-createShadowPass
+createShadowPasses
 =========
 */
-void RenderFrontend::createShadowPass() {
+void RenderFrontend::createShadowPasses() {
 
     const auto shadowMapDesc = ImageDescription(
         std::vector<char>{},
@@ -892,26 +903,37 @@ void RenderFrontend::createShadowPass() {
         MipCount::One,
         1,
         false);
-    m_shadowMap = m_backend.createImage(shadowMapDesc);
 
-    const auto shadowMapAttachment = Attachment(
-        m_shadowMap,
-        0,
-        0,
-        AttachmentLoadOp::Clear);
+    for (uint32_t cascade = 0; cascade < m_shadowCascadeCount; cascade++) {
+        const auto shadowMap = m_backend.createImage(shadowMapDesc);
+        m_shadowMaps.push_back(shadowMap);
 
-    GraphicPassDescription shadowPassConfig;
-    shadowPassConfig.name = "Shadow map";
-    shadowPassConfig.attachments = { shadowMapAttachment };
-    shadowPassConfig.shaderDescriptions.vertex.srcPathRelative   = "sunShadow.vert";
-    shadowPassConfig.shaderDescriptions.fragment.srcPathRelative = "sunShadow.frag";
-    shadowPassConfig.depthTest.function = DepthFunction::LessEqual;
-    shadowPassConfig.depthTest.write = true;
-    shadowPassConfig.rasterization.cullMode = CullMode::Front;
-    shadowPassConfig.rasterization.mode = RasterizationeMode::Fill;
-    shadowPassConfig.rasterization.clampDepth = true;
-    shadowPassConfig.blending = BlendState::None;
-    m_shadowPass = m_backend.createGraphicPass(shadowPassConfig);
+        const auto shadowMapAttachment = Attachment(
+            shadowMap,
+            0,
+            0,
+            AttachmentLoadOp::Clear);
+
+        GraphicPassDescription shadowPassConfig;
+        shadowPassConfig.name = "Shadow map cascade " + std::to_string(cascade);
+        shadowPassConfig.attachments = { shadowMapAttachment };
+        shadowPassConfig.shaderDescriptions.vertex.srcPathRelative   = "sunShadow.vert";
+        shadowPassConfig.shaderDescriptions.fragment.srcPathRelative = "sunShadow.frag";
+        shadowPassConfig.depthTest.function = DepthFunction::LessEqual;
+        shadowPassConfig.depthTest.write = true;
+        shadowPassConfig.rasterization.cullMode = CullMode::Front;
+        shadowPassConfig.rasterization.mode = RasterizationeMode::Fill;
+        shadowPassConfig.rasterization.clampDepth = true;
+        shadowPassConfig.blending = BlendState::None;
+
+        const uint32_t cascadeIndexSpecialisationConstantIndex = 0;
+        auto& constants = shadowPassConfig.shaderDescriptions.vertex.specialisationConstants;
+        constants.locationIDs.push_back(cascadeIndexSpecialisationConstantIndex);
+        constants.values.push_back(cascade);
+
+        const auto shadowPass = m_backend.createGraphicPass(shadowPassConfig);
+        m_shadowPasses.push_back(shadowPass);
+    }
 }
 
 /*
@@ -1305,13 +1327,16 @@ void RenderFrontend::createLightMatrixPass() {
         ComputePassDescription desc;
         desc.name = "Compute light matrix";
         desc.shaderDescription.srcPathRelative = "lightMatrix.comp";
+
         m_lightMatrixPass = m_backend.createComputePass(desc);
     }
     //buffer
     {
         StorageBufferDescription desc;
-        desc.size = sizeof(glm::mat4);
-        m_sunLightMatrixBuffer = m_backend.createStorageBuffer(desc);
+        const uint32_t splitSize = sizeof(glm::vec4);
+        const uint32_t lightMatrixSize = sizeof(glm::mat4) * m_shadowCascadeCount;
+        desc.size = splitSize + lightMatrixSize;
+        m_sunShadowInfoBuffer = m_backend.createStorageBuffer(desc);
     }
 }
 
