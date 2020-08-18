@@ -1579,6 +1579,9 @@ void RenderFrontend::drawUi() {
             = geometricAASelection ? 1 : 0;
     }
 
+    ImGui::InputFloat("Near plane", &m_camera.intrinsic.near);
+    ImGui::InputFloat("Far plane", &m_camera.intrinsic.far);
+
     ImGui::Checkbox("Draw bounding boxes", &m_drawBBs);
     ImGui::Checkbox("Freeze and draw camera frustum", &m_freezeAndDrawCameraFrustum);
     ImGui::Checkbox("Draw shadow frustum", &m_drawShadowFrustum);
