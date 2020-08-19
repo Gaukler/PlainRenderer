@@ -627,6 +627,7 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> handles, const std:
         const auto mesh = m_meshes[meshHandle];
         MeshRenderCommand command;
         command.indexBuffer = mesh.indexBuffer.vulkanHandle;
+        command.indexPrecision = mesh.indexPrecision;
         command.indexCount = mesh.indexCount;
         command.modelMatrix = modelMatrices[i];
 
@@ -1523,7 +1524,7 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
             //vertex/index buffers            
             VkDeviceSize offset[] = { 0 };
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer, offset);
-            vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer, offset[0], VK_INDEX_TYPE_UINT32);
+            vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer, offset[0], mesh.indexPrecision);
 
             //update push constants
             glm::mat4 matrices[2] = { pass.viewProjectionMatrix * mesh.modelMatrix, mesh.modelMatrix };
@@ -2227,9 +2228,29 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
     /*
     index buffer
     */
-    VkDeviceSize indexDataSize = data.indices.size() * sizeof(uint32_t);
-    mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    fillBuffer(mesh.indexBuffer, data.indices.data(), indexDataSize);
+
+    if (mesh.indexCount < std::numeric_limits<uint16_t>::max()) {
+        //half precision indices are enough
+        mesh.indexPrecision = VK_INDEX_TYPE_UINT16;
+        VkDeviceSize indexDataSize = data.indices.size() * sizeof(uint16_t);
+        mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        //calculate lower precision indices
+        std::vector<uint16_t> halfPrecisionIndices;
+        halfPrecisionIndices.reserve(data.indices.size());
+        for (const auto index : data.indices) {
+            halfPrecisionIndices.push_back((uint16_t)index);
+        }
+        fillBuffer(mesh.indexBuffer, halfPrecisionIndices.data(), indexDataSize);
+    }
+    else {
+        //full precision required
+        mesh.indexPrecision = VK_INDEX_TYPE_UINT32;
+        VkDeviceSize indexDataSize = data.indices.size() * sizeof(uint32_t);
+        mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        fillBuffer(mesh.indexBuffer, data.indices.data(), indexDataSize);
+    }
+    
 
     /*
     vertex buffer per pass

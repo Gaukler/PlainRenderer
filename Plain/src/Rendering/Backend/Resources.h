@@ -77,6 +77,7 @@ struct MeshMaterial {
 struct Mesh {
     uint32_t                        indexCount = 0;
     Buffer                          indexBuffer;
+    VkIndexType                     indexPrecision;
     std::vector<MeshVertexBuffer>   vertexBuffers;  //one vertex buffer per render pass with unique vertex input
     std::vector<MeshMaterial>       materials;      //one material per render pass with unique material feature set
 };
@@ -92,6 +93,7 @@ struct MeshRenderCommand {
     VkBuffer        indexBuffer;
     VkBuffer        vertexBuffer;
     uint32_t        indexCount;
+    VkIndexType     indexPrecision;
     VkDescriptorSet materialSet;
     glm::mat4       modelMatrix;
 };
