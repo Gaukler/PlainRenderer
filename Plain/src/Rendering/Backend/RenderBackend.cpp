@@ -311,6 +311,8 @@ void RenderBackend::setup(GLFWwindow* window) {
         updateDescriptorSet(m_globalDescriptorSet, globalResources);
     }
 
+    m_materialSamplers = createMaterialSamplers();
+
     /*
     imgui
     */
@@ -1237,6 +1239,39 @@ private functions
 
 ==================
 */
+
+/*
+=========
+prepareRenderPasses
+=========
+*/
+MaterialSamplers RenderBackend::createMaterialSamplers(){
+
+    MaterialSamplers samplers;
+
+    SamplerDescription albedoSamplerDesc;
+    albedoSamplerDesc.interpolation = SamplerInterpolation::Linear;
+    albedoSamplerDesc.wrapping = SamplerWrapping::Repeat;
+    albedoSamplerDesc.maxMip = 20;
+    albedoSamplerDesc.useAnisotropy = true;
+    samplers.albedoSampler = createSampler(albedoSamplerDesc);
+
+    SamplerDescription normalSamplerDesc;
+    normalSamplerDesc.interpolation = SamplerInterpolation::Linear;
+    normalSamplerDesc.wrapping = SamplerWrapping::Repeat;
+    normalSamplerDesc.maxMip = 20;
+    normalSamplerDesc.useAnisotropy = true;
+    samplers.normalSampler = createSampler(normalSamplerDesc);
+
+    SamplerDescription specularSamplerDesc;
+    specularSamplerDesc.interpolation = SamplerInterpolation::Linear;
+    specularSamplerDesc.wrapping = SamplerWrapping::Repeat;
+    specularSamplerDesc.maxMip = 20;
+    specularSamplerDesc.useAnisotropy = true;
+    samplers.specularSampler = createSampler(specularSamplerDesc);
+
+    return samplers;
+}
 
 /*
 =========
@@ -2383,13 +2418,7 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
             //create sampler if needed
             if (!albedoSampler.has_value()) {
                 if (albedoTexture != InvalidImageHandle) {
-
-                    SamplerDescription albedoSamplerDesc;
-                    albedoSamplerDesc.interpolation = SamplerInterpolation::Linear;
-                    albedoSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                    albedoSamplerDesc.maxMip = m_images[albedoTexture].viewPerMip.size();
-                    albedoSamplerDesc.useAnisotropy = true;
-                    albedoSampler = createSampler(albedoSamplerDesc);
+                    albedoSampler = m_materialSamplers.albedoSampler;
                 }
                 else {
                     std::cout << "Mesh misses required albedo texture \n";
@@ -2411,12 +2440,7 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
         if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE) {
             if (!normalSampler.has_value()) {
                 if (normalTexture != InvalidImageHandle) {
-                    SamplerDescription normalSamplerDesc;
-                    normalSamplerDesc.interpolation = SamplerInterpolation::Linear;
-                    normalSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                    normalSamplerDesc.maxMip = m_images[normalTexture].viewPerMip.size();
-                    normalSamplerDesc.useAnisotropy = true;
-                    normalSampler = createSampler(normalSamplerDesc);
+                    normalSampler = m_materialSamplers.normalSampler;
                 }
                 else {
                     std::cout << "Mesh misses required normal texture \n";
@@ -2439,12 +2463,7 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
         if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE) {
             if (!specularSampler.has_value()) {
                 if (specularTexture != InvalidImageHandle) {
-                    SamplerDescription specularSamplerDesc;
-                    specularSamplerDesc.interpolation = SamplerInterpolation::Linear;
-                    specularSamplerDesc.wrapping = SamplerWrapping::Repeat;
-                    specularSamplerDesc.maxMip = m_images[normalTexture].viewPerMip.size();
-                    specularSamplerDesc.useAnisotropy = true;
-                    specularSampler = createSampler(specularSamplerDesc);
+                    specularSampler = m_materialSamplers.specularSampler;
                 }
                 else {
                     std::cout << "Mesh misses required specular texture \n";

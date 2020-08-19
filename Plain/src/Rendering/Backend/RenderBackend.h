@@ -64,6 +64,12 @@ struct DescriptorPool {
     DescriptorPoolAllocationSizes freeAllocations;
 };
 
+struct MaterialSamplers {
+    SamplerHandle albedoSampler;
+    SamplerHandle specularSampler;
+    SamplerHandle normalSampler;
+};
+
 /*
 RenderPass handles are shared between compute and graphics to allow easy dependency management in the frontend
 the first bit of the handle indicates wether a handle is a compute or graphic pass
@@ -188,6 +194,9 @@ public:
 
 private:
 
+    MaterialSamplers m_materialSamplers;
+    MaterialSamplers createMaterialSamplers();
+
     /*
     calculates pass order, updates descritor sets, creates barriers
     */
@@ -215,7 +224,7 @@ private:
     validation layers are disabled in release build using macro
     */
 #ifdef NDEBUG
-    const bool m_useValidationLayers = true;
+    const bool m_useValidationLayers = false;
 #else
     const bool m_useValidationLayers = true;
 #endif
