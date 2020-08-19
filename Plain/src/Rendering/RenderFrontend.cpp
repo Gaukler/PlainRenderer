@@ -301,10 +301,6 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
 
                 culledMeshes.push_back(handle);
                 culledTransforms.push_back(transform);
-
-                if (m_drawBBs) {
-                    m_bbsToDebugDraw.push_back(bbTransformed);
-                }
             }
         }
         m_backend.drawMeshes(culledMeshes, culledTransforms, m_shadowPasses);
