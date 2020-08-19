@@ -10,6 +10,7 @@
 #include "ShaderIO.h"
 #include "Utilities/GeneralUtils.h"
 #include "Utilities/MathUtils.h"
+#include "TypeConversion.h"
 
 #include <imgui/imgui.h>
 #include <imgui/examples/imgui_impl_glfw.h>
@@ -2221,7 +2222,8 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
         /*
         create new buffer
         */
-        std::vector<float> vertexData;
+        //using fixed size type to guarantee byte size
+        std::vector<uint8_t> vertexData;
 
         size_t nVertices = 0;
         if (pass.vertexInputFlags & VERTEX_INPUT_POSITION_BIT) {
@@ -2240,33 +2242,89 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
             nVertices = data.bitangents.size();
         }
 
-        /*
-        fill in vertex data
-        */
+        //fill in vertex data
+        //precision and type must correspond to types in VertexInput.h
         for (size_t i = 0; i < nVertices; i++) {
             if (pass.vertexInputFlags & VERTEX_INPUT_POSITION_BIT) {
-                vertexData.push_back(data.positions[i].x);
-                vertexData.push_back(data.positions[i].y);
-                vertexData.push_back(data.positions[i].z);
+
+                vertexData.push_back(((uint8_t*)&data.positions[i].x)[0]);
+                vertexData.push_back(((uint8_t*)&data.positions[i].x)[1]);
+                vertexData.push_back(((uint8_t*)&data.positions[i].x)[2]);
+                vertexData.push_back(((uint8_t*)&data.positions[i].x)[3]);
+
+                vertexData.push_back(((uint8_t*)&data.positions[i].y)[0]);
+                vertexData.push_back(((uint8_t*)&data.positions[i].y)[1]);
+                vertexData.push_back(((uint8_t*)&data.positions[i].y)[2]);
+                vertexData.push_back(((uint8_t*)&data.positions[i].y)[3]);
+
+                vertexData.push_back(((uint8_t*)&data.positions[i].z)[0]);
+                vertexData.push_back(((uint8_t*)&data.positions[i].z)[1]);
+                vertexData.push_back(((uint8_t*)&data.positions[i].z)[2]);
+                vertexData.push_back(((uint8_t*)&data.positions[i].z)[3]);
             }
             if (pass.vertexInputFlags & VERTEX_INPUT_UV_BIT) {
-                vertexData.push_back(data.uvs[i].x);
-                vertexData.push_back(data.uvs[i].y);
+                //stored as 16 bit signed float
+                const auto uHalf = glm::packHalf(glm::vec1(data.uvs[i].x));
+                vertexData.push_back(((uint8_t*)&uHalf)[0]);
+                vertexData.push_back(((uint8_t*)&uHalf)[1]);
+
+                const auto vHalf = glm::packHalf(glm::vec1(data.uvs[i].y));
+                vertexData.push_back(((uint8_t*)&vHalf)[0]);
+                vertexData.push_back(((uint8_t*)&vHalf)[1]);
             }
             if (pass.vertexInputFlags & VERTEX_INPUT_NORMAL_BIT) {
-                vertexData.push_back(data.normals[i].x);
-                vertexData.push_back(data.normals[i].y);
-                vertexData.push_back(data.normals[i].z);
+                //stored as 16 bit signed normalized integer
+                int16_t x = floatToNormalizedInt16(data.normals[i].x);
+                vertexData.push_back(((uint8_t*)&x)[0]);
+                vertexData.push_back(((uint8_t*)&x)[1]);
+
+                int16_t y = floatToNormalizedInt16(data.normals[i].y);
+                vertexData.push_back(((uint8_t*)&y)[0]);
+                vertexData.push_back(((uint8_t*)&y)[1]);
+
+                int16_t z = floatToNormalizedInt16(data.normals[i].z);
+                vertexData.push_back(((uint8_t*)&z)[0]);
+                vertexData.push_back(((uint8_t*)&z)[1]);
+
+                //padding to align to 4 bytes
+                vertexData.push_back(0);
+                vertexData.push_back(0);
             }
             if (pass.vertexInputFlags & VERTEX_INPUT_TANGENT_BIT) {
-                vertexData.push_back(data.tangents[i].x);
-                vertexData.push_back(data.tangents[i].y);
-                vertexData.push_back(data.tangents[i].z);
+                //stored as 16 bit signed normalized integer
+                int16_t x = floatToNormalizedInt16(data.tangents[i].x);
+                vertexData.push_back(((uint8_t*)&x)[0]);
+                vertexData.push_back(((uint8_t*)&x)[1]);
+
+                int16_t y = floatToNormalizedInt16(data.tangents[i].y);
+                vertexData.push_back(((uint8_t*)&y)[0]);
+                vertexData.push_back(((uint8_t*)&y)[1]);
+
+                int16_t z = floatToNormalizedInt16(data.tangents[i].z);
+                vertexData.push_back(((uint8_t*)&z)[0]);
+                vertexData.push_back(((uint8_t*)&z)[1]);
+
+                //padding to align to 4 bytes
+                vertexData.push_back(0);
+                vertexData.push_back(0);
             }
             if (pass.vertexInputFlags & VERTEX_INPUT_BITANGENT_BIT) {
-                vertexData.push_back(data.bitangents[i].x);
-                vertexData.push_back(data.bitangents[i].y);
-                vertexData.push_back(data.bitangents[i].z);
+                //stored as 16 bit signed normalized integer
+                int16_t x = floatToNormalizedInt16(data.bitangents[i].x);
+                vertexData.push_back(((uint8_t*)&x)[0]);
+                vertexData.push_back(((uint8_t*)&x)[1]);
+
+                int16_t y = floatToNormalizedInt16(data.bitangents[i].y);
+                vertexData.push_back(((uint8_t*)&y)[0]);
+                vertexData.push_back(((uint8_t*)&y)[1]);
+
+                int16_t z = floatToNormalizedInt16(data.bitangents[i].z);
+                vertexData.push_back(((uint8_t*)&z)[0]);
+                vertexData.push_back(((uint8_t*)&z)[1]);
+
+                //padding to align to 4 bytes
+                vertexData.push_back(0);
+                vertexData.push_back(0);
             }
         }
 
@@ -2275,7 +2333,7 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
         */
         MeshVertexBuffer buffer;
         buffer.flags = pass.vertexInputFlags;
-        VkDeviceSize vertexDataSize = vertexData.size() * sizeof(float);
+        VkDeviceSize vertexDataSize = vertexData.size() * sizeof(uint8_t);
 
         buffer.buffer = createBufferInternal(vertexDataSize, queueFamilies,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);

@@ -27,17 +27,17 @@ const VertexInputFlags vertexInputFlagPerLocation[VERTEX_INPUT_ATTRIBUTE_COUNT] 
 defines format per binding
 */
 const VkFormat vertexInputFormatsPerLocation[VERTEX_INPUT_ATTRIBUTE_COUNT] = {
-    VK_FORMAT_R32G32B32_SFLOAT,
-    VK_FORMAT_R32G32_SFLOAT,
-    VK_FORMAT_R32G32B32_SFLOAT,
-    VK_FORMAT_R32G32B32_SFLOAT,
-    VK_FORMAT_R32G32B32_SFLOAT
+    VK_FORMAT_R32G32B32_SFLOAT, //position
+    VK_FORMAT_R16G16_SFLOAT,     //uvs   
+    VK_FORMAT_R16G16B16_SNORM,  //normals
+    VK_FORMAT_R16G16B16_SNORM,  //tangent
+    VK_FORMAT_R16G16B16_SNORM   //bitanget
 };
 
 const uint32_t vertexInputBytePerLocation[VERTEX_INPUT_ATTRIBUTE_COUNT] = {
     12,
-    8,
-    12,
-    12,
-    12
+    4,
+    8, //6 bytes types need to be padded to 4 byte alignment
+    8, //6 bytes types need to be padded to 4 byte alignment
+    8  //6 bytes types need to be padded to 4 byte alignment
 };
