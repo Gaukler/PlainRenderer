@@ -17,10 +17,10 @@ floatToNormalizedInt16
 =========
 */
 int16_t floatToNormalizedInt16(const float f) {
-    const float fClamped = glm::clamp(f, -0.999f, 0.999f);
+    const float fClamped = glm::clamp(f, -1.f, 1.f);
     const float minValue = std::numeric_limits<int16_t>::min();
     const float maxValue = std::numeric_limits<int16_t>::max();
     const float valueRange = maxValue - minValue;
     const float fRemapped = fClamped * 0.5f + 0.5f; //remap to range [0, 1]
-    return (int16_t)((fRemapped + minValue) * valueRange);
+    return (int16_t)(fRemapped * valueRange + minValue);
 }

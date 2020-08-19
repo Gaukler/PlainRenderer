@@ -2277,15 +2277,15 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
                 int16_t x = floatToNormalizedInt16(data.normals[i].x);
                 vertexData.push_back(((uint8_t*)&x)[0]);
                 vertexData.push_back(((uint8_t*)&x)[1]);
-
+                
                 int16_t y = floatToNormalizedInt16(data.normals[i].y);
                 vertexData.push_back(((uint8_t*)&y)[0]);
                 vertexData.push_back(((uint8_t*)&y)[1]);
-
+                
                 int16_t z = floatToNormalizedInt16(data.normals[i].z);
                 vertexData.push_back(((uint8_t*)&z)[0]);
                 vertexData.push_back(((uint8_t*)&z)[1]);
-
+                
                 //padding to align to 4 bytes
                 vertexData.push_back(0);
                 vertexData.push_back(0);
