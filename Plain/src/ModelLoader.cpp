@@ -38,11 +38,13 @@ bool loadModel(const std::filesystem::path& filename, std::vector<MeshData>* out
         return false;
     }
 
-    outData->resize(materials.size());
+    std::vector<uint32_t> materialIndices;
 
     //iterate over models
     for (uint32_t shapeIndex = 0; shapeIndex < shapes.size(); shapeIndex++) {
 
+        std::vector<MeshData> meshPerMaterial;
+        meshPerMaterial.resize(materials.size());
         const auto shape = shapes[shapeIndex];
 
         //iterate over face vertices
@@ -55,23 +57,31 @@ bool loadModel(const std::filesystem::path& filename, std::vector<MeshData>* out
             size_t normalIndex = indices.normal_index;
             size_t uvIndex = indices.texcoord_index;
 
-            (*outData)[materialIndex].positions.push_back(glm::vec3(
+            meshPerMaterial[materialIndex].positions.push_back(glm::vec3(
                 attributes.vertices[vertexIndex * 3],
                 attributes.vertices[vertexIndex * 3 + 1],
                 -attributes.vertices[vertexIndex * 3 + 2]));
 
-            (*outData)[materialIndex].normals.push_back(glm::vec3(
+            meshPerMaterial[materialIndex].normals.push_back(glm::vec3(
                 attributes.normals[normalIndex * 3],
                 attributes.normals[normalIndex * 3 + 1],
                 -attributes.normals[normalIndex * 3 + 2]));
 
-            (*outData)[materialIndex].uvs.push_back(glm::vec2(
+            meshPerMaterial[materialIndex].uvs.push_back(glm::vec2(
                 attributes.texcoords[uvIndex * 2],
                 1.f - attributes.texcoords[uvIndex * 2 + 1]));
 
             //correct for vulkan coordinate system
-            (*outData)[materialIndex].positions.back().y *= -1.f;
-            (*outData)[materialIndex].normals.back().y *= -1.f;
+            meshPerMaterial[materialIndex].positions.back().y *= -1.f;
+            meshPerMaterial[materialIndex].normals.back().y *= -1.f;
+        }
+
+        for (int i = 0; i < meshPerMaterial.size(); i++) {
+            const auto& mesh = meshPerMaterial[i];
+            if (mesh.positions.size() > 0) {
+                outData->push_back(mesh);
+                materialIndices.push_back(i);
+            }
         }
     }
 
@@ -96,24 +106,27 @@ bool loadModel(const std::filesystem::path& filename, std::vector<MeshData>* out
             }
         };
 
-        if (materials[i].diffuse_texname.length() != 0) {
-            std::filesystem::path diffuseTexture = cleanPath(materials[i].diffuse_texname);
+        const auto materialIndex = materialIndices[i];
+        const auto material = materials[materialIndex];
+
+        if (material.diffuse_texname.length() != 0) {
+            std::filesystem::path diffuseTexture = cleanPath(material.diffuse_texname);
             (*outData)[i].material.albedoTexturePath = modelDirectory / diffuseTexture;
         }
         else {
             (*outData)[i].material.albedoTexturePath = "";
         }
 
-        if (materials[i].bump_texname.length() != 0) {
-            std::string normalTexture = cleanPath(materials[i].bump_texname);
+        if (material.bump_texname.length() != 0) {
+            std::string normalTexture = cleanPath(material.bump_texname);
             (*outData)[i].material.normalTexturePath = modelDirectory / normalTexture;
         }
         else {
             (*outData)[i].material.normalTexturePath = "";
         }
 
-        if (materials[i].specular_texname.length() != 0) {
-            std::string specularTexture = cleanPath(materials[i].specular_texname);
+        if (material.specular_texname.length() != 0) {
+            std::string specularTexture = cleanPath(material.specular_texname);
             (*outData)[i].material.specularTexturePath = modelDirectory / specularTexture;
         }
         else {
