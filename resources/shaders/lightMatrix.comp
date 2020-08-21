@@ -75,17 +75,6 @@ void main(){
         cascadeSplits[i] = computeCascadeSplit(depthMinLinear, depthMaxLinear, i);
     }
     
-    float cascadeSplitsWithNearAndFar[cascadeCount+1];
-    //for(int i = 0; i < cascadeCount; i++){
-    //    cascadeSplitsWithNearAndFar[i+1] = cascadeSplits[i];
-    //}
-    
-    cascadeSplitsWithNearAndFar[0] = depthMinLinear;
-    cascadeSplitsWithNearAndFar[1] = cascadeSplits[0];
-    cascadeSplitsWithNearAndFar[2] = cascadeSplits[1];
-    cascadeSplitsWithNearAndFar[3] = cascadeSplits[2];
-    cascadeSplitsWithNearAndFar[4] = depthMaxLinear;
-    
     for(int i = 0; i < 4; i++){
         
         vec3 minP = vec3(FLOAT_MAX);
