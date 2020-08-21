@@ -325,6 +325,9 @@ void RenderBackend::setup(GLFWwindow* window) {
     copyPass.name = "Copy image to swapchain";
     copyPass.shaderDescription.srcPathRelative = "copyToSwapchain.comp";
     m_swapchain.copyToSwapchainPass = createComputePass(copyPass);
+
+    //query pools
+    m_timestampQueryPool = createQueryPool(VK_QUERY_TYPE_TIMESTAMP, m_timestampQueryPoolQueryCount);
 }
 
 /*
@@ -399,6 +402,8 @@ void RenderBackend::teardown() {
 
     vkDestroySemaphore(vkContext.device, m_renderFinishedSemaphore, nullptr);
     vkDestroySemaphore(vkContext.device, m_swapchain.imageAvaible, nullptr);
+
+    vkDestroyQueryPool(vkContext.device, m_timestampQueryPool, nullptr);
 
     vkDestroyFence(vkContext.device, m_renderFinishedFence, nullptr);
     vkDestroyDevice(vkContext.device, nullptr);
@@ -737,6 +742,13 @@ void RenderBackend::renderFrame() {
     vkAcquireNextImageKHR(vkContext.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvaible, VK_NULL_HANDLE, &imageIndex);
     prepareRenderPasses(m_swapchain.imageHandles[imageIndex]);
 
+    //wait for previous frame to render so resources are avaible
+    vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vkContext.device, 1, &m_renderFinishedFence);
+
+    //reset doesn't work before waiting for render finished fence
+    resetTimestampQueryPool();
+
     //record command buffer
     VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -750,24 +762,46 @@ void RenderBackend::renderFrame() {
     vkResetCommandBuffer(currentCommandBuffer, 0);
     vkBeginCommandBuffer(currentCommandBuffer, &beginInfo);
 
+    //index needed for end query
+    const uint32_t frameQueryIndex = m_timestampQueries.size();
+    {
+        TimestampQuery frameQuery;
+        frameQuery.name = "Frame";
+        frameQuery.startQuery = issueTimestampQuery(currentCommandBuffer);
+
+        m_timestampQueries.push_back(frameQuery);
+    }
+    
+    
     for (const auto& execution : m_renderPassInternalExecutions) {
         submitRenderPass(execution, currentCommandBuffer);
     }
 
-    /*
-    imgui
-    */
-    startDebugLabel(currentCommandBuffer, "ImGui");
-    ImGui::Render();
+    //imgui    
+    {
+        startDebugLabel(currentCommandBuffer, "ImGui");
 
-    vkCmdPipelineBarrier(currentCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-        0, 0, nullptr, 0, nullptr, 1, m_ui.barriers.data());
+        TimestampQuery imguiQuery;
+        imguiQuery.name = "ImGui";
+        imguiQuery.startQuery = issueTimestampQuery(currentCommandBuffer);
 
-    vkCmdBeginRenderPass(currentCommandBuffer, &m_ui.passBeginInfos[imageIndex], VK_SUBPASS_CONTENTS_INLINE);
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentCommandBuffer);
-    vkCmdEndRenderPass(currentCommandBuffer);
+        ImGui::Render();
 
-    endDebugLabel(currentCommandBuffer);
+        vkCmdPipelineBarrier(currentCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            0, 0, nullptr, 0, nullptr, 1, m_ui.barriers.data());
+
+        vkCmdBeginRenderPass(currentCommandBuffer, &m_ui.passBeginInfos[imageIndex], VK_SUBPASS_CONTENTS_INLINE);
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentCommandBuffer);
+        vkCmdEndRenderPass(currentCommandBuffer);
+
+        imguiQuery.endQuery = issueTimestampQuery(currentCommandBuffer);
+        m_timestampQueries.push_back(imguiQuery);
+
+        endDebugLabel(currentCommandBuffer);
+    }
+    
+    m_timestampQueries[frameQueryIndex].endQuery = issueTimestampQuery(currentCommandBuffer);
+    
 
     /*
     transition swapchain image to present
@@ -794,14 +828,36 @@ void RenderBackend::renderFrame() {
     submit.signalSemaphoreCount = 1;
     submit.pSignalSemaphores = &m_renderFinishedSemaphore;
 
-    //wait for previous frame to render so resources are avaible
-    vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vkContext.device, 1, &m_renderFinishedFence);
-
     vkQueueSubmit(vkContext.graphicQueue, 1, &submit, m_renderFinishedFence);
 
     presentImage(imageIndex, m_renderFinishedSemaphore);
     glfwPollEvents();
+
+    //get timestamp results
+    {
+        m_renderpassTimings.clear();
+
+        std::vector<uint32_t> timestamps;
+        timestamps.resize(m_currentTimestampQueryCount);
+        vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, 0, m_currentTimestampQueryCount,
+            timestamps.size() * sizeof(uint32_t), timestamps.data(), 0, VK_QUERY_RESULT_WAIT_BIT);
+
+        for (const auto query : m_timestampQueries) {
+
+            const float startTime = timestamps[query.startQuery];
+            const float endTime = timestamps[query.endQuery];
+            const float time = endTime - startTime;
+
+            const float nanoseconds = time * m_nanosecondsPerTimestamp;
+            const float milliseconds = nanoseconds * 0.000001f;
+
+            RenderPassTime timing;
+            timing.name = query.name;
+            timing.timeMs = milliseconds;
+            m_renderpassTimings.push_back(timing);
+        }
+    }
+    
 
     /*
     cleanup
@@ -1234,6 +1290,15 @@ void RenderBackend::getMemoryStats(uint32_t* outAllocatedSize, uint32_t* outUsed
 }
 
 /*
+=========
+getRenderpassTimings
+=========
+*/
+std::vector<RenderPassTime> RenderBackend::getRenderpassTimings() {
+    return m_renderpassTimings;
+}
+
+/*
 ==================
 
 private functions
@@ -1501,11 +1566,16 @@ submitRenderPass
 void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& execution, const VkCommandBuffer commandBuffer) {
 
     barriersCommand(commandBuffer, execution.imageBarriers, execution.memoryBarriers);
-    
+
+    TimestampQuery timeQuery;
+
     if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
 
         auto& pass = m_renderPasses.getGraphicPassRefByHandle(execution.handle);
         startDebugLabel(commandBuffer, pass.graphicPassDesc.name);
+
+        timeQuery.name = pass.graphicPassDesc.name;
+        timeQuery.startQuery = issueTimestampQuery(commandBuffer);
 
         /*
         update pointer: might become invalid if pass vector was changed
@@ -1552,19 +1622,27 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
             vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, 0, 0, 0);
         }
 
-        vkCmdEndRenderPass(commandBuffer);
+        vkCmdEndRenderPass(commandBuffer);     
+
+        timeQuery.endQuery = issueTimestampQuery(commandBuffer);
         endDebugLabel(commandBuffer);
     }
     else {
         auto& pass = m_renderPasses.getComputePassRefByHandle(execution.handle);
         startDebugLabel(commandBuffer, pass.computePassDesc.name);
 
+        timeQuery.name = pass.computePassDesc.name;
+        timeQuery.startQuery = issueTimestampQuery(commandBuffer);
+
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
         VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet };
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 2, sets, 0, nullptr);
         vkCmdDispatch(commandBuffer, execution.dispatches[0], execution.dispatches[1], execution.dispatches[2]);
+
+        timeQuery.endQuery = issueTimestampQuery(commandBuffer);
         endDebugLabel(commandBuffer);
     }
+    m_timestampQueries.push_back(timeQuery);
 }
 
 /*
@@ -1715,12 +1793,24 @@ hasRequiredDeviceFeatures
 bool RenderBackend::hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDevice) {
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physicalDevice, &features);
-    return 
-        features.samplerAnisotropy && 
-        features.imageCubeArray && 
-        features.fragmentStoresAndAtomics && 
+
+    VkPhysicalDeviceVulkan12Features features12;
+    features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    features12.pNext = nullptr;
+
+    VkPhysicalDeviceFeatures2 features2;
+    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features2.pNext = &features12;
+
+    vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+
+    return
+        features.samplerAnisotropy &&
+        features.imageCubeArray &&
+        features.fragmentStoresAndAtomics &&
         features.fillModeNonSolid &&
-        features.depthClamp;
+        features.depthClamp && 
+        features12.hostQueryReset;
 }
 
 /*
@@ -1752,6 +1842,7 @@ void RenderBackend::pickPhysicalDevice() {
     //retrieve and output device name
     VkPhysicalDeviceProperties deviceProperties;
     vkGetPhysicalDeviceProperties(vkContext.physicalDevice, &deviceProperties);
+    m_nanosecondsPerTimestamp = deviceProperties.limits.timestampPeriod;
     
     std::cout << "picked physical device: " << deviceProperties.deviceName << std::endl;
     std::cout << std::endl;
@@ -1849,10 +1940,15 @@ void RenderBackend::createLogicalDevice() {
     features.fillModeNonSolid = true;
     features.depthClamp = true;
 
+    VkPhysicalDeviceVulkan12Features features12 = {}; //vulkan 1.2 features
+    features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    features12.pNext = nullptr;
+    features12.hostQueryReset = true;
+
     //device info
     VkDeviceCreateInfo deviceInfo = {};
     deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    deviceInfo.pNext = nullptr;
+    deviceInfo.pNext = &features12;
     deviceInfo.flags = 0;
     deviceInfo.queueCreateInfoCount = queueInfos.size();
     deviceInfo.pQueueCreateInfos = queueInfos.data();
@@ -4303,6 +4399,53 @@ VkFence RenderBackend::createFence() {
     assert(res == VK_SUCCESS);
 
     return fence;
+}
+
+/*
+=========
+createQueryPool
+=========
+*/
+VkQueryPool RenderBackend::createQueryPool(const VkQueryType queryType, const uint32_t queryCount) {
+
+    VkQueryPoolCreateInfo createInfo;
+    createInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    createInfo.pNext = nullptr;
+    createInfo.flags = 0;
+    createInfo.queryType = queryType;
+    createInfo.queryCount = queryCount;
+    createInfo.pipelineStatistics = 0; //pipeline queries not handled for now
+
+    VkQueryPool pool;
+    const auto res = vkCreateQueryPool(vkContext.device, &createInfo, nullptr, &pool);
+    assert(res == VK_SUCCESS);
+
+    vkResetQueryPool(vkContext.device, pool, 0, queryCount);
+
+    return pool;
+}
+
+/*
+=========
+resetTimestampQueryPool
+=========
+*/
+void RenderBackend::resetTimestampQueryPool() {
+    m_timestampQueries.resize(0);
+    vkResetQueryPool(vkContext.device, m_timestampQueryPool, 0, m_currentTimestampQueryCount);
+    m_currentTimestampQueryCount = 0;
+}
+
+/*
+=========
+issueTimestampQuery
+=========
+*/
+uint32_t RenderBackend::issueTimestampQuery(const VkCommandBuffer cmdBuffer) {
+    const uint32_t query = m_currentTimestampQueryCount;
+    vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, m_timestampQueryPool, query);
+    m_currentTimestampQueryCount++;
+    return query;
 }
 
 /*

@@ -70,6 +70,18 @@ struct MaterialSamplers {
     SamplerHandle normalSampler;
 };
 
+struct TimestampQuery {
+    uint32_t startQuery;
+    uint32_t endQuery;
+    std::string name;
+};
+
+//per pass execution time
+struct RenderPassTime{
+    float timeMs; //time in milliseconds
+    std::string name;
+};
+
 /*
 RenderPass handles are shared between compute and graphics to allow easy dependency management in the frontend
 the first bit of the handle indicates wether a handle is a compute or graphic pass
@@ -191,6 +203,8 @@ public:
     void setSwapchainInputImage(ImageHandle image);
 
     void getMemoryStats(uint32_t* outAllocatedSize, uint32_t* outUsedSize);
+
+    std::vector<RenderPassTime> getRenderpassTimings();
 
 private:
 
@@ -466,6 +480,24 @@ private:
     VkSemaphore createSemaphore();
     VkFence     createFence();
 
+
+    //timestamp queries
+    const uint32_t m_timestampQueryPoolQueryCount = 100;
+    VkQueryPool m_timestampQueryPool;
+
+    float m_nanosecondsPerTimestamp;
+    uint32_t m_currentTimestampQueryCount = 0;
+    std::vector<TimestampQuery> m_timestampQueries;
+    std::vector<RenderPassTime> m_renderpassTimings;
+
+    //must be called in an active command buffer
+    //issues vulkan timestamp query and increments timestamp query counter
+    //returns query index
+    uint32_t issueTimestampQuery(const VkCommandBuffer cmdBuffer);
+
+    //does not handle queryType VK_QUERY_TYPE_PIPELINE_STATISTICS 
+    VkQueryPool createQueryPool(const VkQueryType queryType, const uint32_t queryCount);
+    void resetTimestampQueryPool();
 
     /*
     =========

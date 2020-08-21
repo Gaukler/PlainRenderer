@@ -1548,8 +1548,8 @@ drawUi
 =========
 */
 void RenderFrontend::drawUi() {
-    ImGui::Begin("Rendering");
-    ImGui::Text(("FrameTime: " + std::to_string(m_globalShaderInfo.deltaTime * 1000) + "ms").c_str());
+    ImGui::Begin("Rendering stats");
+    ImGui::Text(("DeltaTime: " + std::to_string(m_globalShaderInfo.deltaTime * 1000) + "ms").c_str());
     ImGui::Text(("Mesh count: " + std::to_string(m_currentMeshCount)).c_str());
     ImGui::Text(("Main pass drawcalls: " + std::to_string(m_currentMainPassDrawcallCount)).c_str());
     ImGui::Text(("Shadow map drawcalls: " + std::to_string(m_currentShadowPassDrawcallCount)).c_str());
@@ -1564,6 +1564,25 @@ void RenderFrontend::drawUi() {
 
     ImGui::Text(("Allocated memory: " + std::to_string(allocatedMemorySizeMegaByte) + "mb").c_str());
     ImGui::Text(("Used memory: " + std::to_string(usedMemorySizeMegaByte) + "mb").c_str());
+
+    //pass timings shown in columns
+    {
+        ImGui::Separator();
+        ImGui::Columns(2);
+        const auto timings = m_backend.getRenderpassTimings();
+        for (const auto timing : timings) {
+            ImGui::Text(timing.name.c_str());
+        }
+        ImGui::NextColumn();
+        for (const auto timing : timings) {
+            ImGui::Text(std::to_string(timing.timeMs).c_str());
+        }
+    }
+    
+
+    ImGui::End();
+
+    ImGui::Begin("Render settings");
 
     ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
     ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
