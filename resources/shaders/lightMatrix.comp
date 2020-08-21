@@ -105,7 +105,6 @@ void main(){
         else if(i == 3){
             computeFrustumPoints(frustumPoints, cascadeSplits[3], depthMaxLinear);
         }
-        //computeFrustumPoints(frustumPoints, depthMinLinear, depthMaxLinear);
         
         for(int i = 0; i < 8; i++) {
             vec3 p = frustumPoints[i];
