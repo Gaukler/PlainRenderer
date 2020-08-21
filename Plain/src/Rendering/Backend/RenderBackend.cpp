@@ -2425,58 +2425,31 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
                 vertexData.push_back(((uint8_t*)&vHalf)[1]);
             }
             if (pass.vertexInputFlags & VERTEX_INPUT_NORMAL_BIT) {
-                //stored as 16 bit signed normalized integer
-                int16_t x = floatToNormalizedInt16(data.normals[i].x);
-                vertexData.push_back(((uint8_t*)&x)[0]);
-                vertexData.push_back(((uint8_t*)&x)[1]);
-                
-                int16_t y = floatToNormalizedInt16(data.normals[i].y);
-                vertexData.push_back(((uint8_t*)&y)[0]);
-                vertexData.push_back(((uint8_t*)&y)[1]);
-                
-                int16_t z = floatToNormalizedInt16(data.normals[i].z);
-                vertexData.push_back(((uint8_t*)&z)[0]);
-                vertexData.push_back(((uint8_t*)&z)[1]);
-                
-                //padding to align to 4 bytes
-                vertexData.push_back(0);
-                vertexData.push_back(0);
+                //stored as 32 bit R10G10B10A2
+                const auto converted = vec3ToNormalizedR10B10G10A2(data.normals[i]);
+
+                vertexData.push_back(((uint8_t*)&converted)[0]);
+                vertexData.push_back(((uint8_t*)&converted)[1]);
+                vertexData.push_back(((uint8_t*)&converted)[2]);
+                vertexData.push_back(((uint8_t*)&converted)[3]);
             }
             if (pass.vertexInputFlags & VERTEX_INPUT_TANGENT_BIT) {
-                //stored as 16 bit signed normalized integer
-                int16_t x = floatToNormalizedInt16(data.tangents[i].x);
-                vertexData.push_back(((uint8_t*)&x)[0]);
-                vertexData.push_back(((uint8_t*)&x)[1]);
+                //stored as 32 bit R10G10B10A2
+                const auto converted = vec3ToNormalizedR10B10G10A2(data.tangents[i]);
 
-                int16_t y = floatToNormalizedInt16(data.tangents[i].y);
-                vertexData.push_back(((uint8_t*)&y)[0]);
-                vertexData.push_back(((uint8_t*)&y)[1]);
-
-                int16_t z = floatToNormalizedInt16(data.tangents[i].z);
-                vertexData.push_back(((uint8_t*)&z)[0]);
-                vertexData.push_back(((uint8_t*)&z)[1]);
-
-                //padding to align to 4 bytes
-                vertexData.push_back(0);
-                vertexData.push_back(0);
+                vertexData.push_back(((uint8_t*)&converted)[0]);
+                vertexData.push_back(((uint8_t*)&converted)[1]);
+                vertexData.push_back(((uint8_t*)&converted)[2]);
+                vertexData.push_back(((uint8_t*)&converted)[3]);
             }
             if (pass.vertexInputFlags & VERTEX_INPUT_BITANGENT_BIT) {
-                //stored as 16 bit signed normalized integer
-                int16_t x = floatToNormalizedInt16(data.bitangents[i].x);
-                vertexData.push_back(((uint8_t*)&x)[0]);
-                vertexData.push_back(((uint8_t*)&x)[1]);
+                //stored as 32 bit R10G10B10A2
+                const auto converted = vec3ToNormalizedR10B10G10A2(data.bitangents[i]);
 
-                int16_t y = floatToNormalizedInt16(data.bitangents[i].y);
-                vertexData.push_back(((uint8_t*)&y)[0]);
-                vertexData.push_back(((uint8_t*)&y)[1]);
-
-                int16_t z = floatToNormalizedInt16(data.bitangents[i].z);
-                vertexData.push_back(((uint8_t*)&z)[0]);
-                vertexData.push_back(((uint8_t*)&z)[1]);
-
-                //padding to align to 4 bytes
-                vertexData.push_back(0);
-                vertexData.push_back(0);
+                vertexData.push_back(((uint8_t*)&converted)[0]);
+                vertexData.push_back(((uint8_t*)&converted)[1]);
+                vertexData.push_back(((uint8_t*)&converted)[2]);
+                vertexData.push_back(((uint8_t*)&converted)[3]);
             }
         }
 
