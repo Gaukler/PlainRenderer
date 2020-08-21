@@ -45,6 +45,11 @@ private:
     uint32_t m_currentMainPassDrawcallCount = 0;    //executed after camera culling
     uint32_t m_currentShadowPassDrawcallCount = 0;  //executed after shadow frustum culling
 
+    //timings are cached and not updated every frame to improve readability
+    std::vector<RenderPassTime> m_currentRenderTimings;
+    float m_renderTimingUpdateFrequency = 0.2f;
+    float m_renderTimingTimeSinceLastUpdate = 0.f;
+
     bool m_didResolutionChange = false;
     bool m_minimized = false;
     bool m_firstFrame = true;

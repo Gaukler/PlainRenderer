@@ -1567,15 +1567,25 @@ void RenderFrontend::drawUi() {
 
     //pass timings shown in columns
     {
+        m_renderTimingTimeSinceLastUpdate += m_globalShaderInfo.deltaTime;
+        if (m_renderTimingTimeSinceLastUpdate > m_renderTimingUpdateFrequency) {
+            m_currentRenderTimings = m_backend.getRenderpassTimings();
+            m_renderTimingTimeSinceLastUpdate = 0.f;
+        }
+
         ImGui::Separator();
         ImGui::Columns(2);
-        const auto timings = m_backend.getRenderpassTimings();
-        for (const auto timing : timings) {
+        for (const auto timing : m_currentRenderTimings) {
             ImGui::Text(timing.name.c_str());
         }
         ImGui::NextColumn();
-        for (const auto timing : timings) {
-            ImGui::Text(std::to_string(timing.timeMs).c_str());
+        for (const auto timing : m_currentRenderTimings) {
+            //limit number of decimal places to improve readability
+            const uint32_t commaIndex = std::max(int(timing.timeMs) / 10, 1);
+            const uint32_t decimalPlacesToKeep = 2;
+            auto timeString = std::to_string(timing.timeMs);
+            timeString = timeString.substr(0, commaIndex + 1 + decimalPlacesToKeep);
+            ImGui::Text(timeString.c_str());
         }
     }
     
