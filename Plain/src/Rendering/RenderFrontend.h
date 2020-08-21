@@ -97,7 +97,7 @@ private:
     */
     uint32_t m_specularProbeMipCount = 0;
 
-    const uint32_t m_shadowMapRes = 1024;
+    const uint32_t m_shadowMapRes = 2048;
     const uint32_t m_skyTextureRes = 1024;
     const uint32_t m_specularProbeRes = 512;
     const uint32_t m_diffuseProbeRes = 256;
