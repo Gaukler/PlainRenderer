@@ -67,6 +67,8 @@ private:
     GlobalShaderInfo m_globalShaderInfo;
 
     Camera m_camera;    
+    glm::mat4 m_currentViewProjectionMatrix;
+
     ViewFrustum m_cameraFrustum;
     float m_exposureOffset = 0.f;
     

@@ -158,11 +158,12 @@ public:
     actual draw command is deferred until renderFrame is called
     meshHandle must be obtained from createMesh function
     */
-    void drawMeshes(const std::vector<MeshHandle> meshHandles, const std::vector<glm::mat4>& modelMatrices, const std::vector<RenderPassHandle>& passes);
-    void drawDynamicMeshes(const std::vector<DynamicMeshHandle> handles, const std::vector<glm::mat4>& modelMatrices, const std::vector<RenderPassHandle>& passes);
+    void drawMeshes(const std::vector<MeshHandle> meshHandles, 
+        const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle);
 
+    void drawDynamicMeshes(const std::vector<MeshHandle> meshHandles, 
+        const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle);
 
-    void setViewProjectionMatrix(const glm::mat4& viewProjection, const RenderPassHandle pass);
     void setGlobalShaderInfo(const GlobalShaderInfo& info);
 
     //set path and specialisation constants, forces recompile and pipeline recreation

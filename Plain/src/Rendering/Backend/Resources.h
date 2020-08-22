@@ -89,13 +89,18 @@ struct DynamicMesh {
     Buffer              indexBuffer;
 };
 
+//primary and secondary matrix are supplied to shader via push constants
+//primary is MPV mostly
+//secondary is pass dependant
+//for example model matrix for shading pass and previous MVP for motion vectors in depth prepass
 struct MeshRenderCommand {
     VkBuffer        indexBuffer;
     VkBuffer        vertexBuffer;
     uint32_t        indexCount;
     VkIndexType     indexPrecision;
     VkDescriptorSet materialSet;
-    glm::mat4       modelMatrix;
+    glm::mat4       primaryMatrix;
+    glm::mat4       secondaryMatrix;
 };
 
 //lacks materials
@@ -103,7 +108,8 @@ struct DynamicMeshRenderCommand {
     VkBuffer        indexBuffer;
     VkBuffer        vertexBuffer;
     uint32_t        indexCount;
-    glm::mat4       modelMatrix;
+    glm::mat4       primaryMatrix;
+    glm::mat4       secondaryMatrix;
 };
 
 struct GraphicPassShaderSpirV {
@@ -132,7 +138,6 @@ struct GraphicPass {
 
     VkViewport                      viewport;
     VkRect2D                        scissor;
-    glm::mat4                       viewProjectionMatrix = glm::mat4(1.f);
     VertexInputFlags                vertexInputFlags = VertexInputFlags(0);
 
     std::vector<MeshRenderCommand>          meshRenderCommands;

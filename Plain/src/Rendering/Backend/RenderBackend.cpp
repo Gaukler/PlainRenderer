@@ -621,36 +621,35 @@ void RenderBackend::setRenderPassExecution(const RenderPassExecution& execution)
 drawMeshes
 =========
 */
-void RenderBackend::drawMeshes(const std::vector<MeshHandle> handles, const std::vector<glm::mat4>& modelMatrices, 
-    const std::vector<RenderPassHandle>& passes) {
-    if (handles.size() != modelMatrices.size()) {
-        std::cout << "Error: drawMeshes handle and modelMatrix count does not match\n";
+void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, 
+    const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle) {
+    if (meshHandles.size() != primarySecondaryMatrices.size()) {
+        std::cout << "Error: drawMeshes handle and matrix count does not match\n";
     }
-    for (uint32_t i = 0; i < std::min(handles.size(), modelMatrices.size()); i++) {
+    for (uint32_t i = 0; i < std::min(meshHandles.size(), primarySecondaryMatrices.size()); i++) {
 
-        const auto meshHandle = handles[i];
+        const auto meshHandle = meshHandles[i];
         const auto mesh = m_meshes[meshHandle];
         MeshRenderCommand command;
         command.indexBuffer = mesh.indexBuffer.vulkanHandle;
         command.indexPrecision = mesh.indexPrecision;
         command.indexCount = mesh.indexCount;
-        command.modelMatrix = modelMatrices[i];
+        command.primaryMatrix = primarySecondaryMatrices[i][0];
+        command.secondaryMatrix = primarySecondaryMatrices[i][1];
 
-        for (const auto passHandle : passes) {
-            assert(m_renderPasses.isGraphicPassHandle(passHandle));
-            auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-            for (const auto& material : mesh.materials) {
-                if (material.flags == pass.materialFeatures) {
-                    command.materialSet = material.descriptorSet;
-                }
+        assert(m_renderPasses.isGraphicPassHandle(passHandle));
+        auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+        for (const auto& material : mesh.materials) {
+            if (material.flags == pass.materialFeatures) {
+                command.materialSet = material.descriptorSet;
             }
-            for (const auto& vertexBuffer : mesh.vertexBuffers) {
-                if (vertexBuffer.flags == pass.vertexInputFlags) {
-                    command.vertexBuffer = vertexBuffer.buffer.vulkanHandle;
-                }
-            }
-            pass.meshRenderCommands.push_back(command);
         }
+        for (const auto& vertexBuffer : mesh.vertexBuffers) {
+            if (vertexBuffer.flags == pass.vertexInputFlags) {
+                command.vertexBuffer = vertexBuffer.buffer.vulkanHandle;
+            }
+        }
+        pass.meshRenderCommands.push_back(command);
     }
 }
 
@@ -659,37 +658,26 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> handles, const std:
 drawDynamicMeshes
 =========
 */
-void RenderBackend::drawDynamicMeshes(const std::vector<DynamicMeshHandle> handles, 
-    const std::vector<glm::mat4>& modelMatrices, const std::vector<RenderPassHandle>& passes) {
-    if (handles.size() != modelMatrices.size()) {
+void RenderBackend::drawDynamicMeshes(const std::vector<MeshHandle> meshHandles,
+    const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle) {
+    if (meshHandles.size() != primarySecondaryMatrices.size()) {
         std::cout << "Error: drawMeshes handle and modelMatrix count does not match\n";
     }
-    for (uint32_t i = 0; i < std::min(handles.size(), modelMatrices.size()); i++) {
+    for (uint32_t i = 0; i < std::min(meshHandles.size(), primarySecondaryMatrices.size()); i++) {
 
-        const auto meshHandle = handles[i];
+        const auto meshHandle = meshHandles[i];
         const auto mesh = m_dynamicMeshes[meshHandle];
         DynamicMeshRenderCommand command;
         command.indexCount = mesh.indexCount;
-        command.modelMatrix = modelMatrices[i];
         command.vertexBuffer = mesh.vertexBuffer.buffer.vulkanHandle;
         command.indexBuffer = mesh.indexBuffer.vulkanHandle;
+        command.primaryMatrix = primarySecondaryMatrices[i][0];
+        command.secondaryMatrix = primarySecondaryMatrices[i][1];
 
-        for (const auto& passHandle : passes) {
-            assert(m_renderPasses.isGraphicPassHandle(passHandle));
-            auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-            pass.dynamicMeshRenderCommands.push_back(command);
-        }
+        assert(m_renderPasses.isGraphicPassHandle(passHandle));
+        auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+        pass.dynamicMeshRenderCommands.push_back(command);
     }
-}
-
-/*
-=========
-setViewProjectionMatrix
-=========
-*/
-void RenderBackend::setViewProjectionMatrix(const glm::mat4& viewProjection, const RenderPassHandle pass) {
-    assert(m_renderPasses.isGraphicPassHandle(pass));
-    m_renderPasses.getGraphicPassRefByHandle(pass).viewProjectionMatrix = viewProjection;
 }
 
 /*
@@ -1597,7 +1585,7 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
             vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer, offset[0], mesh.indexPrecision);
 
             //update push constants
-            glm::mat4 matrices[2] = { pass.viewProjectionMatrix * mesh.modelMatrix, mesh.modelMatrix };
+            glm::mat4 matrices[2] = { mesh.primaryMatrix, mesh.secondaryMatrix };
             vkCmdPushConstants(commandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(matrices), &matrices);
 
             //materials            
@@ -1616,7 +1604,7 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
             vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer, offset[0], VK_INDEX_TYPE_UINT32);
 
             //update push constants
-            glm::mat4 matrices[2] = { pass.viewProjectionMatrix * mesh.modelMatrix, mesh.modelMatrix };
+            glm::mat4 matrices[2] = { mesh.primaryMatrix, mesh.secondaryMatrix };
             vkCmdPushConstants(commandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(matrices), &matrices);
 
             vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, 0, 0, 0);

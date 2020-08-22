@@ -145,11 +145,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     m_camera.extrinsic = extrinsic;
     const glm::mat4 viewMatrix = viewMatrixFromCameraExtrinsic(extrinsic);
     const glm::mat4 projectionMatrix = projectionMatrixFromCameraIntrinsic(m_camera.intrinsic);
-    const glm::mat4 viewProjectionMatrix = projectionMatrix * viewMatrix;
-    m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_mainPass);
-    m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_skyPass);
-    m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_debugGeoPass);
-    m_backend.setViewProjectionMatrix(viewProjectionMatrix, m_depthPrePass);
+    m_currentViewProjectionMatrix = projectionMatrix * viewMatrix;
 
     if (!m_freezeAndDrawCameraFrustum) {
         updateCameraFrustum();
@@ -242,36 +238,39 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
     //main pass
     {
         std::vector<MeshHandle> culledMeshes;
-        std::vector<glm::mat4> culledTransforms;
+        std::vector<std::array<glm::mat4, 2>> culledTransforms; //contains MVP and model matrix
 
         //frustum culling
         for (uint32_t i = 0; i < std::min(meshes.size(), modelMatrices.size()); i++) {
             const auto handle = meshes[i];
             const auto& bb = m_meshHandleToBoundingBox[handle];
-            const auto& transform = modelMatrices[i];
+
+            const auto mvp = m_currentViewProjectionMatrix * modelMatrices[i];
+            const std::array<glm::mat4, 2> transforms = { mvp, modelMatrices[i] };
 
             //account for transform
-            const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, transform);
+            const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, modelMatrices[i]);
             const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, bb);
 
             if (renderMesh) {
                 m_currentMainPassDrawcallCount++;
 
                 culledMeshes.push_back(handle);
-                culledTransforms.push_back(transform);
+                culledTransforms.push_back(transforms);
 
                 if (m_drawBBs) {
                     m_bbsToDebugDraw.push_back(bbTransformed);
                 }
             }
         }
-        m_backend.drawMeshes(culledMeshes, culledTransforms, { m_mainPass, m_depthPrePass });
+        m_backend.drawMeshes(culledMeshes, culledTransforms, m_mainPass);
+        m_backend.drawMeshes(culledMeshes, culledTransforms, m_depthPrePass);
     }
     
     //shadow pass
     {
         std::vector<MeshHandle> culledMeshes;
-        std::vector<glm::mat4> culledTransforms;
+        std::vector<std::array<glm::mat4, 2>> culledTransforms; //model matrix and secondary unused for now 
 
         const glm::vec3 sunDirection = directionToVector(m_sunDirection);
         auto shadowFrustum = computeOrthogonalFrustumFittedToCamera(m_cameraFrustum, sunDirection);
@@ -290,20 +289,22 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
         for (uint32_t i = 0; i < std::min(meshes.size(), modelMatrices.size()); i++) {
             const auto handle = meshes[i];
             const auto& bb = m_meshHandleToBoundingBox[handle];
-            const auto& transform = modelMatrices[i];
+            const std::array<glm::mat4, 2> transforms = { glm::mat4(1.f), modelMatrices[i] };
 
             //account for transform
-            const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, transform);
+            const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, modelMatrices[i]);
             const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(shadowFrustum, bb);
 
             if (renderMesh) {
                 m_currentShadowPassDrawcallCount++;
 
                 culledMeshes.push_back(handle);
-                culledTransforms.push_back(transform);
+                culledTransforms.push_back(transforms);
             }
         }
-        m_backend.drawMeshes(culledMeshes, culledTransforms, m_shadowPasses);
+        for (uint32_t shadowPass = 0; shadowPass < m_shadowPasses.size(); shadowPass++) {
+            m_backend.drawMeshes(culledMeshes, culledTransforms, m_shadowPasses[shadowPass]);
+        }
     }    
 }
 
@@ -522,13 +523,16 @@ void RenderFrontend::renderFrame() {
 
     bool drawDebugPass = false;
 
+    //for sky and debug models, first matrix is mvp with identity model matrix, secondary is unused
+    const std::array<glm::mat4, 2> defaultTransform = { m_currentViewProjectionMatrix, glm::mat4(1.f) };
+
     //update view frustum debug model
     if (m_freezeAndDrawCameraFrustum) {
-        m_backend.drawDynamicMeshes({ m_cameraFrustumModel }, { glm::mat4(1.f) }, { m_debugGeoPass });
+        m_backend.drawDynamicMeshes({ m_cameraFrustumModel }, { defaultTransform }, m_debugGeoPass);
         drawDebugPass = true;
     }
     if (m_drawShadowFrustum) {
-        m_backend.drawDynamicMeshes({ m_shadowFrustumModel }, { glm::mat4(1.f) }, { m_debugGeoPass });
+        m_backend.drawDynamicMeshes({ m_shadowFrustumModel }, { defaultTransform }, m_debugGeoPass);
         drawDebugPass = true;
     }
 
@@ -550,7 +554,7 @@ void RenderFrontend::renderFrame() {
         }
 
         m_backend.updateDynamicMeshes(m_bbDebugMeshes, positionsPerMesh, indicesPerMesh);
-        m_backend.drawDynamicMeshes(m_bbDebugMeshes, std::vector<glm::mat4> (m_bbDebugMeshes.size(), glm::mat4(1.f)), {m_debugGeoPass});
+        m_backend.drawDynamicMeshes(m_bbDebugMeshes, { defaultTransform }, m_debugGeoPass);
 
         drawDebugPass = true;
     }
@@ -592,7 +596,7 @@ void RenderFrontend::renderFrame() {
     drawUi();
     updateSun();
     updateGlobalShaderInfo();
-    m_backend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, std::vector<glm::mat4> { glm::mat4(1.f)}, std::vector<RenderPassHandle> { m_skyPass });
+    m_backend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, { defaultTransform }, m_skyPass);
     m_backend.renderFrame();
 }
 
