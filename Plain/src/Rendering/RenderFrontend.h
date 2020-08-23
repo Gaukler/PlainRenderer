@@ -139,7 +139,7 @@ private:
     ImageHandle m_specularProbe;
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
-    ImageHandle m_previousFrameBuffer;
+    ImageHandle m_historyBuffer;
 
     std::vector<ImageHandle> m_shadowMaps;
 

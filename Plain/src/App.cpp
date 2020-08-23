@@ -20,8 +20,8 @@ App::App() {
     m_renderer.setup(m_window);
 
     {
-        std::filesystem::path modelPath = "Models\\cerberus\\cerberus.obj";
-        //std::filesystem::path modelPath = "Models\\Sponza\\Sponza.obj";
+        //std::filesystem::path modelPath = "Models\\cerberus\\cerberus.obj";
+        std::filesystem::path modelPath = "Models\\Sponza\\Sponza.obj";
         //std::filesystem::path modelPath = "Models\\Bistro\\exterior.obj";
 
         std::vector<MeshHandle> mesh;
@@ -49,9 +49,9 @@ void App::run() {
 		cameraController.update(m_window);
 
         //comment in to slowly rotate first mesh
-        if (m_meshes.size() >= 1) {
-            m_renderer.setModelMatrix(0, glm::mat4(glm::rotate(glm::mat4(1.f), glm::radians(time) * 10.f, glm::vec3(0, -1, 0))));
-        }
+        //if (m_meshes.size() >= 1) {
+        //    m_renderer.setModelMatrix(0, glm::mat4(glm::rotate(glm::mat4(1.f), glm::radians(time) * 10.f, glm::vec3(0, -1, 0))));
+        //}
 
         m_renderer.setCameraExtrinsic(cameraController.getExtrinsic());
         m_renderer.issueMeshDraws(m_meshes);

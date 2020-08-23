@@ -81,7 +81,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_previousFrameBuffer = m_backend.createImage(desc);
+        m_historyBuffer = m_backend.createImage(desc);
     }
 }
 
@@ -103,7 +103,7 @@ void RenderFrontend::newFrame() {
     if (m_didResolutionChange) {
         m_backend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
         m_backend.resizeImages( { m_colorBuffer, m_depthBuffer, m_motionVectorBuffer, 
-            m_previousFrameBuffer }, m_screenWidth, m_screenHeight);
+            m_historyBuffer }, m_screenWidth, m_screenHeight);
         m_backend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
 
@@ -667,14 +667,15 @@ void RenderFrontend::renderFrame() {
     //taa
     {
         ImageResource colorBufferResource(m_colorBuffer, 0, 0);
-        ImageResource previousFrameResource(m_previousFrameBuffer, 0, 1);
+        ImageResource previousFrameResource(m_historyBuffer, 0, 1);
         ImageResource motionBufferResource(m_motionVectorBuffer, 0, 2);
-        SamplerResource samplerResource(m_colorSampler, 3);
+        ImageResource depthBufferResource(m_depthBuffer, 0, 3);
+        SamplerResource samplerResource(m_colorSampler, 4);
 
         RenderPassExecution taaExecution;
         taaExecution.handle = m_taaPass;
         taaExecution.resources.storageImages = { colorBufferResource };
-        taaExecution.resources.sampledImages = { previousFrameResource, motionBufferResource };
+        taaExecution.resources.sampledImages = { previousFrameResource, motionBufferResource, depthBufferResource };
         taaExecution.resources.samplers = { samplerResource };
         taaExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
         taaExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
@@ -686,7 +687,7 @@ void RenderFrontend::renderFrame() {
 
     //copy to for next frame
     {
-        ImageResource lastFrameResource(m_previousFrameBuffer, 0, 0);
+        ImageResource lastFrameResource(m_historyBuffer, 0, 0);
         ImageResource colorBufferResource(m_colorBuffer, 0, 1);
         SamplerResource samplerResource(m_defaultTexelSampler, 2);
 

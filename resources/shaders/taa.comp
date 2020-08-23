@@ -2,12 +2,16 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
 
+#include "linearDepth.inc"
+#include "global.inc"
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 0, r11f_g11f_b10f) 	uniform image2D framebuffer;
 layout(set=1, binding = 1) 	                uniform texture2D previousFramebuffer;
 layout(set=1, binding = 2) 	                uniform texture2D motionBuffer;
-layout(set=1, binding = 3)                  uniform sampler colorSampler;
+layout(set=1, binding = 3) 	                uniform texture2D depthBuffer;
+layout(set=1, binding = 4)                  uniform sampler colorSampler;
 
 //from: "Temporal ReprojectionAnti-Aliasing in INSIDE"
 //clips a point towards a target in a axis aligned bounding box
@@ -32,6 +36,10 @@ vec3 clipAABB(
     }
 }
 
+float luminance(vec3 c){
+    return dot(c, vec3(0.299f, 0.587f, 0.114f));
+}
+
 void main(){
 
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
@@ -49,15 +57,44 @@ void main(){
             maxC = max(maxC, neighbourhood);
         }
     }
-
-    vec2 motion = texelFetch(sampler2D(motionBuffer, colorSampler), uv, 0).rg;
-    ivec2 uvReprojected = uv + ivec2(motion * imageSize(framebuffer));
-    vec3 previousColor = texelFetch(sampler2D(previousFramebuffer, colorSampler), uvReprojected, 0).rgb;
     
-    //vec2 test = (uv + + vec2(0.5f)) / vec2(imageSize(framebuffer));
-    //previousColor = texture(sampler2D(previousFramebuffer, colorSampler), test).rgb;
+    //dilate velocity buffer
+    float closestDepth = g_farPlane;
+    ivec2 closestDepthOffset = ivec2(0);
     
-    previousColor = clipAABB(minC, maxC, previousColor);
+    //5 texel x pattern from UE4 paper
+    //ivec2 depthSamples[5] = {ivec2(0, 0), ivec2(2, 2), ivec2(-2, 2), ivec2(2, -2), ivec2(-2, -2)};
+    //for(int i = 0; i < 5; i++){
+    //    float depthTexel = texelFetch(sampler2D(depthBuffer, colorSampler), uv + depthSamples[i], 0).r;
+    //    float depth = linearizeDepth(depthTexel, g_nearPlane, g_farPlane);
+    //    if(depth < closestDepth){
+    //        closestDepth = depth;
+    //        closestDepthOffset = depthSamples[i];
+    //    }
+    //}
+    
+    //3x3 neighbourhood from Inside paper
+    for(int x = -1; x <= 1; x++){
+        for(int y = -1; y <= 1; y++){
+            
+            ivec2 offset = ivec2(x, y);
+            float depthTexel = texelFetch(sampler2D(depthBuffer, colorSampler), uv + offset, 0).r;
+            float depth = linearizeDepth(depthTexel, g_nearPlane, g_farPlane);
+            if(depth < closestDepth){
+                closestDepth = depth;
+                closestDepthOffset = offset;
+            }
+        }
+    }
+    
+    vec2 motion = texelFetch(sampler2D(motionBuffer, colorSampler), uv + closestDepthOffset, 0).rg;
+    
+    //last frame must be sampled linearly and motion vector requires sub-pixel precision
+    //careful not to destroy motion vector precision by casting to ivec
+    vec2 uvReprojected = (uv + vec2(0.5f)) / vec2(imageSize(framebuffer)) + motion;
+    vec3 previousColorTexel = texture(sampler2D(previousFramebuffer, colorSampler), uvReprojected).rgb;
+    
+    vec3 previousColor = clipAABB(minC, maxC, previousColorTexel);
     //previousColor = clamp(previousColor, minC, maxC); //simple clamp version
     
     //nan test, mainly a problem when resizing the buffers
@@ -66,7 +103,20 @@ void main(){
         previousColor = currentColor;
     }
     
-    vec3 color = mix(previousColor, currentColor, 0.05f);
+    //luminance difference based blend weight from inside
+    float blendFactorMin = 0.01f;
+    float blendFactorMax = 0.1f;
+    
+    float lumaCurrent = luminance(currentColor);
+    float lumaLast = luminance(previousColorTexel);
+    
+    float samplesDifference = abs(lumaCurrent - lumaLast)  / max(max(lumaCurrent, lumaLast), 0.2f);
+    float weight = 1.f - samplesDifference;
+    float weightSqrd = clamp(weight * weight, 0, 0);
+    
+    float blendFactor = mix(blendFactorMin, blendFactorMax, 1);
+    
+    vec3 color = mix(previousColor, currentColor, blendFactor);
     
 	imageStore(framebuffer, uv, vec4(color, 1.f));
 }
