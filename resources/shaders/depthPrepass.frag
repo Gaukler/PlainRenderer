@@ -27,5 +27,5 @@ void main(){
     ndcCurrent  += g_currentFrameCameraJitter;
     ndcPrevious += g_previousFrameCameraJitter;
     
-    motion = (ndcPrevious - ndcCurrent) * 0.5f;
+    motion = (ndcPrevious - ndcCurrent) * vec2(-0.5f, 0.5f);
 }
