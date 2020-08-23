@@ -6,7 +6,7 @@
 #include "CameraController.h"
 #include "ModelLoader.h"
 #include <imgui/imgui.h>
-
+#include "Utilities/MathUtils.h"
 App::App() {
 
     DirectoryUtils::init();
@@ -20,8 +20,8 @@ App::App() {
     m_renderer.setup(m_window);
 
     {
-        //std::filesystem::path modelPath = "Models\\cerberus\\cerberus.obj";
-        std::filesystem::path modelPath = "Models\\Sponza\\Sponza.obj";
+        std::filesystem::path modelPath = "Models\\cerberus\\cerberus.obj";
+        //std::filesystem::path modelPath = "Models\\Sponza\\Sponza.obj";
         //std::filesystem::path modelPath = "Models\\Bistro\\exterior.obj";
 
         std::vector<MeshHandle> mesh;
@@ -32,7 +32,6 @@ App::App() {
 
         m_meshes.insert(m_meshes.end(), mesh.begin(), mesh.end());
     }
-    m_modelMatrices = std::vector<glm::mat4>(m_meshes.size(), glm::scale(glm::mat4(1.f), glm::vec3(1.f)));
 }
 
 void App::run() {
@@ -49,11 +48,13 @@ void App::run() {
 
 		cameraController.update(m_window);
 
+        //comment in to slowly rotate first mesh
+        if (m_meshes.size() >= 1) {
+            m_renderer.setModelMatrix(0, glm::mat4(glm::rotate(glm::mat4(1.f), glm::radians(time) * 10.f, glm::vec3(0, -1, 0))));
+        }
+
         m_renderer.setCameraExtrinsic(cameraController.getExtrinsic());
-        //if (m_modelMatrices.size() == 1) { //only rotate when loading single test model
-        //    m_modelMatrices[0] = glm::rotate(glm::mat4(1.f), timer.getTimeFloat(), glm::vec3(0.f, -1.f, 0.f));
-        //}
-        m_renderer.issueMeshDraws(m_meshes, m_modelMatrices);
+        m_renderer.issueMeshDraws(m_meshes);
 		m_renderer.renderFrame();
 
         glfwPollEvents();

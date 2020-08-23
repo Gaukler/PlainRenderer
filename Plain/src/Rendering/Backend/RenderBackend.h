@@ -18,7 +18,6 @@ struct Swapchain {
     VkSwapchainKHR                  vulkanHandle;
     uint32_t                        minImageCount;
     std::vector<ImageHandle>        imageHandles;
-    RenderPassHandle                copyToSwapchainPass;
     VkSemaphore                     imageAvaible;
 };
 
@@ -201,7 +200,7 @@ public:
     StorageBufferHandle     createStorageBuffer(const StorageBufferDescription& desc);
     SamplerHandle           createSampler(const SamplerDescription& description);
 
-    void setSwapchainInputImage(ImageHandle image);
+    ImageHandle getSwapchainInputImage();
 
     void getMemoryStats(uint32_t* outAllocatedSize, uint32_t* outUsedSize);
 
@@ -215,7 +214,7 @@ private:
     /*
     calculates pass order, updates descritor sets, creates barriers
     */
-    void prepareRenderPasses(const ImageHandle swapchainOutputImage);
+    void prepareRenderPasses();
 
     std::vector<RenderPassExecution>            m_renderPassExecutions;
     std::vector<RenderPassExecutionInternal>    m_renderPassInternalExecutions;
@@ -239,7 +238,7 @@ private:
     validation layers are disabled in release build using macro
     */
 #ifdef NDEBUG
-    const bool m_useValidationLayers = false;
+    const bool m_useValidationLayers = true;
 #else
     const bool m_useValidationLayers = true;
 #endif

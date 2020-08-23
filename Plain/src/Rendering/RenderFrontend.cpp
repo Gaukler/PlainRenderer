@@ -64,6 +64,25 @@ void RenderFrontend::setup(GLFWwindow* window) {
     createDepthPrePass();
     createDepthPyramidPass();
     createLightMatrixPass();
+    createTonemappingPass();
+    createImageCopyPass();
+    createTaaPass();
+
+    //previous frame buffer
+    {
+        ImageDescription desc;
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::R11G11B10_uFloat;
+        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_STORAGE | IMAGE_USAGE_SAMPLED);
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
+
+        m_previousFrameBuffer = m_backend.createImage(desc);
+    }
 }
 
 /*
@@ -83,7 +102,8 @@ newFrame
 void RenderFrontend::newFrame() {
     if (m_didResolutionChange) {
         m_backend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
-        m_backend.resizeImages( { m_colorBuffer, m_depthBuffer }, m_screenWidth, m_screenHeight);
+        m_backend.resizeImages( { m_colorBuffer, m_depthBuffer, m_motionVectorBuffer, 
+            m_previousFrameBuffer }, m_screenWidth, m_screenHeight);
         m_backend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
 
@@ -115,6 +135,11 @@ void RenderFrontend::newFrame() {
     m_backend.newFrame();
 
     m_bbsToDebugDraw.clear();
+
+    //update previous matrices
+    for (auto& meshState : m_meshStates) {
+        meshState.previousFrameModelMatrix = meshState.modelMatrix;
+    }
 }
 
 /*
@@ -138,14 +163,35 @@ void RenderFrontend::setResolution(const uint32_t width, const uint32_t height) 
 
 /*
 =========
-setCameraMatrix
+setCameraExtrinsic
 =========
 */
 void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     m_camera.extrinsic = extrinsic;
     const glm::mat4 viewMatrix = viewMatrixFromCameraExtrinsic(extrinsic);
     const glm::mat4 projectionMatrix = projectionMatrixFromCameraIntrinsic(m_camera.intrinsic);
-    m_currentViewProjectionMatrix = projectionMatrix * viewMatrix;
+
+    m_previousViewProjectionMatrix = m_viewProjectionMatrix;
+
+    //jitter matrix
+    {
+        static uint32_t jitterIndex;
+        glm::vec2 offset = 2.f * hammersley2D(jitterIndex) - glm::vec2(1.f);
+        offset.x /= float(m_screenWidth);
+        offset.y /= float(m_screenHeight);
+        jitterIndex++;
+        const uint32_t sampleCount = 16;
+        jitterIndex %= sampleCount;
+
+        glm::mat4 jitteredProjection = projectionMatrix;
+        jitteredProjection[2][0] += offset.x;
+        jitteredProjection[2][1] += offset.y;
+
+        m_viewProjectionMatrix = jitteredProjection * viewMatrix;
+
+        m_globalShaderInfo.previousFrameCameraJitter = m_globalShaderInfo.currentFrameCameraJitter;
+        m_globalShaderInfo.currentFrameCameraJitter = offset;
+    }    
 
     if (!m_freezeAndDrawCameraFrustum) {
         updateCameraFrustum();
@@ -167,7 +213,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
 createMeshes
 =========
 */
-std::vector<MeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>& meshData) {
+std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>& meshData) {
 
     //this is a lot of copying... improve later?
     std::vector<MeshDataInternal> dataInternal;
@@ -197,15 +243,26 @@ std::vector<MeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>
     
     auto passList = m_shadowPasses;
     passList.push_back(m_mainPass);
-    const auto handles = m_backend.createMeshes(dataInternal, passList);
+    const auto backendHandles = m_backend.createMeshes(dataInternal, passList);
 
-    //compute and store bounding boxes
-    assert(handles.size() == dataInternal.size());
-    for (uint32_t i = 0; i < handles.size(); i++) {
+    assert(backendHandles.size() == dataInternal.size());
+    
+    //compute and store bounding boxes    
+    std::vector<FrontendMeshHandle> frontendHandles;
+    for (uint32_t i = 0; i < backendHandles.size(); i++) {
+
+        //create and store state and frontend handle        
+        frontendHandles.push_back(frontendHandles.size());
+        MeshState state;
+        state.backendHandle = backendHandles[i];
+        state.modelMatrix = glm::mat4(1.f);
+        state.previousFrameModelMatrix = glm::mat4(1.f);
+        
+        //compute bounding box
         const auto& meshData = dataInternal[i];
-        const auto& handle = handles[i];
-        const auto bb = axisAlignedBoundingBoxFromPositions(meshData.positions);
-        m_meshHandleToBoundingBox[handle] = bb;
+        state.bb = axisAlignedBoundingBoxFromPositions(meshData.positions);
+
+        m_meshStates.push_back(state);
 
         //create debug mesh for rendering
         const auto debugMesh = m_backend.createDynamicMeshes(
@@ -213,7 +270,7 @@ std::vector<MeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>
         m_bbDebugMeshes.push_back(debugMesh);
     }
 
-    return handles;
+    return frontendHandles;
 }
 
 /*
@@ -221,7 +278,7 @@ std::vector<MeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>
 issueMeshDraw
 =========
 */
-void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const std::vector<glm::mat4>& modelMatrices) {
+void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshes) {
 
     //if we prepare render commands without consuming them we will save up a huge amount of commands
     //so commands are not recorded if minmized in the first place
@@ -229,42 +286,44 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
         return;
     }
 
-    if (meshes.size() != modelMatrices.size()) {
-        std::cout << "Error: RenderFrontend::issueMeshDraws mesh and model matrix count do not match\n";
-    }
-
     m_currentMeshCount += meshes.size();
 
-    //main pass
+    //main and prepass
     {
         std::vector<MeshHandle> culledMeshes;
-        std::vector<std::array<glm::mat4, 2>> culledTransforms; //contains MVP and model matrix
+        std::vector<std::array<glm::mat4, 2>> culledTransformsMainPass; //contains MVP and model matrix
+        std::vector<std::array<glm::mat4, 2>> culledTransformsPrepass; //contains MVP and previous mvp
 
         //frustum culling
-        for (uint32_t i = 0; i < std::min(meshes.size(), modelMatrices.size()); i++) {
-            const auto handle = meshes[i];
-            const auto& bb = m_meshHandleToBoundingBox[handle];
+        for (uint32_t i = 0; i < meshes.size(); i++) {
+            const auto frontendHandle = meshes[i];
+            const auto& meshState = m_meshStates[frontendHandle];
 
-            const auto mvp = m_currentViewProjectionMatrix * modelMatrices[i];
-            const std::array<glm::mat4, 2> transforms = { mvp, modelMatrices[i] };
+            const auto mvp = m_viewProjectionMatrix * meshState.modelMatrix;
 
             //account for transform
-            const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, modelMatrices[i]);
-            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, bb);
+            const auto bbTransformed = axisAlignedBoundingBoxTransformed(meshState.bb, meshState.modelMatrix);
+            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, meshState.bb);
 
             if (renderMesh) {
                 m_currentMainPassDrawcallCount++;
 
-                culledMeshes.push_back(handle);
-                culledTransforms.push_back(transforms);
+                culledMeshes.push_back(meshState.backendHandle);
+
+                const std::array<glm::mat4, 2> mainPassTransforms = { mvp, meshState.modelMatrix };
+                culledTransformsMainPass.push_back(mainPassTransforms);
+
+                const glm::mat4 previousMVP = m_previousViewProjectionMatrix * meshState.previousFrameModelMatrix;
+                const std::array<glm::mat4, 2> prePassTransforms = { mvp, previousMVP };
+                culledTransformsPrepass.push_back(prePassTransforms);
 
                 if (m_drawBBs) {
                     m_bbsToDebugDraw.push_back(bbTransformed);
                 }
             }
         }
-        m_backend.drawMeshes(culledMeshes, culledTransforms, m_mainPass);
-        m_backend.drawMeshes(culledMeshes, culledTransforms, m_depthPrePass);
+        m_backend.drawMeshes(culledMeshes, culledTransformsMainPass, m_mainPass);
+        m_backend.drawMeshes(culledMeshes, culledTransformsPrepass, m_depthPrePass);
     }
     
     //shadow pass
@@ -286,19 +345,20 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
 
         //coarse frustum culling for shadow rendering, assuming shadow frustum if fitted to camera frustum
         //actual frustum is fitted tightly to depth buffer values, but that is done on the GPU
-        for (uint32_t i = 0; i < std::min(meshes.size(), modelMatrices.size()); i++) {
-            const auto handle = meshes[i];
-            const auto& bb = m_meshHandleToBoundingBox[handle];
-            const std::array<glm::mat4, 2> transforms = { glm::mat4(1.f), modelMatrices[i] };
+        for (uint32_t i = 0; i < meshes.size(); i++) {
+            const auto frontendHandle = meshes[i];
+            const auto& meshState = m_meshStates[frontendHandle];
+
+            const std::array<glm::mat4, 2> transforms = { glm::mat4(1.f), meshState.modelMatrix };
 
             //account for transform
-            const auto bbTransformed = axisAlignedBoundingBoxTransformed(bb, modelMatrices[i]);
-            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(shadowFrustum, bb);
+            const auto bbTransformed = axisAlignedBoundingBoxTransformed(meshState.bb, meshState.modelMatrix);
+            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(shadowFrustum, meshState.bb);
 
             if (renderMesh) {
                 m_currentShadowPassDrawcallCount++;
 
-                culledMeshes.push_back(handle);
+                culledMeshes.push_back(meshState.backendHandle);
                 culledTransforms.push_back(transforms);
             }
         }
@@ -306,6 +366,15 @@ void RenderFrontend::issueMeshDraws(const std::vector<MeshHandle>& meshes, const
             m_backend.drawMeshes(culledMeshes, culledTransforms, m_shadowPasses[shadowPass]);
         }
     }    
+}
+
+/*
+=========
+setModelMatrix
+=========
+*/
+void RenderFrontend::setModelMatrix(const FrontendMeshHandle handle, const glm::mat4& m) {
+    m_meshStates[handle].modelMatrix = m;
 }
 
 /*
@@ -524,7 +593,7 @@ void RenderFrontend::renderFrame() {
     bool drawDebugPass = false;
 
     //for sky and debug models, first matrix is mvp with identity model matrix, secondary is unused
-    const std::array<glm::mat4, 2> defaultTransform = { m_currentViewProjectionMatrix, glm::mat4(1.f) };
+    const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
 
     //update view frustum debug model
     if (m_freezeAndDrawCameraFrustum) {
@@ -553,8 +622,13 @@ void RenderFrontend::renderFrame() {
             indicesPerMesh.push_back(indices);
         }
 
-        m_backend.updateDynamicMeshes(m_bbDebugMeshes, positionsPerMesh, indicesPerMesh);
-        m_backend.drawDynamicMeshes(m_bbDebugMeshes, { defaultTransform }, m_debugGeoPass);
+        //subvector with correct handle count
+        std::vector<MeshHandle> bbMeshHandles(&m_bbDebugMeshes[0], &m_bbDebugMeshes[positionsPerMesh.size()]);
+
+        m_backend.updateDynamicMeshes(bbMeshHandles, positionsPerMesh, indicesPerMesh);
+
+        std::vector<std::array<glm::mat4, 2>> debugMeshTransforms(m_bbsToDebugDraw.size(), defaultTransform);
+        m_backend.drawDynamicMeshes(bbMeshHandles, debugMeshTransforms, m_debugGeoPass);
 
         drawDebugPass = true;
     }
@@ -588,6 +662,65 @@ void RenderFrontend::renderFrame() {
             skyPassExecution.parents.push_back(m_debugGeoPass);
         }
         m_backend.setRenderPassExecution(skyPassExecution);
+    }
+
+    //taa
+    {
+        ImageResource colorBufferResource(m_colorBuffer, 0, 0);
+        ImageResource previousFrameResource(m_previousFrameBuffer, 0, 1);
+        ImageResource motionBufferResource(m_motionVectorBuffer, 0, 2);
+        SamplerResource samplerResource(m_colorSampler, 3);
+
+        RenderPassExecution taaExecution;
+        taaExecution.handle = m_taaPass;
+        taaExecution.resources.storageImages = { colorBufferResource };
+        taaExecution.resources.sampledImages = { previousFrameResource, motionBufferResource };
+        taaExecution.resources.samplers = { samplerResource };
+        taaExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+        taaExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+        taaExecution.dispatchCount[2] = 1;
+        taaExecution.parents = { m_skyPass };
+
+        m_backend.setRenderPassExecution(taaExecution);
+    }
+
+    //copy to for next frame
+    {
+        ImageResource lastFrameResource(m_previousFrameBuffer, 0, 0);
+        ImageResource colorBufferResource(m_colorBuffer, 0, 1);
+        SamplerResource samplerResource(m_defaultTexelSampler, 2);
+
+        RenderPassExecution copyNextFrameExecution;
+        copyNextFrameExecution.handle = m_imageCopyHDRPass;
+        copyNextFrameExecution.resources.storageImages = { lastFrameResource };
+        copyNextFrameExecution.resources.sampledImages = { colorBufferResource };
+        copyNextFrameExecution.resources.samplers = { samplerResource };
+        copyNextFrameExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+        copyNextFrameExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+        copyNextFrameExecution.dispatchCount[2] = 1;
+        copyNextFrameExecution.parents = { m_taaPass };
+
+        m_backend.setRenderPassExecution(copyNextFrameExecution);
+    }
+
+    //tonemap
+    {
+        const auto swapchainInput = m_backend.getSwapchainInputImage();
+        ImageResource targetResource(swapchainInput, 0, 0);
+        ImageResource colorBufferResource(m_colorBuffer, 0, 1);
+        SamplerResource samplerResource(m_defaultTexelSampler, 2);
+
+        RenderPassExecution tonemappingExecution;
+        tonemappingExecution.handle = m_tonemappingPass;
+        tonemappingExecution.resources.storageImages = { targetResource };
+        tonemappingExecution.resources.sampledImages = { colorBufferResource };
+        tonemappingExecution.resources.samplers = { samplerResource };
+        tonemappingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+        tonemappingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+        tonemappingExecution.dispatchCount[2] = 1;
+        tonemappingExecution.parents = { m_taaPass };
+
+        m_backend.setRenderPassExecution(tonemappingExecution);
     }
 
     /*
@@ -789,7 +922,7 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
         1,
         ImageType::Type2D,
         ImageFormat::R11G11B10_uFloat,
-        (ImageUsageFlags)(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_STORAGE | IMAGE_USAGE_SAMPLED),
+        (ImageUsageFlags)(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE),
         MipCount::One,
         0,
         false);
@@ -864,7 +997,6 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
     mainPassDesc.blending = BlendState::None;
 
     m_mainPass = m_backend.createGraphicPass(mainPassDesc);
-    m_backend.setSwapchainInputImage(m_colorBuffer);
 
     const auto cubeSamplerDesc = SamplerDescription(
         SamplerInterpolation::Linear,
@@ -883,6 +1015,17 @@ void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height)
         SamplerBorderColor::White,
         0);
     m_lutSampler = m_backend.createSampler(lutSamplerDesc);
+
+    {
+        const auto desc = SamplerDescription(
+            SamplerInterpolation::Linear,
+            SamplerWrapping::Clamp,
+            false,
+            1,
+            SamplerBorderColor::White,
+            0);
+        m_colorSampler = m_backend.createSampler(desc);
+    }
 }
 
 /*
@@ -1253,19 +1396,38 @@ createDepthPrePass
 */
 void RenderFrontend::createDepthPrePass() {
 
-    Attachment depthAttachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Clear);
+    //create velocity buffer
+    {
+        ImageDescription desc;
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.format = ImageFormat::RG16_sFloat;
+        desc.autoCreateMips = false;
+        desc.manualMipCount = 1;
+        desc.mipCount = MipCount::One;
+        desc.type = ImageType::Type2D;
+        desc.usageFlags = ImageUsageFlags(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED);
 
-    GraphicPassDescription desc;
-    desc.attachments = { depthAttachment };
-    desc.blending = BlendState::None;
-    desc.depthTest.function = DepthFunction::LessEqual;
-    desc.depthTest.write = true;
-    desc.name = "Depth prepass";
-    desc.rasterization.cullMode = CullMode::Back;
-    desc.shaderDescriptions.vertex.srcPathRelative = "depthPrepass.vert";
-    desc.shaderDescriptions.fragment.srcPathRelative = "depthPrepass.frag";
+        m_motionVectorBuffer = m_backend.createImage(desc);
+    }
+    //create pass
+    {
+        Attachment depthAttachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Clear);
+        Attachment velocityAttachment(m_motionVectorBuffer, 0, 1, AttachmentLoadOp::Clear);
 
-    m_depthPrePass = m_backend.createGraphicPass(desc);
+        GraphicPassDescription desc;
+        desc.attachments = { depthAttachment, velocityAttachment };
+        desc.blending = BlendState::None;
+        desc.depthTest.function = DepthFunction::LessEqual;
+        desc.depthTest.write = true;
+        desc.name = "Depth prepass";
+        desc.rasterization.cullMode = CullMode::Back;
+        desc.shaderDescriptions.vertex.srcPathRelative = "depthPrepass.vert";
+        desc.shaderDescriptions.fragment.srcPathRelative = "depthPrepass.frag";
+
+        m_depthPrePass = m_backend.createGraphicPass(desc);
+    }
 }
 
 /*
@@ -1338,6 +1500,45 @@ void RenderFrontend::createLightMatrixPass() {
         desc.size = splitSize + lightMatrixSize;
         m_sunShadowInfoBuffer = m_backend.createStorageBuffer(desc);
     }
+}
+
+/*
+=========
+createTonemappingPass
+=========
+*/
+void RenderFrontend::createTonemappingPass() {
+    ComputePassDescription desc;
+    desc.name = "Tonemapping";
+    desc.shaderDescription.srcPathRelative = "tonemapping.comp";
+
+    m_tonemappingPass = m_backend.createComputePass(desc);
+}
+
+/*
+=========
+createImageCopyPass
+=========
+*/
+void RenderFrontend::createImageCopyPass() {
+    ComputePassDescription desc;
+    desc.name = "Image copy";
+    desc.shaderDescription.srcPathRelative = "imageCopyHDR.comp";
+
+    m_imageCopyHDRPass = m_backend.createComputePass(desc);
+}
+
+/*
+=========
+createTaaPass
+=========
+*/
+void RenderFrontend::createTaaPass() {
+    ComputePassDescription desc;
+    desc.name = "TAA";
+    desc.shaderDescription.srcPathRelative = "taa.comp";
+
+    m_taaPass = m_backend.createComputePass(desc);
 }
 
 /*

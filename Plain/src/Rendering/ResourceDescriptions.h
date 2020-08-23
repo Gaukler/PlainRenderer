@@ -284,6 +284,8 @@ struct GlobalShaderInfo {
     glm::vec4 cameraRight;
     glm::vec4 cameraUp;
     glm::vec4 cameraForward;
+    glm::vec2 currentFrameCameraJitter;
+    glm::vec2 previousFrameCameraJitter;
     float cameraTanFovHalf;
     float cameraAspectRatio;
     float nearPlane = 0.1f;

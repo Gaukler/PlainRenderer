@@ -318,14 +318,6 @@ void RenderBackend::setup(GLFWwindow* window) {
     */
     setupImgui(window);
 
-    /*
-    create swapchain copy pass
-    */
-    ComputePassDescription copyPass;
-    copyPass.name = "Copy image to swapchain";
-    copyPass.shaderDescription.srcPathRelative = "copyToSwapchain.comp";
-    m_swapchain.copyToSwapchainPass = createComputePass(copyPass);
-
     //query pools
     m_timestampQueryPool = createQueryPool(VK_QUERY_TYPE_TIMESTAMP, m_timestampQueryPoolQueryCount);
 }
@@ -726,9 +718,7 @@ renderFrame
 */
 void RenderBackend::renderFrame() {
 
-    uint32_t imageIndex;
-    vkAcquireNextImageKHR(vkContext.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvaible, VK_NULL_HANDLE, &imageIndex);
-    prepareRenderPasses(m_swapchain.imageHandles[imageIndex]);
+    prepareRenderPasses();
 
     //wait for previous frame to render so resources are avaible
     vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, UINT64_MAX);
@@ -778,7 +768,7 @@ void RenderBackend::renderFrame() {
         vkCmdPipelineBarrier(currentCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
             0, 0, nullptr, 0, nullptr, 1, m_ui.barriers.data());
 
-        vkCmdBeginRenderPass(currentCommandBuffer, &m_ui.passBeginInfos[imageIndex], VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBeginRenderPass(currentCommandBuffer, &m_ui.passBeginInfos[m_swapchainInputImage], VK_SUBPASS_CONTENTS_INLINE);
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentCommandBuffer);
         vkCmdEndRenderPass(currentCommandBuffer);
 
@@ -794,7 +784,7 @@ void RenderBackend::renderFrame() {
     /*
     transition swapchain image to present
     */
-    auto& swapchainPresentImage = m_images[m_swapchain.imageHandles[imageIndex]];
+    auto& swapchainPresentImage = m_images[m_swapchain.imageHandles[m_swapchainInputImage]];
     const auto& transitionToPresentBarrier = createImageBarriers(swapchainPresentImage, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
         0, 1);
     barriersCommand(currentCommandBuffer, transitionToPresentBarrier, std::vector<VkBufferMemoryBarrier> {});
@@ -818,7 +808,7 @@ void RenderBackend::renderFrame() {
 
     vkQueueSubmit(vkContext.graphicQueue, 1, &submit, m_renderFinishedFence);
 
-    presentImage(imageIndex, m_renderFinishedSemaphore);
+    presentImage(m_swapchainInputImage, m_renderFinishedSemaphore);
     glfwPollEvents();
 
     //get timestamp results
@@ -1260,8 +1250,9 @@ SamplerHandle RenderBackend::createSampler(const SamplerDescription& desc) {
 setSwapchainInputImage
 =========
 */
-void RenderBackend::setSwapchainInputImage(ImageHandle image) {
-    m_swapchainInputImage = image;
+ImageHandle RenderBackend::getSwapchainInputImage() {
+    vkAcquireNextImageKHR(vkContext.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvaible, VK_NULL_HANDLE, &m_swapchainInputImage);
+    return m_swapchainInputImage;
 }
 
 /*
@@ -1332,7 +1323,7 @@ MaterialSamplers RenderBackend::createMaterialSamplers(){
 prepareRenderPasses
 =========
 */
-void RenderBackend::prepareRenderPasses(const ImageHandle swapchainOutputImage) {
+void RenderBackend::prepareRenderPasses() {
 
     /*
     update descriptor set
@@ -1390,33 +1381,6 @@ void RenderBackend::prepareRenderPasses(const ImageHandle swapchainOutputImage) 
         }
     }
     assert(renderPassesToAdd.size() == 0); //all passes must have been added
-
-    /*
-    update swapchain copy pass resource and add to executions
-    */
-    const auto swapchainOutput = ImageResource(swapchainOutputImage, 0, 0);
-
-    const auto swapchainInput = ImageResource(m_swapchainInputImage, 0, 1);
-
-    const auto swapchainImageExtent = m_images[swapchainOutputImage].extent;
-    RenderPassExecutionInternal swapchainCopy;
-    swapchainCopy.handle = m_swapchain.copyToSwapchainPass;
-    swapchainCopy.dispatches[0] = std::ceilf(swapchainImageExtent.width / 8.f);
-    swapchainCopy.dispatches[1] = std::ceilf(swapchainImageExtent.height / 8.f);
-    swapchainCopy.dispatches[2] = 1;
-
-    RenderPassResources swapchainCopyResources;
-    swapchainCopyResources.storageImages = { swapchainInput, swapchainOutput };
-    updateDescriptorSet(m_renderPasses.getComputePassRefByHandle(m_swapchain.copyToSwapchainPass).descriptorSet, swapchainCopyResources);
-    m_renderPassInternalExecutions.push_back(swapchainCopy);
-
-    /*
-    add to external executions so barriers are set correctly
-    */
-    RenderPassExecution swapchainCopyExecution;
-    swapchainCopyExecution.handle = m_swapchain.copyToSwapchainPass;
-    swapchainCopyExecution.resources = swapchainCopyResources;
-    m_renderPassExecutions.push_back(swapchainCopyExecution);
 
     /*
     create image barriers
@@ -1542,7 +1506,7 @@ void RenderBackend::prepareRenderPasses(const ImageHandle swapchainOutputImage) 
     /*
     add UI barriers
     */
-    m_ui.barriers = createImageBarriers(m_images[swapchainOutputImage], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    m_ui.barriers = createImageBarriers(m_images[m_swapchainInputImage], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
 }
 

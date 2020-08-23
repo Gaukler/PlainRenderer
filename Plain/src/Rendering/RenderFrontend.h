@@ -9,6 +9,17 @@
 
 struct GLFWwindow;
 
+//FrontendMeshHandle are given out by createMeshes
+//they are indices into m_meshStates
+//as the frontend creates meshes for internal use (like the skybox) the do not correspong to the backend handles
+typedef uint32_t FrontendMeshHandle;
+
+struct MeshState {
+    MeshHandle  backendHandle;
+    glm::mat4   modelMatrix;
+    glm::mat4   previousFrameModelMatrix; //required for reprojection
+    AxisAlignedBoundingBox bb;
+};
 
 /*
 shader resource types
@@ -24,9 +35,11 @@ public:
     void newFrame();
     void setResolution(const uint32_t width, const uint32_t height);
     void setCameraExtrinsic(const CameraExtrinsic& extrinsic);
-    std::vector<MeshHandle> createMeshes(const std::vector<MeshData>& meshData);
-    void issueMeshDraws(const std::vector<MeshHandle>& meshs, const std::vector<glm::mat4>& modelMatrices);
+    std::vector<FrontendMeshHandle> createMeshes(const std::vector<MeshData>& meshData);
+    void issueMeshDraws(const std::vector<FrontendMeshHandle>& meshs);
+    void setModelMatrix(const FrontendMeshHandle handle, const glm::mat4& m);
     void renderFrame();
+
 private:
 
     //returns image from file
@@ -39,6 +52,9 @@ private:
 
     uint32_t m_screenWidth;
     uint32_t m_screenHeight;
+
+    //contains meshes created by createMeshes()
+    std::vector<MeshState> m_meshStates;
 
     //drawcall stats
     uint32_t m_currentMeshCount = 0;                //mesh commands received
@@ -57,17 +73,15 @@ private:
     bool m_freezeAndDrawCameraFrustum = false;
     bool m_drawShadowFrustum = false;
 
-    //probably not the most efficient way
-    //relying on the MeshHandle being indices could break if the backend changes or mesh deletion is added so use map for now
-    std::unordered_map<MeshHandle, AxisAlignedBoundingBox> m_meshHandleToBoundingBox;
-
     //stored for resizing
     GLFWwindow* m_window;
     RenderBackend m_backend;
     GlobalShaderInfo m_globalShaderInfo;
 
     Camera m_camera;    
-    glm::mat4 m_currentViewProjectionMatrix;
+    glm::mat4 m_viewProjectionMatrix = glm::mat4(1.f);
+    glm::mat4 m_viewProjectionMatrixJittered = glm::mat4(1.f);
+    glm::mat4 m_previousViewProjectionMatrix = glm::mat4(1.f);
 
     ViewFrustum m_cameraFrustum;
     float m_exposureOffset = 0.f;
@@ -93,6 +107,9 @@ private:
     RenderPassHandle m_depthPrePass;
     RenderPassHandle m_depthPyramidPass;
     RenderPassHandle m_lightMatrixPass;
+    RenderPassHandle m_imageCopyHDRPass;
+    RenderPassHandle m_tonemappingPass;
+    RenderPassHandle m_taaPass;
 
     /*
     resources
@@ -115,12 +132,14 @@ private:
 
     ImageHandle m_colorBuffer;
     ImageHandle m_depthBuffer;
+    ImageHandle m_motionVectorBuffer;
     ImageHandle m_environmentMapSrc;
     ImageHandle m_skyTexture;
     ImageHandle m_diffuseProbe;
     ImageHandle m_specularProbe;
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
+    ImageHandle m_previousFrameBuffer;
 
     std::vector<ImageHandle> m_shadowMaps;
 
@@ -131,6 +150,7 @@ private:
     SamplerHandle m_lutSampler;
     SamplerHandle m_defaultTexelSampler;
     SamplerHandle m_clampedDepthSampler;
+    SamplerHandle m_colorSampler;
 
     MeshHandle m_skyCube;
 
@@ -183,6 +203,9 @@ private:
     void createDepthPrePass();
     void createDepthPyramidPass();
     void createLightMatrixPass();
+    void createTonemappingPass();
+    void createImageCopyPass();
+    void createTaaPass();
 
     void createDefaultTextures();
     void createDefaultSamplers();

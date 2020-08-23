@@ -15,6 +15,5 @@ public:
 private:
 	GLFWwindow* m_window;
 	RenderFrontend m_renderer;
-    std::vector<MeshHandle> m_meshes;
-    std::vector<glm::mat4> m_modelMatrices;
+    std::vector<FrontendMeshHandle> m_meshes;
 };

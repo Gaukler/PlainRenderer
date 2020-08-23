@@ -1,0 +1,72 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set=1, binding = 0, r11f_g11f_b10f) 	uniform image2D framebuffer;
+layout(set=1, binding = 1) 	                uniform texture2D previousFramebuffer;
+layout(set=1, binding = 2) 	                uniform texture2D motionBuffer;
+layout(set=1, binding = 3)                  uniform sampler colorSampler;
+
+//from: "Temporal ReprojectionAnti-Aliasing in INSIDE"
+//clips a point towards a target in a axis aligned bounding box
+vec3 clipAABB(
+    vec3 bbMin,     //bounding box min 
+    vec3 bbMax,     //bounding box max   
+    vec3 target)    //last frame color
+{   
+    vec3 center = 0.5f * (bbMax + bbMin);
+    vec3 extend = 0.5f * (bbMax - bbMin);
+    
+    vec3 toTarget = target - center;
+    vec3 toTargetNorm = toTarget / max(extend, 0.0001f);
+    vec3 toTargetNormAbs = abs(toTargetNorm);
+    float maxComponent = max(toTargetNormAbs.x, max(toTargetNormAbs.y, toTargetNormAbs.z));
+    
+    if(maxComponent < 1.f){
+        return target; //target in bounding box
+    }
+    else{
+        return center + toTarget / maxComponent;
+    }
+}
+
+void main(){
+
+	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+     
+    vec3 currentColor = imageLoad(framebuffer, uv).rgb;
+    
+    //collect neighbourhood min/max to build AABB color box
+    vec3 minC = vec3(1000000.f);
+    vec3 maxC = vec3(0.f);
+    
+    for(int x = -1; x <= 1; x++){
+        for(int y = -1; y <= 1; y++){
+            vec3 neighbourhood = imageLoad(framebuffer, uv + ivec2(x, y)).rgb;
+            minC = min(minC, neighbourhood);
+            maxC = max(maxC, neighbourhood);
+        }
+    }
+
+    vec2 motion = texelFetch(sampler2D(motionBuffer, colorSampler), uv, 0).rg;
+    ivec2 uvReprojected = uv + ivec2(motion * imageSize(framebuffer));
+    vec3 previousColor = texelFetch(sampler2D(previousFramebuffer, colorSampler), uvReprojected, 0).rgb;
+    
+    //vec2 test = (uv + + vec2(0.5f)) / vec2(imageSize(framebuffer));
+    //previousColor = texture(sampler2D(previousFramebuffer, colorSampler), test).rgb;
+    
+    previousColor = clipAABB(minC, maxC, previousColor);
+    //previousColor = clamp(previousColor, minC, maxC); //simple clamp version
+    
+    //nan test, mainly a problem when resizing the buffers
+    //clear previous frame buffer on resize instead of checking here
+    if(isnan(previousColor.x) || isnan(previousColor.y) || isnan(previousColor.z)){
+        previousColor = currentColor;
+    }
+    
+    vec3 color = mix(previousColor, currentColor, 0.05f);
+    
+	imageStore(framebuffer, uv, vec4(color, 1.f));
+}
