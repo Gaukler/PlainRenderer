@@ -324,10 +324,10 @@ void RenderBackend::setup(GLFWwindow* window) {
 
 /*
 =========
-teardown
+shutdown
 =========
 */
-void RenderBackend::teardown() {
+void RenderBackend::shutdown() {
 
     waitForRenderFinished();
 
@@ -1289,7 +1289,7 @@ private functions
 
 /*
 =========
-prepareRenderPasses
+createMaterialSamplers
 =========
 */
 MaterialSamplers RenderBackend::createMaterialSamplers(){
@@ -1343,14 +1343,13 @@ void RenderBackend::prepareRenderPasses() {
     auto renderPassesToAdd = m_renderPassExecutions;
     m_renderPassExecutions.clear();
 
-    /*
-    order passes
-    iterate over passes, add them if possible
-    adding is possible if all parents have already been added
-    index is reset if pass is added to recheck condition for previous passes
-    */
-    for (int i = 0; i < renderPassesToAdd.size();) {
-        const auto pass = renderPassesToAdd[i];
+    //order passes
+    //iterate over passes, add them if possible
+    //adding is possible if all parents have already been added
+    //index is reset if pass is added to recheck condition for previous passes
+    uint32_t passIndex = 0;
+    while (passIndex < renderPassesToAdd.size()) {
+        const auto pass = renderPassesToAdd[passIndex];
         bool parentsAvaible = true;
         for (const auto parent : pass.parents) {
             bool parentFound = false;
@@ -1362,7 +1361,7 @@ void RenderBackend::prepareRenderPasses() {
             }
             if (!parentFound) {
                 parentsAvaible = false;
-                i++;
+                passIndex++;
                 break;
             }
         }
@@ -1374,12 +1373,11 @@ void RenderBackend::prepareRenderPasses() {
             internalExec.dispatches[1] = pass.dispatchCount[1];
             internalExec.dispatches[2] = pass.dispatchCount[2];
             m_renderPassInternalExecutions.push_back(internalExec);
-            /*
-            remove pass by swapping with end
-            */
-            renderPassesToAdd[i] = renderPassesToAdd.back();
+            
+            //remove pass by swapping with end
+            renderPassesToAdd[passIndex] = renderPassesToAdd.back();
             renderPassesToAdd.pop_back();
-            i = 0;
+            passIndex = 0;
         }
     }
     assert(renderPassesToAdd.size() == 0); //all passes must have been added

@@ -37,61 +37,23 @@ void RenderFrontend::setup(GLFWwindow* window) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, resizeCallback);
 
-    createDefaultTextures();
+    const auto histogramSettings = createHistogramSettings();
 
-    //load skybox
-    ImageDescription hdrCapture;
-    if (loadImage("textures\\sunset_in_the_chalk_quarry_2k.hdr", false, &hdrCapture)) {
-        m_environmentMapSrc = m_backend.createImage(hdrCapture);
-    }
-    else {
-        m_environmentMapSrc = m_defaultSkyTexture;
-    }
-    
-    createDefaultSamplers();
+    initSamplers();
+    initImages();
+    initBuffers(histogramSettings);
 
-    createSkyTexturePreparationPasses();
-    createSpecularConvolutionPass();
-    createDiffuseConvolutionPass();
-    createBRDFLutPreparationPass();
-    createHistogramPasses();
-
-    createShadowPasses();
-    createMainPass(width, height);
-    createSkyPass();
-    createSkyCubeMesh();
-    createDebugGeoPass();
-    createDepthPrePass();
-    createDepthPyramidPass();
-    createLightMatrixPass();
-    createTonemappingPass();
-    createImageCopyPass();
-    createTaaPass();
-
-    //previous frame buffer
-    {
-        ImageDescription desc;
-        desc.width = m_screenWidth;
-        desc.height = m_screenHeight;
-        desc.depth = 1;
-        desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_STORAGE | IMAGE_USAGE_SAMPLED);
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        m_historyBuffer = m_backend.createImage(desc);
-    }
+    initRenderpasses(histogramSettings);
+    initMeshs();
 }
 
 /*
 =========
-teardown
+shutdown
 =========
 */
-void RenderFrontend::teardown() {
-    m_backend.teardown();
+void RenderFrontend::shutdown() {
+    m_backend.shutdown();
 }
 
 /*
@@ -228,13 +190,13 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
         mesh.tangents = data.tangents;
         mesh.bitangents = data.bitangents;
 
-        if (!getImageFromPath(data.material.albedoTexturePath, &mesh.diffuseTexture)) {
+        if (!loadImageFromPath(data.material.albedoTexturePath, &mesh.diffuseTexture)) {
             mesh.diffuseTexture = m_defaultDiffuseTexture;
         }
-        if (!getImageFromPath(data.material.normalTexturePath, &mesh.normalTexture)) {
+        if (!loadImageFromPath(data.material.normalTexturePath, &mesh.normalTexture)) {
             mesh.normalTexture = m_defaultNormalTexture;
         }
-        if (!getImageFromPath(data.material.specularTexturePath, &mesh.specularTexture)) {
+        if (!loadImageFromPath(data.material.specularTexturePath, &mesh.specularTexture)) {
             mesh.specularTexture = m_defaultSpecularTexture;
         }
 
@@ -736,10 +698,10 @@ void RenderFrontend::renderFrame() {
 
 /*
 =========
-getImageFromPath
+loadImageFromPath
 =========
 */
-bool RenderFrontend::getImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
+bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
 
     if (path == "") {
         return false;
@@ -890,6 +852,25 @@ void RenderFrontend::updateCameraFrustum() {
 
 /*
 =========
+computeHistogramSettings
+=========
+*/
+HistogramSettings RenderFrontend::createHistogramSettings() {
+    HistogramSettings settings;
+
+    //range is remapped to avoid values < 0, due to problems with log()
+    settings.minValue = 1;
+    settings.maxValue = uint32_t(m_histogramMax / m_histogramMin);
+    settings.luminanceFactor = uint32_t(1.f / m_histogramMin);
+
+    uint32_t pixelsPerTile = m_histogramTileSizeX * m_histogramTileSizeX;
+    settings.maxTileCount = 1920 * 1080 / pixelsPerTile; //FIXME: update buffer on rescale
+
+    return settings;
+}
+
+/*
+=========
 updateGlobalShaderInfo
 =========
 */
@@ -909,495 +890,50 @@ void RenderFrontend::updateGlobalShaderInfo() {
     m_backend.setGlobalShaderInfo(m_globalShaderInfo);
 }
 
-/*
-=========
-createMainPass
-=========
-*/
-void RenderFrontend::createMainPass(const uint32_t width, const uint32_t height) {
-    
-    const auto colorBufferDescription = ImageDescription(
-        std::vector<char>{},
-        width,
-        height,
-        1,
-        ImageType::Type2D,
-        ImageFormat::R11G11B10_uFloat,
-        (ImageUsageFlags)(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE),
-        MipCount::One,
-        0,
-        false);
-    m_colorBuffer = m_backend.createImage(colorBufferDescription);
-
-    const auto depthBufferDescription = ImageDescription(
-        std::vector<char>{},
-        width,
-        height,
-        1,
-        ImageType::Type2D,
-        ImageFormat::Depth32,
-        ImageUsageFlags(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED),
-        MipCount::One,
-        0,
-        false
-    );
-    m_depthBuffer = m_backend.createImage(depthBufferDescription);
-
-    const auto shadowSamplerDesc = SamplerDescription(
-        SamplerInterpolation::Nearest,
-        SamplerWrapping::Color,
-        false,
-        0,
-        SamplerBorderColor::White,
-        0);
-    m_shadowSampler = m_backend.createSampler(shadowSamplerDesc);
-
-    const auto colorAttachment = Attachment(
-        m_colorBuffer,
-        0,
-        0,
-        AttachmentLoadOp::Clear);
-
-    const auto depthAttachment = Attachment(
-        m_depthBuffer,
-        0,
-        0,
-        AttachmentLoadOp::Load);
-
-    
-    m_mainPassShaderConfig.vertex.srcPathRelative   = "triangle.vert";
-    m_mainPassShaderConfig.fragment.srcPathRelative = "triangle.frag";
-
-    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantDiffuseBRDFIndex);
-    m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(m_diffuseBRDFDefaultSelection);
-
-    const int directMultiscatterBRDFDefaultSelection = 0;
-    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantDirectMultiscatterBRDFIndex);
-    m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(directMultiscatterBRDFDefaultSelection);
-
-    const int indirectMultiscatterBRDFDefaultSelection = 1;
-    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex);
-    m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(indirectMultiscatterBRDFDefaultSelection);
-
-    const int useGeometricAADefaultSelection = 1;
-    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantGeometricAAIndex);
-    m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(useGeometricAADefaultSelection);
-
-    const uint32_t specularProbeMipCountConstantIndex = 4;
-    m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(specularProbeMipCountConstantIndex);
-    m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(m_specularProbeMipCount);
-
-    GraphicPassDescription mainPassDesc;
-    mainPassDesc.name = "Forward shading";
-    mainPassDesc.shaderDescriptions = m_mainPassShaderConfig;
-    mainPassDesc.attachments = { colorAttachment, depthAttachment };
-    mainPassDesc.depthTest.function = DepthFunction::Equal;
-    mainPassDesc.depthTest.write = true;
-    mainPassDesc.rasterization.cullMode = CullMode::Back;
-    mainPassDesc.rasterization.mode = RasterizationeMode::Fill;
-    mainPassDesc.blending = BlendState::None;
-
-    m_mainPass = m_backend.createGraphicPass(mainPassDesc);
-
-    const auto cubeSamplerDesc = SamplerDescription(
-        SamplerInterpolation::Linear,
-        SamplerWrapping::Clamp,
-        false,
-        1,
-        SamplerBorderColor::White,
-        0);
-    m_cubeSampler = m_backend.createSampler(cubeSamplerDesc);
-
-    const auto lutSamplerDesc = SamplerDescription(
-        SamplerInterpolation::Linear,
-        SamplerWrapping::Clamp,
-        false,
-        1,
-        SamplerBorderColor::White,
-        0);
-    m_lutSampler = m_backend.createSampler(lutSamplerDesc);
-
+void RenderFrontend::initImages() {
+    //load skybox
     {
-        const auto desc = SamplerDescription(
-            SamplerInterpolation::Linear,
-            SamplerWrapping::Clamp,
-            false,
-            1,
-            SamplerBorderColor::White,
-            0);
-        m_colorSampler = m_backend.createSampler(desc);
+        ImageDescription hdrCapture;
+        if (loadImage("textures\\sunset_in_the_chalk_quarry_2k.hdr", false, &hdrCapture)) {
+            m_environmentMapSrc = m_backend.createImage(hdrCapture);
+        }
+        else {
+            m_environmentMapSrc = m_defaultSkyTexture;
+        }
     }
-}
-
-/*
-=========
-createShadowPasses
-=========
-*/
-void RenderFrontend::createShadowPasses() {
-
-    const auto shadowMapDesc = ImageDescription(
-        std::vector<char>{},
-        m_shadowMapRes,
-        m_shadowMapRes,
-        1,
-        ImageType::Type2D,
-        ImageFormat::Depth16,
-        (ImageUsageFlags)(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED),
-        MipCount::One,
-        1,
-        false);
-
-    for (uint32_t cascade = 0; cascade < m_shadowCascadeCount; cascade++) {
-        const auto shadowMap = m_backend.createImage(shadowMapDesc);
-        m_shadowMaps.push_back(shadowMap);
-
-        const auto shadowMapAttachment = Attachment(
-            shadowMap,
-            0,
-            0,
-            AttachmentLoadOp::Clear);
-
-        GraphicPassDescription shadowPassConfig;
-        shadowPassConfig.name = "Shadow map cascade " + std::to_string(cascade);
-        shadowPassConfig.attachments = { shadowMapAttachment };
-        shadowPassConfig.shaderDescriptions.vertex.srcPathRelative   = "sunShadow.vert";
-        shadowPassConfig.shaderDescriptions.fragment.srcPathRelative = "sunShadow.frag";
-        shadowPassConfig.depthTest.function = DepthFunction::LessEqual;
-        shadowPassConfig.depthTest.write = true;
-        shadowPassConfig.rasterization.cullMode = CullMode::Front;
-        shadowPassConfig.rasterization.mode = RasterizationeMode::Fill;
-        shadowPassConfig.rasterization.clampDepth = true;
-        shadowPassConfig.blending = BlendState::None;
-
-        const uint32_t cascadeIndexSpecialisationConstantIndex = 0;
-        auto& constants = shadowPassConfig.shaderDescriptions.vertex.specialisationConstants;
-        constants.locationIDs.push_back(cascadeIndexSpecialisationConstantIndex);
-        constants.values.push_back(cascade);
-
-        const auto shadowPass = m_backend.createGraphicPass(shadowPassConfig);
-        m_shadowPasses.push_back(shadowPass);
-    }
-}
-
-/*
-=========
-createSkyTexturePreparationPasses
-=========
-*/
-void RenderFrontend::createSkyTexturePreparationPasses() {
-
-    ComputePassDescription cubeWriteDesc;
-    cubeWriteDesc.name = "Copy sky to cubemap";
-    cubeWriteDesc.shaderDescription.srcPathRelative = "copyToCube.comp";
-    m_toCubemapPass = m_backend.createComputePass(cubeWriteDesc);
-
-    ComputePassDescription cubemapMipPassDesc;
-    cubemapMipPassDesc.name = "Sky mip creation";
-    cubemapMipPassDesc.shaderDescription.srcPathRelative = "cubemapMip.comp";
-    /*
-    first map is written to by different shader
-    */
-    for (uint32_t i = 0; i < m_skyTextureMipCount - 1; i++) {
-        m_cubemapMipPasses.push_back(m_backend.createComputePass(cubemapMipPassDesc));
-    }
-    
-     const auto hdriSamplerDesc = SamplerDescription(
-        SamplerInterpolation::Linear,
-        SamplerWrapping::Clamp,
-        false,
-        0,
-        SamplerBorderColor::Black,
-        0);
-     m_hdriSampler = m_backend.createSampler(hdriSamplerDesc);
-}
-
-/*
-=========
-createDiffuseConvolutionPass
-=========
-*/
-void RenderFrontend::createSpecularConvolutionPass() {
-
-    m_specularProbeMipCount = mipCountFromResolution(m_specularProbeRes, m_specularProbeRes, 1);
-    //don't use the last few mips as they are too small
-    const uint32_t mipsTooSmallCount = 4;
-    if (m_specularProbeMipCount > mipsTooSmallCount) {
-        m_specularProbeMipCount -= mipsTooSmallCount;
-    }
-
-    for (uint32_t i = 0; i < m_specularProbeMipCount; i++) {
-        ComputePassDescription specularConvolutionDesc;
-        specularConvolutionDesc.name = "Specular probe convolution";
-        specularConvolutionDesc.shaderDescription.srcPathRelative = "specularCubeConvolution.comp";
-
-        const uint32_t mipCountConstantIndex = 0;
-        specularConvolutionDesc.shaderDescription.specialisationConstants.locationIDs.push_back(mipCountConstantIndex);
-        specularConvolutionDesc.shaderDescription.specialisationConstants.values.push_back(m_specularProbeMipCount);
-
-        const uint32_t mipLevelConstantIndex = 1;
-        specularConvolutionDesc.shaderDescription.specialisationConstants.locationIDs.push_back(mipLevelConstantIndex);
-        specularConvolutionDesc.shaderDescription.specialisationConstants.values.push_back(i);
-
-        m_specularConvolutionPerMipPasses.push_back(m_backend.createComputePass(specularConvolutionDesc));
-    }
-
-    const auto specularProbeDesc = ImageDescription(
-        std::vector<char>{},
-        m_specularProbeRes,
-        m_specularProbeRes,
-        1,
-        ImageType::TypeCube,
-        ImageFormat::R11G11B10_uFloat,
-        ImageUsageFlags(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE),
-        MipCount::Manual,
-        m_specularProbeMipCount,
-        false);
-    m_specularProbe = m_backend.createImage(specularProbeDesc);
-}
-
-/*
-=========
-createDiffuseConvolutionPass
-=========
-*/
-void RenderFrontend::createDiffuseConvolutionPass() {
-    ComputePassDescription diffuseConvolutionDesc;
-    diffuseConvolutionDesc.name = "Diffuse probe convolution";
-    diffuseConvolutionDesc.shaderDescription.srcPathRelative = "diffuseCubeConvolution.comp";
-    m_diffuseConvolutionPass = m_backend.createComputePass(diffuseConvolutionDesc);
-
-    const auto diffuseProbeDesc = ImageDescription(
-        std::vector<char>{},
-        m_diffuseProbeRes,
-        m_diffuseProbeRes,
-        1,
-        ImageType::TypeCube,
-        ImageFormat::R11G11B10_uFloat,
-        ImageUsageFlags(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE),
-        MipCount::One,
-        0,
-        false);
-    m_diffuseProbe = m_backend.createImage(diffuseProbeDesc);
-}
-
-/*
-=========
-createSkyPass
-=========
-*/
-void RenderFrontend::createSkyPass() {
-
-    const auto skyCubeDesc = ImageDescription(
-        std::vector<char>{},
-        m_skyTextureRes,
-        m_skyTextureRes,
-        1,
-        ImageType::TypeCube,
-        ImageFormat::R11G11B10_uFloat,
-        (ImageUsageFlags)(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE),
-        MipCount::Manual,
-        8,
-        false);
-    m_skyTexture = m_backend.createImage(skyCubeDesc);
-    const auto colorAttachment = Attachment(m_colorBuffer, 0, 0, AttachmentLoadOp::Load);
-    const auto depthAttachment = Attachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Load);
-
-    GraphicPassDescription skyPassConfig;
-    skyPassConfig.name = "Skybox render";
-    skyPassConfig.attachments = { colorAttachment, depthAttachment };
-    skyPassConfig.shaderDescriptions.vertex.srcPathRelative   = "sky.vert";
-    skyPassConfig.shaderDescriptions.fragment.srcPathRelative = "sky.frag";
-    skyPassConfig.depthTest.function = DepthFunction::LessEqual;
-    skyPassConfig.depthTest.write = false;
-    skyPassConfig.rasterization.cullMode = CullMode::None;
-    skyPassConfig.rasterization.mode = RasterizationeMode::Fill;
-    skyPassConfig.blending = BlendState::None;
-    
-    m_skyPass = m_backend.createGraphicPass(skyPassConfig);
-}
-
-/*
-=========
-createBRDFLutPreparationPass
-=========
-*/
-void RenderFrontend::createBRDFLutPreparationPass() {
-
-    m_brdfLutPassShaderConfig.srcPathRelative = "brdfLut.comp";
-    const int diffuseBRDFConstantID = 0;
-    m_brdfLutPassShaderConfig.specialisationConstants.locationIDs.push_back(diffuseBRDFConstantID);
-    m_brdfLutPassShaderConfig.specialisationConstants.values.push_back(m_diffuseBRDFDefaultSelection);
-
-    ComputePassDescription brdfLutPassDesc;
-    brdfLutPassDesc.name = "BRDF Lut creation";
-    brdfLutPassDesc.shaderDescription = m_brdfLutPassShaderConfig;
-    m_brdfLutPass = m_backend.createComputePass(brdfLutPassDesc);
-
-    const auto brdfLutDesc = ImageDescription(
-        std::vector<char>{},
-        m_brdfLutRes,
-        m_brdfLutRes,
-        1,
-        ImageType::Type2D,
-        ImageFormat::RGBA16_sFloat,
-        (ImageUsageFlags)(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE),
-        MipCount::One,
-        1,
-        false);
-    m_brdfLut = m_backend.createImage(brdfLutDesc);
-}
-
-/*
-=========
-createDebugGeoPass
-=========
-*/
-void RenderFrontend::createDebugGeoPass() {
-    //render pass
-    const auto colorAttachment = Attachment(m_colorBuffer, 0, 0, AttachmentLoadOp::Load);
-    const auto depthAttachment = Attachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Load);
-
-    GraphicPassDescription debugPassConfig;
-    debugPassConfig.name = "Debug geometry";
-    debugPassConfig.attachments = { colorAttachment, depthAttachment };
-    debugPassConfig.shaderDescriptions.vertex.srcPathRelative = "debug.vert";
-    debugPassConfig.shaderDescriptions.fragment.srcPathRelative = "debug.frag";
-    debugPassConfig.depthTest.function = DepthFunction::LessEqual;
-    debugPassConfig.depthTest.write = true;
-    debugPassConfig.rasterization.cullMode = CullMode::None;
-    debugPassConfig.rasterization.mode = RasterizationeMode::Line;
-    debugPassConfig.blending = BlendState::None;
-
-    m_debugGeoPass = m_backend.createGraphicPass(debugPassConfig);
-
-    //meshes
-    m_cameraFrustumModel = m_backend.createDynamicMeshes(
-        { positionsInViewFrustumLineMesh }, { indicesInViewFrustumLineMesh }).front();
-    m_shadowFrustumModel = m_backend.createDynamicMeshes(
-        { positionsInViewFrustumLineMesh }, { indicesInViewFrustumLineMesh }).front();
-}
-
-/*
-=========
-createHistogramPasses
-=========
-*/
-void RenderFrontend::createHistogramPasses() {
-
-    /*
-    create ssbos
-    */
+    //main color buffer
     {
-        StorageBufferDescription histogramBufferDesc;
-        histogramBufferDesc.size = m_nHistogramBins * sizeof(uint32_t);
-        m_histogramBuffer = m_backend.createStorageBuffer(histogramBufferDesc);
+        ImageDescription desc;
+        desc.initialData = std::vector<char>{};
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::R11G11B10_uFloat;
+        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 0;
+        desc.autoCreateMips = false;
+
+        m_colorBuffer = m_backend.createImage(desc);
     }
-   
+    //depth buffer
     {
-        float initialLightBufferData[3] = { 0.f, 0.f, 0.f };
-        StorageBufferDescription lightBufferDesc;
-        lightBufferDesc.size = 3 * sizeof(uint32_t);
-        lightBufferDesc.initialData = initialLightBufferData;
-        m_lightBuffer = m_backend.createStorageBuffer(lightBufferDesc);
+        ImageDescription desc;
+        desc.initialData = std::vector<char>{};
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::Depth32;
+        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED);
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 0;
+        desc.autoCreateMips = false;
+
+        m_depthBuffer = m_backend.createImage(desc);
     }
-    
-    uint32_t pixelsPerTile = m_histogramTileSizeX * m_histogramTileSizeX;
-    uint32_t nMaxTiles = 1920 * 1080 / pixelsPerTile; //FIXME: update buffer on rescale
-
-    {
-        StorageBufferDescription histogramPerTileBufferDesc;
-        histogramPerTileBufferDesc.size = nMaxTiles * m_nHistogramBins * sizeof(uint32_t);
-        m_histogramPerTileBuffer = m_backend.createStorageBuffer(histogramPerTileBufferDesc);
-    }
-
-    /*
-    create renderpasses
-    */
-    const uint32_t nBinsSpecialisationConstantID = 0;
-    const uint32_t minLumininanceSpecialisationConstantID = 1;
-    const uint32_t maxLumininanceSpecialisationConstantID = 2;
-    const uint32_t lumininanceFactorSpecialisationConstantID = 3;
-
-    //range is remapped to avoid values < 0, due to problems with log()
-    const uint32_t minHistogramValue = 1;
-    const uint32_t maxHistogramValue = uint32_t(m_histogramMax / m_histogramMin);
-    const uint32_t histogramFactor = uint32_t(1.f / m_histogramMin);
-
-    {
-        ComputePassDescription histogramPerTileDesc;
-        histogramPerTileDesc.name = "Histogram per tile";
-        histogramPerTileDesc.shaderDescription.srcPathRelative = "histogramPerTile.comp";
-
-        const uint32_t maxTilesSpecialisationConstantID = 4;
-
-        histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
-        histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(minLumininanceSpecialisationConstantID);
-        histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxLumininanceSpecialisationConstantID);
-        histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(lumininanceFactorSpecialisationConstantID);
-        histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxTilesSpecialisationConstantID);
-
-        histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
-        histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(minHistogramValue);
-        histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(maxHistogramValue);
-        histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(histogramFactor);
-        histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(nMaxTiles);
-
-        m_histogramPerTilePass = m_backend.createComputePass(histogramPerTileDesc);
-    }
-
-    {
-        ComputePassDescription resetDesc;
-        resetDesc.name = "Histogram reset";
-        resetDesc.shaderDescription.srcPathRelative = "histogramReset.comp";
-        resetDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
-        resetDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
-        m_histogramResetPass = m_backend.createComputePass(resetDesc);
-    }
-
-    {
-        const uint32_t maxTilesSpecialisationConstantID = 1;
-
-        ComputePassDescription histogramCombineDesc;
-        histogramCombineDesc.name = "Histogram combine tiles";
-        histogramCombineDesc.shaderDescription.srcPathRelative = "histogramCombineTiles.comp";
-
-        histogramCombineDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
-        histogramCombineDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxTilesSpecialisationConstantID);
-
-        histogramCombineDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
-        histogramCombineDesc.shaderDescription.specialisationConstants.values.push_back(nMaxTiles);
-
-        m_histogramCombinePass = m_backend.createComputePass(histogramCombineDesc);
-    }
-
-    {
-        ComputePassDescription preExposeLightsDesc;
-        preExposeLightsDesc.name = "Pre-expose lights";
-        preExposeLightsDesc.shaderDescription.srcPathRelative = "preExposeLights.comp";
-
-        preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
-        preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(minLumininanceSpecialisationConstantID);
-        preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxLumininanceSpecialisationConstantID);
-        preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(lumininanceFactorSpecialisationConstantID);
-
-        preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
-        preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(minHistogramValue);
-        preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(maxHistogramValue);
-        preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(histogramFactor);
-
-        m_preExposeLightsPass = m_backend.createComputePass(preExposeLightsDesc);
-    }
-}
-
-/*
-=========
-createDepthPrePass
-=========
-*/
-void RenderFrontend::createDepthPrePass() {
-
-    //create velocity buffer
+    //motion vector buffer
     {
         ImageDescription desc;
         desc.width = m_screenWidth;
@@ -1412,32 +948,103 @@ void RenderFrontend::createDepthPrePass() {
 
         m_motionVectorBuffer = m_backend.createImage(desc);
     }
-    //create pass
+    //history buffer for TAA
     {
-        Attachment depthAttachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Clear);
-        Attachment velocityAttachment(m_motionVectorBuffer, 0, 1, AttachmentLoadOp::Clear);
+    ImageDescription desc;
+    desc.width = m_screenWidth;
+    desc.height = m_screenHeight;
+    desc.depth = 1;
+    desc.type = ImageType::Type2D;
+    desc.format = ImageFormat::R11G11B10_uFloat;
+    desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_STORAGE | IMAGE_USAGE_SAMPLED);
+    desc.mipCount = MipCount::One;
+    desc.manualMipCount = 1;
+    desc.autoCreateMips = false;
 
-        GraphicPassDescription desc;
-        desc.attachments = { depthAttachment, velocityAttachment };
-        desc.blending = BlendState::None;
-        desc.depthTest.function = DepthFunction::LessEqual;
-        desc.depthTest.write = true;
-        desc.name = "Depth prepass";
-        desc.rasterization.cullMode = CullMode::Back;
-        desc.shaderDescriptions.vertex.srcPathRelative = "depthPrepass.vert";
-        desc.shaderDescriptions.fragment.srcPathRelative = "depthPrepass.frag";
-
-        m_depthPrePass = m_backend.createGraphicPass(desc);
+    m_historyBuffer = m_backend.createImage(desc);
     }
-}
+    //shadow map cascades
+    {
+        ImageDescription desc;
+        desc.width = m_shadowMapRes;
+        desc.height = m_shadowMapRes;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::Depth16;
+        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED);
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
 
-/*
-=========
-createDepthPyramidPass
-=========
-*/
-void RenderFrontend::createDepthPyramidPass() {
-    //texture
+        m_shadowMaps.reserve(m_shadowCascadeCount);
+        for (uint32_t i = 0; i < m_shadowCascadeCount; i++) {
+            const auto shadowMap = m_backend.createImage(desc);
+            m_shadowMaps.push_back(shadowMap);
+        }
+    }
+    //specular probe
+    {
+        m_specularProbeMipCount = mipCountFromResolution(m_specularProbeRes, m_specularProbeRes, 1);
+
+        ImageDescription desc;
+        desc.width = m_specularProbeRes;
+        desc.height = m_specularProbeRes;
+        desc.depth = 1;
+        desc.type = ImageType::TypeCube;
+        desc.format = ImageFormat::R11G11B10_uFloat;
+        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+        desc.mipCount = MipCount::Manual;
+        desc.manualMipCount = m_specularProbeMipCount;
+        desc.autoCreateMips = false;
+
+        m_specularProbe = m_backend.createImage(desc);
+    }
+    //diffuse probe
+    {
+        ImageDescription desc;
+        desc.width = m_diffuseProbeRes;
+        desc.height = m_diffuseProbeRes;
+        desc.depth = 1;
+        desc.type = ImageType::TypeCube;
+        desc.format = ImageFormat::R11G11B10_uFloat;
+        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 0;
+        desc.autoCreateMips = false;
+
+        m_diffuseProbe = m_backend.createImage(desc);
+    }
+    //sky cubemap
+    {
+        ImageDescription desc;
+        desc.width = m_skyTextureRes;
+        desc.height = m_skyTextureRes;
+        desc.depth = 1;
+        desc.type = ImageType::TypeCube;
+        desc.format = ImageFormat::R11G11B10_uFloat;
+        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+        desc.mipCount = MipCount::Manual;
+        desc.manualMipCount = 8;
+        desc.autoCreateMips = false;
+
+        m_skyTexture = m_backend.createImage(desc);
+    }
+    //brdf LUT
+    {
+        ImageDescription desc;
+        desc.width = m_brdfLutRes;
+        desc.height = m_brdfLutRes;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::RGBA16_sFloat;
+        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
+
+        m_brdfLut = m_backend.createImage(desc);
+    }
+    //min/max depth pyramid
     {
         ImageDescription desc;
         desc.autoCreateMips = false;
@@ -1448,106 +1055,10 @@ void RenderFrontend::createDepthPyramidPass() {
         desc.type = ImageType::Type2D;
         desc.format = ImageFormat::RG32_sFloat;
         desc.usageFlags = ImageUsageFlags(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+
         m_minMaxDepthPyramid = m_backend.createImage(desc);
     }
-
-    //render pass
-    {
-        ComputePassDescription desc;
-        desc.name = "Depth min/max pyramid creation";
-
-        updateDepthPyramidShaderDescription();
-        desc.shaderDescription = m_depthPyramidShaderConfig;
-
-        m_depthPyramidPass = m_backend.createComputePass(desc);
-    }
-    //sampler
-    {
-        SamplerDescription desc;
-        desc.interpolation = SamplerInterpolation::Nearest;
-        desc.maxMip = 11;
-        desc.useAnisotropy = false;
-        desc.wrapping = SamplerWrapping::Clamp;
-        m_clampedDepthSampler = m_backend.createSampler(desc);
-    }    
-    //storage buffer for syncing
-    {
-        StorageBufferDescription desc;
-        desc.size = sizeof(uint32_t);
-        desc.initialData = { (uint32_t)0 };
-        m_depthPyramidSyncBuffer = m_backend.createStorageBuffer(desc);
-    }
-}
-
-/*
-=========
-createLightMatrixPass
-=========
-*/
-void RenderFrontend::createLightMatrixPass() {
-    //pass
-    {
-        ComputePassDescription desc;
-        desc.name = "Compute light matrix";
-        desc.shaderDescription.srcPathRelative = "lightMatrix.comp";
-
-        m_lightMatrixPass = m_backend.createComputePass(desc);
-    }
-    //buffer
-    {
-        StorageBufferDescription desc;
-        const uint32_t splitSize = sizeof(glm::vec4);
-        const uint32_t lightMatrixSize = sizeof(glm::mat4) * m_shadowCascadeCount;
-        desc.size = splitSize + lightMatrixSize;
-        m_sunShadowInfoBuffer = m_backend.createStorageBuffer(desc);
-    }
-}
-
-/*
-=========
-createTonemappingPass
-=========
-*/
-void RenderFrontend::createTonemappingPass() {
-    ComputePassDescription desc;
-    desc.name = "Tonemapping";
-    desc.shaderDescription.srcPathRelative = "tonemapping.comp";
-
-    m_tonemappingPass = m_backend.createComputePass(desc);
-}
-
-/*
-=========
-createImageCopyPass
-=========
-*/
-void RenderFrontend::createImageCopyPass() {
-    ComputePassDescription desc;
-    desc.name = "Image copy";
-    desc.shaderDescription.srcPathRelative = "imageCopyHDR.comp";
-
-    m_imageCopyHDRPass = m_backend.createComputePass(desc);
-}
-
-/*
-=========
-createTaaPass
-=========
-*/
-void RenderFrontend::createTaaPass() {
-    ComputePassDescription desc;
-    desc.name = "TAA";
-    desc.shaderDescription.srcPathRelative = "taa.comp";
-
-    m_taaPass = m_backend.createComputePass(desc);
-}
-
-/*
-=========
-createDefaultTextures
-=========
-*/
-void RenderFrontend::createDefaultTextures() {
+    //default albedo texture
     {
         ImageDescription defaultDiffuseDesc;
         defaultDiffuseDesc.autoCreateMips = true;
@@ -1563,7 +1074,7 @@ void RenderFrontend::createDefaultTextures() {
 
         m_defaultDiffuseTexture = m_backend.createImage(defaultDiffuseDesc);
     }
-    
+    //default specular texture
     {
         ImageDescription defaultSpecularDesc;
         defaultSpecularDesc.autoCreateMips = true;
@@ -1579,7 +1090,7 @@ void RenderFrontend::createDefaultTextures() {
 
         m_defaultSpecularTexture = m_backend.createImage(defaultSpecularDesc);
     }
-
+    //default normal texture
     {
         ImageDescription defaultNormalDesc;
         defaultNormalDesc.autoCreateMips = true;
@@ -1595,7 +1106,7 @@ void RenderFrontend::createDefaultTextures() {
 
         m_defaultNormalTexture = m_backend.createImage(defaultNormalDesc);
     }
-
+    //default cubemap texture
     {
         ImageDescription defaultCubemapDesc;
         defaultCubemapDesc.autoCreateMips = true;
@@ -1615,42 +1126,516 @@ void RenderFrontend::createDefaultTextures() {
 
 /*
 =========
-createDefaultSamplers
+createMainPass
 =========
 */
-void RenderFrontend::createDefaultSamplers() {
+void RenderFrontend::initSamplers(){
+    //shadow sampler
     {
-        const auto cubeSamplerDesc = SamplerDescription(
-            SamplerInterpolation::Linear,
-            SamplerWrapping::Clamp,
-            false,
-            1,
-            SamplerBorderColor::Black,
-            0);
-        m_cubeSampler = m_backend.createSampler(cubeSamplerDesc);
-    }
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Nearest;
+        desc.wrapping = SamplerWrapping::Color;
+        desc.useAnisotropy = false;
+        desc.maxAnisotropy = 0;
+        desc.borderColor = SamplerBorderColor::White;
+        desc.maxMip = 0;
 
-    {
-        const auto skySamplerDesc = SamplerDescription(
-            SamplerInterpolation::Linear,
-            SamplerWrapping::Clamp,
-            false,
-            0,
-            SamplerBorderColor::Black,
-            m_skyTextureMipCount);
-        m_skySamplerWithMips = m_backend.createSampler(skySamplerDesc);
+        m_shadowSampler = m_backend.createSampler(desc);
     }
-
+    //cube map sampler
     {
-        const auto texelSamplerDesc = SamplerDescription(
-            SamplerInterpolation::Nearest,
-            SamplerWrapping::Clamp,
-            false,
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Linear;
+        desc.wrapping = SamplerWrapping::Clamp;
+        desc.useAnisotropy = false;
+        desc.maxAnisotropy = 0;
+        desc.borderColor = SamplerBorderColor::White;
+        desc.maxMip = 0;
+
+        m_cubeSampler = m_backend.createSampler(desc);
+    }
+    //lut sampler
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Linear;
+        desc.wrapping = SamplerWrapping::Clamp;
+        desc.useAnisotropy = false;
+        desc.maxAnisotropy = 0;
+        desc.borderColor = SamplerBorderColor::White;
+        desc.maxMip = 0;
+
+        m_lutSampler = m_backend.createSampler(desc);
+    }
+    //color sampler
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Linear;
+        desc.wrapping = SamplerWrapping::Clamp;
+        desc.useAnisotropy = false;
+        desc.maxAnisotropy = 0;
+        desc.borderColor = SamplerBorderColor::White;
+        desc.maxMip = 0;
+
+        m_colorSampler = m_backend.createSampler(desc);
+    }
+    //hdri sampler
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Linear;
+        desc.wrapping = SamplerWrapping::Clamp;
+        desc.useAnisotropy = false;
+        desc.maxAnisotropy = 0;
+        desc.borderColor = SamplerBorderColor::Black;
+        desc.maxMip = 0;
+
+        m_hdriSampler = m_backend.createSampler(desc);
+    }
+    //cubemap sampler
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Linear;
+        desc.wrapping = SamplerWrapping::Clamp;
+        desc.useAnisotropy = false;
+        desc.maxAnisotropy = 0;
+        desc.borderColor = SamplerBorderColor::Black;
+        desc.maxMip = 0;
+
+        m_cubeSampler = m_backend.createSampler(desc);
+    }
+    //sky sampler
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Linear;
+        desc.wrapping = SamplerWrapping::Clamp;
+        desc.useAnisotropy = false;
+        desc.maxAnisotropy = 0;
+        desc.borderColor = SamplerBorderColor::Black;
+        desc.maxMip = m_skyTextureMipCount;
+
+        m_skySamplerWithMips = m_backend.createSampler(desc);
+    }
+    //texel sampler
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Nearest;
+        desc.wrapping = SamplerWrapping::Clamp;
+        desc.useAnisotropy = false;
+        desc.maxAnisotropy = 0;
+        desc.borderColor = SamplerBorderColor::Black;
+        desc.maxMip = 0;
+
+        m_defaultTexelSampler = m_backend.createSampler(desc);
+    }
+    //sampler
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Nearest;
+        desc.maxMip = 11;
+        desc.useAnisotropy = false;
+        desc.wrapping = SamplerWrapping::Clamp;
+
+        m_clampedDepthSampler = m_backend.createSampler(desc);
+    }
+}
+
+/*
+=========
+initBuffers
+=========
+*/
+void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
+    //histogram buffer
+    {
+        StorageBufferDescription histogramBufferDesc;
+        histogramBufferDesc.size = m_nHistogramBins * sizeof(uint32_t);
+        m_histogramBuffer = m_backend.createStorageBuffer(histogramBufferDesc);
+    }
+    //light buffer 
+    {
+        float initialLightBufferData[3] = { 0.f, 0.f, 0.f };
+        StorageBufferDescription lightBufferDesc;
+        lightBufferDesc.size = 3 * sizeof(uint32_t);
+        lightBufferDesc.initialData = initialLightBufferData;
+        m_lightBuffer = m_backend.createStorageBuffer(lightBufferDesc);
+    }
+    //per tile histogram
+    {
+        StorageBufferDescription histogramPerTileBufferDesc;
+        histogramPerTileBufferDesc.size = histogramSettings.maxTileCount * m_nHistogramBins * sizeof(uint32_t);
+        m_histogramPerTileBuffer = m_backend.createStorageBuffer(histogramPerTileBufferDesc);
+    }
+    //depth pyramid syncing buffer
+    {
+        StorageBufferDescription desc;
+        desc.size = sizeof(uint32_t);
+        desc.initialData = { (uint32_t)0 };
+        m_depthPyramidSyncBuffer = m_backend.createStorageBuffer(desc);
+    }
+    //light matrix buffer
+    {
+        StorageBufferDescription desc;
+        const uint32_t splitSize = sizeof(glm::vec4);
+        const uint32_t lightMatrixSize = sizeof(glm::mat4) * m_shadowCascadeCount;
+        desc.size = splitSize + lightMatrixSize;
+        m_sunShadowInfoBuffer = m_backend.createStorageBuffer(desc);
+    }
+}
+
+/*
+=========
+initMeshs
+=========
+*/
+void RenderFrontend::initMeshs() {
+    //dynamic meshes for frustum debugging
+    {
+        m_cameraFrustumModel = m_backend.createDynamicMeshes(
+            { positionsInViewFrustumLineMesh }, { indicesInViewFrustumLineMesh }).front();
+
+        m_shadowFrustumModel = m_backend.createDynamicMeshes(
+            { positionsInViewFrustumLineMesh }, { indicesInViewFrustumLineMesh }).front();
+    }
+    //skybox cube
+    {
+        MeshDataInternal cubedata;
+        cubedata.positions = {
+            glm::vec3(-1.f, -1.f, -1.f),
+            glm::vec3(1.f, -1.f, -1.f),
+            glm::vec3(1.f, 1.f, -1.f),
+            glm::vec3(-1.f, 1.f, -1.f),
+            glm::vec3(-1.f, -1.f, 1.f),
+            glm::vec3(1.f, -1.f, 1.f),
+            glm::vec3(1.f, 1.f, 1.f),
+            glm::vec3(-1.f, 1.f, 1.f)
+        };
+        cubedata.indices = {
+            0, 1, 3, 3, 1, 2,
+            1, 5, 2, 2, 5, 6,
+            5, 4, 6, 6, 4, 7,
+            4, 0, 7, 7, 0, 3,
+            3, 2, 7, 7, 2, 6,
+            4, 5, 0, 0, 5, 1
+        };
+        m_skyCube = m_backend.createMeshes(std::vector<MeshDataInternal> { cubedata }, 
+            std::vector<RenderPassHandle>{ m_skyPass })[0];
+    }
+}
+
+/*
+=========
+initRenderpasses
+=========
+*/
+void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings) {
+    //main shading pass
+    {
+        const auto colorAttachment = Attachment(
+            m_colorBuffer,
             0,
-            SamplerBorderColor::Black,
-            0
-        );
-        m_defaultTexelSampler = m_backend.createSampler(texelSamplerDesc);
+            0,
+            AttachmentLoadOp::Clear);
+
+        const auto depthAttachment = Attachment(
+            m_depthBuffer,
+            0,
+            0,
+            AttachmentLoadOp::Load);
+
+
+        m_mainPassShaderConfig.vertex.srcPathRelative = "triangle.vert";
+        m_mainPassShaderConfig.fragment.srcPathRelative = "triangle.frag";
+
+        m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantDiffuseBRDFIndex);
+        m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(m_diffuseBRDFDefaultSelection);
+
+        const int directMultiscatterBRDFDefaultSelection = 0;
+        m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantDirectMultiscatterBRDFIndex);
+        m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(directMultiscatterBRDFDefaultSelection);
+
+        const int indirectMultiscatterBRDFDefaultSelection = 1;
+        m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex);
+        m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(indirectMultiscatterBRDFDefaultSelection);
+
+        const int useGeometricAADefaultSelection = 1;
+        m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantGeometricAAIndex);
+        m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(useGeometricAADefaultSelection);
+
+        const uint32_t specularProbeMipCountConstantIndex = 4;
+        m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(specularProbeMipCountConstantIndex);
+        m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(m_specularProbeMipCount);
+
+        GraphicPassDescription mainPassDesc;
+        mainPassDesc.name = "Forward shading";
+        mainPassDesc.shaderDescriptions = m_mainPassShaderConfig;
+        mainPassDesc.attachments = { colorAttachment, depthAttachment };
+        mainPassDesc.depthTest.function = DepthFunction::Equal;
+        mainPassDesc.depthTest.write = true;
+        mainPassDesc.rasterization.cullMode = CullMode::Back;
+        mainPassDesc.rasterization.mode = RasterizationeMode::Fill;
+        mainPassDesc.blending = BlendState::None;
+
+        m_mainPass = m_backend.createGraphicPass(mainPassDesc);
+    }
+    //shadow cascade passes
+    for (uint32_t cascade = 0; cascade < m_shadowCascadeCount; cascade++) {
+
+        const auto shadowMapAttachment = Attachment(
+            m_shadowMaps[cascade],
+            0,
+            0,
+            AttachmentLoadOp::Clear);
+
+        GraphicPassDescription shadowPassConfig;
+        shadowPassConfig.name = "Shadow map cascade " + std::to_string(cascade);
+        shadowPassConfig.attachments = { shadowMapAttachment };
+        shadowPassConfig.shaderDescriptions.vertex.srcPathRelative = "sunShadow.vert";
+        shadowPassConfig.shaderDescriptions.fragment.srcPathRelative = "sunShadow.frag";
+        shadowPassConfig.depthTest.function = DepthFunction::LessEqual;
+        shadowPassConfig.depthTest.write = true;
+        shadowPassConfig.rasterization.cullMode = CullMode::Front;
+        shadowPassConfig.rasterization.mode = RasterizationeMode::Fill;
+        shadowPassConfig.rasterization.clampDepth = true;
+        shadowPassConfig.blending = BlendState::None;
+
+        const uint32_t cascadeIndexSpecialisationConstantIndex = 0;
+        auto& constants = shadowPassConfig.shaderDescriptions.vertex.specialisationConstants;
+        constants.locationIDs.push_back(cascadeIndexSpecialisationConstantIndex);
+        constants.values.push_back(cascade);
+
+        const auto shadowPass = m_backend.createGraphicPass(shadowPassConfig);
+        m_shadowPasses.push_back(shadowPass);
+    }
+    //sky copy pass
+    {
+        ComputePassDescription cubeWriteDesc;
+        cubeWriteDesc.name = "Copy sky to cubemap";
+        cubeWriteDesc.shaderDescription.srcPathRelative = "copyToCube.comp";
+        m_toCubemapPass = m_backend.createComputePass(cubeWriteDesc);
+    }
+    //cubemap mip creation pass
+    {
+        ComputePassDescription cubemapMipPassDesc;
+        cubemapMipPassDesc.name = "Sky mip creation";
+        cubemapMipPassDesc.shaderDescription.srcPathRelative = "cubemapMip.comp";
+        /*
+        first map is written to by different shader
+        */
+        for (uint32_t i = 0; i < m_skyTextureMipCount - 1; i++) {
+            m_cubemapMipPasses.push_back(m_backend.createComputePass(cubemapMipPassDesc));
+        }
+    }
+    //specular convolution pass
+    {
+        //don't use the last few mips as they are too small
+        const uint32_t mipsTooSmallCount = 4;
+        if (m_specularProbeMipCount > mipsTooSmallCount) {
+            m_specularProbeMipCount -= mipsTooSmallCount;
+        }
+
+        for (uint32_t i = 0; i < m_specularProbeMipCount; i++) {
+            ComputePassDescription specularConvolutionDesc;
+            specularConvolutionDesc.name = "Specular probe convolution";
+            specularConvolutionDesc.shaderDescription.srcPathRelative = "specularCubeConvolution.comp";
+
+            const uint32_t mipCountConstantIndex = 0;
+            specularConvolutionDesc.shaderDescription.specialisationConstants.locationIDs.push_back(mipCountConstantIndex);
+            specularConvolutionDesc.shaderDescription.specialisationConstants.values.push_back(m_specularProbeMipCount);
+
+            const uint32_t mipLevelConstantIndex = 1;
+            specularConvolutionDesc.shaderDescription.specialisationConstants.locationIDs.push_back(mipLevelConstantIndex);
+            specularConvolutionDesc.shaderDescription.specialisationConstants.values.push_back(i);
+
+            m_specularConvolutionPerMipPasses.push_back(m_backend.createComputePass(specularConvolutionDesc));
+        }
+    }
+    //diffuse convolution pass
+    {
+        ComputePassDescription diffuseConvolutionDesc;
+        diffuseConvolutionDesc.name = "Diffuse probe convolution";
+        diffuseConvolutionDesc.shaderDescription.srcPathRelative = "diffuseCubeConvolution.comp";
+        m_diffuseConvolutionPass = m_backend.createComputePass(diffuseConvolutionDesc);
+    }
+    //sky pass
+    {
+        const auto colorAttachment = Attachment(m_colorBuffer, 0, 0, AttachmentLoadOp::Load);
+        const auto depthAttachment = Attachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Load);
+
+        GraphicPassDescription skyPassConfig;
+        skyPassConfig.name = "Skybox render";
+        skyPassConfig.attachments = { colorAttachment, depthAttachment };
+        skyPassConfig.shaderDescriptions.vertex.srcPathRelative = "sky.vert";
+        skyPassConfig.shaderDescriptions.fragment.srcPathRelative = "sky.frag";
+        skyPassConfig.depthTest.function = DepthFunction::LessEqual;
+        skyPassConfig.depthTest.write = false;
+        skyPassConfig.rasterization.cullMode = CullMode::None;
+        skyPassConfig.rasterization.mode = RasterizationeMode::Fill;
+        skyPassConfig.blending = BlendState::None;
+
+        m_skyPass = m_backend.createGraphicPass(skyPassConfig);
+    }
+    //BRDF Lut creation pass
+    {
+        m_brdfLutPassShaderConfig.srcPathRelative = "brdfLut.comp";
+        const int diffuseBRDFConstantID = 0;
+        m_brdfLutPassShaderConfig.specialisationConstants.locationIDs.push_back(diffuseBRDFConstantID);
+        m_brdfLutPassShaderConfig.specialisationConstants.values.push_back(m_diffuseBRDFDefaultSelection);
+
+        ComputePassDescription brdfLutPassDesc;
+        brdfLutPassDesc.name = "BRDF Lut creation";
+        brdfLutPassDesc.shaderDescription = m_brdfLutPassShaderConfig;
+        m_brdfLutPass = m_backend.createComputePass(brdfLutPassDesc);
+    }
+    //geometry debug pass
+    {
+        const auto colorAttachment = Attachment(m_colorBuffer, 0, 0, AttachmentLoadOp::Load);
+        const auto depthAttachment = Attachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Load);
+
+        GraphicPassDescription debugPassConfig;
+        debugPassConfig.name = "Debug geometry";
+        debugPassConfig.attachments = { colorAttachment, depthAttachment };
+        debugPassConfig.shaderDescriptions.vertex.srcPathRelative = "debug.vert";
+        debugPassConfig.shaderDescriptions.fragment.srcPathRelative = "debug.frag";
+        debugPassConfig.depthTest.function = DepthFunction::LessEqual;
+        debugPassConfig.depthTest.write = true;
+        debugPassConfig.rasterization.cullMode = CullMode::None;
+        debugPassConfig.rasterization.mode = RasterizationeMode::Line;
+        debugPassConfig.blending = BlendState::None;
+
+        m_debugGeoPass = m_backend.createGraphicPass(debugPassConfig);
+    }
+    //histogram passes
+    {
+        const uint32_t nBinsSpecialisationConstantID = 0;
+        const uint32_t minLumininanceSpecialisationConstantID = 1;
+        const uint32_t maxLumininanceSpecialisationConstantID = 2;
+        const uint32_t lumininanceFactorSpecialisationConstantID = 3;
+
+        
+
+        //histogram per tile pass
+        {
+            ComputePassDescription histogramPerTileDesc;
+            histogramPerTileDesc.name = "Histogram per tile";
+            histogramPerTileDesc.shaderDescription.srcPathRelative = "histogramPerTile.comp";
+
+            const uint32_t maxTilesSpecialisationConstantID = 4;
+
+            histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
+            histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(minLumininanceSpecialisationConstantID);
+            histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxLumininanceSpecialisationConstantID);
+            histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(lumininanceFactorSpecialisationConstantID);
+            histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxTilesSpecialisationConstantID);
+
+            histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
+            histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.minValue);
+            histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.maxValue);
+            histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.luminanceFactor);
+            histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.maxTileCount);
+
+            m_histogramPerTilePass = m_backend.createComputePass(histogramPerTileDesc);
+        }
+        //histogram reset pass
+        {
+            ComputePassDescription resetDesc;
+            resetDesc.name = "Histogram reset";
+            resetDesc.shaderDescription.srcPathRelative = "histogramReset.comp";
+            resetDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
+            resetDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
+            m_histogramResetPass = m_backend.createComputePass(resetDesc);
+        }
+        //histogram combine tiles pass
+        {
+            const uint32_t maxTilesSpecialisationConstantID = 1;
+
+            ComputePassDescription histogramCombineDesc;
+            histogramCombineDesc.name = "Histogram combine tiles";
+            histogramCombineDesc.shaderDescription.srcPathRelative = "histogramCombineTiles.comp";
+
+            histogramCombineDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
+            histogramCombineDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxTilesSpecialisationConstantID);
+
+            histogramCombineDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
+            histogramCombineDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.maxTileCount);
+
+            m_histogramCombinePass = m_backend.createComputePass(histogramCombineDesc);
+        }
+        //pre-expose lights pass
+        {
+            ComputePassDescription preExposeLightsDesc;
+            preExposeLightsDesc.name = "Pre-expose lights";
+            preExposeLightsDesc.shaderDescription.srcPathRelative = "preExposeLights.comp";
+
+            preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
+            preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(minLumininanceSpecialisationConstantID);
+            preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxLumininanceSpecialisationConstantID);
+            preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(lumininanceFactorSpecialisationConstantID);
+
+            preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
+            preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.minValue);
+            preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.maxValue);
+            preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.luminanceFactor);
+
+            m_preExposeLightsPass = m_backend.createComputePass(preExposeLightsDesc);
+        }
+    }
+    //depth prepass
+    {
+        Attachment depthAttachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Clear);
+        Attachment velocityAttachment(m_motionVectorBuffer, 0, 1, AttachmentLoadOp::Clear);
+
+        GraphicPassDescription desc;
+        desc.attachments = { depthAttachment, velocityAttachment };
+        desc.blending = BlendState::None;
+        desc.depthTest.function = DepthFunction::LessEqual;
+        desc.depthTest.write = true;
+        desc.name = "Depth prepass";
+        desc.rasterization.cullMode = CullMode::Back;
+        desc.shaderDescriptions.vertex.srcPathRelative = "depthPrepass.vert";
+        desc.shaderDescriptions.fragment.srcPathRelative = "depthPrepass.frag";
+
+        m_depthPrePass = m_backend.createGraphicPass(desc);
+    }
+    //depth pyramid pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Depth min/max pyramid creation";
+
+        updateDepthPyramidShaderDescription();
+        desc.shaderDescription = m_depthPyramidShaderConfig;
+
+        m_depthPyramidPass = m_backend.createComputePass(desc);
+    }
+    //light matrix pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Compute light matrix";
+        desc.shaderDescription.srcPathRelative = "lightMatrix.comp";
+
+        m_lightMatrixPass = m_backend.createComputePass(desc);
+    }
+    //tonemapping pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Tonemapping";
+        desc.shaderDescription.srcPathRelative = "tonemapping.comp";
+
+        m_tonemappingPass = m_backend.createComputePass(desc);
+    }
+    //image copy pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Image copy";
+        desc.shaderDescription.srcPathRelative = "imageCopyHDR.comp";
+
+        m_imageCopyHDRPass = m_backend.createComputePass(desc);
+    }
+    //TAA pass
+    {
+        ComputePassDescription desc;
+        desc.name = "TAA";
+        desc.shaderDescription.srcPathRelative = "taa.comp";
+
+        m_taaPass = m_backend.createComputePass(desc);
     }
 }
 
@@ -1708,35 +1693,6 @@ glm::ivec2 RenderFrontend::computeDepthPyramidDispatchCount() {
 
         return count;
     }
-}
-
-/*
-=========
-createSkyCubeMesh
-=========
-*/
-void RenderFrontend::createSkyCubeMesh() {
-
-    MeshDataInternal cubedata;
-    cubedata.positions = {
-        glm::vec3(-1.f, -1.f, -1.f),
-        glm::vec3(1.f, -1.f, -1.f),
-        glm::vec3(1.f, 1.f, -1.f),
-        glm::vec3(-1.f, 1.f, -1.f),
-        glm::vec3(-1.f, -1.f, 1.f),
-        glm::vec3(1.f, -1.f, 1.f),
-        glm::vec3(1.f, 1.f, 1.f),
-        glm::vec3(-1.f, 1.f, 1.f)
-    };
-    cubedata.indices = {
-        0, 1, 3, 3, 1, 2,
-        1, 5, 2, 2, 5, 6,
-        5, 4, 6, 6, 4, 7,
-        4, 0, 7, 7, 0, 3,
-        3, 2, 7, 7, 2, 6,
-        4, 5, 0, 0, 5, 1
-    };
-    m_skyCube = m_backend.createMeshes(std::vector<MeshDataInternal> { cubedata }, std::vector<RenderPassHandle>{ m_skyPass })[0];
 }
 
 /*

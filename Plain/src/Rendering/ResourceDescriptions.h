@@ -183,27 +183,6 @@ typedef enum ImageUsageFlags {
 
 
 struct ImageDescription {
-    /*
-    default constructor
-    */
-    ImageDescription() {};
-    /*
-    initializer list constructor with all members
-    */
-    ImageDescription(
-        const std::vector<char> initialData,
-        const uint32_t          width,
-        const uint32_t          height,
-        const uint32_t          depth,
-        const ImageType         type,
-        const ImageFormat       format,
-        const ImageUsageFlags   usageFlags,
-        const MipCount          mipCount,
-        const uint32_t          manualMipCount,
-        const bool              autoCreateMips) : 
-        width(width), height(height), depth(depth), type(type), format(format), usageFlags(usageFlags), mipCount(mipCount), 
-        manualMipCount(manualMipCount), autoCreateMips(autoCreateMips){};
-
     std::vector<char> initialData;
 
     uint32_t width  = 1;
@@ -246,23 +225,6 @@ enum class SamplerWrapping { Clamp, Color, Repeat };
 enum class SamplerBorderColor { White, Black };
 
 struct SamplerDescription {
-    /*
-    default constructor
-    */
-    SamplerDescription() {};
-    /*
-    initializer list constructor with all members
-    */
-    SamplerDescription(
-    const SamplerInterpolation    interpolation,
-    const SamplerWrapping         wrapping,
-    const bool                    useAnisotropy,
-    const float                   maxAnisotropy,
-    const SamplerBorderColor      borderColor,
-    const uint32_t                maxMip
-    ) : interpolation(interpolation), wrapping(wrapping), useAnisotropy(useAnisotropy),
-        maxAnisotropy(maxAnisotropy), borderColor(borderColor), maxMip(maxMip) {};
-
     SamplerInterpolation    interpolation   = SamplerInterpolation::Nearest;
     SamplerWrapping         wrapping        = SamplerWrapping::Repeat;
     bool                    useAnisotropy   = false;

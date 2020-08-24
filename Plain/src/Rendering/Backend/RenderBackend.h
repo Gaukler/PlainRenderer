@@ -139,7 +139,7 @@ class RenderBackend {
 public:
 
 	void setup(GLFWwindow* window);
-	void teardown();
+	void shutdown();
     void recreateSwapchain(const uint32_t width, const uint32_t height, GLFWwindow* window);
 
     //checks if any shaders are out of date, if so reloads them and reconstructs the corresponding pipeline

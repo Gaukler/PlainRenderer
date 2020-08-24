@@ -21,6 +21,14 @@ struct MeshState {
     AxisAlignedBoundingBox bb;
 };
 
+//settings are passed as specialisation constans, so they need to be encoded as ints
+struct HistogramSettings {
+    uint32_t minValue;
+    uint32_t maxValue;
+    uint32_t luminanceFactor;
+    uint32_t maxTileCount;
+};
+
 /*
 shader resource types
 define inputs and outputs of renderpass
@@ -31,7 +39,7 @@ class RenderFrontend {
 public:
     RenderFrontend() {};
     void setup(GLFWwindow* window);
-    void teardown();
+    void shutdown();
     void newFrame();
     void setResolution(const uint32_t width, const uint32_t height);
     void setCameraExtrinsic(const CameraExtrinsic& extrinsic);
@@ -44,7 +52,7 @@ private:
 
     //returns image from file
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
-    bool getImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);
+    bool loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);
     std::map<std::filesystem::path, ImageHandle> m_textureMap;
 
     void firstFramePreparation();
@@ -87,6 +95,8 @@ private:
     float m_exposureOffset = 0.f;
     
     void updateCameraFrustum();
+
+    HistogramSettings createHistogramSettings();
 
     /*
     passes
@@ -167,7 +177,7 @@ private:
     
     const int m_diffuseBRDFDefaultSelection = 3;
 
-    //specilisation constant indices
+    //specialisation constant indices
     const int m_mainPassSpecilisationConstantDiffuseBRDFIndex = 0;
     const int m_mainPassSpecilisationConstantDirectMultiscatterBRDFIndex = 1;
     const int m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex = 2;
@@ -190,25 +200,18 @@ private:
 
     void updateGlobalShaderInfo();
 
-    void createMainPass(const uint32_t width, const uint32_t height);
-    void createShadowPasses();
-    void createSkyPass();
-    void createSkyCubeMesh();
-    void createSkyTexturePreparationPasses();
-    void createDiffuseConvolutionPass();
-    void createSpecularConvolutionPass();
-    void createBRDFLutPreparationPass();
-    void createDebugGeoPass();
-    void createHistogramPasses();
-    void createDepthPrePass();
-    void createDepthPyramidPass();
-    void createLightMatrixPass();
-    void createTonemappingPass();
-    void createImageCopyPass();
-    void createTaaPass();
+    void initImages();
+    void initSamplers();
 
-    void createDefaultTextures();
-    void createDefaultSamplers();
+    void initBuffers(const HistogramSettings& histogramSettings);
+
+    //must be called after initImages as images have to be created to be used as attachments
+    void initRenderpasses(const HistogramSettings& histogramSettings);
+
+    //must be called after initRenderpasses as meshes are created in regards to pass
+    void initMeshs();
+
+    
 
     //sets resolution dependant specialisation constants
     void updateDepthPyramidShaderDescription();

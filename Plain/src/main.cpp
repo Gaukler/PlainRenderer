@@ -4,5 +4,5 @@
 void main(){
 	App app;
 	app.run();
-	app.cleanup();
+	app.shutdown();
 }
