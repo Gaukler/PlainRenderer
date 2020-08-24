@@ -758,23 +758,23 @@ void RenderBackend::renderFrame() {
     //imgui    
     {
         startDebugLabel(currentCommandBuffer, "ImGui");
-
+    
         TimestampQuery imguiQuery;
         imguiQuery.name = "ImGui";
         imguiQuery.startQuery = issueTimestampQuery(currentCommandBuffer);
-
+    
         ImGui::Render();
-
+    
         vkCmdPipelineBarrier(currentCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
             0, 0, nullptr, 0, nullptr, 1, m_ui.barriers.data());
-
-        vkCmdBeginRenderPass(currentCommandBuffer, &m_ui.passBeginInfos[m_swapchainInputImage], VK_SUBPASS_CONTENTS_INLINE);
+    
+        vkCmdBeginRenderPass(currentCommandBuffer, &m_ui.passBeginInfos[m_swapchainInputImageIndex], VK_SUBPASS_CONTENTS_INLINE);
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentCommandBuffer);
         vkCmdEndRenderPass(currentCommandBuffer);
-
+    
         imguiQuery.endQuery = issueTimestampQuery(currentCommandBuffer);
         m_timestampQueries.push_back(imguiQuery);
-
+    
         endDebugLabel(currentCommandBuffer);
     }
     
@@ -784,7 +784,7 @@ void RenderBackend::renderFrame() {
     /*
     transition swapchain image to present
     */
-    auto& swapchainPresentImage = m_images[m_swapchain.imageHandles[m_swapchainInputImage]];
+    auto& swapchainPresentImage = m_images[m_swapchainInputImageHandle];
     const auto& transitionToPresentBarrier = createImageBarriers(swapchainPresentImage, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
         0, 1);
     barriersCommand(currentCommandBuffer, transitionToPresentBarrier, std::vector<VkBufferMemoryBarrier> {});
@@ -808,7 +808,7 @@ void RenderBackend::renderFrame() {
 
     vkQueueSubmit(vkContext.graphicQueue, 1, &submit, m_renderFinishedFence);
 
-    presentImage(m_swapchainInputImage, m_renderFinishedSemaphore);
+    presentImage(m_renderFinishedSemaphore);
     glfwPollEvents();
 
     //get timestamp results
@@ -1251,8 +1251,10 @@ setSwapchainInputImage
 =========
 */
 ImageHandle RenderBackend::getSwapchainInputImage() {
-    vkAcquireNextImageKHR(vkContext.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvaible, VK_NULL_HANDLE, &m_swapchainInputImage);
-    return m_swapchainInputImage;
+
+    vkAcquireNextImageKHR(vkContext.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvaible, VK_NULL_HANDLE, &m_swapchainInputImageIndex);
+    m_swapchainInputImageHandle = m_swapchain.imageHandles[m_swapchainInputImageIndex];
+    return m_swapchainInputImageHandle;
 }
 
 /*
@@ -1506,7 +1508,7 @@ void RenderBackend::prepareRenderPasses() {
     /*
     add UI barriers
     */
-    m_ui.barriers = createImageBarriers(m_images[m_swapchainInputImage], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    m_ui.barriers = createImageBarriers(m_images[m_swapchainInputImageHandle], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
 }
 
@@ -2101,7 +2103,7 @@ void RenderBackend::getSwapchainImages(const uint32_t width, const uint32_t heig
 presentImage
 =========
 */
-void RenderBackend::presentImage(const uint32_t imageIndex, const VkSemaphore waitSemaphore) {
+void RenderBackend::presentImage(const VkSemaphore waitSemaphore) {
 
     VkPresentInfoKHR present = {};
     present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -2110,7 +2112,7 @@ void RenderBackend::presentImage(const uint32_t imageIndex, const VkSemaphore wa
     present.pWaitSemaphores = &waitSemaphore;
     present.swapchainCount = 1;
     present.pSwapchains = &m_swapchain.vulkanHandle;
-    present.pImageIndices = &imageIndex;
+    present.pImageIndices = &m_swapchainInputImageIndex;
 
     VkResult presentResult = VK_SUCCESS;
     present.pResults = &presentResult;

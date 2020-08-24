@@ -28,7 +28,7 @@ struct UIRenderInfo {
     VkRenderPass                        renderPass;
 };
 
-//structs that are reference by VkPipelineShaderStageCreateInfo
+//structs that are referenced by VkPipelineShaderStageCreateInfo
 struct VulkanShaderCreateAdditionalStructs {
     VkSpecializationInfo                    specialisationInfo;
     std::vector<VkSpecializationMapEntry>   specilisationMap;
@@ -273,7 +273,7 @@ private:
     void createSwapChain();
 
     void getSwapchainImages(const uint32_t width, const uint32_t height);
-    void presentImage(const uint32_t imageIndex, const VkSemaphore waitSemaphore);
+    void presentImage(const VkSemaphore waitSemaphore);
 
     /*
     =========
@@ -287,7 +287,8 @@ private:
     currently scheduled renderpass
     */
     std::vector<RenderPassExecution>    m_framePasses;
-    ImageHandle                         m_swapchainInputImage;
+    uint32_t                            m_swapchainInputImageIndex;
+    ImageHandle                         m_swapchainInputImageHandle;
 
     /*
     =========
