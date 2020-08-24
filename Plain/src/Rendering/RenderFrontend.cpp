@@ -138,7 +138,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     //jitter matrix
     {
         static uint32_t jitterIndex;
-        glm::vec2 offset = 2.f * hammersley2D(jitterIndex) - glm::vec2(1.f);
+        glm::vec2 offset = hammersley2D(jitterIndex) - glm::vec2(0.5f);
         offset.x /= float(m_screenWidth);
         offset.y /= float(m_screenHeight);
         jitterIndex++;
