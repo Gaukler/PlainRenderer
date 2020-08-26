@@ -26,10 +26,21 @@ struct MeshState {
 
 //settings are passed as specialisation constans, so they need to be encoded as ints
 struct HistogramSettings {
-    uint32_t minValue;
-    uint32_t maxValue;
-    uint32_t luminanceFactor;
-    uint32_t maxTileCount;
+    int minValue;
+    int maxValue;
+    int luminanceFactor;
+    int maxTileCount;
+};
+
+//these enumb values must correspond to the shader values
+enum class DiffuseBRDF { Lambert = 0, Disney = 1, CoDWWII = 2, Titanfall2 = 3};
+enum class DirectSpecularMultiscattering { McAuley = 0, Simplified = 1, ScaledGGX = 2, None = 3};
+
+struct ShadingConfig {
+    DiffuseBRDF diffuseBRDF = DiffuseBRDF::Titanfall2;
+    DirectSpecularMultiscattering directMultiscatter = DirectSpecularMultiscattering::McAuley;
+    bool useIndirectMultiscatter = true;
+    bool useGeometryAA = true;
 };
 
 /*
@@ -99,6 +110,8 @@ private:
     void updateCameraFrustum();
 
     HistogramSettings createHistogramSettings();
+
+    ShadingConfig m_shadingConfig;
 
     /*
     passes
@@ -176,26 +189,9 @@ private:
     StorageBufferHandle m_lightBuffer; //contains previous exposure and exposured light values
     StorageBufferHandle m_sunShadowInfoBuffer; //contains light matrices and cascade splits
     StorageBufferHandle m_depthPyramidSyncBuffer;
-    
-    const int m_diffuseBRDFDefaultSelection = 3;
 
-    //specialisation constant indices
-    const int m_mainPassSpecilisationConstantDiffuseBRDFIndex = 0;
-    const int m_mainPassSpecilisationConstantDirectMultiscatterBRDFIndex = 1;
-    const int m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex = 2;
-    const int m_mainPassSpecilisationConstantGeometricAAIndex = 3;
-
-    const int m_brdfLutSpecilisationConstantDiffuseBRDFIndex = 0;
-
-    const int m_depthPyramidSpecialisationConstantMipCountIndex = 0;
-    const int m_depthPyramidSpecialisationConstantDepthResX = 1;
-    const int m_depthPyramidSpecialisationConstantDepthResY = 2;
-    const int m_depthPyramidSpecialisationConstantGroupCount = 3;
-
-    //cached to reuse to change for changig specialisation constants
-    GraphicPassShaderDescriptions   m_mainPassShaderConfig;
-    ShaderDescription               m_brdfLutPassShaderConfig;
-    ShaderDescription               m_depthPyramidShaderConfig;
+    GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
+    ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
 
     bool m_isMainPassShaderDescriptionStale = false;
     bool m_isBRDFLutShaderDescriptionStale = false;
@@ -213,10 +209,7 @@ private:
     //must be called after initRenderpasses as meshes are created in regards to pass
     void initMeshs();
 
-    
-
-    //sets resolution dependant specialisation constants
-    void updateDepthPyramidShaderDescription();
+    ShaderDescription createDepthPyramidShaderDescription();
     glm::ivec2 computeDepthPyramidDispatchCount();
 
     //default textures

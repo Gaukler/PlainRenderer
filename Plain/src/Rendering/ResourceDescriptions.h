@@ -129,14 +129,14 @@ struct Attachment {
 };
 
 //only int support at the moment
-struct ShaderSpecialisationConstants {
-    std::vector<uint32_t>    locationIDs;
-    std::vector<int>         values;
+struct SpecialisationConstant {
+    uint32_t location;
+    int      value;
 };
 
 struct ShaderDescription {
     std::filesystem::path srcPathRelative;
-    ShaderSpecialisationConstants specialisationConstants;
+    std::vector<SpecialisationConstant> specialisationConstants;
 };
 
 struct GraphicPassShaderDescriptions {

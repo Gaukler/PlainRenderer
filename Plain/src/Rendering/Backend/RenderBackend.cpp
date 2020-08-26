@@ -3969,12 +3969,14 @@ VkShaderModule RenderBackend::createShaderModule(const std::vector<uint32_t>& co
 /*
 createPipelineShaderStageInfos
 */
-VkPipelineShaderStageCreateInfo RenderBackend::createPipelineShaderStageInfos(const VkShaderModule module, const VkShaderStageFlagBits stage,
-    const ShaderSpecialisationConstants& specialisationInfo, VulkanShaderCreateAdditionalStructs* outAdditionalInfo) {
+VkPipelineShaderStageCreateInfo RenderBackend::createPipelineShaderStageInfos(
+    const VkShaderModule module, 
+    const VkShaderStageFlagBits stage,
+    const std::vector<SpecialisationConstant>& specialisationInfo, 
+    VulkanShaderCreateAdditionalStructs* outAdditionalInfo) {
 
     assert(outAdditionalInfo != nullptr);
-    assert(specialisationInfo.locationIDs.size() == specialisationInfo.values.size());
-    uint32_t nSpecialisation = specialisationInfo.locationIDs.size();
+    uint32_t specialisationCount = specialisationInfo.size();
 
     VkPipelineShaderStageCreateInfo createInfos;
     createInfos.sType                  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -3985,18 +3987,22 @@ VkPipelineShaderStageCreateInfo RenderBackend::createPipelineShaderStageInfos(co
     createInfos.pName                  = "main";
     createInfos.pSpecializationInfo    = nullptr;
 
-    if (specialisationInfo.values.size() > 0) {
+    if (specialisationInfo.size() > 0) {
 
-        outAdditionalInfo->specilisationMap.resize(nSpecialisation);
+        outAdditionalInfo->specilisationMap.resize(specialisationCount);
+        outAdditionalInfo->specialisationValues.resize(specialisationCount);
         for (uint32_t i = 0; i < outAdditionalInfo->specilisationMap.size(); i++) {
-            outAdditionalInfo->specilisationMap[i].constantID = specialisationInfo.locationIDs[i];
+            const auto constant = specialisationInfo[i];
+
+            outAdditionalInfo->specilisationMap[i].constantID = constant.location;
             outAdditionalInfo->specilisationMap[i].offset = i * sizeof(int);
             outAdditionalInfo->specilisationMap[i].size = sizeof(int);
+            outAdditionalInfo->specialisationValues[i] = constant.value;
         }
 
-        outAdditionalInfo->specialisationInfo.dataSize      = nSpecialisation * sizeof(int);
-        outAdditionalInfo->specialisationInfo.mapEntryCount = nSpecialisation;
-        outAdditionalInfo->specialisationInfo.pData         = specialisationInfo.values.data();
+        outAdditionalInfo->specialisationInfo.dataSize      = specialisationCount * sizeof(int);
+        outAdditionalInfo->specialisationInfo.mapEntryCount = specialisationCount;
+        outAdditionalInfo->specialisationInfo.pData         = outAdditionalInfo->specialisationValues.data();
         outAdditionalInfo->specialisationInfo.pMapEntries   = outAdditionalInfo->specilisationMap.data();
 
         createInfos.pSpecializationInfo = &outAdditionalInfo->specialisationInfo;

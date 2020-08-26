@@ -32,6 +32,7 @@ struct UIRenderInfo {
 struct VulkanShaderCreateAdditionalStructs {
     VkSpecializationInfo                    specialisationInfo;
     std::vector<VkSpecializationMapEntry>   specilisationMap;
+    std::vector<int>                        specialisationValues;
 };
 
 //because they are extensions they need to be acquired using vkGetDeviceProcAddr
@@ -438,7 +439,7 @@ private:
 
     //outAdditionalInfo has to be from parent scope to keep pointers to info structs valid
     VkPipelineShaderStageCreateInfo         createPipelineShaderStageInfos(const VkShaderModule module, const VkShaderStageFlagBits stage, 
-        const ShaderSpecialisationConstants& specialisationInfo, VulkanShaderCreateAdditionalStructs* outAdditionalInfo);
+        const std::vector<SpecialisationConstant>& specialisationInfo, VulkanShaderCreateAdditionalStructs* outAdditionalInfo);
     VkPipelineInputAssemblyStateCreateInfo  createDefaultInputAssemblyInfo();
     VkPipelineTessellationStateCreateInfo   createTesselationState(const uint32_t patchControlPoints);
     VkPipelineRasterizationStateCreateInfo  createRasterizationState(const RasterizationConfig& raster);

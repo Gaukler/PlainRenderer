@@ -69,8 +69,7 @@ void RenderFrontend::newFrame() {
         m_backend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
 
-        updateDepthPyramidShaderDescription();
-        m_backend.updateComputePassShaderDescription(m_depthPyramidPass, m_depthPyramidShaderConfig);
+        m_backend.updateComputePassShaderDescription(m_depthPyramidPass, createDepthPyramidShaderDescription());
     }
     if (m_minimized) {
         return;
@@ -81,14 +80,12 @@ void RenderFrontend::newFrame() {
     m_currentShadowPassDrawcallCount = 0;
 
     if (m_isMainPassShaderDescriptionStale) {
-        m_backend.updateGraphicPassShaderDescription(m_mainPass, m_mainPassShaderConfig);
+        m_backend.updateGraphicPassShaderDescription(m_mainPass, createForwardPassShaderDescription(m_shadingConfig));
         m_isMainPassShaderDescriptionStale = false;
     }
 
     if (m_isBRDFLutShaderDescriptionStale) {
-        m_brdfLutPassShaderConfig.specialisationConstants.values[m_brdfLutSpecilisationConstantDiffuseBRDFIndex] 
-            = m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantDiffuseBRDFIndex];
-        m_backend.updateComputePassShaderDescription(m_brdfLutPass, m_brdfLutPassShaderConfig);
+        m_backend.updateComputePassShaderDescription(m_brdfLutPass, createBRDFLutShaderDescription(m_shadingConfig));
         //don't reset m_isMainPassShaderDescriptionStale, this is done when rendering as it's used to trigger lut recreation
     }
 
@@ -871,6 +868,71 @@ HistogramSettings RenderFrontend::createHistogramSettings() {
 
 /*
 =========
+createForwardPassShaderDescription
+=========
+*/
+GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription(const ShadingConfig& config) {
+
+    GraphicPassShaderDescriptions shaderDesc;
+    shaderDesc.vertex.srcPathRelative = "triangle.vert";
+    shaderDesc.fragment.srcPathRelative = "triangle.frag";
+
+    //specialisation constants
+    {
+        auto& constants = shaderDesc.fragment.specialisationConstants;
+
+        //diffuse BRDF
+        constants.push_back({
+            0,                      //location
+            (int)config.diffuseBRDF //value
+        });
+        //direct specular multiscattering
+        constants.push_back({
+            1,                              //location
+            (int)config.directMultiscatter  //value
+        });
+        //use indirect multiscattering
+        constants.push_back({
+            2,                                      //location
+            config.useIndirectMultiscatter ? 1 : 0  //value
+        });
+        //use geometry AA
+        constants.push_back({
+            3,                              //location
+            config.useGeometryAA ? 1 : 0    //value
+        });
+        //specular probe mip count
+        constants.push_back({
+            4,                      //location
+            (int)m_specularProbeMipCount //value
+        });
+    }
+
+    return shaderDesc;
+}
+
+/*
+=========
+createBRDFLutShaderDescription
+=========
+*/
+ShaderDescription RenderFrontend::createBRDFLutShaderDescription(const ShadingConfig& config) {
+
+    ShaderDescription desc;
+    desc.srcPathRelative = "brdfLut.comp";
+    //diffuse brdf specialisation constant
+    {
+        SpecialisationConstant constant;
+        constant.location = 0;
+        constant.value = (int)config.diffuseBRDF;
+        desc.specialisationConstants.push_back(constant);
+    }
+    
+    return desc;
+}
+
+/*
+=========
 updateGlobalShaderInfo
 =========
 */
@@ -950,18 +1012,18 @@ void RenderFrontend::initImages() {
     }
     //history buffer for TAA
     {
-    ImageDescription desc;
-    desc.width = m_screenWidth;
-    desc.height = m_screenHeight;
-    desc.depth = 1;
-    desc.type = ImageType::Type2D;
-    desc.format = ImageFormat::R11G11B10_uFloat;
-    desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_STORAGE | IMAGE_USAGE_SAMPLED);
-    desc.mipCount = MipCount::One;
-    desc.manualMipCount = 1;
-    desc.autoCreateMips = false;
+        ImageDescription desc;
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::R11G11B10_uFloat;
+        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_STORAGE | IMAGE_USAGE_SAMPLED);
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
 
-    m_historyBuffer = m_backend.createImage(desc);
+        m_historyBuffer = m_backend.createImage(desc);
     }
     //shadow map cascades
     {
@@ -1341,32 +1403,9 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
             0,
             AttachmentLoadOp::Load);
 
-
-        m_mainPassShaderConfig.vertex.srcPathRelative = "triangle.vert";
-        m_mainPassShaderConfig.fragment.srcPathRelative = "triangle.frag";
-
-        m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantDiffuseBRDFIndex);
-        m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(m_diffuseBRDFDefaultSelection);
-
-        const int directMultiscatterBRDFDefaultSelection = 0;
-        m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantDirectMultiscatterBRDFIndex);
-        m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(directMultiscatterBRDFDefaultSelection);
-
-        const int indirectMultiscatterBRDFDefaultSelection = 1;
-        m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex);
-        m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(indirectMultiscatterBRDFDefaultSelection);
-
-        const int useGeometricAADefaultSelection = 1;
-        m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(m_mainPassSpecilisationConstantGeometricAAIndex);
-        m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(useGeometricAADefaultSelection);
-
-        const uint32_t specularProbeMipCountConstantIndex = 4;
-        m_mainPassShaderConfig.fragment.specialisationConstants.locationIDs.push_back(specularProbeMipCountConstantIndex);
-        m_mainPassShaderConfig.fragment.specialisationConstants.values.push_back(m_specularProbeMipCount);
-
         GraphicPassDescription mainPassDesc;
         mainPassDesc.name = "Forward shading";
-        mainPassDesc.shaderDescriptions = m_mainPassShaderConfig;
+        mainPassDesc.shaderDescriptions = createForwardPassShaderDescription(m_shadingConfig);
         mainPassDesc.attachments = { colorAttachment, depthAttachment };
         mainPassDesc.depthTest.function = DepthFunction::Equal;
         mainPassDesc.depthTest.write = true;
@@ -1397,10 +1436,15 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         shadowPassConfig.rasterization.clampDepth = true;
         shadowPassConfig.blending = BlendState::None;
 
-        const uint32_t cascadeIndexSpecialisationConstantIndex = 0;
-        auto& constants = shadowPassConfig.shaderDescriptions.vertex.specialisationConstants;
-        constants.locationIDs.push_back(cascadeIndexSpecialisationConstantIndex);
-        constants.values.push_back(cascade);
+        //cascade index specialisation constant
+        {
+            SpecialisationConstant constant;
+            constant.location = 0;
+            constant.value = cascade;
+
+            shadowPassConfig.shaderDescriptions.vertex.specialisationConstants = { constant };
+        }
+        
 
         const auto shadowPass = m_backend.createGraphicPass(shadowPassConfig);
         m_shadowPasses.push_back(shadowPass);
@@ -1437,14 +1481,21 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
             specularConvolutionDesc.name = "Specular probe convolution";
             specularConvolutionDesc.shaderDescription.srcPathRelative = "specularCubeConvolution.comp";
 
-            const uint32_t mipCountConstantIndex = 0;
-            specularConvolutionDesc.shaderDescription.specialisationConstants.locationIDs.push_back(mipCountConstantIndex);
-            specularConvolutionDesc.shaderDescription.specialisationConstants.values.push_back(m_specularProbeMipCount);
+            //specialisation constants
+            {
+                auto& constants = specularConvolutionDesc.shaderDescription.specialisationConstants;
 
-            const uint32_t mipLevelConstantIndex = 1;
-            specularConvolutionDesc.shaderDescription.specialisationConstants.locationIDs.push_back(mipLevelConstantIndex);
-            specularConvolutionDesc.shaderDescription.specialisationConstants.values.push_back(i);
-
+                //mip count specialisation constant
+                constants.push_back({
+                    0,                              //location
+                    (int)m_specularProbeMipCount    //value
+                    });
+                //mip level
+                constants.push_back({
+                    1,      //location
+                    (int)i  //value
+                    });
+            }
             m_specularConvolutionPerMipPasses.push_back(m_backend.createComputePass(specularConvolutionDesc));
         }
     }
@@ -1475,14 +1526,9 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     }
     //BRDF Lut creation pass
     {
-        m_brdfLutPassShaderConfig.srcPathRelative = "brdfLut.comp";
-        const int diffuseBRDFConstantID = 0;
-        m_brdfLutPassShaderConfig.specialisationConstants.locationIDs.push_back(diffuseBRDFConstantID);
-        m_brdfLutPassShaderConfig.specialisationConstants.values.push_back(m_diffuseBRDFDefaultSelection);
-
         ComputePassDescription brdfLutPassDesc;
         brdfLutPassDesc.name = "BRDF Lut creation";
-        brdfLutPassDesc.shaderDescription = m_brdfLutPassShaderConfig;
+        brdfLutPassDesc.shaderDescription = createBRDFLutShaderDescription(m_shadingConfig);
         m_brdfLutPass = m_backend.createComputePass(brdfLutPassDesc);
     }
     //geometry debug pass
@@ -1503,80 +1549,117 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         m_debugGeoPass = m_backend.createGraphicPass(debugPassConfig);
     }
-    //histogram passes
+    //histogram per tile pass
     {
-        const uint32_t nBinsSpecialisationConstantID = 0;
-        const uint32_t minLumininanceSpecialisationConstantID = 1;
-        const uint32_t maxLumininanceSpecialisationConstantID = 2;
-        const uint32_t lumininanceFactorSpecialisationConstantID = 3;
+        ComputePassDescription histogramPerTileDesc;
+        histogramPerTileDesc.name = "Histogram per tile";
+        histogramPerTileDesc.shaderDescription.srcPathRelative = "histogramPerTile.comp";
 
-        
+        const uint32_t maxTilesSpecialisationConstantID = 4;
 
-        //histogram per tile pass
+        //specialisation constants
         {
-            ComputePassDescription histogramPerTileDesc;
-            histogramPerTileDesc.name = "Histogram per tile";
-            histogramPerTileDesc.shaderDescription.srcPathRelative = "histogramPerTile.comp";
+            auto& constants = histogramPerTileDesc.shaderDescription.specialisationConstants;
 
-            const uint32_t maxTilesSpecialisationConstantID = 4;
-
-            histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
-            histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(minLumininanceSpecialisationConstantID);
-            histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxLumininanceSpecialisationConstantID);
-            histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(lumininanceFactorSpecialisationConstantID);
-            histogramPerTileDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxTilesSpecialisationConstantID);
-
-            histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
-            histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.minValue);
-            histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.maxValue);
-            histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.luminanceFactor);
-            histogramPerTileDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.maxTileCount);
-
-            m_histogramPerTilePass = m_backend.createComputePass(histogramPerTileDesc);
+            //bin count
+            constants.push_back({
+                0,                      //location
+                (int)m_nHistogramBins   //value
+                    });
+            //min luminance constant
+            constants.push_back({
+                1,                          //location
+                histogramSettings.minValue  //value
+                    });
+            //max luminance constant
+            constants.push_back({
+                2,                          //location
+                histogramSettings.maxValue  //value
+                    });
+            //luminance factor
+            constants.push_back({
+                3,                                  //location
+                histogramSettings.luminanceFactor   //value
+                    });
+            //max tile count
+            constants.push_back({
+                4,                              //location
+                histogramSettings.maxTileCount  //value
+                    });
         }
-        //histogram reset pass
+        m_histogramPerTilePass = m_backend.createComputePass(histogramPerTileDesc);
+    }
+    //histogram reset pass
+    {
+        ComputePassDescription resetDesc;
+        resetDesc.name = "Histogram reset";
+        resetDesc.shaderDescription.srcPathRelative = "histogramReset.comp";
+
+        //bin count constant
         {
-            ComputePassDescription resetDesc;
-            resetDesc.name = "Histogram reset";
-            resetDesc.shaderDescription.srcPathRelative = "histogramReset.comp";
-            resetDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
-            resetDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
-            m_histogramResetPass = m_backend.createComputePass(resetDesc);
+            SpecialisationConstant constant;
+            constant.location = 0;
+            constant.value = m_nHistogramBins;
+            resetDesc.shaderDescription.specialisationConstants.push_back(constant);
         }
-        //histogram combine tiles pass
+
+        m_histogramResetPass = m_backend.createComputePass(resetDesc);
+    }
+    //histogram combine tiles pass
+    {
+        const uint32_t maxTilesSpecialisationConstantID = 1;
+
+        ComputePassDescription histogramCombineDesc;
+        histogramCombineDesc.name = "Histogram combine tiles";
+        histogramCombineDesc.shaderDescription.srcPathRelative = "histogramCombineTiles.comp";
+
+        auto& constants = histogramCombineDesc.shaderDescription.specialisationConstants;
+
+        //bin count
+        constants.push_back({
+            0,                      //location
+            (int)m_nHistogramBins   //value
+                });
+        //max luminance constant
+        constants.push_back({
+            1,                              //location
+            histogramSettings.maxTileCount  //value
+                });
+
+        m_histogramCombinePass = m_backend.createComputePass(histogramCombineDesc);
+    }
+    //pre-expose lights pass
+    {
+        ComputePassDescription preExposeLightsDesc;
+        preExposeLightsDesc.name = "Pre-expose lights";
+        preExposeLightsDesc.shaderDescription.srcPathRelative = "preExposeLights.comp";
+
+        //specialisation constants
         {
-            const uint32_t maxTilesSpecialisationConstantID = 1;
+            auto& constants = preExposeLightsDesc.shaderDescription.specialisationConstants;
 
-            ComputePassDescription histogramCombineDesc;
-            histogramCombineDesc.name = "Histogram combine tiles";
-            histogramCombineDesc.shaderDescription.srcPathRelative = "histogramCombineTiles.comp";
-
-            histogramCombineDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
-            histogramCombineDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxTilesSpecialisationConstantID);
-
-            histogramCombineDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
-            histogramCombineDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.maxTileCount);
-
-            m_histogramCombinePass = m_backend.createComputePass(histogramCombineDesc);
+            //bin count
+            constants.push_back({
+                0,                      //location
+                (int)m_nHistogramBins   //value
+                    });
+            //min luminance constant
+            constants.push_back({
+                1,                          //location
+                histogramSettings.minValue  //value
+                    });
+            //max luminance constant
+            constants.push_back({
+                2,                          //location
+                histogramSettings.maxValue  //value
+                    });
+            //luminance factor
+            constants.push_back({
+                3,                                  //location
+                histogramSettings.luminanceFactor   //value
+                    });
         }
-        //pre-expose lights pass
-        {
-            ComputePassDescription preExposeLightsDesc;
-            preExposeLightsDesc.name = "Pre-expose lights";
-            preExposeLightsDesc.shaderDescription.srcPathRelative = "preExposeLights.comp";
-
-            preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(nBinsSpecialisationConstantID);
-            preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(minLumininanceSpecialisationConstantID);
-            preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(maxLumininanceSpecialisationConstantID);
-            preExposeLightsDesc.shaderDescription.specialisationConstants.locationIDs.push_back(lumininanceFactorSpecialisationConstantID);
-
-            preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(m_nHistogramBins);
-            preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.minValue);
-            preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.maxValue);
-            preExposeLightsDesc.shaderDescription.specialisationConstants.values.push_back(histogramSettings.luminanceFactor);
-
-            m_preExposeLightsPass = m_backend.createComputePass(preExposeLightsDesc);
-        }
+        m_preExposeLightsPass = m_backend.createComputePass(preExposeLightsDesc);
     }
     //depth prepass
     {
@@ -1599,9 +1682,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     {
         ComputePassDescription desc;
         desc.name = "Depth min/max pyramid creation";
-
-        updateDepthPyramidShaderDescription();
-        desc.shaderDescription = m_depthPyramidShaderConfig;
+        desc.shaderDescription = createDepthPyramidShaderDescription();
 
         m_depthPyramidPass = m_backend.createComputePass(desc);
     }
@@ -1644,25 +1725,36 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 updateDepthPyramidShaderDescription
 =========
 */
-void RenderFrontend::updateDepthPyramidShaderDescription() {
+ShaderDescription RenderFrontend::createDepthPyramidShaderDescription() {
 
-    m_depthPyramidShaderConfig.srcPathRelative = "depthHiZPyramid.comp";
-
-    m_depthPyramidShaderConfig.specialisationConstants.locationIDs.resize(4);
-    m_depthPyramidShaderConfig.specialisationConstants.values.resize(4);
-
-    m_depthPyramidShaderConfig.specialisationConstants.locationIDs[0] = m_depthPyramidSpecialisationConstantMipCountIndex;
-    m_depthPyramidShaderConfig.specialisationConstants.locationIDs[1] = m_depthPyramidSpecialisationConstantDepthResX;
-    m_depthPyramidShaderConfig.specialisationConstants.locationIDs[2] = m_depthPyramidSpecialisationConstantDepthResY;
-    m_depthPyramidShaderConfig.specialisationConstants.locationIDs[3] = m_depthPyramidSpecialisationConstantGroupCount;
+    ShaderDescription desc;
+    desc.srcPathRelative = "depthHiZPyramid.comp";
 
     const uint32_t depthMipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
-    m_depthPyramidShaderConfig.specialisationConstants.values[0] = depthMipCount;
-    m_depthPyramidShaderConfig.specialisationConstants.values[1] = m_screenWidth;
-    m_depthPyramidShaderConfig.specialisationConstants.values[2] = m_screenHeight;
-
     const auto dispatchCount = computeDepthPyramidDispatchCount();
-    m_depthPyramidShaderConfig.specialisationConstants.values[3] = dispatchCount.x * dispatchCount.y;
+
+    //mip count
+    desc.specialisationConstants.push_back({ 
+        0,              //location
+        (int)depthMipCount   //value
+        });
+    //depth buffer width
+    desc.specialisationConstants.push_back({
+        1,              //location
+        (int)m_screenWidth   //value
+        });
+    //depth buffer height
+    desc.specialisationConstants.push_back({
+        2,              //location
+        (int)m_screenHeight  //value
+        });
+    //threadgroup count
+    desc.specialisationConstants.push_back({
+        3,                                  //location
+        dispatchCount.x * dispatchCount.y   //value
+        });
+
+    return desc;
 }
 
 /*
@@ -1710,22 +1802,25 @@ drawUi
 =========
 */
 void RenderFrontend::drawUi() {
-    ImGui::Begin("Rendering stats");
-    ImGui::Text(("DeltaTime: " + std::to_string(m_globalShaderInfo.deltaTime * 1000) + "ms").c_str());
-    ImGui::Text(("Mesh count: " + std::to_string(m_currentMeshCount)).c_str());
-    ImGui::Text(("Main pass drawcalls: " + std::to_string(m_currentMainPassDrawcallCount)).c_str());
-    ImGui::Text(("Shadow map drawcalls: " + std::to_string(m_currentShadowPassDrawcallCount)).c_str());
+    //rendering stats
+    {
+        ImGui::Begin("Rendering stats");
+        ImGui::Text(("DeltaTime: " + std::to_string(m_globalShaderInfo.deltaTime * 1000) + "ms").c_str());
+        ImGui::Text(("Mesh count: " + std::to_string(m_currentMeshCount)).c_str());
+        ImGui::Text(("Main pass drawcalls: " + std::to_string(m_currentMainPassDrawcallCount)).c_str());
+        ImGui::Text(("Shadow map drawcalls: " + std::to_string(m_currentShadowPassDrawcallCount)).c_str());
 
-    uint32_t allocatedMemorySizeByte;
-    uint32_t usedMemorySizeByte;
-    m_backend.getMemoryStats(&allocatedMemorySizeByte, &usedMemorySizeByte);
+        uint32_t allocatedMemorySizeByte;
+        uint32_t usedMemorySizeByte;
+        m_backend.getMemoryStats(&allocatedMemorySizeByte, &usedMemorySizeByte);
 
-    const float byteToMbDivider = 1048576;
-    const float allocatedMemorySizeMegaByte  = allocatedMemorySizeByte   / byteToMbDivider;
-    const float usedMemorySizeMegaByte       = usedMemorySizeByte        / byteToMbDivider;
+        const float byteToMbDivider = 1048576;
+        const float allocatedMemorySizeMegaByte = allocatedMemorySizeByte / byteToMbDivider;
+        const float usedMemorySizeMegaByte = usedMemorySizeByte / byteToMbDivider;
 
-    ImGui::Text(("Allocated memory: " + std::to_string(allocatedMemorySizeMegaByte) + "mb").c_str());
-    ImGui::Text(("Used memory: " + std::to_string(usedMemorySizeMegaByte) + "mb").c_str());
+        ImGui::Text(("Allocated memory: " + std::to_string(allocatedMemorySizeMegaByte) + "mb").c_str());
+        ImGui::Text(("Used memory: " + std::to_string(usedMemorySizeMegaByte) + "mb").c_str());
+    }
 
     //pass timings shown in columns
     {
@@ -1734,7 +1829,7 @@ void RenderFrontend::drawUi() {
             m_currentRenderTimings = m_backend.getRenderpassTimings();
             m_renderTimingTimeSinceLastUpdate = 0.f;
         }
-
+        
         ImGui::Separator();
         ImGui::Columns(2);
         for (const auto timing : m_currentRenderTimings) {
@@ -1750,53 +1845,54 @@ void RenderFrontend::drawUi() {
             ImGui::Text(timeString.c_str());
         }
     }
-    
 
     ImGui::End();
 
     ImGui::Begin("Render settings");
 
-    ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
-    ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
-    ImGui::DragFloat("Exposure offset EV", &m_globalShaderInfo.exposureOffset, 0.1f);
-    ImGui::DragFloat("Adaption speed EV/s", &m_globalShaderInfo.exposureAdaptionSpeedEvPerSec, 0.1f, 0.f);
-    ImGui::InputFloat("Sun Illuminance Lux", &m_globalShaderInfo.sunIlluminanceLux);
-    ImGui::InputFloat("Sky Illuminance Lux", &m_globalShaderInfo.skyIlluminanceLux);
-
-    static bool indirectMultiscatterSelection = 
-        m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex] == 1;
-    if (ImGui::Checkbox("Indirect Multiscatter BRDF", &indirectMultiscatterSelection)) {
-        m_isMainPassShaderDescriptionStale = true;
-        m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantUseIndirectMultiscatterBRDFIndex] 
-            = indirectMultiscatterSelection ? 1 : 0;
+    //lighting settings
+    {
+        ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
+        ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
+        ImGui::DragFloat("Exposure offset EV", &m_globalShaderInfo.exposureOffset, 0.1f);
+        ImGui::DragFloat("Adaption speed EV/s", &m_globalShaderInfo.exposureAdaptionSpeedEvPerSec, 0.1f, 0.f);
+        ImGui::InputFloat("Sun Illuminance Lux", &m_globalShaderInfo.sunIlluminanceLux);
+        ImGui::InputFloat("Sky Illuminance Lux", &m_globalShaderInfo.skyIlluminanceLux);
     }
+    
+    //shading settings
+    {
+        m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Indirect Multiscatter BRDF", &m_shadingConfig.useIndirectMultiscatter);
 
-    const char* diffuseBRDFOptions[] = { "Lambert", "Disney", "CoD WWII", "Titanfall 2" };
-    const bool diffuseBRDFChanged = ImGui::Combo("Diffuse BRDF", 
-        &m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantDiffuseBRDFIndex], 
-        diffuseBRDFOptions, 4);
-    m_isMainPassShaderDescriptionStale |= diffuseBRDFChanged;
-    m_isBRDFLutShaderDescriptionStale = diffuseBRDFChanged;
+        //naming and values rely on enum values being ordered same as names and indices being [0,3]
+        const char* diffuseBRDFOptions[] = { "Lambert", "Disney", "CoD WWII", "Titanfall 2" };
+        const bool diffuseBRDFChanged = ImGui::Combo("Diffuse BRDF",
+            (int*)&m_shadingConfig.diffuseBRDF,
+            diffuseBRDFOptions, 4);
+        m_isMainPassShaderDescriptionStale |= diffuseBRDFChanged;
+        m_isBRDFLutShaderDescriptionStale = diffuseBRDFChanged;
 
-    const char* directMultiscatterBRDFOptions[] = { "McAuley", "Simplified", "Scaled GGX lobe", "None" };
-    m_isMainPassShaderDescriptionStale |= ImGui::Combo("Direct Multiscatter BRDF",
-        &m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantDirectMultiscatterBRDFIndex], 
-        directMultiscatterBRDFOptions, 4);
+        //naming and values rely on enum values being ordered same as names and indices being [0,3]
+        const char* directMultiscatterBRDFOptions[] = { "McAuley", "Simplified", "Scaled GGX lobe", "None" };
+        m_isMainPassShaderDescriptionStale |= ImGui::Combo("Direct Multiscatter BRDF",
+            (int*)&m_shadingConfig.directMultiscatter,
+            directMultiscatterBRDFOptions, 4);
 
-    static bool geometricAASelection =
-        m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantGeometricAAIndex] == 1;
-    if (ImGui::Checkbox("Geometric AA", &geometricAASelection)) {
-        m_isMainPassShaderDescriptionStale = true;
-        m_mainPassShaderConfig.fragment.specialisationConstants.values[m_mainPassSpecilisationConstantGeometricAAIndex]
-            = geometricAASelection ? 1 : 0;
+        m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Geometric AA", &m_shadingConfig.useGeometryAA);
     }
-
-    ImGui::InputFloat("Near plane", &m_camera.intrinsic.near);
-    ImGui::InputFloat("Far plane", &m_camera.intrinsic.far);
-
-    ImGui::Checkbox("Draw bounding boxes", &m_drawBBs);
-    ImGui::Checkbox("Freeze and draw camera frustum", &m_freezeAndDrawCameraFrustum);
-    ImGui::Checkbox("Draw shadow frustum", &m_drawShadowFrustum);
+   
+    //camera settings
+    {
+        ImGui::InputFloat("Near plane", &m_camera.intrinsic.near);
+        ImGui::InputFloat("Far plane", &m_camera.intrinsic.far);
+    }
+    
+    //debug settings
+    {
+        ImGui::Checkbox("Draw bounding boxes", &m_drawBBs);
+        ImGui::Checkbox("Freeze and draw camera frustum", &m_freezeAndDrawCameraFrustum);
+        ImGui::Checkbox("Draw shadow frustum", &m_drawShadowFrustum);
+    }    
 
     ImGui::End();
 }
