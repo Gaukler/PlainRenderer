@@ -214,7 +214,7 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
     for (uint32_t i = 0; i < backendHandles.size(); i++) {
 
         //create and store state and frontend handle        
-        frontendHandles.push_back(frontendHandles.size());
+        frontendHandles.push_back({ (uint32_t)frontendHandles.size() });
         MeshState state;
         state.backendHandle = backendHandles[i];
         state.modelMatrix = glm::mat4(1.f);
@@ -259,7 +259,7 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
         //frustum culling
         for (uint32_t i = 0; i < meshes.size(); i++) {
             const auto frontendHandle = meshes[i];
-            const auto& meshState = m_meshStates[frontendHandle];
+            const auto& meshState = m_meshStates[frontendHandle.index];
 
             const auto mvp = m_viewProjectionMatrix * meshState.modelMatrix;
 
@@ -309,7 +309,7 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
         //actual frustum is fitted tightly to depth buffer values, but that is done on the GPU
         for (uint32_t i = 0; i < meshes.size(); i++) {
             const auto frontendHandle = meshes[i];
-            const auto& meshState = m_meshStates[frontendHandle];
+            const auto& meshState = m_meshStates[frontendHandle.index];
 
             const std::array<glm::mat4, 2> transforms = { glm::mat4(1.f), meshState.modelMatrix };
 
@@ -336,7 +336,7 @@ setModelMatrix
 =========
 */
 void RenderFrontend::setModelMatrix(const FrontendMeshHandle handle, const glm::mat4& m) {
-    m_meshStates[handle].modelMatrix = m;
+    m_meshStates[handle.index].modelMatrix = m;
 }
 
 /*
@@ -585,7 +585,7 @@ void RenderFrontend::renderFrame() {
         }
 
         //subvector with correct handle count
-        std::vector<MeshHandle> bbMeshHandles(&m_bbDebugMeshes[0], &m_bbDebugMeshes[positionsPerMesh.size()]);
+        std::vector<DynamicMeshHandle> bbMeshHandles(&m_bbDebugMeshes[0], &m_bbDebugMeshes[positionsPerMesh.size()]);
 
         m_backend.updateDynamicMeshes(bbMeshHandles, positionsPerMesh, indicesPerMesh);
 

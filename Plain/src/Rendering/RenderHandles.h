@@ -1,13 +1,34 @@
 #pragma once
 #include "pch.h"
 
-typedef uint32_t MeshHandle;
-typedef uint32_t DynamicMeshHandle;
-typedef uint32_t RenderPassHandle;
+const uint32_t invalidIndex = std::numeric_limits<uint32_t>::max();
 
-typedef uint32_t ImageHandle;
-const ImageHandle InvalidImageHandle = UINT32_MAX;
+//handles are contained in a struct to enforce type safety
 
-typedef uint32_t SamplerHandle;
-typedef uint32_t UniformBufferHandle;
-typedef uint32_t StorageBufferHandle;
+struct MeshHandle {
+    uint32_t index = invalidIndex;
+};
+
+struct DynamicMeshHandle {
+    uint32_t index = invalidIndex;
+};
+
+struct RenderPassHandle {
+    uint32_t index = invalidIndex;
+};
+
+struct ImageHandle {
+    uint32_t index = invalidIndex;
+};
+
+struct SamplerHandle {
+    uint32_t index = invalidIndex;
+};
+
+struct UniformBufferHandle {
+    uint32_t index = invalidIndex;
+};
+
+struct StorageBufferHandle {
+    uint32_t index = invalidIndex;
+};

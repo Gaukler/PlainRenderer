@@ -160,7 +160,7 @@ public:
     void drawMeshes(const std::vector<MeshHandle> meshHandles, 
         const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle);
 
-    void drawDynamicMeshes(const std::vector<MeshHandle> meshHandles, 
+    void drawDynamicMeshes(const std::vector<DynamicMeshHandle> meshHandles, 
         const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle);
 
     void setGlobalShaderInfo(const GlobalShaderInfo& info);

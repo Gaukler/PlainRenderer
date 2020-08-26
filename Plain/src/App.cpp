@@ -30,7 +30,7 @@ App::App() {
         std::filesystem::path modelPath = "Models\\Sponza\\Sponza.obj";
         //std::filesystem::path modelPath = "Models\\Bistro\\exterior.obj";
 
-        std::vector<MeshHandle> mesh;
+        std::vector<FrontendMeshHandle> mesh;
         std::vector<MeshData> meshData;
         if (loadModel(modelPath, &meshData)) {
             mesh = m_renderer.createMeshes(meshData);

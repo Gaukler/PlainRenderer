@@ -12,7 +12,10 @@ struct GLFWwindow;
 //FrontendMeshHandle are given out by createMeshes
 //they are indices into m_meshStates
 //as the frontend creates meshes for internal use (like the skybox) the do not correspong to the backend handles
-typedef uint32_t FrontendMeshHandle;
+//like all handles contained in a struct to enforce type safety
+struct FrontendMeshHandle {
+    uint32_t index = invalidIndex;
+};
 
 struct MeshState {
     MeshHandle  backendHandle;
@@ -173,7 +176,7 @@ private:
     StorageBufferHandle m_histogramBuffer;
     StorageBufferHandle m_lightBuffer; //contains previous exposure and exposured light values
     StorageBufferHandle m_sunShadowInfoBuffer; //contains light matrices and cascade splits
-    UniformBufferHandle m_depthPyramidSyncBuffer;
+    StorageBufferHandle m_depthPyramidSyncBuffer;
     
     const int m_diffuseBRDFDefaultSelection = 3;
 

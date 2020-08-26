@@ -122,7 +122,7 @@ struct Attachment {
         const AttachmentLoadOp    loadOp
     ) : image(image), mipLevel(mipLevel), binding(binding), loadOp(loadOp){};
 
-    ImageHandle         image       = 0;
+    ImageHandle         image;
     uint32_t            mipLevel    = 0;
     uint32_t            binding     = 0;
     AttachmentLoadOp    loadOp      = AttachmentLoadOp::DontCare;
