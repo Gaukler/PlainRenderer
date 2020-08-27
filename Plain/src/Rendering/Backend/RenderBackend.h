@@ -32,7 +32,7 @@ struct UIRenderInfo {
 struct VulkanShaderCreateAdditionalStructs {
     VkSpecializationInfo                    specialisationInfo;
     std::vector<VkSpecializationMapEntry>   specilisationMap;
-    std::vector<int>                        specialisationValues;
+    std::vector<char>                       specialisationData;
 };
 
 //because they are extensions they need to be acquired using vkGetDeviceProcAddr

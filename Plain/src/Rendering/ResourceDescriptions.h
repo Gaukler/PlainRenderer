@@ -128,10 +128,10 @@ struct Attachment {
     AttachmentLoadOp    loadOp      = AttachmentLoadOp::DontCare;
 };
 
-//only int support at the moment
+//data will be interpreted according to shader
 struct SpecialisationConstant {
     uint32_t location;
-    int      value;
+    std::vector<char> data;
 };
 
 struct ShaderDescription {

@@ -25,15 +25,13 @@ layout(constant_id = 0) const int diffuseBRDF = 0;
 //3: none
 layout(constant_id = 1) const int directMultiscatterBRDF = 0;
 
-//0: disabled
-//1: enabled
-layout(constant_id = 2) const int indirectMultiscatterBRDF = 0;
+layout(constant_id = 2) const bool indirectMultiscatterBRDF = false;
 
 //0: disabled
 //1: enabled
-layout(constant_id = 3) const int geometricAA = 0;
+layout(constant_id = 3) const bool geometricAA = false;
 
-layout(constant_id = 4) const int specularProbeMipCount = 0;
+layout(constant_id = 4) const uint specularProbeMipCount = 0;
 
 layout(set=1, binding = 0) uniform sampler depthSampler;
 
@@ -165,7 +163,7 @@ void main(){
 	vec3 H = normalize(V + L);
 	vec3 R = reflect(-V, N);
     
-    if(geometricAA == 1){
+    if(geometricAA){
         r = modifiedRoughnessGeometricAA(N, r);
     }
     
@@ -253,12 +251,8 @@ void main(){
     vec3 irradiance = texture(samplerCube(diffuseProbe, cubeSampler), N).rgb;
     vec3 fresnelAverage = f0 + (1-f0) / 21.f;
     
-    //single scattering only
-    if(indirectMultiscatterBRDF == 0){
-        vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y);
-        lightingIndirect = singleScattering * environmentSample + irradiance * diffuseColor * diffuseBRDFIntegral;
-    }
-    else {
+    
+    if(indirectMultiscatterBRDF){
         //multi scattering for IBL from "A Multiple-Scattering Microfacet Model for Real-Time Image-based Lighting"
         vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y); //includes fresnel and energy
         
@@ -271,6 +265,11 @@ void main(){
         vec3 diffuseCorrection = diffuseColor * energyDiffuseMultiScattering;
         
         lightingIndirect = singleScattering * environmentSample + (multiScattering + diffuseCorrection * diffuseBRDFIntegral) * irradiance;
+    }
+    else {
+        //single scattering only
+        vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y);
+        lightingIndirect = singleScattering * environmentSample + irradiance * diffuseColor * diffuseBRDFIntegral;
     }
     
     //direct specular

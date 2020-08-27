@@ -12,8 +12,8 @@ layout(set=1, binding = 0, r11f_g11f_b10f)	uniform imageCube	cubeOut;
 layout(set=1, binding = 1) 					uniform textureCube	cubeTexture;
 layout(set=1, binding = 2) 					uniform sampler 	cubeSampler;
 
-layout(constant_id = 0) const int mipCount = 0;
-layout(constant_id = 1) const int mipLevel = 0;
+layout(constant_id = 0) const uint mipCount = 0;
+layout(constant_id = 1) const uint mipLevel = 0;
 
 void main(){
 	ivec3 storageCo = ivec3(gl_GlobalInvocationID.xyz);

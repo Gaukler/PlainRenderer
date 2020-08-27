@@ -5,10 +5,8 @@
 #include "global.inc"
 
 layout(constant_id = 0) const int constNBins = 64;
-layout(constant_id = 1) const int constMinLuminance = 1;
-layout(constant_id = 2) const int constMaxLuminance = 100000;
-//multiplication factor to shift the number range over 1 for very dimm light values, as log() of values < 0 are negative and is problematic
-layout(constant_id = 3) const int constLuminanceFactor = 1000;
+layout(constant_id = 1) const float constMinLuminance = 1.f;
+layout(constant_id = 2) const float constMaxLuminance = 100.f;
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
@@ -24,14 +22,14 @@ layout(set=1, binding = 1, std430) buffer histogramBuffer{
 
 void main(){
     
-    const float minLuminanceLog = log(float(1.f));
-    const float maxLuminanceLog = log(float(constMaxLuminance));
+    const float minLuminanceLog = log(constMinLuminance);
+    const float maxLuminanceLog = log(constMaxLuminance);
     
     float mean = 0.f;
     float total = 0.f;
     for(int i = 0; i < constNBins; i++){
-        float binValueLog = minLuminanceLog + maxLuminanceLog * i / float(constNBins - 1.f);
-        float binValueLinear = exp(binValueLog) / float(constLuminanceFactor);
+        float binValueLog = minLuminanceLog + (maxLuminanceLog - minLuminanceLog) * i / float(constNBins - 1.f);
+        float binValueLinear = exp(binValueLog);
         mean += histogram[i] * binValueLinear;
         total += histogram[i];
     }

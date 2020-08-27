@@ -5,6 +5,7 @@
 #include <Utilities/MathUtils.h>
 #include "Utilities/Timer.h"
 #include "Culling.h"
+#include "Utilities/GeneralUtils.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -69,7 +70,8 @@ void RenderFrontend::newFrame() {
         m_backend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
 
-        m_backend.updateComputePassShaderDescription(m_depthPyramidPass, createDepthPyramidShaderDescription());
+        uint32_t threadgroupCount = 0;
+        m_backend.updateComputePassShaderDescription(m_depthPyramidPass, createDepthPyramidShaderDescription(&threadgroupCount));
     }
     if (m_minimized) {
         return;
@@ -855,10 +857,8 @@ computeHistogramSettings
 HistogramSettings RenderFrontend::createHistogramSettings() {
     HistogramSettings settings;
 
-    //range is remapped to avoid values < 0, due to problems with log()
-    settings.minValue = 1;
-    settings.maxValue = uint32_t(m_histogramMax / m_histogramMin);
-    settings.luminanceFactor = uint32_t(1.f / m_histogramMin);
+    settings.minValue = 0.001f;
+    settings.maxValue = 200000.f;
 
     uint32_t pixelsPerTile = m_histogramTileSizeX * m_histogramTileSizeX;
     settings.maxTileCount = 1920 * 1080 / pixelsPerTile; //FIXME: update buffer on rescale
@@ -883,29 +883,29 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
 
         //diffuse BRDF
         constants.push_back({
-            0,                      //location
-            (int)config.diffuseBRDF //value
-        });
+            0,                                                                      //location
+            dataToCharArray((void*)&config.diffuseBRDF, sizeof(config.diffuseBRDF)) //value
+            });
         //direct specular multiscattering
         constants.push_back({
-            1,                              //location
-            (int)config.directMultiscatter  //value
-        });
+            1,                                                                                      //location
+            dataToCharArray((void*)&config.directMultiscatter, sizeof(config.directMultiscatter))   //value
+            });
         //use indirect multiscattering
         constants.push_back({
-            2,                                      //location
-            config.useIndirectMultiscatter ? 1 : 0  //value
-        });
+            2,                                                                                              //location
+            dataToCharArray((void*)&config.useIndirectMultiscatter, sizeof(config.useIndirectMultiscatter)) //value
+            });
         //use geometry AA
         constants.push_back({
-            3,                              //location
-            config.useGeometryAA ? 1 : 0    //value
-        });
+            3,                                                                          //location
+            dataToCharArray((void*)&config.useGeometryAA, sizeof(config.useGeometryAA)) //value
+            });
         //specular probe mip count
         constants.push_back({
-            4,                      //location
-            (int)m_specularProbeMipCount //value
-        });
+            4,                                                                                  //location
+            dataToCharArray((void*)&m_specularProbeMipCount, sizeof(m_specularProbeMipCount))   //value
+            });
     }
 
     return shaderDesc;
@@ -920,13 +920,12 @@ ShaderDescription RenderFrontend::createBRDFLutShaderDescription(const ShadingCo
 
     ShaderDescription desc;
     desc.srcPathRelative = "brdfLut.comp";
+
     //diffuse brdf specialisation constant
-    {
-        SpecialisationConstant constant;
-        constant.location = 0;
-        constant.value = (int)config.diffuseBRDF;
-        desc.specialisationConstants.push_back(constant);
-    }
+    desc.specialisationConstants.push_back({
+        0,                                                                      //location
+        dataToCharArray((void*)&config.diffuseBRDF, sizeof(config.diffuseBRDF)) //value
+        });
     
     return desc;
 }
@@ -1437,13 +1436,10 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         shadowPassConfig.blending = BlendState::None;
 
         //cascade index specialisation constant
-        {
-            SpecialisationConstant constant;
-            constant.location = 0;
-            constant.value = cascade;
-
-            shadowPassConfig.shaderDescriptions.vertex.specialisationConstants = { constant };
-        }
+        shadowPassConfig.shaderDescriptions.vertex.specialisationConstants = { {
+            0,                                                  //location
+            dataToCharArray((void*)&cascade, sizeof(cascade))   //value
+            }};
         
 
         const auto shadowPass = m_backend.createGraphicPass(shadowPassConfig);
@@ -1487,13 +1483,13 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
                 //mip count specialisation constant
                 constants.push_back({
-                    0,                              //location
-                    (int)m_specularProbeMipCount    //value
+                    0,                                                                                  //location
+                    dataToCharArray((void*)&m_specularProbeMipCount, sizeof(m_specularProbeMipCount))   //value
                     });
                 //mip level
                 constants.push_back({
-                    1,      //location
-                    (int)i  //value
+                    1,                                      //location
+                    dataToCharArray((void*)&i, sizeof(i))   //value
                     });
             }
             m_specularConvolutionPerMipPasses.push_back(m_backend.createComputePass(specularConvolutionDesc));
@@ -1563,29 +1559,23 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
             //bin count
             constants.push_back({
-                0,                      //location
-                (int)m_nHistogramBins   //value
-                    });
+                0,                                                                  //location
+                dataToCharArray((void*)&m_nHistogramBins, sizeof(m_nHistogramBins)) //value
+                });
             //min luminance constant
             constants.push_back({
-                1,                          //location
-                histogramSettings.minValue  //value
-                    });
+                1,                                                                                      //location
+                dataToCharArray((void*)&histogramSettings.minValue, sizeof(histogramSettings.minValue)) //value
+                });
             //max luminance constant
             constants.push_back({
-                2,                          //location
-                histogramSettings.maxValue  //value
-                    });
-            //luminance factor
+                2,                                                                                      //location
+                dataToCharArray((void*)&histogramSettings.maxValue, sizeof(histogramSettings.maxValue)) //value
+                });
             constants.push_back({
-                3,                                  //location
-                histogramSettings.luminanceFactor   //value
-                    });
-            //max tile count
-            constants.push_back({
-                4,                              //location
-                histogramSettings.maxTileCount  //value
-                    });
+                3,                                                                                              //location
+                dataToCharArray((void*)&histogramSettings.maxTileCount, sizeof(histogramSettings.maxTileCount)) //value
+                });
         }
         m_histogramPerTilePass = m_backend.createComputePass(histogramPerTileDesc);
     }
@@ -1596,12 +1586,10 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         resetDesc.shaderDescription.srcPathRelative = "histogramReset.comp";
 
         //bin count constant
-        {
-            SpecialisationConstant constant;
-            constant.location = 0;
-            constant.value = m_nHistogramBins;
-            resetDesc.shaderDescription.specialisationConstants.push_back(constant);
-        }
+        resetDesc.shaderDescription.specialisationConstants.push_back({
+            0,                                                                  //location
+            dataToCharArray((void*)&m_nHistogramBins, sizeof(m_nHistogramBins)) //value
+            });
 
         m_histogramResetPass = m_backend.createComputePass(resetDesc);
     }
@@ -1617,13 +1605,13 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         //bin count
         constants.push_back({
-            0,                      //location
-            (int)m_nHistogramBins   //value
+            0,                                                                  //location
+            dataToCharArray((void*)&m_nHistogramBins, sizeof(m_nHistogramBins)) //value
                 });
         //max luminance constant
         constants.push_back({
-            1,                              //location
-            histogramSettings.maxTileCount  //value
+            1,                                                                                              //location
+            dataToCharArray((void*)&histogramSettings.maxTileCount, sizeof(histogramSettings.maxTileCount)) //value
                 });
 
         m_histogramCombinePass = m_backend.createComputePass(histogramCombineDesc);
@@ -1640,24 +1628,19 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
             //bin count
             constants.push_back({
-                0,                      //location
-                (int)m_nHistogramBins   //value
-                    });
+                0,                                                                  //location
+                dataToCharArray((void*)&m_nHistogramBins, sizeof(m_nHistogramBins)) //value
+                });
             //min luminance constant
             constants.push_back({
-                1,                          //location
-                histogramSettings.minValue  //value
-                    });
+                1,                                                                                      //location
+                dataToCharArray((void*)&histogramSettings.minValue,sizeof(histogramSettings.minValue))  //value
+                });
             //max luminance constant
             constants.push_back({
-                2,                          //location
-                histogramSettings.maxValue  //value
-                    });
-            //luminance factor
-            constants.push_back({
-                3,                                  //location
-                histogramSettings.luminanceFactor   //value
-                    });
+                2,                                                                                      //location
+                dataToCharArray((void*)&histogramSettings.maxValue, sizeof(histogramSettings.maxValue)) //value
+                });
         }
         m_preExposeLightsPass = m_backend.createComputePass(preExposeLightsDesc);
     }
@@ -1682,7 +1665,9 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     {
         ComputePassDescription desc;
         desc.name = "Depth min/max pyramid creation";
-        desc.shaderDescription = createDepthPyramidShaderDescription();
+
+        uint32_t threadgroupCount = 0;
+        desc.shaderDescription = createDepthPyramidShaderDescription(&threadgroupCount);
 
         m_depthPyramidPass = m_backend.createComputePass(desc);
     }
@@ -1725,7 +1710,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 updateDepthPyramidShaderDescription
 =========
 */
-ShaderDescription RenderFrontend::createDepthPyramidShaderDescription() {
+ShaderDescription RenderFrontend::createDepthPyramidShaderDescription(uint32_t* outThreadgroupCount) {
 
     ShaderDescription desc;
     desc.srcPathRelative = "depthHiZPyramid.comp";
@@ -1735,24 +1720,25 @@ ShaderDescription RenderFrontend::createDepthPyramidShaderDescription() {
 
     //mip count
     desc.specialisationConstants.push_back({ 
-        0,              //location
-        (int)depthMipCount   //value
-        });
+        0,                                                              //location
+        dataToCharArray((void*)&depthMipCount, sizeof(depthMipCount))   //value
+            });
     //depth buffer width
     desc.specialisationConstants.push_back({
-        1,              //location
-        (int)m_screenWidth   //value
-        });
+        1,                                                              //location
+        dataToCharArray((void*)&m_screenWidth, sizeof(m_screenWidth))   //value
+            });
     //depth buffer height
     desc.specialisationConstants.push_back({
-        2,              //location
-        (int)m_screenHeight  //value
-        });
+        2,                                                              //location
+        dataToCharArray((void*)&m_screenHeight, sizeof(m_screenHeight)) //value
+            });
     //threadgroup count
+    *outThreadgroupCount = dispatchCount.x * dispatchCount.y;
     desc.specialisationConstants.push_back({
-        3,                                  //location
-        dispatchCount.x * dispatchCount.y   //value
-        });
+        3,                                                                          //location
+        dataToCharArray((void*)outThreadgroupCount, sizeof(*outThreadgroupCount))   //value
+            });
 
     return desc;
 }

@@ -6,13 +6,10 @@
 
 layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
-layout(constant_id = 0) const int constNBins = 64;
-layout(constant_id = 1) const int constMinLuminance = 1;
-layout(constant_id = 2) const int constMaxLuminance = 100000;
-//multiplication factor to shift the number range over 1 for very dimm light values, as log() of values < 0 are negative and is problematic
-layout(constant_id = 3) const int constLuminanceFactor = 1000;
-
-layout(constant_id = 4) const int constNTiles = 32400;
+layout(constant_id = 0) const uint constNBins = 64;
+layout(constant_id = 1) const float constMinLuminance = 1.f;
+layout(constant_id = 2) const float constMaxLuminance = 100.f;
+layout(constant_id = 3) const int constNTiles = 32400;
 
 layout(set=1, binding = 0, std430) buffer histogramPerTileBuffer{
     uint histogramPerTile[constNTiles * constNBins];
@@ -51,13 +48,13 @@ void main(){
     
     barrier();
     
-    const float minLuminanceLog = log(float(1.f));
-    const float maxLuminanceLog = log(float(constMaxLuminance));
+    const float minLuminanceLog = log(constMinLuminance);
+    const float maxLuminanceLog = log(constMaxLuminance);
 
     vec3 color = texelFetch(sampler2D(srcTexture, texelSampler), uv, 0).rgb;    
     float luminance = colorToLuminance(color) / previousFrameExposure;
-    float luminanceLog = log(luminance * float(constLuminanceFactor));
-    const int maxIndex = constNBins - 1;
+    float luminanceLog = log(luminance);
+    const uint maxIndex = constNBins - 1;
     uint bin = uint(maxIndex * clamp((luminanceLog - minLuminanceLog) / (maxLuminanceLog - minLuminanceLog), 0.f, 1.f));
     atomicAdd(localHistogram[bin], 1); 
 

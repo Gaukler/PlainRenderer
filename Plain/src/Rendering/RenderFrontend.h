@@ -26,15 +26,14 @@ struct MeshState {
 
 //settings are passed as specialisation constans, so they need to be encoded as ints
 struct HistogramSettings {
-    int minValue;
-    int maxValue;
-    int luminanceFactor;
+    float minValue;
+    float maxValue;
     int maxTileCount;
 };
 
 //these enumb values must correspond to the shader values
-enum class DiffuseBRDF { Lambert = 0, Disney = 1, CoDWWII = 2, Titanfall2 = 3};
-enum class DirectSpecularMultiscattering { McAuley = 0, Simplified = 1, ScaledGGX = 2, None = 3};
+enum class DiffuseBRDF : int { Lambert = 0, Disney = 1, CoDWWII = 2, Titanfall2 = 3};
+enum class DirectSpecularMultiscattering : int { McAuley = 0, Simplified = 1, ScaledGGX = 2, None = 3};
 
 struct ShadingConfig {
     DiffuseBRDF diffuseBRDF = DiffuseBRDF::Titanfall2;
@@ -148,8 +147,6 @@ private:
     const uint32_t m_skyTextureMipCount = 8;
     const uint32_t m_brdfLutRes = 512;
     const uint32_t m_nHistogramBins = 128;
-    const float m_histogramMin = 0.001f;
-    const float m_histogramMax = 200000.f;
     const uint32_t m_shadowCascadeCount = 4;
 
     const uint32_t m_histogramTileSizeX = 32;
@@ -209,7 +206,8 @@ private:
     //must be called after initRenderpasses as meshes are created in regards to pass
     void initMeshs();
 
-    ShaderDescription createDepthPyramidShaderDescription();
+    //threadgroup count is needed as a pointer in a specialisation constant, so it must be from outer scope to stay valid
+    ShaderDescription createDepthPyramidShaderDescription(uint32_t* outThreadgroupCount);
     glm::ivec2 computeDepthPyramidDispatchCount();
 
     //default textures

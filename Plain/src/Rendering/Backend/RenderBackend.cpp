@@ -3990,19 +3990,36 @@ VkPipelineShaderStageCreateInfo RenderBackend::createPipelineShaderStageInfos(
     if (specialisationInfo.size() > 0) {
 
         outAdditionalInfo->specilisationMap.resize(specialisationCount);
-        outAdditionalInfo->specialisationValues.resize(specialisationCount);
+
+        uint32_t currentOffset = 0;
         for (uint32_t i = 0; i < outAdditionalInfo->specilisationMap.size(); i++) {
             const auto constant = specialisationInfo[i];
 
             outAdditionalInfo->specilisationMap[i].constantID = constant.location;
-            outAdditionalInfo->specilisationMap[i].offset = i * sizeof(int);
-            outAdditionalInfo->specilisationMap[i].size = sizeof(int);
-            outAdditionalInfo->specialisationValues[i] = constant.value;
+            outAdditionalInfo->specilisationMap[i].offset = currentOffset;
+            outAdditionalInfo->specilisationMap[i].size = constant.data.size();
+
+            currentOffset += constant.data.size();
         }
+
+        {
+            //make space
+            outAdditionalInfo->specialisationData.resize(currentOffset);
+
+            //reset offset
+            currentOffset = 0;
+
+            //copy data into place
+            for (const auto& constant : specialisationInfo) {
+                memcpy(outAdditionalInfo->specialisationData.data() + currentOffset, constant.data.data(), constant.data.size());
+                currentOffset += constant.data.size();
+            }
+        }
+        
 
         outAdditionalInfo->specialisationInfo.dataSize      = specialisationCount * sizeof(int);
         outAdditionalInfo->specialisationInfo.mapEntryCount = specialisationCount;
-        outAdditionalInfo->specialisationInfo.pData         = outAdditionalInfo->specialisationValues.data();
+        outAdditionalInfo->specialisationInfo.pData         = outAdditionalInfo->specialisationData.data();
         outAdditionalInfo->specialisationInfo.pMapEntries   = outAdditionalInfo->specilisationMap.data();
 
         createInfos.pSpecializationInfo = &outAdditionalInfo->specialisationInfo;

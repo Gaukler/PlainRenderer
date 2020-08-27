@@ -4,7 +4,7 @@
 
 #include "shadowCascadeConstants.inc"
 
-layout(constant_id = 0) const int cascadeIndex = 0;
+layout(constant_id = 0) const uint cascadeIndex = 0;
 
 layout(location = 0) in vec3 inPos;
 layout(location = 1) in vec2 inUv;
