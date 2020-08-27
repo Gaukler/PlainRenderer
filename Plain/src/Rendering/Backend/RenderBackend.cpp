@@ -552,7 +552,7 @@ void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const u
         const auto imageDesc = m_images[image.index].desc;
         destroyImage(image);
         ImageHandle newHandle = createImage(imageDesc);
-        assert(newHandle == image);
+        assert(newHandle.index == image.index);
     }
 
     /*
