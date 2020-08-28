@@ -42,6 +42,13 @@ struct ShadingConfig {
     bool useGeometryAA = true;
 };
 
+struct TAASettings {
+    bool useClipping = true;
+    bool useVarianceClipping = true;
+    bool useYCoCg = true;
+    bool useMotionVectorDilation = true;
+};
+
 /*
 shader resource types
 define inputs and outputs of renderpass
@@ -111,6 +118,7 @@ private:
     HistogramSettings createHistogramSettings();
 
     ShadingConfig m_shadingConfig;
+    TAASettings m_taaSettings;
 
     /*
     passes
@@ -189,9 +197,11 @@ private:
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
+    ShaderDescription createTAAShaderDescription(const TAASettings& config);
 
     bool m_isMainPassShaderDescriptionStale = false;
     bool m_isBRDFLutShaderDescriptionStale = false;
+    bool m_isTAAShaderDescriptionStale = false;
 
     void updateGlobalShaderInfo();
 

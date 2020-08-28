@@ -91,6 +91,11 @@ void RenderFrontend::newFrame() {
         //don't reset m_isMainPassShaderDescriptionStale, this is done when rendering as it's used to trigger lut recreation
     }
 
+    if (m_isTAAShaderDescriptionStale) {
+        m_backend.updateComputePassShaderDescription(m_taaPass, createTAAShaderDescription(m_taaSettings));
+        m_isTAAShaderDescriptionStale = false;
+    }
+
     m_backend.updateShaderCode();
 
     m_backend.newFrame();
@@ -932,6 +937,42 @@ ShaderDescription RenderFrontend::createBRDFLutShaderDescription(const ShadingCo
 
 /*
 =========
+createTAAShaderDescription
+=========
+*/
+ShaderDescription RenderFrontend::createTAAShaderDescription(const TAASettings& config) {
+    ShaderDescription desc;
+    desc.srcPathRelative = "taa.comp";
+    
+    //specialisation constants
+    {
+        //use clipping
+        desc.specialisationConstants.push_back({
+            0,                                                                              //location
+            dataToCharArray(&m_taaSettings.useClipping, sizeof(m_taaSettings.useClipping))  //value
+            });
+        //use variance clipping
+        desc.specialisationConstants.push_back({
+            1,                                                                                              //location
+            dataToCharArray(&m_taaSettings.useVarianceClipping, sizeof(m_taaSettings.useVarianceClipping))  //value
+            });
+        //use YCoCg color space
+        desc.specialisationConstants.push_back({
+            2,                                                                          //location
+            dataToCharArray(&m_taaSettings.useYCoCg, sizeof(m_taaSettings.useYCoCg))    //value
+            });
+        //use use motion vector dilation
+        desc.specialisationConstants.push_back({
+            3,                                                                                                      //location
+            dataToCharArray(&m_taaSettings.useMotionVectorDilation, sizeof(m_taaSettings.useMotionVectorDilation))  //value
+            });
+    }
+
+    return desc;
+}
+
+/*
+=========
 updateGlobalShaderInfo
 =========
 */
@@ -1699,8 +1740,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     {
         ComputePassDescription desc;
         desc.name = "TAA";
-        desc.shaderDescription.srcPathRelative = "taa.comp";
-
+        desc.shaderDescription = createTAAShaderDescription(m_taaSettings);
         m_taaPass = m_backend.createComputePass(desc);
     }
 }
@@ -1836,8 +1876,17 @@ void RenderFrontend::drawUi() {
 
     ImGui::Begin("Render settings");
 
+    //TAA Settings
+    if(ImGui::CollapsingHeader("TAA settings")){
+        
+        m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Clipping", &m_taaSettings.useClipping);
+        m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Variance clipping", &m_taaSettings.useVarianceClipping);
+        m_isTAAShaderDescriptionStale |= ImGui::Checkbox("YCoCg color space clipping", &m_taaSettings.useYCoCg);
+        m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Dilate motion vector", &m_taaSettings.useMotionVectorDilation);
+    }
+
     //lighting settings
-    {
+    if(ImGui::CollapsingHeader("Lighting settings")){
         ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
         ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
         ImGui::DragFloat("Exposure offset EV", &m_globalShaderInfo.exposureOffset, 0.1f);
@@ -1847,7 +1896,7 @@ void RenderFrontend::drawUi() {
     }
     
     //shading settings
-    {
+    if (ImGui::CollapsingHeader("Shading settings")) {
         m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Indirect Multiscatter BRDF", &m_shadingConfig.useIndirectMultiscatter);
 
         //naming and values rely on enum values being ordered same as names and indices being [0,3]
@@ -1868,13 +1917,13 @@ void RenderFrontend::drawUi() {
     }
    
     //camera settings
-    {
+    if (ImGui::CollapsingHeader("Camera settings")) {
         ImGui::InputFloat("Near plane", &m_camera.intrinsic.near);
         ImGui::InputFloat("Far plane", &m_camera.intrinsic.far);
     }
     
     //debug settings
-    {
+    if (ImGui::CollapsingHeader("Debug settings")) {
         ImGui::Checkbox("Draw bounding boxes", &m_drawBBs);
         ImGui::Checkbox("Freeze and draw camera frustum", &m_freezeAndDrawCameraFrustum);
         ImGui::Checkbox("Draw shadow frustum", &m_drawShadowFrustum);

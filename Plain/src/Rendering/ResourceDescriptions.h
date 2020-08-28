@@ -154,7 +154,7 @@ struct GraphicPassDescription {
     //configuration
     uint32_t                patchControlPoints; //ignored if no tesselation shader
     RasterizationConfig     rasterization;
-    BlendState              blending;
+    BlendState              blending = BlendState::None;
     DepthTest               depthTest;
 
     std::string name; //used for debug labels
@@ -248,8 +248,8 @@ struct GlobalShaderInfo {
     glm::vec4 cameraForward = glm::vec4(0.f, 0.f, -1.f, 0.f);
     glm::vec2 currentFrameCameraJitter  = glm::vec2(0.f);
     glm::vec2 previousFrameCameraJitter = glm::vec2(0.f);
-    float cameraTanFovHalf;
-    float cameraAspectRatio;
+    float cameraTanFovHalf = 1.f;
+    float cameraAspectRatio = 1.f;
     float nearPlane = 0.1f;
     float farPlane = 100.f;
     float sunIlluminanceLux = 80000.f;

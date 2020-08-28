@@ -5,6 +5,11 @@
 #include "global.inc"
 #include "colorConversion.inc"
 
+layout(constant_id = 0) const bool useClipping = false;
+layout(constant_id = 1) const bool useVarianceClipping = false;
+layout(constant_id = 2) const bool useYCoCg = false;
+layout(constant_id = 3) const bool useMotionVectorDilation = false;
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 0, r11f_g11f_b10f) 	uniform image2D framebuffer;
@@ -16,18 +21,21 @@ layout(set=1, binding = 4)                  uniform sampler colorSampler;
 //from: "Temporal ReprojectionAnti-Aliasing in INSIDE"
 //clips a point towards a target in a axis aligned bounding box
 vec3 clipAABB(
+    vec3 target,    //last frame color
     vec3 bbMin,     //bounding box min 
-    vec3 bbMax,     //bounding box max   
-    vec3 target)    //last frame color
+    vec3 bbMax      //bounding box max   
+    )    
 {   
+    const vec3 epsilon = vec3(0.0001f);
+    
     vec3 center = 0.5f * (bbMax + bbMin);
-    vec3 extend = 0.5f * (bbMax - bbMin);
+    vec3 extend = 0.5f * (bbMax - bbMin) + epsilon; //epsilon prevents divison by zero
     
     vec3 toTarget = target - center;
-    vec3 toTargetNorm = toTarget / max(extend, 0.0001f);
+    vec3 toTargetNorm = toTarget / extend;
     vec3 toTargetNormAbs = abs(toTargetNorm);
     float maxComponent = max(toTargetNormAbs.x, max(toTargetNormAbs.y, toTargetNormAbs.z));
-    
+
     if(maxComponent < 1.f){
         return target; //target in bounding box
     }
@@ -40,7 +48,6 @@ float luminance(vec3 c){
     return dot(c, vec3(0.299f, 0.587f, 0.114f));
 }
 
-const bool useYCoCg = true;
 vec3 sampleNeighbourhood(ivec2 uv){
     vec3 c = imageLoad(framebuffer, uv).rgb;
     if(useYCoCg){
@@ -91,23 +98,31 @@ void main(){
     variance *= 1.f / 9;
     variance = sqrt(variance);
     
-    //dilate velocity buffer
-    float closestDepth = 1;
-    ivec2 closestDepthOffset = ivec2(0);
     
-    //3x3 neighbourhood from Inside paper
-    for(int x = -1; x <= 1; x++){
-        for(int y = -1; y <= 1; y++){
-            ivec2 offset = ivec2(x, y);
-            float depth = texelFetch(sampler2D(depthBuffer, colorSampler), uv + offset, 0).r;
-            if(depth < closestDepth){
-                closestDepth = depth;
-                closestDepthOffset = offset;
+    vec2 motion;
+    if(useMotionVectorDilation){
+        float closestDepth = 1;
+        ivec2 closestDepthOffset = ivec2(0);
+        
+        //3x3 neighbourhood from Inside paper
+        for(int x = -1; x <= 1; x++){
+            for(int y = -1; y <= 1; y++){
+                ivec2 offset = ivec2(x, y);
+                float depth = texelFetch(sampler2D(depthBuffer, colorSampler), uv + offset, 0).r;
+                if(depth < closestDepth){
+                    closestDepth = depth;
+                    closestDepthOffset = offset;
+                }
             }
         }
+        
+        motion = texelFetch(sampler2D(motionBuffer, colorSampler), uv + closestDepthOffset, 0).rg;
+    }
+    else{
+        motion = texelFetch(sampler2D(motionBuffer, colorSampler), uv, 0).rg;
     }
     
-    vec2 motion = texelFetch(sampler2D(motionBuffer, colorSampler), uv + closestDepthOffset, 0).rg;
+    
     
     //last frame must be sampled linearly and motion vector requires sub-pixel precision
     //careful not to destroy motion vector precision by casting to ivec
@@ -118,9 +133,8 @@ void main(){
         historySample = linearToYCoCg(historySample);
     }
     
-    const bool useVariance = true;
-    if(useVariance){
-        float scale = 1.5;
+    if(useVarianceClipping){
+        float scale = 1.f;
         
         vec3 varianceMin = mean - variance * scale;
         vec3 varianceMax = mean + variance * scale;
@@ -128,7 +142,13 @@ void main(){
         minC = max(varianceMin, minC);
         maxC = min(varianceMax, maxC);
     }
-    historySample = clipAABB(minC, maxC, historySample);
+
+    if(useClipping){
+        historySample = clipAABB(historySample, minC, maxC);
+    }
+    else{
+        historySample = clamp(historySample, minC, maxC);
+    }
     
     if(useYCoCg){
         historySample = YCoCgToLinear(historySample);
