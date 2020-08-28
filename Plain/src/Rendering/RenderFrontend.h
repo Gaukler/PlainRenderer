@@ -197,7 +197,7 @@ private:
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
-    ShaderDescription createTAAShaderDescription(const TAASettings& config);
+    ShaderDescription createTAAShaderDescription();
 
     bool m_isMainPassShaderDescriptionStale = false;
     bool m_isBRDFLutShaderDescriptionStale = false;

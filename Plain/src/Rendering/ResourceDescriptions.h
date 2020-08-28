@@ -151,7 +151,7 @@ struct GraphicPassDescription {
     std::vector<Attachment>         attachments;
 
     //configuration
-    uint32_t                patchControlPoints; //ignored if no tesselation shader
+    uint32_t                patchControlPoints = 0; //ignored if no tesselation shader
     RasterizationConfig     rasterization;
     BlendState              blending = BlendState::None;
     DepthTest               depthTest;
@@ -182,7 +182,7 @@ typedef enum ImageUsageFlags {
 
 
 struct ImageDescription {
-    std::vector<char> initialData;
+    std::vector<uint8_t> initialData;
 
     uint32_t width  = 1;
     uint32_t height = 0;
@@ -204,12 +204,12 @@ Buffer
 */
 
 struct UniformBufferDescription {
-    size_t  size;
+    size_t  size = 0;
     void*   initialData = nullptr;
 };
 
 struct StorageBufferDescription {
-    size_t  size;
+    size_t  size = 0;
     void*   initialData = nullptr;
 };
 

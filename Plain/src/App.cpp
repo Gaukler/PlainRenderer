@@ -52,8 +52,7 @@ void App::run() {
 	while (!glfwWindowShouldClose(m_window)) {
 
         Timer::markNewFrame();
-		float deltaTime = Timer::getDeltaTimeFloat();
-        float time = Timer::getTime();
+        float time = Timer::getTimeFloat();
 
         m_renderer.newFrame();
 

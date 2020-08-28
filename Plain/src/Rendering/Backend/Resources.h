@@ -23,9 +23,9 @@ image
 struct Image {
     VkImage                     vulkanHandle = VK_NULL_HANDLE;
     std::vector<VkImageView>    viewPerMip;
-    VkFormat                    format;
-    VkExtent3D                  extent;
-    ImageType                   type;
+    VkFormat                    format = VK_FORMAT_MAX_ENUM;
+    VkExtent3D                  extent = {};
+    ImageType                   type = ImageType::Type2D;
 
     /*
     current status

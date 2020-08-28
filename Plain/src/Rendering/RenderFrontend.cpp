@@ -92,7 +92,7 @@ void RenderFrontend::newFrame() {
     }
 
     if (m_isTAAShaderDescriptionStale) {
-        m_backend.updateComputePassShaderDescription(m_taaPass, createTAAShaderDescription(m_taaSettings));
+        m_backend.updateComputePassShaderDescription(m_taaPass, createTAAShaderDescription());
         m_isTAAShaderDescriptionStale = false;
     }
 
@@ -225,8 +225,8 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
         state.previousFrameModelMatrix = glm::mat4(1.f);
         
         //compute bounding box
-        const auto& meshData = dataInternal[i];
-        state.bb = axisAlignedBoundingBoxFromPositions(meshData.positions);
+        const auto& internalmeshData = dataInternal[i];
+        state.bb = axisAlignedBoundingBoxFromPositions(internalmeshData.positions);
 
         m_meshStates.push_back(state);
 
@@ -252,7 +252,7 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
         return;
     }
 
-    m_currentMeshCount += meshes.size();
+    m_currentMeshCount += (uint32_t)meshes.size();
 
     //main and prepass
     {
@@ -436,10 +436,10 @@ void RenderFrontend::renderFrame() {
         RenderPassExecution histogramCombineTilesExecution;
         histogramCombineTilesExecution.handle = m_histogramCombinePass;
         histogramCombineTilesExecution.resources.storageBuffers = { histogramPerTileResource, histogramResource };
-        float nTiles = 
-            std::ceilf(m_screenWidth  / float(m_histogramTileSizeX)) * 
-            std::ceilf(m_screenHeight / float(m_histogramTileSizeY));
-        histogramCombineTilesExecution.dispatchCount[0] = nTiles;
+        uint32_t tileCount =
+            (uint32_t)std::ceilf(m_screenWidth  / float(m_histogramTileSizeX)) * 
+            (uint32_t)std::ceilf(m_screenHeight / float(m_histogramTileSizeY));
+        histogramCombineTilesExecution.dispatchCount[0] = tileCount;
         histogramCombineTilesExecution.dispatchCount[1] = uint32_t(std::ceilf(float(m_nHistogramBins) / binsPerDispatch));
         histogramCombineTilesExecution.dispatchCount[2] = 1;
         histogramCombineTilesExecution.parents = { m_histogramPerTilePass, m_histogramResetPass };
@@ -940,7 +940,7 @@ ShaderDescription RenderFrontend::createBRDFLutShaderDescription(const ShadingCo
 createTAAShaderDescription
 =========
 */
-ShaderDescription RenderFrontend::createTAAShaderDescription(const TAASettings& config) {
+ShaderDescription RenderFrontend::createTAAShaderDescription() {
     ShaderDescription desc;
     desc.srcPathRelative = "taa.comp";
     
@@ -1006,7 +1006,7 @@ void RenderFrontend::initImages() {
     //main color buffer
     {
         ImageDescription desc;
-        desc.initialData = std::vector<char>{};
+        desc.initialData = std::vector<uint8_t>{};
         desc.width = m_screenWidth;
         desc.height = m_screenHeight;
         desc.depth = 1;
@@ -1022,7 +1022,7 @@ void RenderFrontend::initImages() {
     //depth buffer
     {
         ImageDescription desc;
-        desc.initialData = std::vector<char>{};
+        desc.initialData = std::vector<uint8_t>{};
         desc.width = m_screenWidth;
         desc.height = m_screenHeight;
         desc.depth = 1;
@@ -1166,7 +1166,7 @@ void RenderFrontend::initImages() {
         defaultDiffuseDesc.autoCreateMips = true;
         defaultDiffuseDesc.depth = 1;
         defaultDiffuseDesc.format = ImageFormat::RGBA8;
-        defaultDiffuseDesc.initialData = { (char)255, (char)255, (char)255, (char)255 };
+        defaultDiffuseDesc.initialData = { 255, 255, 255, 255 };
         defaultDiffuseDesc.manualMipCount = 1;
         defaultDiffuseDesc.mipCount = MipCount::FullChain;
         defaultDiffuseDesc.type = ImageType::Type2D;
@@ -1182,7 +1182,7 @@ void RenderFrontend::initImages() {
         defaultSpecularDesc.autoCreateMips = true;
         defaultSpecularDesc.depth = 1;
         defaultSpecularDesc.format = ImageFormat::RGBA8;
-        defaultSpecularDesc.initialData = { (char)0, (char)128, (char)255, (char)0 };
+        defaultSpecularDesc.initialData = { 0, 128, 255, 0 };
         defaultSpecularDesc.manualMipCount = 1;
         defaultSpecularDesc.mipCount = MipCount::FullChain;
         defaultSpecularDesc.type = ImageType::Type2D;
@@ -1198,7 +1198,7 @@ void RenderFrontend::initImages() {
         defaultNormalDesc.autoCreateMips = true;
         defaultNormalDesc.depth = 1;
         defaultNormalDesc.format = ImageFormat::RG8;
-        defaultNormalDesc.initialData = { (char)128, (char)128 };
+        defaultNormalDesc.initialData = { 128, 128 };
         defaultNormalDesc.manualMipCount = 1;
         defaultNormalDesc.mipCount = MipCount::FullChain;
         defaultNormalDesc.type = ImageType::Type2D;
@@ -1214,7 +1214,7 @@ void RenderFrontend::initImages() {
         defaultCubemapDesc.autoCreateMips = true;
         defaultCubemapDesc.depth = 1;
         defaultCubemapDesc.format = ImageFormat::RGBA8;
-        defaultCubemapDesc.initialData = { (char)255, (char)255, (char)255, (char)255 };
+        defaultCubemapDesc.initialData = { 255, 255, 255, 255 };
         defaultCubemapDesc.manualMipCount = 1;
         defaultCubemapDesc.mipCount = MipCount::FullChain;
         defaultCubemapDesc.type = ImageType::Type2D;
@@ -1740,7 +1740,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     {
         ComputePassDescription desc;
         desc.name = "TAA";
-        desc.shaderDescription = createTAAShaderDescription(m_taaSettings);
+        desc.shaderDescription = createTAAShaderDescription();
         m_taaPass = m_backend.createComputePass(desc);
     }
 }
@@ -1806,8 +1806,8 @@ glm::ivec2 RenderFrontend::computeDepthPyramidDispatchCount() {
         const uint32_t localThreadGroupExtent = 32 / pow((uint32_t)2, unusedMips);
 
         //pyramid mip0 is half screen resolution
-        count.x = std::ceil((float)m_screenWidth / 2 / localThreadGroupExtent);
-        count.y = std::ceil((float)m_screenHeight / 2 / localThreadGroupExtent);
+        count.x = (uint32_t)std::ceil(m_screenWidth  * 0.5f / localThreadGroupExtent);
+        count.y = (uint32_t)std::ceil(m_screenHeight * 0.5f / localThreadGroupExtent);
 
         return count;
     }

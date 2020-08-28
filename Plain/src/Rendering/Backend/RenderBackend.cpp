@@ -938,14 +938,14 @@ void RenderBackend::updateDynamicMeshes(const std::vector<DynamicMeshHandle>& ha
         std::cout << "Warning: RenderBackend::updateDynamicMeshes handle, position and index vector sizes do not match\n";
     };
 
-    const uint32_t meshCount = std::min(std::min(handles.size(), positionsPerMesh.size()), indicesPerMesh.size());
+    const uint32_t meshCount = (uint32_t)std::min(std::min(handles.size(), positionsPerMesh.size()), indicesPerMesh.size());
     for (uint32_t i = 0; i < meshCount; i++) {
         const auto handle = handles[i];
         const auto& positions = positionsPerMesh[i];
         const auto& indices = indicesPerMesh[i];
         auto& mesh = m_dynamicMeshes[handle.index];
 
-        mesh.indexCount = indices.size();
+        mesh.indexCount = (uint32_t)indices.size();
 
         //validate position count
         const uint32_t floatPerPosition = 3; //xyz
@@ -1909,7 +1909,7 @@ void RenderBackend::createLogicalDevice() {
     deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     deviceInfo.pNext = &features12;
     deviceInfo.flags = 0;
-    deviceInfo.queueCreateInfoCount = queueInfos.size();
+    deviceInfo.queueCreateInfoCount = (uint32_t)queueInfos.size();
     deviceInfo.pQueueCreateInfos = queueInfos.data();
     deviceInfo.enabledLayerCount = 0;			//depreceated and ignored
     deviceInfo.ppEnabledLayerNames = nullptr;	//depreceated and ignored
@@ -2157,7 +2157,7 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
     init_info.DescriptorPool = m_imguiDescriptorPool;
     init_info.Allocator = nullptr;
     init_info.MinImageCount = m_swapchain.minImageCount;
-    init_info.ImageCount = m_swapchain.imageHandles.size();
+    init_info.ImageCount = (uint32_t)m_swapchain.imageHandles.size();
     init_info.CheckVkResultFn = nullptr;
     ImGui_ImplVulkan_Init(&init_info, m_ui.renderPass);
 
@@ -2278,7 +2278,7 @@ createMeshInternal
 MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const std::vector<RenderPassHandle>& passes) {
     std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphicsQueueIndex };
     Mesh mesh;
-    mesh.indexCount = data.indices.size();
+    mesh.indexCount = (uint32_t)data.indices.size();
 
     /*
     index buffer
@@ -2612,7 +2612,7 @@ Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::v
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     }
 
-    bufferInfo.queueFamilyIndexCount = uniqueQueueFamilies.size();
+    bufferInfo.queueFamilyIndexCount = (uint32_t)uniqueQueueFamilies.size();
     bufferInfo.pQueueFamilyIndices = uniqueQueueFamilies.data();
 
     Buffer buffer;
@@ -2707,7 +2707,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
     VkDeviceSize currentMipSize = VkDeviceSize(currentMipWidth * currentMipHeight * bytePerPixel);
 
     //memory offset per mip is tracked separately to check if a mip border is reached
-    uint32_t mipMemoryOffset = 0;
+    VkDeviceSize mipMemoryOffset = 0;
 
     //total offset is used to check if entire data has been copied
     VkDeviceSize totalMemoryOffset = 0;
@@ -2751,7 +2751,6 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         copySize = copySize / bytesPerRow * bytesPerRow;
 
         //copy data to staging buffer
-        void* mappedData;
         fillHostVisibleCoherentBuffer(m_stagingBuffer, (char*)data + totalMemoryOffset, copySize);
 
         //begin command buffer for copying
@@ -2771,7 +2770,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         region.bufferOffset = 0;
         region.imageSubresource = createSubresourceLayers(target, mipLevel);
         //entire rows are copied, so the starting row(offset.y) is the current mip offset divided by the row size
-        region.imageOffset = { 0, (int32_t)(mipMemoryOffset / bytesPerRow), 0 };
+        region.imageOffset = { 0, int32_t(mipMemoryOffset / bytesPerRow), 0 };
         region.bufferRowLength = currentMipWidth; 
         region.bufferImageHeight = currentMipHeight;
         //copy as many rows as fit into the copy size, without going over the mip height
@@ -2798,8 +2797,8 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         //update memory offsets
         //BCn compressed textures store at least a 4x4 pixel block
         if (isBCnCompressed) {
-            mipMemoryOffset     += std::max((uint32_t)copySize, (uint32_t)(4 * 4 * bytePerPixel));
-            totalMemoryOffset   += std::max((uint32_t)copySize, (uint32_t)(4 * 4 * bytePerPixel));
+            mipMemoryOffset     += std::max(copySize, (VkDeviceSize)(4 * 4 * bytePerPixel));
+            totalMemoryOffset   += std::max(copySize, (VkDeviceSize)(4 * 4 * bytePerPixel));
         }
         else {
             mipMemoryOffset     += copySize;
@@ -2880,7 +2879,7 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
     /*
     bring image into new layout
     */
-    const auto newLayoutBarriers = createImageBarriers(image, newLayout, VK_ACCESS_TRANSFER_WRITE_BIT, 0, image.viewPerMip.size());
+    const auto newLayoutBarriers = createImageBarriers(image, newLayout, VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
     barriersCommand(blitCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
 
     //end recording
@@ -3170,11 +3169,11 @@ DescriptorPoolAllocationSizes RenderBackend::descriptorSetAllocationSizeFromShad
     DescriptorPoolAllocationSizes sizes;
     sizes.setCount = 1;
     const auto& shaderLayout = reflection.shaderLayout;
-    sizes.imageSampled = shaderLayout.sampledImageBindings.size();
-    sizes.imageStorage = shaderLayout.storageImageBindings.size();
-    sizes.storageBuffer = shaderLayout.storageBufferBindings.size();
-    sizes.uniformBuffer = shaderLayout.uniformBufferBindings.size();
-    sizes.sampler = shaderLayout.samplerBindings.size();
+    sizes.imageSampled  = (uint32_t)shaderLayout.sampledImageBindings.size();
+    sizes.imageStorage  = (uint32_t)shaderLayout.storageImageBindings.size();
+    sizes.storageBuffer = (uint32_t)shaderLayout.storageBufferBindings.size();
+    sizes.uniformBuffer = (uint32_t)shaderLayout.uniformBufferBindings.size();
+    sizes.sampler       = (uint32_t)shaderLayout.samplerBindings.size();
     return sizes;
 }
 
@@ -3377,7 +3376,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
         descriptorInfos.push_back(writeSet);
     }
 
-    vkUpdateDescriptorSets(vkContext.device, descriptorInfos.size(), descriptorInfos.data(), 0, nullptr);
+    vkUpdateDescriptorSets(vkContext.device, (uint32_t)descriptorInfos.size(), descriptorInfos.data(), 0, nullptr);
 }
 
 /*
@@ -3420,7 +3419,7 @@ VkDescriptorSetLayout RenderBackend::createDescriptorSetLayout(const ShaderLayou
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.pNext = nullptr;
     layoutInfo.flags = 0;
-    layoutInfo.bindingCount = layoutBindings.size();
+    layoutInfo.bindingCount = (uint32_t)layoutBindings.size();
     layoutInfo.pBindings = layoutBindings.data();
 
     VkDescriptorSetLayout setLayout;
@@ -3644,7 +3643,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     vertexInputInfo.flags = 0;
     vertexInputInfo.vertexBindingDescriptionCount = 1;
     vertexInputInfo.pVertexBindingDescriptions = &vertexBinding;
-    vertexInputInfo.vertexAttributeDescriptionCount = attributes.size();
+    vertexInputInfo.vertexAttributeDescriptionCount = (uint32_t)attributes.size();
     vertexInputInfo.pVertexAttributeDescriptions = attributes.data();
 
     /*
@@ -3664,8 +3663,8 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
     pass.viewport.x = 0;
     pass.viewport.y = 0;
-    pass.viewport.width = width;
-    pass.viewport.height = height;
+    pass.viewport.width  = (float)width;
+    pass.viewport.height = (float)height;
     pass.viewport.minDepth = 0.f;
     pass.viewport.maxDepth = 1.f;
 
@@ -3711,7 +3710,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     blending.flags = 0;
     blending.logicOpEnable = VK_FALSE;
     blending.logicOp = VK_LOGIC_OP_NO_OP;
-    blending.attachmentCount = blendingAttachments.size();
+    blending.attachmentCount = (uint32_t)blendingAttachments.size();
     blending.pAttachments = blendingAttachments.data();
     blending.blendConstants[0] = 0.f;
     blending.blendConstants[1] = 0.f;
@@ -3724,7 +3723,17 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     const auto rasterizationState = createRasterizationState(desc.rasterization);
     const auto multisamplingState = createDefaultMultisamplingInfo();
     const auto depthStencilState = createDepthStencilState(desc.depthTest);
-    const auto tesselationState = desc.shaderDescriptions.tesselationControl.has_value() ? &createTesselationState(desc.patchControlPoints) : nullptr;
+
+    VkPipelineTessellationStateCreateInfo tesselationState;
+    VkPipelineTessellationStateCreateInfo* pTesselationState;
+    if (desc.shaderDescriptions.tesselationControl.has_value()) {
+        tesselationState = createTesselationState(desc.patchControlPoints);
+        pTesselationState = &tesselationState;
+    }
+    else {
+        pTesselationState = nullptr;
+    }
+
     auto inputAssemblyState = createDefaultInputAssemblyInfo();
 
     if (desc.rasterization.mode == RasterizationeMode::Line) {
@@ -3745,7 +3754,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     dynamicStateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
     dynamicStateInfo.pNext = nullptr;
     dynamicStateInfo.flags = 0;
-    dynamicStateInfo.dynamicStateCount = dynamicStates.size();
+    dynamicStateInfo.dynamicStateCount = (uint32_t)dynamicStates.size();
     dynamicStateInfo.pDynamicStates = dynamicStates.data();
 
 
@@ -3753,11 +3762,11 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     pipelineInfo.pNext = nullptr;
     pipelineInfo.flags = 0;
-    pipelineInfo.stageCount = stages.size();
+    pipelineInfo.stageCount = (uint32_t)stages.size();
     pipelineInfo.pStages = stages.data();
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssemblyState;
-    pipelineInfo.pTessellationState = tesselationState;
+    pipelineInfo.pTessellationState = pTesselationState;
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizationState;
     pipelineInfo.pMultisampleState = &multisamplingState;
@@ -3811,7 +3820,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pass.beginInfo.pNext = nullptr;
     pass.beginInfo.renderPass = pass.vulkanRenderPass;
     pass.beginInfo.framebuffer = createFramebuffer(pass.vulkanRenderPass, extent, desc.attachments);
-    pass.beginInfo.clearValueCount = pass.clearValues.size();
+    pass.beginInfo.clearValueCount = (uint32_t)pass.clearValues.size();
     pass.beginInfo.pClearValues = pass.clearValues.data();
     pass.beginInfo.renderArea = rect;
 
@@ -3976,7 +3985,7 @@ VkPipelineShaderStageCreateInfo RenderBackend::createPipelineShaderStageInfos(
     VulkanShaderCreateAdditionalStructs* outAdditionalInfo) {
 
     assert(outAdditionalInfo != nullptr);
-    uint32_t specialisationCount = specialisationInfo.size();
+    size_t specialisationCount = specialisationInfo.size();
 
     VkPipelineShaderStageCreateInfo createInfos;
     createInfos.sType                  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -3991,12 +4000,12 @@ VkPipelineShaderStageCreateInfo RenderBackend::createPipelineShaderStageInfos(
 
         outAdditionalInfo->specilisationMap.resize(specialisationCount);
 
-        uint32_t currentOffset = 0;
+        size_t currentOffset = 0;
         for (uint32_t i = 0; i < outAdditionalInfo->specilisationMap.size(); i++) {
             const auto constant = specialisationInfo[i];
 
             outAdditionalInfo->specilisationMap[i].constantID = constant.location;
-            outAdditionalInfo->specilisationMap[i].offset = currentOffset;
+            outAdditionalInfo->specilisationMap[i].offset = (uint32_t)currentOffset;
             outAdditionalInfo->specilisationMap[i].size = constant.data.size();
 
             currentOffset += constant.data.size();
@@ -4018,7 +4027,7 @@ VkPipelineShaderStageCreateInfo RenderBackend::createPipelineShaderStageInfos(
         
 
         outAdditionalInfo->specialisationInfo.dataSize      = specialisationCount * sizeof(int);
-        outAdditionalInfo->specialisationInfo.mapEntryCount = specialisationCount;
+        outAdditionalInfo->specialisationInfo.mapEntryCount = (uint32_t)specialisationCount;
         outAdditionalInfo->specialisationInfo.pData         = outAdditionalInfo->specialisationData.data();
         outAdditionalInfo->specialisationInfo.pMapEntries   = outAdditionalInfo->specilisationMap.data();
 
