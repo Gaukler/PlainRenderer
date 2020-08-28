@@ -30,7 +30,7 @@ struct UIRenderInfo {
 
 //structs that are referenced by VkPipelineShaderStageCreateInfo
 struct VulkanShaderCreateAdditionalStructs {
-    VkSpecializationInfo                    specialisationInfo;
+    VkSpecializationInfo                    specialisationInfo = {};
     std::vector<VkSpecializationMapEntry>   specilisationMap;
     std::vector<char>                       specialisationData;
 };
@@ -500,6 +500,8 @@ private:
     //does not handle queryType VK_QUERY_TYPE_PIPELINE_STATISTICS 
     VkQueryPool createQueryPool(const VkQueryType queryType, const uint32_t queryCount);
     void resetTimestampQueryPool();
+
+    void checkVulkanResult(const VkResult result);
 
     /*
     =========

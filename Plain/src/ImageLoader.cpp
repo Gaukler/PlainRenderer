@@ -4,7 +4,14 @@
 #include "Utilities/DirectoryUtils.h"
 
 #define STB_IMAGE_IMPLEMENTATION
+
+//disable warnings for stb_image library
+#pragma warning( push )
+#pragma warning( disable : 26451 26819 6011 26819 6262 6308 28182)
 #include <stb_image.h>
+
+//reenable
+#pragma warning( pop )
 
 bool loadImage(const std::filesystem::path& path, const bool isFullPath, ImageDescription* outImage) {
 
@@ -32,7 +39,7 @@ bool loadImage(const std::filesystem::path& path, const bool isFullPath, ImageDe
     }
 	 
     uint32_t bytesPerComponent = isHdr ? 4 : 1;
-    size_t dataSize = width * height * components * bytesPerComponent; //in bytes
+    size_t dataSize = (size_t)width * (size_t)height * (size_t)components * (size_t)bytesPerComponent; //in bytes
 
 	if (data == nullptr) {
 		std::cout << "failed to open image: " << fullPath << std::endl;
@@ -83,7 +90,7 @@ bool loadImage(const std::filesystem::path& path, const bool isFullPath, ImageDe
     requires padding to 4 compontens
     */
     else {
-        outImage->initialData.reserve(dataSize * 1.25);
+        outImage->initialData.reserve(size_t(dataSize * 1.25));
         if (isHdr) {
             for (int i = 0; i < dataSize; i += 12) {
                 /*
@@ -167,7 +174,7 @@ bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outIma
     }
 
     //file is opened at the end so current position is file size
-    uint32_t fileSize = file.tellg();
+    size_t fileSize = file.tellg();
     file.seekg(0, file.beg); //go to file start
 
     //validate magic number

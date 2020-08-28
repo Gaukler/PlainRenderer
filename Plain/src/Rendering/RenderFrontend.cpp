@@ -768,8 +768,8 @@ void RenderFrontend::firstFramePreparation() {
         else {
             skyMipExecution.parents = { m_cubemapMipPasses[srcMip - 1] };
         }
-        skyMipExecution.dispatchCount[0] = m_skyTextureRes / 8 / glm::pow(2, i);
-        skyMipExecution.dispatchCount[1] = m_skyTextureRes / 8 / glm::pow(2, i);
+        skyMipExecution.dispatchCount[0] = m_skyTextureRes / 8 / (uint32_t)glm::pow(2, i);
+        skyMipExecution.dispatchCount[1] = m_skyTextureRes / 8 / (uint32_t)glm::pow(2, i);
         skyMipExecution.dispatchCount[2] = 6;
         m_backend.setRenderPassExecution(skyMipExecution);
     }
@@ -1803,7 +1803,7 @@ glm::ivec2 RenderFrontend::computeDepthPyramidDispatchCount() {
     }
     else {
         //group size of 16x16 can compute up to a 32x32 area in mip0
-        const uint32_t localThreadGroupExtent = 32 / pow((uint32_t)2, unusedMips);
+        const uint32_t localThreadGroupExtent = 32 / (uint32_t)pow((uint32_t)2, unusedMips);
 
         //pyramid mip0 is half screen resolution
         count.x = (uint32_t)std::ceil(m_screenWidth  * 0.5f / localThreadGroupExtent);

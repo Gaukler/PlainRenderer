@@ -207,6 +207,12 @@ RenderBackend
 debugReportCallback
 =========
 */
+
+//callback needs a lot of parameters which are not used
+//disable warning for this function
+#pragma warning( push )
+#pragma warning( disable : 4100 ) //4100: unreference formal parameter
+
 VKAPI_ATTR VkBool32 VKAPI_CALL debugReportCallback(
     VkDebugReportFlagsEXT       flags,
     VkDebugReportObjectTypeEXT  objectType,
@@ -220,6 +226,9 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugReportCallback(
     std::cerr << pMessage << std::endl;
     return VK_FALSE;
 }
+
+//reenable warnings
+#pragma warning( pop )
 
 /*
 ==================
@@ -1074,7 +1083,7 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     auto res = vkCreateImage(vkContext.device, &imageInfo, nullptr, &image.vulkanHandle);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 
     //bind memory
     VkMemoryRequirements memoryRequirements;
@@ -1741,7 +1750,7 @@ void RenderBackend::createVulkanInstance() {
     instanceInfo.ppEnabledExtensionNames = requestedExtensions.data();
 
     auto res = vkCreateInstance(&instanceInfo, nullptr, &vkContext.vulkanInstance);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 }
 
 /*
@@ -1837,7 +1846,7 @@ bool RenderBackend::getQueueFamilies(const VkPhysicalDevice device, QueueFamilie
 
         VkBool32 isPresentationQueue;
         auto res = vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_swapchain.surface, &isPresentationQueue);
-        assert(res == VK_SUCCESS);
+        checkVulkanResult(res);
 
         if (isPresentationQueue) {
             pOutQueueFamilies->presentationQueueIndex = i;
@@ -1920,7 +1929,7 @@ void RenderBackend::createLogicalDevice() {
     deviceInfo.ppEnabledExtensionNames = deviceExtensions;
 
     auto res = vkCreateDevice(vkContext.physicalDevice, &deviceInfo, nullptr, &vkContext.device);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 }
 
 /*
@@ -1948,7 +1957,7 @@ VkDebugReportCallbackEXT RenderBackend::setupDebugCallbacks() {
 
     VkDebugReportCallbackEXT debugCallback;
     auto res = vkCreateDebugReportCallbackEXT(vkContext.vulkanInstance, &callbackInfo, nullptr, &debugCallback);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 
     return debugCallback;
 }
@@ -1969,7 +1978,7 @@ createSurface
 void RenderBackend::createSurface(GLFWwindow* window) {
 
     auto res = glfwCreateWindowSurface(vkContext.vulkanInstance, window, nullptr, &m_swapchain.surface);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 }
 
 /*
@@ -2058,7 +2067,7 @@ void RenderBackend::createSwapChain() {
     swapchainInfo.oldSwapchain = VK_NULL_HANDLE;
 
     auto res = vkCreateSwapchainKHR(vkContext.device, &swapchainInfo, nullptr, &m_swapchain.vulkanHandle);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 }
 
 /*
@@ -2265,7 +2274,7 @@ VkImageView RenderBackend::createImageView(const Image image, const VkImageViewT
 
     VkImageView view;
     auto res = vkCreateImageView(vkContext.device, &viewInfo, nullptr, &view);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 
     return view;
 }
@@ -2704,7 +2713,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
     uint32_t mipLevel = 0;
     uint32_t currentMipWidth = target.extent.width;
     uint32_t currentMipHeight = target.extent.height;
-    VkDeviceSize currentMipSize = VkDeviceSize(currentMipWidth * currentMipHeight * bytePerPixel);
+    VkDeviceSize currentMipSize = (VkDeviceSize)currentMipWidth * (VkDeviceSize)currentMipHeight * (VkDeviceSize)bytePerPixel;
 
     //memory offset per mip is tracked separately to check if a mip border is reached
     VkDeviceSize mipMemoryOffset = 0;
@@ -2735,8 +2744,8 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
 
             //BCn compressed textures store at least a 4x4 pixel block, resulting in at least a 4 pixel row
             if (isBCnCompressed) {
-                bytesPerRow = std::max(bytesPerRow, (VkDeviceSize)(4 * bytePerPixel));
-                currentMipSize = std::max(currentMipSize, (VkDeviceSize)(4 * 4 * bytePerPixel));
+                bytesPerRow = std::max(bytesPerRow, 4 * (VkDeviceSize)bytePerPixel);
+                currentMipSize = std::max(currentMipSize, 4 * 4 * (VkDeviceSize)bytePerPixel);
             }
         }
 
@@ -2797,8 +2806,8 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         //update memory offsets
         //BCn compressed textures store at least a 4x4 pixel block
         if (isBCnCompressed) {
-            mipMemoryOffset     += std::max(copySize, (VkDeviceSize)(4 * 4 * bytePerPixel));
-            totalMemoryOffset   += std::max(copySize, (VkDeviceSize)(4 * 4 * bytePerPixel));
+            mipMemoryOffset     += std::max(copySize, 4 * 4 * (VkDeviceSize)bytePerPixel);
+            totalMemoryOffset   += std::max(copySize, 4 * 4 * (VkDeviceSize)bytePerPixel);
         }
         else {
             mipMemoryOffset     += copySize;
@@ -2969,7 +2978,7 @@ VkCommandPool RenderBackend::createCommandPool(const uint32_t queueFamilyIndex, 
 
     VkCommandPool pool;
     auto res = vkCreateCommandPool(vkContext.device, &poolInfo, nullptr, &pool);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 
     return pool;
 }
@@ -2990,7 +2999,7 @@ VkCommandBuffer RenderBackend::allocateCommandBuffer() {
 
     VkCommandBuffer commandBuffer;
     auto res = vkAllocateCommandBuffers(vkContext.device, &bufferInfo, &commandBuffer);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 
     return commandBuffer;
 }
@@ -3113,7 +3122,7 @@ void RenderBackend::createImguiDescriptorPool() {
     pool_info.poolSizeCount = (uint32_t)IM_ARRAYSIZE(pool_sizes);
     pool_info.pPoolSizes = pool_sizes;
     auto res = vkCreateDescriptorPool(vkContext.device, &pool_info, nullptr, &m_imguiDescriptorPool);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 }
 
 /*
@@ -3155,7 +3164,7 @@ void RenderBackend::createDescriptorPool() {
     DescriptorPool pool;
     pool.freeAllocations = initialSizes;
     auto res = vkCreateDescriptorPool(vkContext.device, &poolInfo, nullptr, &pool.vkPool);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
     
     m_descriptorPools.push_back(pool);
 }
@@ -3424,7 +3433,8 @@ VkDescriptorSetLayout RenderBackend::createDescriptorSetLayout(const ShaderLayou
 
     VkDescriptorSetLayout setLayout;
     auto res = vkCreateDescriptorSetLayout(vkContext.device, &layoutInfo, nullptr, &setLayout);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
+
     return setLayout;
 }
 
@@ -3455,7 +3465,7 @@ VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout
 
     VkPipelineLayout layout = {};
     auto res = vkCreatePipelineLayout(vkContext.device, &layoutInfo, nullptr, &layout);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 
     return layout;
 }
@@ -3496,7 +3506,7 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     pipelineInfo.basePipelineIndex = 0;
 
     auto res = vkCreateComputePipelines(vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pass.pipeline);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 
     //shader module no needed anymore
     vkDestroyShaderModule(vkContext.device, module, nullptr);
@@ -3620,15 +3630,15 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     std::vector<VkVertexInputAttributeDescription> attributes;
     uint32_t currentOffset = 0;
 
-    for (size_t location = 0; location < VERTEX_INPUT_ATTRIBUTE_COUNT; location++) {
+    for (uint32_t location = 0; location < VERTEX_INPUT_ATTRIBUTE_COUNT; location++) {
         if (vertexInputFlagPerLocation[location] & reflection.vertexInputFlags) {
             VkVertexInputAttributeDescription attribute;
             attribute.location = location;
             attribute.binding = 0;
-            attribute.format = vertexInputFormatsPerLocation[location];
+            attribute.format = vertexInputFormatsPerLocation[(size_t)location];
             attribute.offset = currentOffset;
             attributes.push_back(attribute);
-            currentOffset += vertexInputBytePerLocation[location];
+            currentOffset += vertexInputBytePerLocation[(size_t)location];
         }
     }
 
@@ -3916,7 +3926,8 @@ VkRenderPass RenderBackend::createVulkanRenderPass(const std::vector<Attachment>
     info.pDependencies = nullptr;
 
     auto res = vkCreateRenderPass(vkContext.device, &info, nullptr, &pass);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
+
     return pass;
 }
 
@@ -3949,7 +3960,7 @@ VkFramebuffer RenderBackend::createFramebuffer(const VkRenderPass renderPass, co
 
     VkFramebuffer framebuffer;
     auto res = vkCreateFramebuffer(vkContext.device, &framebufferInfo, nullptr, &framebuffer);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 
     return framebuffer;
 }
@@ -3970,7 +3981,7 @@ VkShaderModule RenderBackend::createShaderModule(const std::vector<uint32_t>& co
 
     VkShaderModule shaderModule;
     auto res = vkCreateShaderModule(vkContext.device, &moduleInfo, nullptr, &shaderModule);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 
     return shaderModule;
 }
@@ -4347,7 +4358,7 @@ VkSemaphore RenderBackend::createSemaphore() {
 
     VkSemaphore semaphore;
     auto res = vkCreateSemaphore(vkContext.device, &semaphoreInfo, nullptr, &semaphore);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 
     return semaphore;
 }
@@ -4366,7 +4377,7 @@ VkFence RenderBackend::createFence() {
 
     VkFence fence;
     auto res = vkCreateFence(vkContext.device, &fenceInfo, nullptr, &fence);
-    assert(res == VK_SUCCESS);
+    checkVulkanResult(res);
 
     return fence;
 }
@@ -4417,6 +4428,28 @@ uint32_t RenderBackend::issueTimestampQuery(const VkCommandBuffer cmdBuffer) {
     m_currentTimestampQueryCount++;
     return query;
 }
+
+/*
+=========
+checkVulkanResult
+=========
+*/
+
+//in release mode the function is empty, resulting in a warning
+//disable warning for the function
+#pragma warning( push )
+#pragma warning( disable : 4100 ) //C4100: unreferenced formal parameter
+
+void RenderBackend::checkVulkanResult(const VkResult result) {
+#ifndef NDEBUG
+    if (result != VK_SUCCESS) {
+        std::cout << "Vulkan function failed\n";
+    }
+#endif 
+}
+
+//reenable warning
+#pragma warning( pop )
 
 /*
 ==================

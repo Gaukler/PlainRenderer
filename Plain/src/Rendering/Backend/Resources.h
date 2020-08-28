@@ -77,7 +77,7 @@ struct MeshMaterial {
 struct Mesh {
     uint32_t                        indexCount = 0;
     Buffer                          indexBuffer;
-    VkIndexType                     indexPrecision;
+    VkIndexType                     indexPrecision = VK_INDEX_TYPE_NONE_KHR;
     std::vector<MeshVertexBuffer>   vertexBuffers;  //one vertex buffer per render pass with unique vertex input
     std::vector<MeshMaterial>       materials;      //one material per render pass with unique material feature set
 };
@@ -129,12 +129,12 @@ struct GraphicPass {
     
     std::filesystem::file_time_type lastModifiedShader;
 
-    VkRenderPass            vulkanRenderPass = VK_NULL_HANDLE;
-    VkPipeline              pipeline = VK_NULL_HANDLE;
-    VkPipelineLayout        pipelineLayout = VK_NULL_HANDLE;
-    VkDescriptorSet         descriptorSet;
-    VkDescriptorSetLayout   descriptorSetLayout;
-    VkRenderPassBeginInfo   beginInfo;
+    VkRenderPass            vulkanRenderPass    = VK_NULL_HANDLE;
+    VkPipeline              pipeline            = VK_NULL_HANDLE;
+    VkPipelineLayout        pipelineLayout      = VK_NULL_HANDLE;
+    VkDescriptorSet         descriptorSet       = VK_NULL_HANDLE;
+    VkDescriptorSetLayout   descriptorSetLayout = VK_NULL_HANDLE;
+    VkRenderPassBeginInfo   beginInfo = {};
 
     VkViewport                      viewport;
     VkRect2D                        scissor;
@@ -155,7 +155,7 @@ struct GraphicPass {
     some passes may no use all material features
     therefore every pass has it's own materialSetLayout and a bitset of features
     */
-    VkDescriptorSetLayout   materialSetLayout;
+    VkDescriptorSetLayout   materialSetLayout = VK_NULL_HANDLE;
     MaterialFeatureFlags    materialFeatures;
 
     /*
@@ -170,12 +170,12 @@ struct ComputePass {
 
     std::filesystem::file_time_type lastModifiedShader;
 
-    VkRenderPass            vulkanRenderPass = VK_NULL_HANDLE;
-    VkPipeline              pipeline = VK_NULL_HANDLE;
-    VkPipelineLayout        pipelineLayout = VK_NULL_HANDLE;
-    VkDescriptorSet         descriptorSet;
-    VkDescriptorSetLayout   descriptorSetLayout;
-    VkRenderPassBeginInfo   beginInfo;
+    VkRenderPass            vulkanRenderPass    = VK_NULL_HANDLE;
+    VkPipeline              pipeline            = VK_NULL_HANDLE;
+    VkPipelineLayout        pipelineLayout      = VK_NULL_HANDLE;
+    VkDescriptorSet         descriptorSet       = VK_NULL_HANDLE;
+    VkDescriptorSetLayout   descriptorSetLayout = VK_NULL_HANDLE;
+    VkRenderPassBeginInfo   beginInfo = {};
 
     /*
     shader path cache to speed up out of date check
@@ -190,7 +190,7 @@ the external version is used to order, update and create barriers
 */
 struct RenderPassExecutionInternal {
     RenderPassHandle                    handle;
-    uint32_t                            dispatches[3]; //for compute only
+    uint32_t                            dispatches[3] = {1, 1, 1}; //for compute only
     std::vector<VkBufferMemoryBarrier>  memoryBarriers;
     std::vector<VkImageMemoryBarrier>   imageBarriers;
 };

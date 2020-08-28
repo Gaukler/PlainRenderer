@@ -24,7 +24,7 @@ mipCountFromResolution
 =========
 */
 uint32_t mipCountFromResolution(const uint32_t width, const uint32_t height, const uint32_t depth) {
-    return 1 + std::floor(std::log2(std::max(std::max(width, height), depth)));
+    return 1 + (uint32_t)std::floor(std::log2(std::max(std::max(width, height), depth)));
 }
 
 /*
@@ -60,7 +60,7 @@ radicalInverseBase2
 float radicalInverseBase2(const uint32_t in) {
     //reference: http://www.pbr-book.org/3ed-2018/Sampling_and_Reconstruction/The_Halton_Sampler.html
     const uint32_t rev = reverse32Bit(in);
-    return float(rev) * 2.3283064365386963e-10;
+    return float(rev) * (float)2.3283064365386963e-10;
 }
 
 /*

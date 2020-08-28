@@ -6,9 +6,18 @@
 spirvCrossErrorCallback
 =========
 */
+
+//callback not using userdata, resulting in a warning
+//disable warning for the function
+#pragma warning( push )
+#pragma warning( disable : 4100 ) //C4100: unreferenced formal parameter
+
 void spirvCrossErrorCallback(void* userdata, const char* error) {
     std::cout << error << std::endl;
 }
+
+//reenable warning
+#pragma warning( pop )
 
 /*
 =========

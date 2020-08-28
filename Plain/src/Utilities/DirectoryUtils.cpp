@@ -21,7 +21,7 @@ fs::path DirectoryUtils::getResourceDirectory(){
 
 fs::path DirectoryUtils::searchResourceDirectory(const fs::path& workingDirectory) {
 
-	fs::path current = getWorkingDirectory();
+	fs::path current = workingDirectory;
 
 	//parent_path of C: will return C: -> loop terminates
 	while (current != current.parent_path()) {
