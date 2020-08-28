@@ -73,7 +73,7 @@ struct RenderPassExecution {
     RenderPassHandle                handle;
     RenderPassResources             resources;
     std::vector<RenderPassHandle>   parents;
-    uint32_t                        dispatchCount[3]; //compute pass only
+    uint32_t                        dispatchCount[3] = { 1, 1, 1}; //compute pass only
 };
 
 /*
@@ -240,14 +240,14 @@ Global shader info
 */
 
 struct GlobalShaderInfo {
-    glm::vec4 sunColor = glm::vec4(1.f);
-    glm::vec4 sunDirection = glm::vec4(0.f, -1.f, 0.f, 0.f);
-    glm::vec4 cameraPos = glm::vec4(0.f);
-    glm::vec4 cameraRight;
-    glm::vec4 cameraUp;
-    glm::vec4 cameraForward;
-    glm::vec2 currentFrameCameraJitter;
-    glm::vec2 previousFrameCameraJitter;
+    glm::vec4 sunColor      = glm::vec4(1.f);
+    glm::vec4 sunDirection  = glm::vec4(0.f, -1.f, 0.f, 0.f);
+    glm::vec4 cameraPos     = glm::vec4(0.f);
+    glm::vec4 cameraRight   = glm::vec4(1.f, 0.f, 0.f, 0.f);
+    glm::vec4 cameraUp      = glm::vec4(0.f, -1.f, 0.f, 0.f);
+    glm::vec4 cameraForward = glm::vec4(0.f, 0.f, -1.f, 0.f);
+    glm::vec2 currentFrameCameraJitter  = glm::vec2(0.f);
+    glm::vec2 previousFrameCameraJitter = glm::vec2(0.f);
     float cameraTanFovHalf;
     float cameraAspectRatio;
     float nearPlane = 0.1f;

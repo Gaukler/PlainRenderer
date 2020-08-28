@@ -25,7 +25,7 @@ struct UIRenderInfo {
     std::vector<VkImageMemoryBarrier>   barriers;
     std::vector<VkRenderPassBeginInfo>  passBeginInfos;
     std::vector<VkFramebuffer>          framebuffers;
-    VkRenderPass                        renderPass;
+    VkRenderPass                        renderPass = VK_NULL_HANDLE;
 };
 
 //structs that are referenced by VkPipelineShaderStageCreateInfo
@@ -60,7 +60,7 @@ struct DescriptorPoolAllocationSizes {
 };
 
 struct DescriptorPool {
-    VkDescriptorPool vkPool;
+    VkDescriptorPool vkPool = VK_NULL_HANDLE;
     DescriptorPoolAllocationSizes freeAllocations;
 };
 
@@ -71,14 +71,14 @@ struct MaterialSamplers {
 };
 
 struct TimestampQuery {
-    uint32_t startQuery;
-    uint32_t endQuery;
+    uint32_t startQuery = 0;
+    uint32_t endQuery = 0;
     std::string name;
 };
 
 //per pass execution time
 struct RenderPassTime{
-    float timeMs; //time in milliseconds
+    float timeMs = 0; //time in milliseconds
     std::string name;
 };
 
@@ -288,7 +288,7 @@ private:
     currently scheduled renderpass
     */
     std::vector<RenderPassExecution>    m_framePasses;
-    uint32_t                            m_swapchainInputImageIndex;
+    uint32_t                            m_swapchainInputImageIndex = 0;
     ImageHandle                         m_swapchainInputImageHandle;
 
     /*
@@ -341,13 +341,13 @@ private:
     commands 
     =========
     */
-    VkCommandPool   m_commandPool;
-    VkCommandPool   m_transientCommandPool; //used for short lived copy command buffer and such
+    VkCommandPool   m_commandPool = VK_NULL_HANDLE;
+    VkCommandPool   m_transientCommandPool = VK_NULL_HANDLE; //used for short lived copy command buffer and such
     /*
     primary command buffers used for all rendering
     two so one can be filled while the other is still rendering
     */
-    VkCommandBuffer m_commandBuffers[2];
+    VkCommandBuffer m_commandBuffers[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
 
     uint32_t m_currentCommandBufferIndex = 0;
 
@@ -377,13 +377,13 @@ private:
     descriptors and layouts
     =========
     */
-    VkDescriptorSet m_globalDescriptorSet;     
+    VkDescriptorSet m_globalDescriptorSet = VK_NULL_HANDLE;     
 
     //discriptor pools are added as existing ones run out
     std::vector<DescriptorPool> m_descriptorPools;
 
     //the imgui pool is just passed to the library, no need for allocation counting
-    VkDescriptorPool m_imguiDescriptorPool;
+    VkDescriptorPool m_imguiDescriptorPool = VK_NULL_HANDLE;
 
     //imgui requires a single sizeable pool, so it's handled separately
     void createImguiDescriptorPool();
@@ -401,7 +401,7 @@ private:
         128  //sampler
     };    
 
-    VkDescriptorSetLayout m_globalDescriptorSetLayout;    //contains global info, always bound to set 0
+    VkDescriptorSetLayout m_globalDescriptorSetLayout = VK_NULL_HANDLE;    //contains global info, always bound to set 0
 
     DescriptorPoolAllocationSizes descriptorSetAllocationSizeFromShaderReflection(const ShaderReflection& reflection);
     DescriptorPoolAllocationSizes descriptorSetAllocationSizeFromMaterialFlags(const MaterialFeatureFlags& flags);
@@ -475,8 +475,8 @@ private:
     sync objects
     =========
     */
-    VkSemaphore m_renderFinishedSemaphore;
-    VkFence     m_renderFinishedFence;
+    VkSemaphore m_renderFinishedSemaphore = VK_NULL_HANDLE;
+    VkFence     m_renderFinishedFence = VK_NULL_HANDLE;
 
 
     VkSemaphore createSemaphore();
@@ -485,9 +485,9 @@ private:
 
     //timestamp queries
     const uint32_t m_timestampQueryPoolQueryCount = 100;
-    VkQueryPool m_timestampQueryPool;
+    VkQueryPool m_timestampQueryPool = VK_NULL_HANDLE;
 
-    float m_nanosecondsPerTimestamp;
+    float m_nanosecondsPerTimestamp = 1.f;
     uint32_t m_currentTimestampQueryCount = 0;
     std::vector<TimestampQuery> m_timestampQueries;
     std::vector<RenderPassTime> m_renderpassTimings;

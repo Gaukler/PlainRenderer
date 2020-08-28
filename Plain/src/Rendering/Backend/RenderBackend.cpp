@@ -1161,7 +1161,7 @@ UniformBufferHandle RenderBackend::createUniformBuffer(const UniformBufferDescri
         fillBuffer(uniformBuffer, desc.initialData, desc.size);
     }
 
-    UniformBufferHandle handle = { m_uniformBuffers.size() };
+    UniformBufferHandle handle = { (uint32_t)m_uniformBuffers.size() };
     m_uniformBuffers.push_back(uniformBuffer);
     return handle;
 }
@@ -1185,7 +1185,7 @@ StorageBufferHandle RenderBackend::createStorageBuffer(const StorageBufferDescri
         fillBuffer(storageBuffer, desc.initialData, desc.size);
     }
 
-    StorageBufferHandle handle = { m_storageBuffers.size() };
+    StorageBufferHandle handle = { (uint32_t)m_storageBuffers.size() };
     m_storageBuffers.push_back(storageBuffer);
     return handle;
 }
@@ -1245,7 +1245,7 @@ SamplerHandle RenderBackend::createSampler(const SamplerDescription& desc) {
     const auto res = vkCreateSampler(vkContext.device, &samplerInfo, nullptr, &sampler);
     assert(res == VK_SUCCESS);
 
-    SamplerHandle handle = { m_samplers.size() };
+    SamplerHandle handle = { (uint32_t)m_samplers.size() };
     m_samplers.push_back(sampler);
     return handle;
 }
@@ -2543,7 +2543,7 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
     /*
     save and return handle
     */
-    MeshHandle handle = { m_meshes.size() };
+    MeshHandle handle = { (uint32_t)m_meshes.size() };
     m_meshes.push_back(mesh);
 
     return handle;
@@ -2575,7 +2575,7 @@ DynamicMeshHandle RenderBackend::createDynamicMeshInternal(const uint32_t maxPos
     mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, memoryFlags);
 
     //save and return handle
-    DynamicMeshHandle handle = { m_dynamicMeshes.size() };
+    DynamicMeshHandle handle = { (uint32_t)m_dynamicMeshes.size() };
     m_dynamicMeshes.push_back(mesh);
 
     return handle;
@@ -2698,13 +2698,13 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         throw("Unsupported format");
     }
 
-    VkDeviceSize bytesPerRow = target.extent.width * bytePerPixel;
+    VkDeviceSize bytesPerRow = (size_t)target.extent.width * (size_t)bytePerPixel;
 
     //if size is bigger than mip level 0 automatically switch to next mip level
     uint32_t mipLevel = 0;
     uint32_t currentMipWidth = target.extent.width;
     uint32_t currentMipHeight = target.extent.height;
-    VkDeviceSize currentMipSize = currentMipWidth * currentMipHeight * bytePerPixel;
+    VkDeviceSize currentMipSize = (size_t)currentMipWidth * (size_t)currentMipHeight * bytePerPixel;
 
     //memory offset per mip is tracked separately to check if a mip border is reached
     uint32_t mipMemoryOffset = 0;
@@ -4064,18 +4064,20 @@ createRasterizationState
 */
 VkPipelineRasterizationStateCreateInfo RenderBackend::createRasterizationState(const RasterizationConfig& raster) {
 
-    VkPolygonMode polygonMode;
+    VkPolygonMode polygonMode = VK_POLYGON_MODE_FILL;
     switch (raster.mode) {
     case RasterizationeMode::Fill:  polygonMode = VK_POLYGON_MODE_FILL; break;
     case RasterizationeMode::Line:  polygonMode = VK_POLYGON_MODE_LINE; break;
     case RasterizationeMode::Point:  polygonMode = VK_POLYGON_MODE_POINT; break;
+    default: std::cout << "RenderBackend::createRasterizationState: Unknown RasterizationeMode\n"; break;
     };
 
-    VkCullModeFlags cullFlags;
+    VkCullModeFlags cullFlags = VK_CULL_MODE_NONE;
     switch (raster.cullMode) {
     case CullMode::None:  cullFlags = VK_CULL_MODE_NONE; break;
     case CullMode::Front:  cullFlags = VK_CULL_MODE_FRONT_BIT; break;
     case CullMode::Back:  cullFlags = VK_CULL_MODE_BACK_BIT; break;
+    default: std::cout << "RenderBackend::createRasterizationState unknown CullMode\n"; break;
     };
 
     VkPipelineRasterizationStateCreateInfo rasterization = {};
@@ -4132,7 +4134,7 @@ VkPipelineDepthStencilStateCreateInfo RenderBackend::createDepthStencilState(con
     stencilInfoDummy.reference = 0;
 
     VkPipelineDepthStencilStateCreateInfo depthInfo = {};
-    VkCompareOp compareOp;
+    VkCompareOp compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     switch (depthTest.function) {
     case DepthFunction::Always: compareOp = VK_COMPARE_OP_ALWAYS; break;
     case DepthFunction::Equal: compareOp = VK_COMPARE_OP_EQUAL; break;
@@ -4141,6 +4143,7 @@ VkPipelineDepthStencilStateCreateInfo RenderBackend::createDepthStencilState(con
     case DepthFunction::Less: compareOp = VK_COMPARE_OP_LESS; break;
     case DepthFunction::LessEqual: compareOp = VK_COMPARE_OP_LESS_OR_EQUAL; break;
     case DepthFunction::Never : compareOp = VK_COMPARE_OP_NEVER; break;
+    default: std::cout << "RenderBackend::createDepthStencilState unknown DepthFunction\n"; break;
     }
 
     depthInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -4254,7 +4257,8 @@ std::vector<VkImageMemoryBarrier> RenderBackend::createImageBarriers(Image& imag
         /*
         same mip layout: extens subresource range
         */
-        if (image.layoutPerMip[baseMip + i] == barriers.back().oldLayout) {
+        size_t mipLevel = baseMip + i;
+        if (image.layoutPerMip[mipLevel] == barriers.back().oldLayout) {
             barriers.back().subresourceRange.levelCount++;
         }
         /*
@@ -4266,13 +4270,13 @@ std::vector<VkImageMemoryBarrier> RenderBackend::createImageBarriers(Image& imag
             barrier.pNext = nullptr;
             barrier.srcAccessMask = image.currentAccess;
             barrier.dstAccessMask = dstAccess;
-            barrier.oldLayout = image.layoutPerMip[baseMip + i];
+            barrier.oldLayout = image.layoutPerMip[mipLevel];
             barrier.newLayout = newLayout;
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.image = image.vulkanHandle;
             barrier.subresourceRange.aspectMask = aspectFlags;
-            barrier.subresourceRange.baseMipLevel = baseMip + i;
+            barrier.subresourceRange.baseMipLevel = mipLevel;
             barrier.subresourceRange.levelCount = 1;
             barrier.subresourceRange.baseArrayLayer = 0;
             barrier.subresourceRange.layerCount = layerCount;

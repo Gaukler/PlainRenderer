@@ -1322,7 +1322,7 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
     //per tile histogram
     {
         StorageBufferDescription histogramPerTileBufferDesc;
-        histogramPerTileBufferDesc.size = histogramSettings.maxTileCount * m_nHistogramBins * sizeof(uint32_t);
+        histogramPerTileBufferDesc.size = (size_t)histogramSettings.maxTileCount * m_nHistogramBins * sizeof(uint32_t);
         m_histogramPerTileBuffer = m_backend.createStorageBuffer(histogramPerTileBufferDesc);
     }
     //depth pyramid syncing buffer
@@ -1335,8 +1335,8 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
     //light matrix buffer
     {
         StorageBufferDescription desc;
-        const uint32_t splitSize = sizeof(glm::vec4);
-        const uint32_t lightMatrixSize = sizeof(glm::mat4) * m_shadowCascadeCount;
+        const size_t splitSize = sizeof(glm::vec4);
+        const size_t lightMatrixSize = sizeof(glm::mat4) * m_shadowCascadeCount;
         desc.size = splitSize + lightMatrixSize;
         m_sunShadowInfoBuffer = m_backend.createStorageBuffer(desc);
     }
@@ -1824,8 +1824,8 @@ void RenderFrontend::drawUi() {
         ImGui::NextColumn();
         for (const auto timing : m_currentRenderTimings) {
             //limit number of decimal places to improve readability
-            const uint32_t commaIndex = std::max(int(timing.timeMs) / 10, 1);
-            const uint32_t decimalPlacesToKeep = 2;
+            const size_t commaIndex = std::max(int(timing.timeMs) / 10, 1);
+            const size_t decimalPlacesToKeep = 2;
             auto timeString = std::to_string(timing.timeMs);
             timeString = timeString.substr(0, commaIndex + 1 + decimalPlacesToKeep);
             ImGui::Text(timeString.c_str());

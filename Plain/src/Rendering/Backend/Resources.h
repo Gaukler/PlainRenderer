@@ -31,7 +31,7 @@ struct Image {
     current status
     */
     std::vector<VkImageLayout>  layoutPerMip;
-    VkAccessFlags               currentAccess;
+    VkAccessFlags               currentAccess = 0;
     bool                        currentlyWriting = false;
 
     /*
@@ -47,8 +47,8 @@ struct Image {
 buffer
 */
 struct Buffer {
-    VkBuffer        vulkanHandle;
-    VkDeviceSize    size;
+    VkBuffer vulkanHandle = VK_NULL_HANDLE;
+    VkDeviceSize size = 0;
     VulkanAllocation memory;
 };
 

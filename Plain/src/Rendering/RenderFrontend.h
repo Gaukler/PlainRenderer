@@ -19,8 +19,8 @@ struct FrontendMeshHandle {
 
 struct MeshState {
     MeshHandle  backendHandle;
-    glm::mat4   modelMatrix;
-    glm::mat4   previousFrameModelMatrix; //required for reprojection
+    glm::mat4   modelMatrix = glm::mat4(1.f);
+    glm::mat4   previousFrameModelMatrix = glm::mat4(1.f); //required for reprojection
     AxisAlignedBoundingBox bb;
 };
 
@@ -70,8 +70,8 @@ private:
     void firstFramePreparation();
     void computeBRDFLut();
 
-    uint32_t m_screenWidth;
-    uint32_t m_screenHeight;
+    uint32_t m_screenWidth = 800;
+    uint32_t m_screenHeight = 600;
 
     //contains meshes created by createMeshes()
     std::vector<MeshState> m_meshStates;
@@ -94,7 +94,7 @@ private:
     bool m_drawShadowFrustum = false;
 
     //stored for resizing
-    GLFWwindow* m_window;
+    GLFWwindow* m_window = nullptr;
     RenderBackend m_backend;
     GlobalShaderInfo m_globalShaderInfo;
 

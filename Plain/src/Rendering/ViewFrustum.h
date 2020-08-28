@@ -4,23 +4,23 @@
 
 //naming scheme: l/r(left/right)_u/l(upper/lower)_n/f(_near/far)
 struct ViewFrustumPoints {
-    glm::vec3 l_l_n;
-    glm::vec3 l_l_f;
-    glm::vec3 l_u_n;
-    glm::vec3 l_u_f;
-    glm::vec3 r_l_n;
-    glm::vec3 r_l_f;
-    glm::vec3 r_u_n;
-    glm::vec3 r_u_f;
+    glm::vec3 l_l_n = glm::vec3(0.f);
+    glm::vec3 l_l_f = glm::vec3(0.f);
+    glm::vec3 l_u_n = glm::vec3(0.f);
+    glm::vec3 l_u_f = glm::vec3(0.f);
+    glm::vec3 r_l_n = glm::vec3(0.f);
+    glm::vec3 r_l_f = glm::vec3(0.f);
+    glm::vec3 r_u_n = glm::vec3(0.f);
+    glm::vec3 r_u_f = glm::vec3(0.f);
 };
 
 struct ViewFrustumNormals {
-    glm::vec3 top;
-    glm::vec3 bot;
-    glm::vec3 right;
-    glm::vec3 left;
-    glm::vec3 near;
-    glm::vec3 far;
+    glm::vec3 top   = glm::vec3(0.f);
+    glm::vec3 bot   = glm::vec3(0.f);
+    glm::vec3 right = glm::vec3(0.f);
+    glm::vec3 left  = glm::vec3(0.f);
+    glm::vec3 near  = glm::vec3(0.f);
+    glm::vec3 far   = glm::vec3(0.f);
 };
 
 struct ViewFrustum {

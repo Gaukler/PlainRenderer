@@ -2,8 +2,8 @@
 #include "pch.h"
 
 struct AxisAlignedBoundingBox {
-    glm::vec3 min;
-    glm::vec3 max;
+    glm::vec3 min = glm::vec3(0.f);
+    glm::vec3 max = glm::vec3(0.f);
 };
 
 AxisAlignedBoundingBox axisAlignedBoundingBoxFromPositions(const std::vector<glm::vec3>& positions);
