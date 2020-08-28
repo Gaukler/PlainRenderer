@@ -31,7 +31,7 @@ isGraphicPassHandle
 */
 bool RenderPasses::isGraphicPassHandle(const RenderPassHandle handle) {
     //checks first bit
-    const uint32_t upperBit = 1 << 31;
+    const uint32_t upperBit = (uint32_t)1 << 31;
     return handle.index & upperBit;
 }
 
@@ -41,7 +41,7 @@ addGraphicPass
 =========
 */
 RenderPassHandle RenderPasses::addGraphicPass(const GraphicPass pass) {
-    uint32_t index = m_graphicPasses.size();
+    uint32_t index = (uint32_t)m_graphicPasses.size();
     m_graphicPasses.push_back(pass);
     return indexToGraphicPassHandle(index);
 }
@@ -52,7 +52,7 @@ addComputePass
 =========
 */
 RenderPassHandle RenderPasses::addComputePass(const ComputePass pass) {
-    uint32_t index = m_computePasses.size();
+    uint32_t index = (uint32_t)m_computePasses.size();
     m_computePasses.push_back(pass);
     return indexToComputePassHandle(index);
 }
@@ -63,7 +63,7 @@ getNGraphicPasses
 =========
 */
 uint32_t RenderPasses::getNGraphicPasses() {
-    return m_graphicPasses.size();
+    return (uint32_t)m_graphicPasses.size();
 }
 
 /*
@@ -72,7 +72,7 @@ getNComputePasses
 =========
 */
 uint32_t RenderPasses::getNComputePasses(){
-    return m_computePasses.size();
+    return (uint32_t)m_computePasses.size();
 }
 
 /*
@@ -179,7 +179,7 @@ indexToGraphicPassHandle
 */
 RenderPassHandle RenderPasses::indexToGraphicPassHandle(const uint32_t index) {
     //set first bit to 1 and cast
-    const uint32_t upperBit = 1 << 31;
+    const uint32_t upperBit = (uint32_t)1 << 31;
     return { index | upperBit };
 }
 
@@ -301,7 +301,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     */
     {
         RenderPassResources globalResources;
-        UniformBufferResource globalBufferResource(m_globalShaderInfoBuffer, true, 0);
+        UniformBufferResource globalBufferResource(m_globalShaderInfoBuffer, 0);
         globalResources.uniformBuffers.push_back(globalBufferResource);
 
         DescriptorPoolAllocationSizes globalDescriptorSetSizes;
@@ -582,8 +582,8 @@ void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const u
             vkDestroyFramebuffer(vkContext.device, pass.beginInfo.framebuffer, nullptr);
             pass.beginInfo.framebuffer = createFramebuffer(pass.vulkanRenderPass, extent, pass.attachmentDescriptions);
             pass.beginInfo.renderArea = rect;
-            pass.viewport.width = width;
-            pass.viewport.height = height;
+            pass.viewport.width  = (float)width;
+            pass.viewport.height = (float)height;
             pass.scissor.extent = extent;
             m_renderPasses.updateGraphicPassByIndex(pass, i);
         }
@@ -745,7 +745,7 @@ void RenderBackend::renderFrame() {
     vkBeginCommandBuffer(currentCommandBuffer, &beginInfo);
 
     //index needed for end query
-    const uint32_t frameQueryIndex = m_timestampQueries.size();
+    const uint32_t frameQueryIndex = (uint32_t)m_timestampQueries.size();
     {
         TimestampQuery frameQuery;
         frameQuery.name = "Frame";
@@ -826,11 +826,11 @@ void RenderBackend::renderFrame() {
 
         for (const auto query : m_timestampQueries) {
 
-            const float startTime = timestamps[query.startQuery];
-            const float endTime = timestamps[query.endQuery];
-            const float time = endTime - startTime;
+            const uint32_t startTime = timestamps[query.startQuery];
+            const uint32_t endTime = timestamps[query.endQuery];
+            const uint32_t time = endTime - startTime;
 
-            const float nanoseconds = time * m_nanosecondsPerTimestamp;
+            const float nanoseconds = (float)time * m_nanosecondsPerTimestamp;
             const float milliseconds = nanoseconds * 0.000001f;
 
             RenderPassTime timing;
@@ -949,14 +949,14 @@ void RenderBackend::updateDynamicMeshes(const std::vector<DynamicMeshHandle>& ha
 
         //validate position count
         const uint32_t floatPerPosition = 3; //xyz
-        const uint32_t maxPositionCount = mesh.vertexBuffer.buffer.size / (sizeof(float) * floatPerPosition);
+        const uint32_t maxPositionCount = (uint32_t)mesh.vertexBuffer.buffer.size / (sizeof(float) * floatPerPosition);
 
         if (positions.size() > maxPositionCount) {
             std::cout << "Warning: RenderBackend::updateDynamicMeshes position count exceeds allocated vertex buffer size\n";
         }
 
         //validate index count
-        const uint32_t maxIndexCount = mesh.indexBuffer.size / sizeof(uint32_t);
+        const uint32_t maxIndexCount = (uint32_t)mesh.indexBuffer.size / sizeof(uint32_t);
         if (indices.size() > maxIndexCount) {
             std::cout << "Warning: RenderBackend::updateDynamicMeshes index count exceeds allocated index buffer size\n";
             mesh.indexCount = maxIndexCount;
@@ -1112,7 +1112,7 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
         const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
 
         const auto newLayoutBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 
-            VK_ACCESS_TRANSFER_WRITE_BIT, 0, image.viewPerMip.size());
+            VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
         barriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
 
         //end recording
@@ -1136,7 +1136,7 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
         m_images[handle.index] = image;
     }
     else {
-        handle.index = m_images.size();
+        handle.index = (uint32_t)m_images.size();
         m_images.push_back(image);
     }
     return handle;
@@ -1237,7 +1237,7 @@ SamplerHandle RenderBackend::createSampler(const SamplerDescription& desc) {
     samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.compareOp = VK_COMPARE_OP_NEVER;
     samplerInfo.minLod = 0.f;
-    samplerInfo.maxLod = desc.maxMip;
+    samplerInfo.maxLod = (float)desc.maxMip;
     samplerInfo.borderColor = borderColor;
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
 
@@ -1271,8 +1271,8 @@ void RenderBackend::getMemoryStats(uint32_t* outAllocatedSize, uint32_t* outUsed
     assert(outAllocatedSize != nullptr);
     assert(outUsedSize != nullptr);
     m_vkAllocator.getMemoryStats(outAllocatedSize, outUsedSize);
-    *outAllocatedSize   += m_stagingBufferSize;
-    *outUsedSize        += m_stagingBufferSize;
+    *outAllocatedSize   += (uint32_t)m_stagingBufferSize;
+    *outUsedSize        += (uint32_t)m_stagingBufferSize;
 }
 
 /*
@@ -1427,7 +1427,7 @@ void RenderBackend::prepareRenderPasses() {
 
             if ((image.currentlyWriting || needsLayoutTransition) && !hasBarrierAlready) {
                 const auto& layoutBarriers = createImageBarriers(image, requiredLayout,
-                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, 0, image.layoutPerMip.size());
+                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, 0, (uint32_t)image.layoutPerMip.size());
                 barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
                 image.currentlyWriting = true;
             }
@@ -1468,7 +1468,7 @@ void RenderBackend::prepareRenderPasses() {
 
             if (image.currentlyWriting | needsLayoutTransition) {
                 const auto& layoutBarriers = createImageBarriers(image, requiredLayout, VK_ACCESS_SHADER_READ_BIT, 
-                    0, image.viewPerMip.size());
+                    0, (uint32_t)image.viewPerMip.size());
                 barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
             }
         }
@@ -1499,7 +1499,7 @@ void RenderBackend::prepareRenderPasses() {
                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
                     const auto& layoutBarriers = createImageBarriers(image, requiredLayout, access, 0, 
-                        image.viewPerMip.size());
+                        (uint32_t)image.viewPerMip.size());
                     barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
                     image.currentlyWriting = true;
                 }
@@ -1824,14 +1824,14 @@ bool RenderBackend::getQueueFamilies(const VkPhysicalDevice device, QueueFamilie
     bool foundPresentation = false;
 
     //iterate families and check if they fit our needs
-    for (size_t i = 0; i < familyCount; i++) {
+    for (uint32_t i = 0; i < familyCount; i++) {
         if (families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
-            pOutQueueFamilies->computeQueueIndex = (uint32_t)i;
+            pOutQueueFamilies->computeQueueIndex = i;
             foundCompute = true;
         }
         if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-            pOutQueueFamilies->graphicsQueueIndex = (uint32_t)i;
-            pOutQueueFamilies->transferQueueFamilyIndex = (uint32_t)i;
+            pOutQueueFamilies->graphicsQueueIndex = i;
+            pOutQueueFamilies->transferQueueFamilyIndex = i;
             foundGraphics = true;
         }
 
@@ -1840,7 +1840,7 @@ bool RenderBackend::getQueueFamilies(const VkPhysicalDevice device, QueueFamilie
         assert(res == VK_SUCCESS);
 
         if (isPresentationQueue) {
-            pOutQueueFamilies->presentationQueueIndex = (uint32_t)i;
+            pOutQueueFamilies->presentationQueueIndex = i;
             foundPresentation = true;
         }
     }
@@ -2704,7 +2704,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
     uint32_t mipLevel = 0;
     uint32_t currentMipWidth = target.extent.width;
     uint32_t currentMipHeight = target.extent.height;
-    VkDeviceSize currentMipSize = (size_t)currentMipWidth * (size_t)currentMipHeight * bytePerPixel;
+    VkDeviceSize currentMipSize = VkDeviceSize(currentMipWidth * currentMipHeight * bytePerPixel);
 
     //memory offset per mip is tracked separately to check if a mip border is reached
     uint32_t mipMemoryOffset = 0;
@@ -2760,7 +2760,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         //layout transition to transfer_dst the first time
         if (totalMemoryOffset == 0) {
             const auto toTransferDstBarrier = createImageBarriers(target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                VK_ACCESS_TRANSFER_READ_BIT, 0, target.viewPerMip.size());
+                VK_ACCESS_TRANSFER_READ_BIT, 0, (uint32_t)target.viewPerMip.size());
 
             barriersCommand(copyBuffer, toTransferDstBarrier, std::vector<VkBufferMemoryBarrier> {});
         }
@@ -2775,7 +2775,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         region.bufferRowLength = currentMipWidth; 
         region.bufferImageHeight = currentMipHeight;
         //copy as many rows as fit into the copy size, without going over the mip height
-        region.imageExtent.height = std::min(copySize / bytesPerRow, (VkDeviceSize)currentMipHeight);
+        region.imageExtent.height = std::min(uint32_t(copySize / bytesPerRow), currentMipHeight);
         region.imageExtent.width = currentMipWidth;
         region.imageExtent.depth = 1;
 
@@ -2798,8 +2798,8 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         //update memory offsets
         //BCn compressed textures store at least a 4x4 pixel block
         if (isBCnCompressed) {
-            mipMemoryOffset     += std::max(copySize, (VkDeviceSize)(4 * 4 * bytePerPixel));
-            totalMemoryOffset   += std::max(copySize, (VkDeviceSize)(4 * 4 * bytePerPixel));
+            mipMemoryOffset     += std::max((uint32_t)copySize, (uint32_t)(4 * 4 * bytePerPixel));
+            totalMemoryOffset   += std::max((uint32_t)copySize, (uint32_t)(4 * 4 * bytePerPixel));
         }
         else {
             mipMemoryOffset     += copySize;
@@ -3889,7 +3889,7 @@ VkRenderPass RenderBackend::createVulkanRenderPass(const std::vector<Attachment>
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.inputAttachmentCount = 0;
     subpass.pInputAttachments = nullptr;
-    subpass.colorAttachmentCount = colorReferences.size();
+    subpass.colorAttachmentCount = (uint32_t)colorReferences.size();
     subpass.pColorAttachments = colorReferences.data();
     subpass.pResolveAttachments = nullptr;
     subpass.pDepthStencilAttachment = hasDepth ? &depthReference : nullptr;
@@ -3899,7 +3899,7 @@ VkRenderPass RenderBackend::createVulkanRenderPass(const std::vector<Attachment>
     info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     info.pNext = nullptr;
     info.flags = 0;
-    info.attachmentCount = descriptions.size();
+    info.attachmentCount = (uint32_t)descriptions.size();
     info.pAttachments = descriptions.data();
     info.subpassCount = 1;
     info.pSubpasses = &subpass;
@@ -3931,7 +3931,7 @@ VkFramebuffer RenderBackend::createFramebuffer(const VkRenderPass renderPass, co
     framebufferInfo.flags = 0;
     framebufferInfo.renderPass = renderPass;
 
-    framebufferInfo.attachmentCount = views.size();
+    framebufferInfo.attachmentCount = (uint32_t)views.size();
     framebufferInfo.pAttachments = views.data();
 
     framebufferInfo.width = extent.width;
@@ -4193,8 +4193,8 @@ barriersCommand
 void RenderBackend::barriersCommand(const VkCommandBuffer commandBuffer, 
     const std::vector<VkImageMemoryBarrier>& imageBarriers, const std::vector<VkBufferMemoryBarrier>& memoryBarriers) {
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, memoryBarriers.size(), 
-        memoryBarriers.data(), imageBarriers.size(), imageBarriers.data());
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 
+        (uint32_t)memoryBarriers.size(), memoryBarriers.data(), (uint32_t)imageBarriers.size(), imageBarriers.data());
 }
 
 /*
@@ -4257,7 +4257,7 @@ std::vector<VkImageMemoryBarrier> RenderBackend::createImageBarriers(Image& imag
         /*
         same mip layout: extens subresource range
         */
-        size_t mipLevel = baseMip + i;
+        uint32_t mipLevel = baseMip + i;
         if (image.layoutPerMip[mipLevel] == barriers.back().oldLayout) {
             barriers.back().subresourceRange.levelCount++;
         }

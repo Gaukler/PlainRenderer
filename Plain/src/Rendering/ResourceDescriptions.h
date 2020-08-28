@@ -25,7 +25,6 @@ struct StorageBufferResource {
 struct UniformBufferResource {
     UniformBufferResource(
         const UniformBufferHandle   buffer,
-        const bool                  readOnly,
         const uint32_t              binding) : buffer(buffer), binding(binding) {};
     UniformBufferHandle buffer;
     uint32_t            binding;
