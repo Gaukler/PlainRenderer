@@ -2,13 +2,16 @@
 #include "pch.h"
 #include <vulkan/vulkan.h>
 
-typedef enum VertexInputFlags {
-    VERTEX_INPUT_POSITION_BIT = 0x00000001,
-    VERTEX_INPUT_UV_BIT = 0x00000002,
-    VERTEX_INPUT_NORMAL_BIT = 0x00000004,
-    VERTEX_INPUT_TANGENT_BIT = 0x00000008,
-    VERTEX_INPUT_BITANGENT_BIT = 0x00000010
-} VertexInputFlags;
+enum class VertexInputFlags {
+    Position    = 0x00000001,
+    UV          = 0x00000002,
+    Normal      = 0x00000004,
+    Tangent     = 0x00000008,
+    Bitangent   = 0x00000010
+};
+
+VertexInputFlags operator&(const VertexInputFlags l, const VertexInputFlags r);
+VertexInputFlags operator|(const VertexInputFlags l, const VertexInputFlags r);
 
 #define VERTEX_INPUT_ATTRIBUTE_COUNT 5
 
@@ -16,11 +19,11 @@ typedef enum VertexInputFlags {
 defines which vertex attribute goes to which binding
 */
 const VertexInputFlags vertexInputFlagPerLocation[VERTEX_INPUT_ATTRIBUTE_COUNT] = {
-    VERTEX_INPUT_POSITION_BIT,
-    VERTEX_INPUT_UV_BIT,
-    VERTEX_INPUT_NORMAL_BIT,
-    VERTEX_INPUT_TANGENT_BIT,
-    VERTEX_INPUT_BITANGENT_BIT
+    VertexInputFlags::Position,
+    VertexInputFlags::UV,
+    VertexInputFlags::Normal,
+    VertexInputFlags::Tangent,
+    VertexInputFlags::Bitangent
 };
 
 /*

@@ -691,7 +691,7 @@ setGlobalShaderInfo
 =========
 */
 void RenderBackend::setGlobalShaderInfo(const GlobalShaderInfo& info) {
-    const auto buffer = m_uniformBuffers[m_globalShaderInfoBuffer.index];
+    const auto& buffer = m_uniformBuffers[m_globalShaderInfoBuffer.index];
     fillBuffer(buffer, &info, sizeof(info));
 }
 
@@ -1027,14 +1027,14 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
     }
 
     VkImageUsageFlags usage = 0;
-    if (desc.usageFlags & ImageUsageFlags::IMAGE_USAGE_ATTACHMENT) {
+    if (bool(desc.usageFlags & ImageUsageFlags::Attachment)) {
         const VkImageUsageFlagBits attachmentUsage = isDepthFormat(format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         usage |= attachmentUsage;
     }
-    if (desc.usageFlags & ImageUsageFlags::IMAGE_USAGE_SAMPLED) {
+    if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
         usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
     }
-    if (desc.usageFlags & ImageUsageFlags::IMAGE_USAGE_STORAGE) {
+    if (bool(desc.usageFlags & ImageUsageFlags::Storage)) {
         usage |= VK_IMAGE_USAGE_STORAGE_BIT;
     }
     if (desc.initialData.size() > 0) {
@@ -1117,7 +1117,7 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
     if no mips are generated the layout will still be transfer_dst or undefined
     to avoid issues all sampled images without mip generation are manually transitioned to read_only_optimal
     */
-    if ((desc.usageFlags & ImageUsageFlags::IMAGE_USAGE_SAMPLED) && !desc.autoCreateMips) {
+    if (bool(desc.usageFlags & ImageUsageFlags::Sampled) && !desc.autoCreateMips) {
         const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
 
         const auto newLayoutBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 
@@ -2346,26 +2346,26 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
         std::vector<uint8_t> vertexData;
 
         size_t nVertices = 0;
-        if (pass.vertexInputFlags & VERTEX_INPUT_POSITION_BIT) {
+        if (bool(pass.vertexInputFlags & VertexInputFlags::Position)) {
             nVertices = data.positions.size();
         }
-        else if (pass.vertexInputFlags & VERTEX_INPUT_UV_BIT) {
+        else if (bool(pass.vertexInputFlags & VertexInputFlags::UV)) {
             nVertices = data.uvs.size();
         }
-        else if (pass.vertexInputFlags & VERTEX_INPUT_NORMAL_BIT) {
+        else if (bool(pass.vertexInputFlags & VertexInputFlags::Normal)) {
             nVertices = data.normals.size();
         }
-        else if (pass.vertexInputFlags & VERTEX_INPUT_TANGENT_BIT) {
+        else if (bool(pass.vertexInputFlags & VertexInputFlags::Tangent)) {
             nVertices = data.tangents.size();
         }
-        else if (pass.vertexInputFlags & VERTEX_INPUT_BITANGENT_BIT) {
+        else if (bool(pass.vertexInputFlags & VertexInputFlags::Bitangent)) {
             nVertices = data.bitangents.size();
         }
 
         //fill in vertex data
         //precision and type must correspond to types in VertexInput.h
         for (size_t i = 0; i < nVertices; i++) {
-            if (pass.vertexInputFlags & VERTEX_INPUT_POSITION_BIT) {
+            if (bool(pass.vertexInputFlags & VertexInputFlags::Position)) {
 
                 vertexData.push_back(((uint8_t*)&data.positions[i].x)[0]);
                 vertexData.push_back(((uint8_t*)&data.positions[i].x)[1]);
@@ -2382,7 +2382,7 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
                 vertexData.push_back(((uint8_t*)&data.positions[i].z)[2]);
                 vertexData.push_back(((uint8_t*)&data.positions[i].z)[3]);
             }
-            if (pass.vertexInputFlags & VERTEX_INPUT_UV_BIT) {
+            if (bool(pass.vertexInputFlags & VertexInputFlags::UV)) {
                 //stored as 16 bit signed float
                 const auto uHalf = glm::packHalf(glm::vec1(data.uvs[i].x));
                 vertexData.push_back(((uint8_t*)&uHalf)[0]);
@@ -2392,7 +2392,7 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
                 vertexData.push_back(((uint8_t*)&vHalf)[0]);
                 vertexData.push_back(((uint8_t*)&vHalf)[1]);
             }
-            if (pass.vertexInputFlags & VERTEX_INPUT_NORMAL_BIT) {
+            if (bool(pass.vertexInputFlags & VertexInputFlags::Normal)) {
                 //stored as 32 bit R10G10B10A2
                 const auto converted = vec3ToNormalizedR10B10G10A2(data.normals[i]);
 
@@ -2401,7 +2401,7 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
                 vertexData.push_back(((uint8_t*)&converted)[2]);
                 vertexData.push_back(((uint8_t*)&converted)[3]);
             }
-            if (pass.vertexInputFlags & VERTEX_INPUT_TANGENT_BIT) {
+            if (bool(pass.vertexInputFlags & VertexInputFlags::Tangent)) {
                 //stored as 32 bit R10G10B10A2
                 const auto converted = vec3ToNormalizedR10B10G10A2(data.tangents[i]);
 
@@ -2410,7 +2410,7 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
                 vertexData.push_back(((uint8_t*)&converted)[2]);
                 vertexData.push_back(((uint8_t*)&converted)[3]);
             }
-            if (pass.vertexInputFlags & VERTEX_INPUT_BITANGENT_BIT) {
+            if (bool(pass.vertexInputFlags & VertexInputFlags::Bitangent)) {
                 //stored as 32 bit R10G10B10A2
                 const auto converted = vec3ToNormalizedR10B10G10A2(data.bitangents[i]);
 
@@ -2471,7 +2471,7 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
         RenderPassResources resources;
 
         //add resources depending on material flags
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE) {
+        if (bool(pass.materialFeatures & MaterialFeatureFlags::AlbedoTexture)) {
 
             //create sampler if needed
             if (!albedoSampler.has_value()) {
@@ -2495,7 +2495,7 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
             resources.sampledImages.push_back(albedoTextureResource);
             resources.samplers.push_back(albedoSamplerResource);
         }
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE) {
+        if (bool(pass.materialFeatures & MaterialFeatureFlags::NormalTexture)) {
             if (!normalSampler.has_value()) {
                 if (normalTexture.index != invalidIndex) {
                     normalSampler = m_materialSamplers.normalSampler;
@@ -2518,7 +2518,7 @@ MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const 
             resources.samplers.push_back(normalSamplerResource);
 
         }
-        if (pass.materialFeatures & MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE) {
+        if (bool(pass.materialFeatures & MaterialFeatureFlags::SpecularTexture)) {
             if (!specularSampler.has_value()) {
                 if (specularTexture.index != invalidIndex) {
                     specularSampler = m_materialSamplers.specularSampler;
@@ -2572,7 +2572,7 @@ DynamicMeshHandle RenderBackend::createDynamicMeshInternal(const uint32_t maxPos
     const uint32_t memoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
     //create vertex buffer    
-    mesh.vertexBuffer.flags = VERTEX_INPUT_POSITION_BIT;
+    mesh.vertexBuffer.flags = VertexInputFlags::Position;
     const uint32_t floatsPerPosition = 3; //xyz
     VkDeviceSize vertexDataSize = maxPositions * sizeof(float) * floatsPerPosition;
 
@@ -3197,12 +3197,12 @@ DescriptorPoolAllocationSizes RenderBackend::descriptorSetAllocationSizeFromMate
     sizes.setCount = 1;
 
     const MaterialFeatureFlags materialFlagsBits[] = {
-        MaterialFeatureFlags::MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE,
-        MaterialFeatureFlags::MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE,
-        MaterialFeatureFlags::MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE
+        MaterialFeatureFlags::AlbedoTexture,
+        MaterialFeatureFlags::NormalTexture,
+        MaterialFeatureFlags::SpecularTexture
     };
     for (const MaterialFeatureFlags feature : materialFlagsBits) {
-        if (flags & feature) {
+        if (bool(flags & feature)) {
             //every material flag corresponds to a sampled texture and it's sampler
             sizes.imageSampled += 1;
             sizes.sampler += 1;
@@ -3587,15 +3587,15 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     material set layout
     */
     ShaderLayout shaderLayout;
-    if (reflection.materialFeatures & MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE) {
+    if (bool(reflection.materialFeatures & MaterialFeatureFlags::AlbedoTexture)) {
         shaderLayout.samplerBindings.push_back(0);
         shaderLayout.sampledImageBindings.push_back(3);
     }
-    if (reflection.materialFeatures & MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE) {
+    if (bool(reflection.materialFeatures & MaterialFeatureFlags::NormalTexture)) {
         shaderLayout.samplerBindings.push_back(1);
         shaderLayout.sampledImageBindings.push_back(4);
     }
-    if (reflection.materialFeatures & MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE) {
+    if (bool(reflection.materialFeatures & MaterialFeatureFlags::SpecularTexture)) {
         shaderLayout.samplerBindings.push_back(2);
         shaderLayout.sampledImageBindings.push_back(5);
     }
@@ -3631,7 +3631,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     uint32_t currentOffset = 0;
 
     for (uint32_t location = 0; location < VERTEX_INPUT_ATTRIBUTE_COUNT; location++) {
-        if (vertexInputFlagPerLocation[location] & reflection.vertexInputFlags) {
+        if (bool(vertexInputFlagPerLocation[location] & reflection.vertexInputFlags)) {
             VkVertexInputAttributeDescription attribute;
             attribute.location = location;
             attribute.binding = 0;

@@ -58,20 +58,24 @@ passes may need different vertex attributes and therefore different vertex buffe
 the same is true for material features
 */
 
-typedef enum MaterialFeatureFlags {
-    MATERIAL_FEATURE_FLAG_ALBEDO_TEXTURE = 0x00000001,
-    MATERIAL_FEATURE_FLAG_NORMAL_TEXTURE = 0x00000002,
-    MATERIAL_FEATURE_FLAG_SPECULAR_TEXTURE = 0x00000004,
-} MaterialFeatureFlags;
+enum class MaterialFeatureFlags {
+    AlbedoTexture   = 0x00000001,
+    NormalTexture   = 0x00000002,
+    SpecularTexture = 0x00000004,
+};
+
+MaterialFeatureFlags operator&(const MaterialFeatureFlags l, const MaterialFeatureFlags r);
+MaterialFeatureFlags operator|(const MaterialFeatureFlags l, const MaterialFeatureFlags r);
+
 
 struct MeshVertexBuffer {
     Buffer              buffer;
-    VertexInputFlags    flags;
+    VertexInputFlags    flags = VertexInputFlags(0);
 };
 
 struct MeshMaterial {
     VkDescriptorSet         descriptorSet;
-    MaterialFeatureFlags    flags;
+    MaterialFeatureFlags    flags = MaterialFeatureFlags(0);
 };
 
 struct Mesh {

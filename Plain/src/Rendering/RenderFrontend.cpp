@@ -1012,7 +1012,7 @@ void RenderFrontend::initImages() {
         desc.depth = 1;
         desc.type = ImageType::Type2D;
         desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
         desc.mipCount = MipCount::One;
         desc.manualMipCount = 0;
         desc.autoCreateMips = false;
@@ -1028,7 +1028,7 @@ void RenderFrontend::initImages() {
         desc.depth = 1;
         desc.type = ImageType::Type2D;
         desc.format = ImageFormat::Depth32;
-        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED);
+        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
         desc.mipCount = MipCount::One;
         desc.manualMipCount = 0;
         desc.autoCreateMips = false;
@@ -1046,7 +1046,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.mipCount = MipCount::One;
         desc.type = ImageType::Type2D;
-        desc.usageFlags = ImageUsageFlags(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED);
+        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
 
         m_motionVectorBuffer = m_backend.createImage(desc);
     }
@@ -1058,7 +1058,7 @@ void RenderFrontend::initImages() {
         desc.depth = 1;
         desc.type = ImageType::Type2D;
         desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_STORAGE | IMAGE_USAGE_SAMPLED);
+        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
         desc.mipCount = MipCount::One;
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
@@ -1073,7 +1073,7 @@ void RenderFrontend::initImages() {
         desc.depth = 1;
         desc.type = ImageType::Type2D;
         desc.format = ImageFormat::Depth16;
-        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_ATTACHMENT | IMAGE_USAGE_SAMPLED);
+        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
         desc.mipCount = MipCount::One;
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
@@ -1094,7 +1094,7 @@ void RenderFrontend::initImages() {
         desc.depth = 1;
         desc.type = ImageType::TypeCube;
         desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
         desc.mipCount = MipCount::Manual;
         desc.manualMipCount = m_specularProbeMipCount;
         desc.autoCreateMips = false;
@@ -1109,7 +1109,7 @@ void RenderFrontend::initImages() {
         desc.depth = 1;
         desc.type = ImageType::TypeCube;
         desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
         desc.mipCount = MipCount::One;
         desc.manualMipCount = 0;
         desc.autoCreateMips = false;
@@ -1124,7 +1124,7 @@ void RenderFrontend::initImages() {
         desc.depth = 1;
         desc.type = ImageType::TypeCube;
         desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
         desc.mipCount = MipCount::Manual;
         desc.manualMipCount = 8;
         desc.autoCreateMips = false;
@@ -1139,7 +1139,7 @@ void RenderFrontend::initImages() {
         desc.depth = 1;
         desc.type = ImageType::Type2D;
         desc.format = ImageFormat::RGBA16_sFloat;
-        desc.usageFlags = (ImageUsageFlags)(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
         desc.mipCount = MipCount::One;
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
@@ -1156,7 +1156,7 @@ void RenderFrontend::initImages() {
         desc.mipCount = MipCount::FullChain;
         desc.type = ImageType::Type2D;
         desc.format = ImageFormat::RG32_sFloat;
-        desc.usageFlags = ImageUsageFlags(IMAGE_USAGE_SAMPLED | IMAGE_USAGE_STORAGE);
+        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
 
         m_minMaxDepthPyramid = m_backend.createImage(desc);
     }
@@ -1170,7 +1170,7 @@ void RenderFrontend::initImages() {
         defaultDiffuseDesc.manualMipCount = 1;
         defaultDiffuseDesc.mipCount = MipCount::FullChain;
         defaultDiffuseDesc.type = ImageType::Type2D;
-        defaultDiffuseDesc.usageFlags = IMAGE_USAGE_SAMPLED;
+        defaultDiffuseDesc.usageFlags = ImageUsageFlags::Sampled;
         defaultDiffuseDesc.width = 1;
         defaultDiffuseDesc.height = 1;
 
@@ -1186,7 +1186,7 @@ void RenderFrontend::initImages() {
         defaultSpecularDesc.manualMipCount = 1;
         defaultSpecularDesc.mipCount = MipCount::FullChain;
         defaultSpecularDesc.type = ImageType::Type2D;
-        defaultSpecularDesc.usageFlags = IMAGE_USAGE_SAMPLED;
+        defaultSpecularDesc.usageFlags = ImageUsageFlags::Sampled;
         defaultSpecularDesc.width = 1;
         defaultSpecularDesc.height = 1;
 
@@ -1202,7 +1202,7 @@ void RenderFrontend::initImages() {
         defaultNormalDesc.manualMipCount = 1;
         defaultNormalDesc.mipCount = MipCount::FullChain;
         defaultNormalDesc.type = ImageType::Type2D;
-        defaultNormalDesc.usageFlags = IMAGE_USAGE_SAMPLED;
+        defaultNormalDesc.usageFlags = ImageUsageFlags::Sampled;
         defaultNormalDesc.width = 1;
         defaultNormalDesc.height = 1;
 
@@ -1218,7 +1218,7 @@ void RenderFrontend::initImages() {
         defaultCubemapDesc.manualMipCount = 1;
         defaultCubemapDesc.mipCount = MipCount::FullChain;
         defaultCubemapDesc.type = ImageType::Type2D;
-        defaultCubemapDesc.usageFlags = IMAGE_USAGE_SAMPLED;
+        defaultCubemapDesc.usageFlags = ImageUsageFlags::Sampled;
         defaultCubemapDesc.width = 1;
         defaultCubemapDesc.height = 1;
 

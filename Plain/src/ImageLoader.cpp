@@ -76,8 +76,7 @@ bool loadImage(const std::filesystem::path& path, const bool isFullPath, ImageDe
     outImage->type = ImageType::Type2D;
     outImage->format = format;
     outImage->autoCreateMips = true;
-    outImage->usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
-    
+    outImage->usageFlags = ImageUsageFlags::Sampled;
 
     /*
     simple copy 
@@ -194,7 +193,7 @@ bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outIma
     outImage->type = ImageType::Type2D;
     outImage->mipCount = MipCount::FullChain;
     outImage->autoCreateMips = false;
-    outImage->usageFlags = ImageUsageFlags::IMAGE_USAGE_SAMPLED;
+    outImage->usageFlags = ImageUsageFlags::Sampled;
 
     /*
     only specific compressed dds formats are supported at the moment
