@@ -5,7 +5,16 @@
 #include "Utilities/Timer.h"
 #include "CameraController.h"
 #include "ModelLoader.h"
+
+//disable ImGui warning
+#pragma warning( push )
+#pragma warning( disable : 26495)
+
 #include <imgui/imgui.h>
+
+//reenable warning
+#pragma warning( pop )
+
 #include "Utilities/MathUtils.h"
 
 /*
@@ -52,7 +61,6 @@ void App::run() {
 	while (!glfwWindowShouldClose(m_window)) {
 
         Timer::markNewFrame();
-        float time = Timer::getTimeFloat();
 
         m_renderer.newFrame();
 
