@@ -18,8 +18,8 @@ floatToNormalizedInt16
 */
 int16_t floatToNormalizedInt16(const float f) {
     const float fClamped = glm::clamp(f, -1.f, 1.f);
-    const float minValue = std::numeric_limits<int16_t>::min();
-    const float maxValue = std::numeric_limits<int16_t>::max();
+    constexpr float minValue = std::numeric_limits<int16_t>::min();
+    constexpr float maxValue = std::numeric_limits<int16_t>::max();
     const float valueRange = maxValue - minValue;
     const float fRemapped = fClamped * 0.5f + 0.5f; //remap to range [0, 1]
     return (int16_t)(fRemapped * valueRange + minValue);
@@ -36,7 +36,7 @@ uint32_t vec3ToNormalizedR10B10G10A2(const glm::vec3& v) {
         float value = v[i];
         const float clamped = glm::clamp(value, -1.f, 1.f);
         const float fRemapped = clamped * 0.5f + 0.5f; //remap to range [0, 1]
-        int32_t bits = fRemapped * valueRange + minValue;
+        int32_t bits = int32_t(fRemapped * valueRange + minValue);
 
         //get rid of bits above 10 in case of unsigned
         const int32_t bitOver10Mask = 1023;

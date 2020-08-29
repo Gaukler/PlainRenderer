@@ -74,8 +74,8 @@ struct MeshVertexBuffer {
 };
 
 struct MeshMaterial {
-    VkDescriptorSet         descriptorSet;
-    MaterialFeatureFlags    flags = MaterialFeatureFlags(0);
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    MaterialFeatureFlags flags = MaterialFeatureFlags(0);
 };
 
 struct Mesh {

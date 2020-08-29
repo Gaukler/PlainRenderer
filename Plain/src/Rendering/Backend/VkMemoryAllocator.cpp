@@ -179,7 +179,7 @@ void VkMemoryPool::free(const VulkanAllocation& allocation) {
 getUsedMemorySize
 =========
 */
-uint32_t VkMemoryPool::getUsedMemorySize() const{
+VkDeviceSize VkMemoryPool::getUsedMemorySize() const{
     return m_initialSize - m_freeMemorySize;
 }
 
@@ -188,7 +188,7 @@ uint32_t VkMemoryPool::getUsedMemorySize() const{
 getAllocatedMemorySize
 =========
 */
-uint32_t VkMemoryPool::getAllocatedMemorySize() const {
+VkDeviceSize VkMemoryPool::getAllocatedMemorySize() const {
     return m_initialSize;
 }
 
@@ -249,7 +249,7 @@ bool VkMemoryAllocator::allocate(const VkMemoryRequirements& requirements, const
     if (newPool.create(outAllocation->memoryIndex)) {
         poolList.push_back(newPool);
         bool success = poolList.back().allocate(requirements.size, requirements.alignment, outAllocation);
-        outAllocation->poolIndex = poolList.size() - 1;
+        outAllocation->poolIndex = (uint32_t)poolList.size() - 1;
         return success;
     }
     else {
@@ -272,7 +272,7 @@ void VkMemoryAllocator::free(const VulkanAllocation& allocation) {
 getMemoryStats
 =========
 */
-void VkMemoryAllocator::getMemoryStats(uint32_t* outAllocatedSize, uint32_t* outUsedSize) {
+void VkMemoryAllocator::getMemoryStats(VkDeviceSize* outAllocatedSize, VkDeviceSize* outUsedSize) {
     assert(outAllocatedSize != nullptr);
     assert(outUsedSize != nullptr);
     *outAllocatedSize = 0;

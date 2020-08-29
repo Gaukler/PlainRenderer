@@ -1836,8 +1836,8 @@ void RenderFrontend::drawUi() {
         ImGui::Text(("Main pass drawcalls: " + std::to_string(m_currentMainPassDrawcallCount)).c_str());
         ImGui::Text(("Shadow map drawcalls: " + std::to_string(m_currentShadowPassDrawcallCount)).c_str());
 
-        uint32_t allocatedMemorySizeByte;
-        uint32_t usedMemorySizeByte;
+        uint64_t allocatedMemorySizeByte;
+        uint64_t usedMemorySizeByte;
         m_backend.getMemoryStats(&allocatedMemorySizeByte, &usedMemorySizeByte);
 
         const float byteToMbDivider = 1048576;

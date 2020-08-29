@@ -10,8 +10,6 @@ bool isAxisAlignedBoundingBoxIntersectingViewFrustum(const ViewFrustum& frustum,
         return glm::sign(dot(p - pPlane, nPlane));
     };
 
-    bool isOutside = false;
-
     const auto& fps = frustum.points;
     const auto& fns = frustum.normals;
 

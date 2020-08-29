@@ -3,6 +3,7 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
+
 #include <vulkan/vulkan.h>
 
 #include "SpirvReflection.h"
@@ -12,9 +13,20 @@
 #include "Utilities/MathUtils.h"
 #include "TypeConversion.h"
 
+//disable ImGui warnings
+#pragma warning( push )
+#pragma warning( disable : 26495 26812)
+
 #include <imgui/imgui.h>
 #include <imgui/examples/imgui_impl_glfw.h>
 #include <imgui/examples/imgui_impl_vulkan.h>
+
+//reenable warnings
+#pragma warning( pop )
+
+//vulkan uses enums, which result in a warning every time they are used
+//this warning is disabled for this entire file
+#pragma warning( disable : 26812) //C26812: Prefer 'enum class' over 'enum' 
 
 /*
 ==================
@@ -1276,7 +1288,7 @@ ImageHandle RenderBackend::getSwapchainInputImage() {
 getMemoryStats
 =========
 */
-void RenderBackend::getMemoryStats(uint32_t* outAllocatedSize, uint32_t* outUsedSize) {
+void RenderBackend::getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsedSize) {
     assert(outAllocatedSize != nullptr);
     assert(outUsedSize != nullptr);
     m_vkAllocator.getMemoryStats(outAllocatedSize, outUsedSize);

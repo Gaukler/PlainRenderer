@@ -15,7 +15,7 @@ struct VulkanContext {
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
 
-    QueueFamilies queueFamilies;
+    QueueFamilies queueFamilies = {};
     VkQueue graphicQueue = VK_NULL_HANDLE;
     VkQueue presentQueue = VK_NULL_HANDLE;
     VkQueue computeQueue = VK_NULL_HANDLE;

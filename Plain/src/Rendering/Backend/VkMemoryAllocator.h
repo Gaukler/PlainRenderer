@@ -5,9 +5,9 @@
 
 //kept internally, forms a linked list
 struct VulkanAllocationInternal {
-    bool                isFree = true;
-    VkDeviceSize        offset;
-    VkDeviceSize        size;
+    bool                isFree  = true;
+    VkDeviceSize        offset  = 0;
+    VkDeviceSize        size    = 0;
     VulkanAllocationInternal* previous = nullptr;
     VulkanAllocationInternal* next = nullptr;
 };
@@ -25,13 +25,13 @@ public:
     bool allocate(const VkDeviceSize size, const VkDeviceSize alignment, VulkanAllocation* outAllocation);
     void free(const VulkanAllocation& allocation);
 
-    uint32_t getUsedMemorySize() const;
-    uint32_t getAllocatedMemorySize() const;
+    VkDeviceSize getUsedMemorySize() const;
+    VkDeviceSize getAllocatedMemorySize() const;
 private:
     const VkDeviceSize m_initialSize = 268435456; //256 mb
     VkDeviceSize m_freeMemorySize = m_initialSize;
 
-    VkDeviceMemory      m_vulkanMemory;
+    VkDeviceMemory m_vulkanMemory = VK_NULL_HANDLE;
     VulkanAllocationInternal* m_head; //linked allocation list head
 };
 
@@ -44,7 +44,7 @@ public:
     bool allocate(const VkMemoryRequirements& requirements, const VkMemoryPropertyFlags flags, VulkanAllocation* outAllocation);
     void free(const VulkanAllocation& allocation);
 
-    void getMemoryStats(uint32_t* outAllocatedSize, uint32_t* outUsedSize);
+    void getMemoryStats(VkDeviceSize* outAllocatedSize, VkDeviceSize* outUsedSize);
 private:
     uint32_t findMemoryIndex(const VkMemoryPropertyFlags flags, const uint32_t memoryTypeBitsRequirement);
 

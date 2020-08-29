@@ -9,9 +9,18 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+
+//disable glm warnings
+#pragma warning( push )
+#pragma warning( disable : 4201)
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/packing.hpp>
+
+//reenable warnings
+#pragma warning( pop )
+
 #include <variant>
 #include <unordered_map>
 #include <map>

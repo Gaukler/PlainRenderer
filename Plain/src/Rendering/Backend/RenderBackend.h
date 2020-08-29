@@ -203,7 +203,7 @@ public:
 
     ImageHandle getSwapchainInputImage();
 
-    void getMemoryStats(uint32_t* outAllocatedSize, uint32_t* outUsedSize);
+    void getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsedSize);
 
     std::vector<RenderPassTime> getRenderpassTimings();
 
