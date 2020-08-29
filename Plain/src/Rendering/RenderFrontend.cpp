@@ -1,7 +1,16 @@
 #include "pch.h"
 #include "RenderFrontend.h"
 #include "ImageLoader.h"
+
+//disable ImGui warning
+#pragma warning( push )
+#pragma warning( disable : 26495)
+
 #include <imgui/imgui.h>
+
+//reenable warning
+#pragma warning( pop )
+
 #include <Utilities/MathUtils.h>
 #include "Utilities/Timer.h"
 #include "Culling.h"
