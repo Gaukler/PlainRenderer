@@ -911,6 +911,11 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
             4,                                                                                  //location
             dataToCharArray((void*)&m_specularProbeMipCount, sizeof(m_specularProbeMipCount))   //value
             });
+        //texture LoD bias
+        constants.push_back({
+            5,                                                                                          //location
+            dataToCharArray((void*)&m_taaSettings.textureLoDBias, sizeof(m_taaSettings.textureLoDBias)) //value
+            });
     }
 
     return shaderDesc;
@@ -1883,6 +1888,8 @@ void RenderFrontend::drawUi() {
         m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Variance clipping", &m_taaSettings.useVarianceClipping);
         m_isTAAShaderDescriptionStale |= ImGui::Checkbox("YCoCg color space clipping", &m_taaSettings.useYCoCg);
         m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Dilate motion vector", &m_taaSettings.useMotionVectorDilation);
+
+        m_isMainPassShaderDescriptionStale |= ImGui::InputFloat("Texture LoD bias", &m_taaSettings.textureLoDBias);
     }
 
     //lighting settings

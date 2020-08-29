@@ -47,6 +47,7 @@ struct TAASettings {
     bool useVarianceClipping = true;
     bool useYCoCg = true;
     bool useMotionVectorDilation = true;
+    float textureLoDBias = -0.75f;
 };
 
 /*

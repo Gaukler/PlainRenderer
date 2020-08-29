@@ -32,6 +32,7 @@ layout(constant_id = 2) const bool indirectMultiscatterBRDF = false;
 layout(constant_id = 3) const bool geometricAA = false;
 
 layout(constant_id = 4) const uint specularProbeMipCount = 0;
+layout(constant_id = 5) const float TextureLoDBias = 0;
 
 layout(set=1, binding = 0) uniform sampler depthSampler;
 
@@ -140,9 +141,9 @@ float EnergyAverage(float roughness){
 }
 
 void main(){
-	vec3 albedoTexel 		= texture(sampler2D(colorTexture, 		colorSampler), 		passUV).rgb;
-	vec3 specularTexel 		= texture(sampler2D(specularTexture, 	specularSampler), 	passUV).rgb;
-	vec2 normalTexel 		= texture(sampler2D(normalTexture, 		normalSampler), 	passUV).rg;
+	vec3 albedoTexel 		= texture(sampler2D(colorTexture, 		colorSampler), 		passUV, TextureLoDBias).rgb;
+	vec3 specularTexel 		= texture(sampler2D(specularTexture, 	specularSampler), 	passUV, TextureLoDBias).rgb;
+	vec2 normalTexel 		= texture(sampler2D(normalTexture, 		normalSampler), 	passUV, TextureLoDBias).rg;
     vec3 normalTexelReconstructed = vec3(normalTexel, sqrt(1.f - normalTexel.x * normalTexel.x + normalTexel.y + normalTexel.y));
     normalTexelReconstructed = normalTexelReconstructed * 2.f - 1.f;
     
