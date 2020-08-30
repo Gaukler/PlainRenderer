@@ -1,0 +1,40 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(set=1, binding = 0, r8) 			    uniform image3D occlusionVolume;
+layout(set=1, binding = 1) 	                uniform texture2D skyShadowMap;
+layout(set=1, binding = 2)                  uniform sampler shadowSampler;
+
+layout(set=1, binding = 3, std140) uniform occlusionData{
+	mat4 skyShadowMatrix;
+    vec4 occlusionVolumeExtends;
+    vec4 sampleDirection;
+    float weight;
+};
+
+void main(){
+
+	ivec3 uv = ivec3(gl_GlobalInvocationID);
+    
+    //shadow test
+    float value;
+    {
+        //TODO: move texel size computation to CPU
+        vec3 texelSize = vec3(imageSize(occlusionVolume)) / occlusionVolumeExtends.xyz;
+        vec3 posWorld = vec3(uv + 0.5f) / texelSize - 0.5f * occlusionVolumeExtends.xyz; 
+        vec4 posLight = skyShadowMatrix * vec4(posWorld, 1.f);
+        vec2 shadowUV = posLight.xy / posLight.w;
+        shadowUV = shadowUV * 0.5f + 0.5f;
+        float shadowMapDepth = texture(sampler2D(skyShadowMap, shadowSampler), shadowUV).r;
+        float bias = 0.05f;
+        value = posLight.z - bias < shadowMapDepth ? 1 : 0;
+    }
+    
+    //add to volume value
+    float current = imageLoad(occlusionVolume, uv).r;
+    value = current + weight * value;
+    imageStore(occlusionVolume, uv, vec4(value, vec3(0.f)));
+}

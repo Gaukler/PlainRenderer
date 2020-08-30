@@ -709,6 +709,16 @@ void RenderBackend::setGlobalShaderInfo(const GlobalShaderInfo& info) {
 
 /*
 =========
+setUniformBufferData
+=========
+*/
+void RenderBackend::setUniformBufferData(const UniformBufferHandle buffer, const void* data, const size_t size) {
+    fillBuffer(m_uniformBuffers[buffer.index], data, size);
+}
+
+
+/*
+=========
 updateGraphicPassShaderDescription
 =========
 */

@@ -18,3 +18,7 @@ const uint32_t axisAlignedBoundingBoxIndicesPerMesh = 24;
 //useful for debug rendering, indices are line list
 void axisAlignedBoundingBoxToLineMesh(const AxisAlignedBoundingBox& bb, 
     std::vector<glm::vec3>* outPositions, std::vector<uint32_t>* outIndices);
+
+//used for shadow rendering around area
+//for fitting to camera frustum the exact frustum should be used, not the bounding box
+glm::mat4 viewProjectionMatrixAroundBB(const AxisAlignedBoundingBox& bb, const glm::vec3& viewDirection);

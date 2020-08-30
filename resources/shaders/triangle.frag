@@ -61,6 +61,13 @@ layout(set=1, binding = 10) uniform texture2D shadowMapCascade1;
 layout(set=1, binding = 11) uniform texture2D shadowMapCascade2;
 layout(set=1, binding = 12) uniform texture2D shadowMapCascade3;
 
+layout(set=1, binding = 13) uniform texture3D skyOcclusionVolume;
+
+layout(set=1, binding = 14, std140) uniform occlusionData{
+	mat4 skyShadowMatrix;
+    vec4 occlusionVolumeExtends;
+};
+
 layout(set=2, binding = 0) uniform sampler colorSampler;
 layout(set=2, binding = 1) uniform sampler normalSampler;
 layout(set=2, binding = 2) uniform sampler specularSampler;
@@ -314,6 +321,17 @@ void main(){
     }
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
+    //sky occlusion
+    float skyOcclusion;
+    {
+        float normalOffset = 0.5f;
+        vec3 aoSample = passPos + passTBN[2] * normalOffset;
+        aoSample = aoSample / occlusionVolumeExtends.xyz + 0.5f; 
+        aoSample = clamp(aoSample, 0, 1);
+        skyOcclusion = texture(sampler3D(skyOcclusionVolume, colorSampler), aoSample).r;
+        lightingIndirect *= skyOcclusion;
+    }
+    
 	color = (diffuseDirect + specularDirect) * sunStrengthExposed + lightingIndirect * skyStrengthExposed;
     
     vec3 cascadeTestColor[4] = { 
@@ -322,4 +340,6 @@ void main(){
     vec3(0, 0, 1), 
     vec3(1, 1, 0)};
     //color *= cascadeTestColor[cascadeIndex];
+    
+    color = vec3(skyOcclusion);
 }

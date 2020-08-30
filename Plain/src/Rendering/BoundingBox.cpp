@@ -96,6 +96,11 @@ void axisAlignedBoundingBoxToLineMesh(const AxisAlignedBoundingBox& bb,
     (*outIndices)[23] = r_l_b;
 }
 
+/*
+=========
+axisAlignedBoundingBoxTransformed
+=========
+*/
 std::array<glm::vec3, 8> getAxisAlignedBoundingBoxPoints(const AxisAlignedBoundingBox& bb) {
     return {
         glm::vec3(bb.min.x, bb.min.y, bb.min.z),
@@ -107,4 +112,54 @@ std::array<glm::vec3, 8> getAxisAlignedBoundingBoxPoints(const AxisAlignedBoundi
         glm::vec3(bb.max.x, bb.max.y, bb.min.z),
         glm::vec3(bb.max.x, bb.max.y, bb.max.z)
     };
+}
+
+/*
+=========
+viewProjectionMatrixAroundBB
+=========
+*/
+glm::mat4 viewProjectionMatrixAroundBB(const AxisAlignedBoundingBox& bb, const glm::vec3& viewDirection) {
+
+    glm::mat4 coordinateSystemCorrection = {
+        {1.0f, 0.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 0.5f, 0.f},
+        {0.0f, 0.0f, 0.5f, 1.0f} };
+
+    glm::mat4 V(1.f);
+    glm::vec3 forward = viewDirection;
+    glm::vec3 up = abs(forward.y) < 0.9999f ? glm::vec3(0.f, -1.f, 0.f) : glm::vec3(0.f, 0.f, -1.f);
+    glm::vec3 right = cross(forward, up);
+    up = cross(forward, right);
+    V[0] = glm::vec4(normalize(right), 1.f);
+    V[1] = glm::vec4(normalize(up), 1.f);
+    V[2] = glm::vec4(forward, 1.f);    
+
+    V = glm::transpose(V);
+
+    //reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
+    const auto frustumPoints = getAxisAlignedBoundingBoxPoints(bb);
+    glm::vec3 minP(std::numeric_limits<float>::max());
+    glm::vec3 maxP(std::numeric_limits<float>::min());
+
+    for (int i = 0; i < 8; i++) {
+        glm::vec3 p = frustumPoints[i];
+        glm::vec3 pTransformed = glm::mat3(V) * p;
+        minP = min(minP, pTransformed);
+        maxP = max(maxP, pTransformed);
+    }
+
+    glm::vec3 scale = glm::vec3(2.f) / (maxP - minP);
+    glm::vec3 offset = -0.5f * (maxP + minP) * scale;
+
+    glm::mat4 P(1.f);
+    P[0][0] = scale.x;
+    P[1][1] = scale.y;
+    P[2][2] = scale.z;
+    P[3][0] = offset.x;
+    P[3][1] = offset.y;
+    P[3][2] = offset.z;
+
+    return coordinateSystemCorrection * P * V;
 }

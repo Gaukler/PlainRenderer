@@ -165,6 +165,7 @@ public:
         const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle);
 
     void setGlobalShaderInfo(const GlobalShaderInfo& info);
+    void setUniformBufferData(const UniformBufferHandle buffer, const void* data, const size_t size);
 
     //set path and specialisation constants, forces recompile and pipeline recreation
     void updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc);

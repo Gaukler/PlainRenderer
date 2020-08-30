@@ -50,6 +50,27 @@ struct TAASettings {
     float textureLoDBias = -0.75f;
 };
 
+struct SkyOcclusionSettings {
+    glm::vec3 extends = glm::vec3(30.f, 20.f, 30.f);
+    int countBeforeBlend = 24;
+};
+
+//corresponds to uniform buffer in skyOcclusion.comp
+struct SkyOcclusionRenderData {
+    glm::mat4 shadowMatrix;
+    glm::vec4 extends;      //w unused
+    glm::vec4 sampleDirection;
+    float weight = 0.f;
+};
+
+struct SkyOcclusionState {
+    glm::mat4 viewProjectionMatrix = glm::mat4(1.f);
+    AxisAlignedBoundingBox volumeBoundingBox = {};
+    glm::vec3 sampleDirection = glm::vec3(0.f);
+    uint32_t sampleCounter = 0;
+    
+};
+
 /*
 shader resource types
 define inputs and outputs of renderpass
@@ -120,6 +141,10 @@ private:
 
     ShadingConfig m_shadingConfig;
     TAASettings m_taaSettings;
+    SkyOcclusionSettings m_skyOcclusionSettings;
+
+    void updateSkyOcclusionState();
+    SkyOcclusionState m_skyOcclusionState;
 
     /*
     passes
@@ -143,6 +168,10 @@ private:
     RenderPassHandle m_imageCopyHDRPass;
     RenderPassHandle m_tonemappingPass;
     RenderPassHandle m_taaPass;
+    RenderPassHandle m_skyShadowPass;
+    RenderPassHandle m_skyOcclusionGatherPass;  //gathers visibility from sky shadow map
+    RenderPassHandle m_skyOcclusionBlendPass;   //blends gather into actual volume after all samples are gathered
+    RenderPassHandle m_skyOcclusionResetPass;   //reset gather volume after blending
 
     /*
     resources
@@ -157,6 +186,8 @@ private:
     const uint32_t m_brdfLutRes = 512;
     const uint32_t m_nHistogramBins = 128;
     const uint32_t m_shadowCascadeCount = 4;
+    const uint32_t m_skyShadowMapRes = 512;
+    const uint32_t m_skyOcclusionVolumeRes = 64;
 
     const uint32_t m_histogramTileSizeX = 32;
     const uint32_t m_histogramTileSizeY = 32;
@@ -171,6 +202,9 @@ private:
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
     ImageHandle m_historyBuffer;
+    ImageHandle m_skyShadowMap;
+    ImageHandle m_skyOcclusionGatherVolume;
+    ImageHandle m_skyOcclusionVolume;
 
     std::vector<ImageHandle> m_shadowMaps;
 
@@ -195,6 +229,8 @@ private:
     StorageBufferHandle m_lightBuffer; //contains previous exposure and exposured light values
     StorageBufferHandle m_sunShadowInfoBuffer; //contains light matrices and cascade splits
     StorageBufferHandle m_depthPyramidSyncBuffer;
+
+    UniformBufferHandle m_skyOcclusionDataBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);

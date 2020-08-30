@@ -1,0 +1,21 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(set=1, binding = 0, r8) 			    uniform image3D occlusionVolume;
+layout(set=1, binding = 1) 	                uniform texture3D previousVolume;
+layout(set=1, binding = 2)                  uniform sampler volumeSampler;
+
+void main(){
+
+	ivec3 uv = ivec3(gl_GlobalInvocationID);
+    
+    float newInfo = texture(sampler3D(previousVolume, volumeSampler), (vec3(uv) + 0.5f) / vec3(64.f)).r;
+    float oldInfo  = imageLoad(occlusionVolume, uv).r;
+    
+    float value = mix(newInfo, oldInfo, 0.93f);
+    
+    imageStore(occlusionVolume, uv, vec4(value, vec3(0.f)));
+}

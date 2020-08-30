@@ -115,6 +115,8 @@ void RenderFrontend::newFrame() {
     for (auto& meshState : m_meshStates) {
         meshState.previousFrameModelMatrix = meshState.modelMatrix;
     }
+
+    updateSkyOcclusionState();
 }
 
 /*
@@ -218,6 +220,7 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
     
     auto passList = m_shadowPasses;
     passList.push_back(m_mainPass);
+    passList.push_back(m_skyShadowPass);
     const auto backendHandles = m_backend.createMeshes(dataInternal, passList);
 
     assert(backendHandles.size() == dataInternal.size());
@@ -227,7 +230,7 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
     for (uint32_t i = 0; i < backendHandles.size(); i++) {
 
         //create and store state and frontend handle        
-        frontendHandles.push_back({ (uint32_t)frontendHandles.size() });
+        frontendHandles.push_back({ (uint32_t)m_meshStates.size() });
         MeshState state;
         state.backendHandle = backendHandles[i];
         state.modelMatrix = glm::mat4(1.f);
@@ -250,7 +253,7 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
 
 /*
 =========
-issueMeshDraw
+issueMeshDraws
 =========
 */
 void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshes) {
@@ -340,7 +343,27 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
         for (uint32_t shadowPass = 0; shadowPass < m_shadowPasses.size(); shadowPass++) {
             m_backend.drawMeshes(culledMeshes, culledTransforms, m_shadowPasses[shadowPass]);
         }
-    }    
+    }  
+
+    //sky shadow pass
+    {
+        std::vector<MeshHandle> meshHandles;
+        std::vector<std::array<glm::mat4, 2>> transforms;
+
+        //FIXME add culling
+        for (uint32_t i = 0; i < meshes.size(); i++) {
+            const auto frontendHandle = meshes[i];
+            const auto& meshState = m_meshStates[frontendHandle.index];
+
+            const std::array<glm::mat4, 2> t = { 
+                m_skyOcclusionState.viewProjectionMatrix * meshState.modelMatrix, 
+                glm::mat4(1.f) }; //unused
+            
+            meshHandles.push_back(meshState.backendHandle);
+            transforms.push_back(t);
+        }
+        m_backend.drawMeshes(meshHandles, transforms, m_skyShadowPass);
+    }
 }
 
 /*
@@ -470,14 +493,18 @@ void RenderFrontend::renderFrame() {
 
         m_backend.setRenderPassExecution(preExposeLightsExecution);
     }
-    
     //depth prepass
     {
         RenderPassExecution prepassExe;
         prepassExe.handle = m_depthPrePass;
         m_backend.setRenderPassExecution(prepassExe);
     }
-
+    //sky shadow
+    {
+        RenderPassExecution exe;
+        exe.handle = m_skyShadowPass;
+        m_backend.setRenderPassExecution(exe);
+    }
     //depth pyramid
     {
         RenderPassExecution exe;
@@ -532,10 +559,82 @@ void RenderFrontend::renderFrame() {
 
         m_backend.setRenderPassExecution(exe);
     }
+    //sky occlusion reset
+    static uint32_t skyOcclusionIndex;
+    if (skyOcclusionIndex == 0) {
+        RenderPassExecution exe;
+        exe.handle = m_skyOcclusionResetPass;
+        exe.parents = {};
 
-    /*
-    render scene geometry
-    */
+        const uint32_t threadgroupSize = 4;
+        const uint32_t dispatchCount = (uint32_t)std::ceilf((float)m_skyOcclusionVolumeRes / threadgroupSize);
+
+        exe.dispatchCount[0] = dispatchCount;
+        exe.dispatchCount[1] = dispatchCount;
+        exe.dispatchCount[2] = dispatchCount;
+
+        const ImageResource occlusionVolume(m_skyOcclusionGatherVolume, 0, 0);
+
+        exe.resources.storageImages = { occlusionVolume };
+        m_backend.setRenderPassExecution(exe);
+    }
+    //sky occlusion gather
+    {
+        RenderPassExecution exe;
+        exe.handle = m_skyOcclusionGatherPass;
+        if (skyOcclusionIndex == 0) {
+            exe.parents = { m_skyShadowPass, m_skyOcclusionResetPass };
+        }
+        else {
+            exe.parents = { m_skyShadowPass };
+        }
+
+        const uint32_t threadgroupSize = 4;
+        const uint32_t dispatchCount = (uint32_t)std::ceilf((float)m_skyOcclusionVolumeRes / threadgroupSize);
+
+        exe.dispatchCount[0] = dispatchCount;
+        exe.dispatchCount[1] = dispatchCount;
+        exe.dispatchCount[2] = dispatchCount;
+
+        const ImageResource occlusionVolume(m_skyOcclusionGatherVolume, 0, 0);
+        const ImageResource skyShadowMap(m_skyShadowMap, 0, 1);
+        const SamplerResource shadowSamplerResource(m_shadowSampler, 2);
+        const UniformBufferResource skyShadowInfo(m_skyOcclusionDataBuffer, 3);
+
+        exe.resources.storageImages = { occlusionVolume };
+        exe.resources.sampledImages = { skyShadowMap };
+        exe.resources.samplers = { shadowSamplerResource};
+        exe.resources.uniformBuffers = { skyShadowInfo };
+
+        m_backend.setRenderPassExecution(exe);
+    }
+    //sky occlusion blend
+    skyOcclusionIndex++;
+    if (skyOcclusionIndex >= m_skyOcclusionSettings.countBeforeBlend) {
+        skyOcclusionIndex = 0;
+
+        RenderPassExecution exe;
+        exe.handle = m_skyOcclusionBlendPass;
+        exe.parents = { m_skyOcclusionGatherPass };
+
+        const uint32_t threadgroupSize = 4;
+        const uint32_t dispatchCount = (uint32_t)std::ceilf((float)m_skyOcclusionVolumeRes / threadgroupSize);
+
+        exe.dispatchCount[0] = dispatchCount;
+        exe.dispatchCount[1] = dispatchCount;
+        exe.dispatchCount[2] = dispatchCount;
+
+        const ImageResource occlusionVolume(m_skyOcclusionVolume, 0, 0);
+        const ImageResource occlusionGatherVolume(m_skyOcclusionGatherVolume, 0, 1);
+        const SamplerResource volumeSampler(m_colorSampler, 2);
+
+        exe.resources.storageImages = { occlusionVolume };
+        exe.resources.sampledImages = { occlusionGatherVolume };
+        exe.resources.samplers = { volumeSampler };
+
+        m_backend.setRenderPassExecution(exe);
+    }
+    //render scene geometry
     {
         const auto shadowSamplerResource = SamplerResource(m_shadowSampler, 0);
         const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 1);
@@ -546,11 +645,15 @@ void RenderFrontend::renderFrame() {
         const auto lustSamplerResource = SamplerResource(m_lutSampler, 6);
         const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
         const auto lightMatrixBuffer = StorageBufferResource(m_sunShadowInfoBuffer, true, 8);
+        const UniformBufferResource skyShadowInfoBuffer(m_skyOcclusionDataBuffer, 14);
+
+        ImageResource occlusionVolume(m_skyOcclusionVolume, 0, 13);
 
         RenderPassExecution mainPassExecution;
         mainPassExecution.handle = m_mainPass;
         mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
-        mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource };
+        mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolume };
+        mainPassExecution.resources.uniformBuffers = { skyShadowInfoBuffer };
 
         //add shadow map cascade resources
         for (uint32_t i = 0; i < m_shadowCascadeCount; i++) {
@@ -559,7 +662,7 @@ void RenderFrontend::renderFrame() {
         }
 
         mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource, cubeSamplerMipsResource, lustSamplerResource };
-        mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
+        mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass, m_skyOcclusionGatherPass };
         mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
         mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
         m_backend.setRenderPassExecution(mainPassExecution);
@@ -882,6 +985,45 @@ HistogramSettings RenderFrontend::createHistogramSettings() {
 
 /*
 =========
+updateSkyOcclusionState
+=========
+*/
+void RenderFrontend::updateSkyOcclusionState() {
+    //compute sample
+    {
+        glm::vec2 sample = hammersley2D(m_skyOcclusionState.sampleCounter);
+
+        //using cosine weighted samples
+        //reference: http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
+        float cosTheta = sqrt(1.f - sample.x);
+        float sinTheta = sqrt(1 - cosTheta * cosTheta);
+        float phi = 2.f * 3.1415 * sample.y;
+        m_skyOcclusionState.sampleDirection = glm::vec3(cos(phi) * sinTheta, cosTheta, sin(phi) * sinTheta);
+    }
+    //compute bounding box and matrix
+    {
+        m_skyOcclusionState.volumeBoundingBox.min = -m_skyOcclusionSettings.extends * 0.5f;
+        m_skyOcclusionState.volumeBoundingBox.max = m_skyOcclusionSettings.extends * 0.5f;
+        m_skyOcclusionState.viewProjectionMatrix = viewProjectionMatrixAroundBB(
+            m_skyOcclusionState.volumeBoundingBox,
+            m_skyOcclusionState.sampleDirection);
+    }
+    //push data to uniform buffer
+    {
+        SkyOcclusionRenderData occlusionRenderData;
+        occlusionRenderData.shadowMatrix = m_skyOcclusionState.viewProjectionMatrix;
+        occlusionRenderData.extends = glm::vec4(m_skyOcclusionSettings.extends, 0.f);
+        occlusionRenderData.sampleDirection = glm::vec4(m_skyOcclusionState.sampleDirection, 0.f);
+        occlusionRenderData.weight = 1.f / m_skyOcclusionSettings.countBeforeBlend;
+
+        m_backend.setUniformBufferData(m_skyOcclusionDataBuffer, &occlusionRenderData, sizeof(SkyOcclusionRenderData));
+    }
+    
+    m_skyOcclusionState.sampleCounter++;
+}
+
+/*
+=========
 createForwardPassShaderDescription
 =========
 */
@@ -1006,6 +1148,11 @@ void RenderFrontend::updateGlobalShaderInfo() {
     m_backend.setGlobalShaderInfo(m_globalShaderInfo);
 }
 
+/*
+=========
+initImages
+=========
+*/
 void RenderFrontend::initImages() {
     //load skybox
     {
@@ -1238,11 +1385,42 @@ void RenderFrontend::initImages() {
 
         m_defaultSkyTexture = m_backend.createImage(defaultCubemapDesc);
     }
+    //sky shadow map
+    {
+        ImageDescription desc;
+        desc.width = m_skyShadowMapRes;
+        desc.height = m_skyShadowMapRes;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::Depth16;
+        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
+
+        m_skyShadowMap = m_backend.createImage(desc);
+    }
+    //sky occlusion volume
+    {
+        ImageDescription desc;
+        desc.width = m_skyOcclusionVolumeRes;
+        desc.height = m_skyOcclusionVolumeRes;
+        desc.depth = m_skyOcclusionVolumeRes;
+        desc.type = ImageType::Type3D;
+        desc.format = ImageFormat::R8;
+        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
+
+        m_skyOcclusionVolume = m_backend.createImage(desc);
+        m_skyOcclusionGatherVolume = m_backend.createImage(desc);
+    }
 }
 
 /*
 =========
-createMainPass
+initSamplers
 =========
 */
 void RenderFrontend::initSamplers(){
@@ -1394,6 +1572,12 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         const size_t lightMatrixSize = sizeof(glm::mat4) * m_shadowCascadeCount;
         desc.size = splitSize + lightMatrixSize;
         m_sunShadowInfoBuffer = m_backend.createStorageBuffer(desc);
+    }
+    //sky shadow info buffer
+    {
+        UniformBufferDescription desc;
+        desc.size = sizeof(SkyOcclusionRenderData);
+        m_skyOcclusionDataBuffer = m_backend.createUniformBuffer(desc);
     }
 }
 
@@ -1757,6 +1941,49 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.shaderDescription = createTAAShaderDescription();
         m_taaPass = m_backend.createComputePass(desc);
     }
+    //sky shadow pass
+    {
+        const auto shadowMapAttachment = Attachment(
+            m_skyShadowMap,
+            0,
+            0,
+            AttachmentLoadOp::Clear);
+
+        GraphicPassDescription config;
+        config.name = "Sky shadow map";
+        config.attachments = { shadowMapAttachment };
+        config.shaderDescriptions.vertex.srcPathRelative = "depthOnlySimple.vert";
+        config.shaderDescriptions.fragment.srcPathRelative = "depthOnlySimple.frag";
+        config.depthTest.function = DepthFunction::LessEqual;
+        config.depthTest.write = true;
+        config.rasterization.cullMode = CullMode::Back;
+        config.rasterization.mode = RasterizationeMode::Fill;
+        config.rasterization.clampDepth = true;
+        config.blending = BlendState::None;
+
+        m_skyShadowPass = m_backend.createGraphicPass(config);
+    }
+    //sky occlusion pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Sky occlusion gather";
+        desc.shaderDescription.srcPathRelative = "skyOcclusionGather.comp";
+        m_skyOcclusionGatherPass = m_backend.createComputePass(desc);
+    }
+    //sky occlusion reset pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Sky occlusion reset";
+        desc.shaderDescription.srcPathRelative = "skyOcclusionReset.comp";
+        m_skyOcclusionResetPass = m_backend.createComputePass(desc);
+    }
+    //sky occlusion blend pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Sky occlusion blending";
+        desc.shaderDescription.srcPathRelative = "skyOcclusionBlend.comp";
+        m_skyOcclusionBlendPass = m_backend.createComputePass(desc);
+    }
 }
 
 /*
@@ -1931,7 +2158,10 @@ void RenderFrontend::drawUi() {
 
         m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Geometric AA", &m_shadingConfig.useGeometryAA);
     }
-   
+    //sky occlusion
+    if (ImGui::CollapsingHeader("Sky occlusion settings")) {
+        ImGui::DragInt("Sample count before blend", &m_skyOcclusionSettings.countBeforeBlend, 1.f, 1, 1024);
+    }
     //camera settings
     if (ImGui::CollapsingHeader("Camera settings")) {
         ImGui::InputFloat("Near plane", &m_camera.intrinsic.near);

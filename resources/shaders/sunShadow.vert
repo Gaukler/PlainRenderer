@@ -12,7 +12,7 @@ layout(location = 1) in vec2 inUv;
 layout(location = 0) out vec2 passUV;
 
 layout(push_constant) uniform MatrixBlock {
-	mat4 mvp;
+	mat4 unused;
 	mat4 model;
 } translation;
 
