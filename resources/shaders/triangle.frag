@@ -341,5 +341,5 @@ void main(){
     vec3(1, 1, 0)};
     //color *= cascadeTestColor[cascadeIndex];
     
-    color = vec3(skyOcclusion);
+    //color = vec3(skyOcclusion);
 }
