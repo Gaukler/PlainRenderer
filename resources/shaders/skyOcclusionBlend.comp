@@ -12,7 +12,7 @@ void main(){
 
 	ivec3 uv = ivec3(gl_GlobalInvocationID);
     
-    float newInfo = texture(sampler3D(previousVolume, volumeSampler), (vec3(uv) + 0.5f) / vec3(64.f)).r;
+    float newInfo = texelFetch(sampler3D(previousVolume, volumeSampler), uv, 0).r;
     float oldInfo  = imageLoad(occlusionVolume, uv).r;
     
     float value = mix(newInfo, oldInfo, 0.93f);
