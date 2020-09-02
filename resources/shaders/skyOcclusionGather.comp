@@ -24,17 +24,22 @@ void main(){
     {
         //TODO: move texel size computation to CPU
         vec3 texelSize = vec3(imageSize(occlusionVolume)) / occlusionVolumeExtends.xyz;
-        vec3 posWorld = vec3(uv + 0.5f) / texelSize - 0.5f * occlusionVolumeExtends.xyz; 
+        
+        vec3 samplePos = uv;    //in range [0, res]
+        samplePos += 0.5f;      //shift to texel center
+        vec3 posWorld = samplePos / texelSize;          //stretch to range [0, extend]
+        posWorld -= 0.5f * occlusionVolumeExtends.xyz;  //move to [-extend/2, extend/2]  
+        //posWorld += sampleDirection.xyz * 0.1; //bias to avoid bleeding
         vec4 posLight = skyShadowMatrix * vec4(posWorld, 1.f);
         vec2 shadowUV = posLight.xy / posLight.w;
         shadowUV = shadowUV * 0.5f + 0.5f;
         float shadowMapDepth = texture(sampler2D(skyShadowMap, shadowSampler), shadowUV).r;
-        float bias = 0.05f;
-        value = posLight.z - bias < shadowMapDepth ? 1 : 0;
+        value = posLight.z < shadowMapDepth ? 1 : 0;
     }
     
     //add to volume value
     float current = imageLoad(occlusionVolume, uv).r;
-    value = current + weight * value;
+    float pdfWithoutNoL = 1.f / (3.1415); //NoL reduced by ao NoL
+    value = current + weight * value / pdfWithoutNoL;
     imageStore(occlusionVolume, uv, vec4(value, vec3(0.f)));
 }
