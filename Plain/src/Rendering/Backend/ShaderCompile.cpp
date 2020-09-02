@@ -5,7 +5,7 @@
 
 //disable glslang warnings
 #pragma warning( push )
-#pragma warning( disable : 26495 26812)
+#pragma warning( disable : 26495 26812 26451)
 
 #include <glslang/Public/ShaderLang.h>
 #include <SPIRV/GlslangToSpv.h>
