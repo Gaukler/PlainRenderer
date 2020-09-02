@@ -69,6 +69,8 @@ layout(set=1, binding = 14, std140) uniform occlusionData{
     vec4 occlusionVolumeExtends;
 };
 
+layout(set=1, binding = 15) uniform sampler occlusionSampler;
+
 layout(set=2, binding = 0) uniform sampler colorSampler;
 layout(set=2, binding = 1) uniform sampler normalSampler;
 layout(set=2, binding = 2) uniform sampler specularSampler;
@@ -330,8 +332,7 @@ void main(){
         vec3 aoSample = passPos + passTBN[2] * normalOffset;    //in range[-extend/2, extend/2]    
         aoSample = aoSample/ occlusionVolumeExtends.xyz;        //in range [-0.5, 0.5]
         aoSample += 0.5f;                                       //in range [0, 1]
-        aoSample = clamp(aoSample, 0, 1);
-        skyOcclusion = texture(sampler3D(skyOcclusionVolume, colorSampler), aoSample).r;
+        skyOcclusion = texture(sampler3D(skyOcclusionVolume, occlusionSampler), aoSample).r;
         lightingIndirect *= skyOcclusion;
     }
     

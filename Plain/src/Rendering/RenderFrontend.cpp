@@ -646,6 +646,7 @@ void RenderFrontend::renderFrame() {
         const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
         const auto lightMatrixBuffer = StorageBufferResource(m_sunShadowInfoBuffer, true, 8);
         const UniformBufferResource skyShadowInfoBuffer(m_skyOcclusionDataBuffer, 14);
+        SamplerResource occlusionSamplerResource(m_skyOcclusionSampler, 15);
 
         ImageResource occlusionVolume(m_skyOcclusionVolume, 0, 13);
 
@@ -661,7 +662,8 @@ void RenderFrontend::renderFrame() {
             mainPassExecution.resources.sampledImages.push_back(shadowMapResource);
         }
 
-        mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource, cubeSamplerMipsResource, lustSamplerResource };
+        mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource, 
+            cubeSamplerMipsResource, lustSamplerResource, occlusionSamplerResource };
         mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass, m_skyOcclusionGatherPass };
         mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
         mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
@@ -1525,7 +1527,7 @@ void RenderFrontend::initSamplers(){
 
         m_defaultTexelSampler = m_backend.createSampler(desc);
     }
-    //sampler
+    //depth sampler
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Nearest;
@@ -1534,6 +1536,17 @@ void RenderFrontend::initSamplers(){
         desc.wrapping = SamplerWrapping::Clamp;
 
         m_clampedDepthSampler = m_backend.createSampler(desc);
+    }
+    //sky occlusion sampler
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Linear;
+        desc.maxMip = 0;
+        desc.useAnisotropy = false;
+        desc.wrapping = SamplerWrapping::Color;
+        desc.borderColor = SamplerBorderColor::White;
+
+        m_skyOcclusionSampler = m_backend.createSampler(desc);
     }
 }
 
