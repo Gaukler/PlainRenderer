@@ -324,9 +324,10 @@ void main(){
     //sky occlusion
     float skyOcclusion;
     {
-        float normalOffset = 0.5f;
-        vec3 aoSample = passPos + passTBN[2] * normalOffset;
-        aoSample = aoSample / occlusionVolumeExtends.xyz + 0.5f; 
+        float normalOffset = 0.05f;
+        vec3 aoSample = passPos + passTBN[2] * normalOffset;    //in range[-extend/2, extend/2]    
+        aoSample = aoSample/ occlusionVolumeExtends.xyz;        //in range [-0.5, 0.5]
+        aoSample += 0.5f;                                       //in range [0, 1]
         aoSample = clamp(aoSample, 0, 1);
         skyOcclusion = texture(sampler3D(skyOcclusionVolume, colorSampler), aoSample).r;
         lightingIndirect *= skyOcclusion;
