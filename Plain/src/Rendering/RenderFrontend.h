@@ -58,9 +58,9 @@ struct SkyOcclusionSettings {
 
 //corresponds to uniform buffer in skyOcclusion.comp
 struct SkyOcclusionRenderData {
-    glm::mat4 shadowMatrix;
-    glm::vec4 extends;      //w unused
-    glm::vec4 sampleDirection;
+    glm::mat4 shadowMatrix      = glm::mat4(1.f);
+    glm::vec4 extends           = glm::vec4(0.f);   //w unused
+    glm::vec4 sampleDirection   = glm::vec4(0.f);
     float weight = 0.f;
 };
 

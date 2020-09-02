@@ -3,9 +3,16 @@
 #include "Utilities/DirectoryUtils.h"
 #include "ShaderIO.h"
 
+//disable glslang warnings
+#pragma warning( push )
+#pragma warning( disable : 26495 26812)
+
 #include <glslang/Public/ShaderLang.h>
 #include <SPIRV/GlslangToSpv.h>
 #include <StandAlone/DirStackFileIncluder.h>
+
+//reenable warnings
+#pragma warning( pop )
 
 //from StandAlone/ResourceLimits.cpp
 const TBuiltInResource DefaultTBuiltInResource = {

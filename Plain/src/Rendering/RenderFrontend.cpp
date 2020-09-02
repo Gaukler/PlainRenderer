@@ -999,7 +999,7 @@ void RenderFrontend::updateSkyOcclusionState() {
         //reference: http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
         float cosTheta = sqrt(1.f - sample.x);
         float sinTheta = sqrt(1 - cosTheta * cosTheta);
-        float phi = 2.f * 3.1415 * sample.y;
+        float phi = 2.f * 3.1415f * sample.y;
         m_skyOcclusionState.sampleDirection = glm::vec3(cos(phi) * sinTheta, cosTheta, sin(phi) * sinTheta);
     }
     //compute bounding box and matrix
