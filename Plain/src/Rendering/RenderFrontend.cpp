@@ -1067,6 +1067,11 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
             5,                                                                                          //location
             dataToCharArray((void*)&m_taaSettings.textureLoDBias, sizeof(m_taaSettings.textureLoDBias)) //value
             });
+        //use sky occlusion
+        constants.push_back({
+            6,                                                                              //location
+            dataToCharArray((void*)&config.useSkyOcclusion, sizeof(config.useSkyOcclusion)) //value
+            });
     }
 
     return shaderDesc;
@@ -2160,6 +2165,7 @@ void RenderFrontend::drawUi() {
     }
     //sky occlusion
     if (ImGui::CollapsingHeader("Sky occlusion settings")) {
+        m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Use for shading", &m_shadingConfig.useSkyOcclusion);
         ImGui::DragInt("Sample count before blend", &m_skyOcclusionSettings.countBeforeBlend, 1.f, 1, 1024);
     }
     //camera settings

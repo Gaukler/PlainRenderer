@@ -33,6 +33,7 @@ layout(constant_id = 3) const bool geometricAA = false;
 
 layout(constant_id = 4) const uint specularProbeMipCount = 0;
 layout(constant_id = 5) const float TextureLoDBias = 0;
+layout(constant_id = 6) const bool useSkyOcclusion = true;
 
 layout(set=1, binding = 0) uniform sampler depthSampler;
 
@@ -323,6 +324,7 @@ void main(){
     
     //sky occlusion
     float skyOcclusion;
+    if(useSkyOcclusion)
     {
         float normalOffset = 0.05f;
         vec3 aoSample = passPos + passTBN[2] * normalOffset;    //in range[-extend/2, extend/2]    

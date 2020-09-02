@@ -40,6 +40,7 @@ struct ShadingConfig {
     DirectSpecularMultiscattering directMultiscatter = DirectSpecularMultiscattering::McAuley;
     bool useIndirectMultiscatter = true;
     bool useGeometryAA = true;
+    bool useSkyOcclusion = true;
 };
 
 struct TAASettings {
@@ -68,7 +69,6 @@ struct SkyOcclusionState {
     AxisAlignedBoundingBox volumeBoundingBox = {};
     glm::vec3 sampleDirection = glm::vec3(0.f);
     uint32_t sampleCounter = 0;
-    
 };
 
 /*
