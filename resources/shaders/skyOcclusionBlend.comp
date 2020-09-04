@@ -4,18 +4,30 @@
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
-layout(set=1, binding = 0, r8) 			    uniform image3D occlusionVolume;
-layout(set=1, binding = 1) 	                uniform texture3D previousVolume;
-layout(set=1, binding = 2)                  uniform sampler volumeSampler;
+layout(set=1, binding = 0, r8) 			    uniform image3D currentVolume;
+layout(set=1, binding = 1, r8) 			    uniform image3D previousVolume;
+layout(set=1, binding = 2) 	                uniform texture3D gatherVolume;
+layout(set=1, binding = 3)                  uniform sampler volumeSampler;
+
+layout(set=1, binding = 4, std140) uniform occlusionData{
+	mat4 skyShadowMatrix;
+    vec4 occlusionVolumeExtends;
+    vec4 sampleDirection;
+    vec4 occlusionVolumeOffset;
+    ivec4 texelMotionGathering;
+    ivec4 texelMotionRendering;
+    ivec4 texelMotionBlending;
+    float weight;
+};
 
 void main(){
 
 	ivec3 uv = ivec3(gl_GlobalInvocationID);
     
-    float newInfo = texelFetch(sampler3D(previousVolume, volumeSampler), uv, 0).r;
-    float oldInfo  = imageLoad(occlusionVolume, uv).r;
+    float gather = texelFetch(sampler3D(gatherVolume, volumeSampler), uv, 0).r;
+    float previous = imageLoad(previousVolume, uv - texelMotionBlending.xyz).r;
     
-    float value = mix(newInfo, oldInfo, 0.93f);
+    float value = mix(gather, previous, 0.8f);
     
-    imageStore(occlusionVolume, uv, vec4(value, vec3(0.f)));
+    imageStore(currentVolume, uv, vec4(value, vec3(0.f)));
 }

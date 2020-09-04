@@ -462,7 +462,6 @@ void RenderFrontend::renderFrame() {
 
         m_backend.setRenderPassExecution(histogramResetExecution);
     }
-
     //combine tiles
     {
         RenderPassExecution histogramCombineTilesExecution;
@@ -478,7 +477,6 @@ void RenderFrontend::renderFrame() {
 
         m_backend.setRenderPassExecution(histogramCombineTilesExecution);
     }
-
     //pre expose
     {
         StorageBufferResource lightBufferResource(m_lightBuffer, false, 0);
@@ -540,7 +538,6 @@ void RenderFrontend::renderFrame() {
         }
         m_backend.setRenderPassExecution(exe);
     }
-
     //compute light matrix
     {
         RenderPassExecution exe;
@@ -560,8 +557,7 @@ void RenderFrontend::renderFrame() {
         m_backend.setRenderPassExecution(exe);
     }
     //sky occlusion reset
-    static uint32_t skyOcclusionIndex;
-    if (skyOcclusionIndex == 0) {
+    if (m_skyOcclusionState.blendedLastFrame) {
         RenderPassExecution exe;
         exe.handle = m_skyOcclusionResetPass;
         exe.parents = {};
@@ -582,7 +578,7 @@ void RenderFrontend::renderFrame() {
     {
         RenderPassExecution exe;
         exe.handle = m_skyOcclusionGatherPass;
-        if (skyOcclusionIndex == 0) {
+        if (m_skyOcclusionState.blendedLastFrame) {
             exe.parents = { m_skyShadowPass, m_skyOcclusionResetPass };
         }
         else {
@@ -609,9 +605,8 @@ void RenderFrontend::renderFrame() {
         m_backend.setRenderPassExecution(exe);
     }
     //sky occlusion blend
-    skyOcclusionIndex++;
-    if (skyOcclusionIndex >= m_skyOcclusionSettings.countBeforeBlend) {
-        skyOcclusionIndex = 0;
+    //blend when this will be the last of batch (current +1 == max count)
+    if (m_skyOcclusionState.blendThisFrame) {
 
         RenderPassExecution exe;
         exe.handle = m_skyOcclusionBlendPass;
@@ -624,13 +619,19 @@ void RenderFrontend::renderFrame() {
         exe.dispatchCount[1] = dispatchCount;
         exe.dispatchCount[2] = dispatchCount;
 
-        const ImageResource occlusionVolume(m_skyOcclusionVolume, 0, 0);
-        const ImageResource occlusionGatherVolume(m_skyOcclusionGatherVolume, 0, 1);
-        const SamplerResource volumeSampler(m_colorSampler, 2);
+        const uint32_t currentVolumeIndex   = m_skyOcclusionState.activeVolumeIndex;
+        const uint32_t previousVolumeIndex  = (m_skyOcclusionState.activeVolumeIndex + 1) % 2;
 
-        exe.resources.storageImages = { occlusionVolume };
-        exe.resources.sampledImages = { occlusionGatherVolume };
+        const ImageResource currentVolumeResource(m_skyOcclusionVolume[currentVolumeIndex], 0, 0);
+        const ImageResource previousVolumeResource(m_skyOcclusionVolume[previousVolumeIndex], 0, 1);
+        const ImageResource gatherVolumeResource(m_skyOcclusionGatherVolume, 0, 2);
+        const SamplerResource volumeSampler(m_colorSampler, 3);
+        const UniformBufferResource skyShadowInfoBuffer(m_skyOcclusionDataBuffer, 4);
+
+        exe.resources.storageImages = { currentVolumeResource, previousVolumeResource };
+        exe.resources.sampledImages = { gatherVolumeResource };
         exe.resources.samplers = { volumeSampler };
+        exe.resources.uniformBuffers = { skyShadowInfoBuffer };
 
         m_backend.setRenderPassExecution(exe);
     }
@@ -648,7 +649,7 @@ void RenderFrontend::renderFrame() {
         const UniformBufferResource skyShadowInfoBuffer(m_skyOcclusionDataBuffer, 14);
         SamplerResource occlusionSamplerResource(m_skyOcclusionSampler, 15);
 
-        ImageResource occlusionVolume(m_skyOcclusionVolume, 0, 13);
+        ImageResource occlusionVolume(m_skyOcclusionVolume[m_skyOcclusionState.activeVolumeIndex], 0, 13);
 
         RenderPassExecution mainPassExecution;
         mainPassExecution.handle = m_mainPass;
@@ -664,7 +665,12 @@ void RenderFrontend::renderFrame() {
 
         mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource, 
             cubeSamplerMipsResource, lustSamplerResource, occlusionSamplerResource };
-        mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass, m_skyOcclusionGatherPass };
+        mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
+
+        if (m_skyOcclusionState.blendThisFrame) {
+            mainPassExecution.parents.push_back(m_skyOcclusionBlendPass);
+        }
+
         mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
         mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
         m_backend.setRenderPassExecution(mainPassExecution);
@@ -991,9 +997,28 @@ updateSkyOcclusionState
 =========
 */
 void RenderFrontend::updateSkyOcclusionState() {
+    //compute offset
+    glm::ivec3 texelMotion;
+    {
+        const glm::vec3 previousOffset = m_skyOcclusionState.offset;
+
+        //set offset to camera
+        m_skyOcclusionState.offset = m_camera.extrinsic.position;
+
+        //align to texel size
+        const glm::vec3 texelSize = glm::vec3(m_skyOcclusionVolumeRes) / m_skyOcclusionSettings.extends;
+        m_skyOcclusionState.offset = glm::floor(m_skyOcclusionState.offset * texelSize) / texelSize;
+
+        //compute motion
+        const glm::vec3 motion = previousOffset - m_skyOcclusionState.offset;
+        texelMotion = glm::ivec3(glm::round(motion * texelSize));
+        
+        //sum up motion
+        m_skyOcclusionState.texelMotionSinceLastBlend += texelMotion;
+    }
     //compute sample
     {
-        glm::vec2 sample = hammersley2D(m_skyOcclusionState.sampleCounter);
+        glm::vec2 sample = hammersley2D(m_skyOcclusionState.sampleCounterTotal);
 
         //using cosine weighted samples
         //reference: http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
@@ -1004,11 +1029,35 @@ void RenderFrontend::updateSkyOcclusionState() {
     }
     //compute bounding box and matrix
     {
-        m_skyOcclusionState.volumeBoundingBox.min = -m_skyOcclusionSettings.extends * 0.5f;
-        m_skyOcclusionState.volumeBoundingBox.max = m_skyOcclusionSettings.extends * 0.5f;
+        const float bbBias = 1.f;
+        m_skyOcclusionState.volumeBoundingBox.min = m_skyOcclusionState.offset - m_skyOcclusionSettings.extends * 0.5f - glm::vec3(bbBias);
+        m_skyOcclusionState.volumeBoundingBox.max = m_skyOcclusionState.offset + m_skyOcclusionSettings.extends * 0.5f + glm::vec3(bbBias);
         m_skyOcclusionState.viewProjectionMatrix = viewProjectionMatrixAroundBB(
             m_skyOcclusionState.volumeBoundingBox,
             m_skyOcclusionState.sampleDirection);
+    }
+    //iterate counters
+    glm::ivec3 texelMotionWithoutReset = m_skyOcclusionState.texelMotionSinceLastBlend;
+    {
+        m_skyOcclusionState.sampleCounterTotal++;
+        m_skyOcclusionState.sampleCounterBatch++;
+
+        m_skyOcclusionState.blendedLastFrame = m_skyOcclusionState.blendThisFrame;
+
+        if (m_skyOcclusionState.sampleCounterBatch >= m_skyOcclusionSettings.countBeforeBlend) {
+            //blending
+            m_skyOcclusionState.sampleCounterBatch = 0;
+            m_skyOcclusionState.texelMotionSinceLastBlend = glm::ivec3(0);
+            m_skyOcclusionState.blendThisFrame = true;
+
+            //occlusion volume is double buffered and switches on blend
+            m_skyOcclusionState.activeVolumeIndex++;
+            m_skyOcclusionState.activeVolumeIndex %= 2;
+        }
+        else {
+            //not blending
+            m_skyOcclusionState.blendThisFrame = false;
+        }
     }
     //push data to uniform buffer
     {
@@ -1016,12 +1065,14 @@ void RenderFrontend::updateSkyOcclusionState() {
         occlusionRenderData.shadowMatrix = m_skyOcclusionState.viewProjectionMatrix;
         occlusionRenderData.extends = glm::vec4(m_skyOcclusionSettings.extends, 0.f);
         occlusionRenderData.sampleDirection = glm::vec4(m_skyOcclusionState.sampleDirection, 0.f);
+        occlusionRenderData.offset = glm::vec4(m_skyOcclusionState.offset, 0.f);
         occlusionRenderData.weight = 1.f / m_skyOcclusionSettings.countBeforeBlend;
+        occlusionRenderData.texelMotionGathering = glm::ivec4(texelMotion, 0.f);
+        occlusionRenderData.texelMotionRendering = glm::ivec4(m_skyOcclusionState.texelMotionSinceLastBlend, 0.f);
+        occlusionRenderData.texelMotionBlending = glm::ivec4(texelMotionWithoutReset, 0.f);
 
         m_backend.setUniformBufferData(m_skyOcclusionDataBuffer, &occlusionRenderData, sizeof(SkyOcclusionRenderData));
     }
-    
-    m_skyOcclusionState.sampleCounter++;
 }
 
 /*
@@ -1420,7 +1471,8 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_skyOcclusionVolume = m_backend.createImage(desc);
+        m_skyOcclusionVolume[0] = m_backend.createImage(desc);
+        m_skyOcclusionVolume[1] = m_backend.createImage(desc);
         m_skyOcclusionGatherVolume = m_backend.createImage(desc);
     }
 }
@@ -2130,10 +2182,7 @@ void RenderFrontend::drawUi() {
             ImGui::Text(timeString.c_str());
         }
     }
-
     ImGui::End();
-
-    ImGui::Begin("Render settings");
 
     //TAA Settings
     if(ImGui::CollapsingHeader("TAA settings")){

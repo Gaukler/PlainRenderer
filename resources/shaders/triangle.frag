@@ -67,6 +67,12 @@ layout(set=1, binding = 13) uniform texture3D skyOcclusionVolume;
 layout(set=1, binding = 14, std140) uniform occlusionData{
 	mat4 skyShadowMatrix;
     vec4 occlusionVolumeExtends;
+    vec4 sampleDirection;
+    vec4 occlusionVolumeOffset;
+    ivec4 texelMotionGathering;
+    ivec4 texelMotionRendering;
+    ivec4 texelMotionBlending;
+    float weight;
 };
 
 layout(set=1, binding = 15) uniform sampler occlusionSampler;
@@ -329,9 +335,19 @@ void main(){
     if(useSkyOcclusion)
     {
         float normalOffset = 0.05f;
-        vec3 aoSample = passPos + passTBN[2] * normalOffset;    //in range[-extend/2, extend/2]    
+        vec3 aoSample = passPos;   
+        aoSample -= occlusionVolumeOffset.xyz;
+        aoSample += passTBN[2] * normalOffset;  //now in range[-extend/2, extend/2]    
+        
         aoSample = aoSample/ occlusionVolumeExtends.xyz;        //in range [-0.5, 0.5]
         aoSample += 0.5f;                                       //in range [0, 1]
+        
+        vec3 volumeRes = textureSize(sampler3D(skyOcclusionVolume, occlusionSampler), 0);
+        
+        vec3 motionCorrection = vec3(texelMotionRendering.xyz);
+        motionCorrection /= volumeRes;
+        aoSample -= motionCorrection;
+        
         skyOcclusion = texture(sampler3D(skyOcclusionVolume, occlusionSampler), aoSample).r;
         lightingIndirect *= skyOcclusion;
     }
@@ -344,6 +360,6 @@ void main(){
     vec3(0, 0, 1), 
     vec3(1, 1, 0)};
     //color *= cascadeTestColor[cascadeIndex];
-    
+
     //color = vec3(skyOcclusion);
 }
