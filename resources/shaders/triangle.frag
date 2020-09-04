@@ -33,7 +33,6 @@ layout(constant_id = 3) const bool geometricAA = false;
 
 layout(constant_id = 4) const uint specularProbeMipCount = 0;
 layout(constant_id = 5) const float TextureLoDBias = 0;
-layout(constant_id = 6) const bool useSkyOcclusion = true;
 
 layout(set=1, binding = 0) uniform sampler depthSampler;
 
@@ -61,21 +60,6 @@ layout(set=1, binding = 9)  uniform texture2D shadowMapCascade0;
 layout(set=1, binding = 10) uniform texture2D shadowMapCascade1;
 layout(set=1, binding = 11) uniform texture2D shadowMapCascade2;
 layout(set=1, binding = 12) uniform texture2D shadowMapCascade3;
-
-layout(set=1, binding = 13) uniform texture3D skyOcclusionVolume;
-
-layout(set=1, binding = 14, std140) uniform occlusionData{
-	mat4 skyShadowMatrix;
-    vec4 occlusionVolumeExtends;
-    vec4 sampleDirection;
-    vec4 occlusionVolumeOffset;
-    ivec4 texelMotionGathering;
-    ivec4 texelMotionRendering;
-    ivec4 texelMotionBlending;
-    float weight;
-};
-
-layout(set=1, binding = 15) uniform sampler occlusionSampler;
 
 layout(set=2, binding = 0) uniform sampler colorSampler;
 layout(set=2, binding = 1) uniform sampler normalSampler;
@@ -330,28 +314,6 @@ void main(){
     }
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
-    //sky occlusion
-    float skyOcclusion;
-    if(useSkyOcclusion)
-    {
-        float normalOffset = 0.05f;
-        vec3 aoSample = passPos;   
-        aoSample -= occlusionVolumeOffset.xyz;
-        aoSample += passTBN[2] * normalOffset;  //now in range[-extend/2, extend/2]    
-        
-        aoSample = aoSample/ occlusionVolumeExtends.xyz;        //in range [-0.5, 0.5]
-        aoSample += 0.5f;                                       //in range [0, 1]
-        
-        vec3 volumeRes = textureSize(sampler3D(skyOcclusionVolume, occlusionSampler), 0);
-        
-        vec3 motionCorrection = vec3(texelMotionRendering.xyz);
-        motionCorrection /= volumeRes;
-        aoSample -= motionCorrection;
-        
-        skyOcclusion = texture(sampler3D(skyOcclusionVolume, occlusionSampler), aoSample).r;
-        lightingIndirect *= skyOcclusion;
-    }
-    
 	color = (diffuseDirect + specularDirect) * sunStrengthExposed + lightingIndirect * skyStrengthExposed;
     
     vec3 cascadeTestColor[4] = { 
@@ -360,6 +322,4 @@ void main(){
     vec3(0, 0, 1), 
     vec3(1, 1, 0)};
     //color *= cascadeTestColor[cascadeIndex];
-
-    //color = vec3(skyOcclusion);
 }

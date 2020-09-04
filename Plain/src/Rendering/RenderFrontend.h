@@ -40,7 +40,6 @@ struct ShadingConfig {
     DirectSpecularMultiscattering directMultiscatter = DirectSpecularMultiscattering::McAuley;
     bool useIndirectMultiscatter = true;
     bool useGeometryAA = true;
-    bool useSkyOcclusion = true;
 };
 
 struct TAASettings {
@@ -49,40 +48,6 @@ struct TAASettings {
     bool useYCoCg = true;
     bool useMotionVectorDilation = true;
     float textureLoDBias = -0.75f;
-};
-
-struct SkyOcclusionSettings {
-    glm::vec3 extends = glm::vec3(30.f, 20.f, 30.f); //glm::vec3(10.f, 10.f, 10.f);// 
-    int countBeforeBlend = 24;
-};
-
-//corresponds to uniform buffer in skyOcclusion.comp
-struct SkyOcclusionRenderData {
-    glm::mat4 shadowMatrix      = glm::mat4(1.f);
-    glm::vec4 extends           = glm::vec4(0.f);   //w unused
-    glm::vec4 sampleDirection   = glm::vec4(0.f);
-    glm::vec4 offset            = glm::vec4(0.f);
-    glm::ivec4 texelMotionGathering = glm::ivec4(0.f);  //only frame to frame movement as gather volume is reprojected every frame
-    glm::ivec4 texelMotionRendering = glm::ivec4(0.f);  //texel motion since last blend, as position is only updated at blend time
-
-    //blending is done before rendering, so blending needs the texel motion, while rendering is already reset
-    //effectively texelMotionRendering but resetting one frame later
-    glm::ivec4 texelMotionBlending  = glm::ivec4(0.f);  
-
-    float weight = 0.f;
-};
-
-struct SkyOcclusionState {
-    glm::mat4 viewProjectionMatrix = glm::mat4(1.f);
-    AxisAlignedBoundingBox volumeBoundingBox = {};
-    glm::vec3 sampleDirection = glm::vec3(0.f);
-    uint32_t sampleCounterTotal = 0; //for sample creation, goes on
-    uint32_t sampleCounterBatch = 0; //to check when samples are batched and blended in
-    glm::vec3 offset = glm::vec3(0.f);
-    glm::ivec3 texelMotionSinceLastBlend = glm::ivec3(0.f);
-    bool blendThisFrame = false;
-    bool blendedLastFrame = false;
-    uint32_t activeVolumeIndex = 0;
 };
 
 /*
@@ -155,10 +120,6 @@ private:
 
     ShadingConfig m_shadingConfig;
     TAASettings m_taaSettings;
-    SkyOcclusionSettings m_skyOcclusionSettings;
-
-    void updateSkyOcclusionState();
-    SkyOcclusionState m_skyOcclusionState;
 
     /*
     passes
@@ -182,10 +143,6 @@ private:
     RenderPassHandle m_imageCopyHDRPass;
     RenderPassHandle m_tonemappingPass;
     RenderPassHandle m_taaPass;
-    RenderPassHandle m_skyShadowPass;
-    RenderPassHandle m_skyOcclusionGatherPass;  //gathers visibility from sky shadow map
-    RenderPassHandle m_skyOcclusionBlendPass;   //blends gather into actual volume after all samples are gathered
-    RenderPassHandle m_skyOcclusionResetPass;   //reset gather volume after blending
 
     /*
     resources
@@ -200,8 +157,6 @@ private:
     const uint32_t m_brdfLutRes = 512;
     const uint32_t m_nHistogramBins = 128;
     const uint32_t m_shadowCascadeCount = 4;
-    const uint32_t m_skyShadowMapRes = 512;
-    const uint32_t m_skyOcclusionVolumeRes = 64;
 
     const uint32_t m_histogramTileSizeX = 32;
     const uint32_t m_histogramTileSizeY = 32;
@@ -216,9 +171,6 @@ private:
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
     ImageHandle m_historyBuffer;
-    ImageHandle m_skyShadowMap;
-    ImageHandle m_skyOcclusionGatherVolume;
-    ImageHandle m_skyOcclusionVolume[2]; //double buffered
 
     std::vector<ImageHandle> m_shadowMaps;
 
@@ -230,7 +182,6 @@ private:
     SamplerHandle m_defaultTexelSampler;
     SamplerHandle m_clampedDepthSampler;
     SamplerHandle m_colorSampler;
-    SamplerHandle m_skyOcclusionSampler;
 
     MeshHandle m_skyCube;
 
@@ -244,8 +195,6 @@ private:
     StorageBufferHandle m_lightBuffer; //contains previous exposure and exposured light values
     StorageBufferHandle m_sunShadowInfoBuffer; //contains light matrices and cascade splits
     StorageBufferHandle m_depthPyramidSyncBuffer;
-
-    UniformBufferHandle m_skyOcclusionDataBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
