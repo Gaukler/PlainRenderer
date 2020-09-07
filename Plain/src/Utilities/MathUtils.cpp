@@ -29,6 +29,19 @@ uint32_t mipCountFromResolution(const uint32_t width, const uint32_t height, con
 
 /*
 =========
+mipCountFromResolution
+=========
+*/
+glm::mat4 getOpenGLToVulkanCorrectionMatrix() {
+    return glm::mat4(
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, -1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.5f, 0.0f,
+        0.0f, 0.0f, 0.5f, 1.0f);
+}
+
+/*
+=========
 hammersley2D
 =========
 */

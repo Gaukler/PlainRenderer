@@ -1017,6 +1017,7 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
     case ImageFormat::R8:               format = VK_FORMAT_R8_UNORM;                aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RG8:              format = VK_FORMAT_R8G8_UNORM;              aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RGBA8:            format = VK_FORMAT_R8G8B8A8_UNORM;          aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
+    case ImageFormat::R16_sFloat:       format = VK_FORMAT_R16_SFLOAT;              aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RG16_sFloat:      format = VK_FORMAT_R16G16_SFLOAT;           aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RG32_sFloat:      format = VK_FORMAT_R32G32_SFLOAT;           aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
     case ImageFormat::RGBA16_sFloat:    format = VK_FORMAT_R16G16B16A16_SFLOAT;     aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
@@ -2694,6 +2695,9 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
     }
     else if (target.desc.format == ImageFormat::R11G11B10_uFloat) {
         bytePerPixel = 4;
+    }
+    else if (target.desc.format == ImageFormat::R16_sFloat) {
+        bytePerPixel = 2;
     }
     else if (target.desc.format == ImageFormat::RG16_sFloat) {
         bytePerPixel = 4;
