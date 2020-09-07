@@ -77,7 +77,6 @@ private:
 
     void firstFramePreparation();
     void computeBRDFLut();
-    void renderHeightMap();
 
     uint32_t m_screenWidth = 800;
     uint32_t m_screenHeight = 600;
@@ -97,7 +96,7 @@ private:
 
     bool m_didResolutionChange = false;
     bool m_minimized = false;
-    bool m_isFirstFrame = true;
+    bool m_firstFrame = true;
     bool m_drawBBs = false; //debug rendering of bounding boxes
     bool m_freezeAndDrawCameraFrustum = false;
     bool m_drawShadowFrustum = false;
@@ -144,7 +143,6 @@ private:
     RenderPassHandle m_imageCopyHDRPass;
     RenderPassHandle m_tonemappingPass;
     RenderPassHandle m_taaPass;
-    RenderPassHandle m_heightMapPass;
 
     /*
     resources
@@ -160,12 +158,6 @@ private:
     const uint32_t m_nHistogramBins = 128;
     const uint32_t m_shadowCascadeCount = 4;
 
-    //height map covers 64x64m chunk with a resolution of 0.25m per texel
-    const uint32_t m_heightMapResolution = 256;
-    const uint32_t m_heightMapExtend = 64;
-    const float m_heightMinHeight = 0.1f;
-    const float m_heightMaxHeight = 100.f;
-
     const uint32_t m_histogramTileSizeX = 32;
     const uint32_t m_histogramTileSizeY = 32;
 
@@ -179,8 +171,6 @@ private:
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
     ImageHandle m_historyBuffer;
-    ImageHandle m_heightMap;
-    ImageHandle m_heightMapDepth; //used for rendering, could be used for height directly but would need additional info at runtime
 
     std::vector<ImageHandle> m_shadowMaps;
 

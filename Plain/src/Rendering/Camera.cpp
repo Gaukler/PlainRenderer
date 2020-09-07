@@ -1,6 +1,5 @@
 #include "pch.h"
 #include "Camera.h"
-#include "Utilities/MathUtils.h"
 
 /*
 =========
@@ -26,5 +25,11 @@ glm::mat4 projectionMatrixFromCameraIntrinsic(const CameraIntrinsic& intrinsic) 
     glm::mat4 projectionMatrix = 
         glm::perspective(glm::radians(intrinsic.fov), intrinsic.aspectRatio, intrinsic.near, intrinsic.far);
 
-    return getOpenGLToVulkanCorrectionMatrix() * projectionMatrix;
+    const glm::mat4 coordinateSystemCorrection = glm::mat4(
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, -1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.5f, 0.0f,
+        0.0f, 0.0f, 0.5f, 1.0f);
+
+    return coordinateSystemCorrection * projectionMatrix;
 }

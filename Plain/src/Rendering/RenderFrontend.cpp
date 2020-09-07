@@ -171,6 +171,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     if (!m_freezeAndDrawCameraFrustum) {
         updateCameraFrustum();
     }
+
     //update shadow frustum
     {
         std::vector<glm::vec3> frustumPoints;
@@ -217,7 +218,6 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
     
     auto passList = m_shadowPasses;
     passList.push_back(m_mainPass);
-    passList.push_back(m_heightMapPass);
     const auto backendHandles = m_backend.createMeshes(dataInternal, passList);
 
     assert(backendHandles.size() == dataInternal.size());
@@ -300,6 +300,7 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
         m_backend.drawMeshes(culledMeshes, culledTransformsMainPass, m_mainPass);
         m_backend.drawMeshes(culledMeshes, culledTransformsPrepass, m_depthPrePass);
     }
+    
     //shadow pass
     {
         std::vector<MeshHandle> culledMeshes;
@@ -340,36 +341,6 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
             m_backend.drawMeshes(culledMeshes, culledTransforms, m_shadowPasses[shadowPass]);
         }
     }  
-    //heigth map pass if needed
-    if (m_isFirstFrame || true) {
-
-        std::vector<MeshHandle> meshList;
-        std::vector<std::array<glm::mat4, 2>> transformList; //mvp and model matrix
-
-        const float extendHalf = m_heightMapExtend * 0.5f;
-        const glm::mat4 projection = glm::ortho(-extendHalf, extendHalf, -extendHalf, extendHalf, m_heightMinHeight, m_heightMaxHeight);
-        const glm::mat4 view = glm::mat4(
-            1.0f,  0.0f,  0.0f, 0.0f,
-            0.0f,  0.0f, -1.0f, 0.0f,
-            0.0f,  1.0f,  0.0f, 0.0f,
-            0.0f,  0.0f,  0.0f, 1.0f);
-
-        const glm::mat4 viewProjection = getOpenGLToVulkanCorrectionMatrix() * projection * view;
-
-        for (uint32_t i = 0; i < meshes.size(); i++) {
-            const auto frontendHandle = meshes[i];
-            const auto& meshState = m_meshStates[frontendHandle.index];
-
-            const glm::mat4 mvp = viewProjection * meshState.modelMatrix;
-
-            const std::array<glm::mat4, 2> transforms = { mvp, meshState.modelMatrix };
-
-            meshList.push_back(meshState.backendHandle);
-            transformList.push_back(transforms);
-        }
-
-        m_backend.drawMeshes(meshList, transformList, m_heightMapPass);
-    }
 }
 
 /*
@@ -396,11 +367,10 @@ void RenderFrontend::renderFrame() {
     additional passes that have to be executed before the main pass
     */
     std::vector<RenderPassHandle> preparationPasses;
-    renderHeightMap();
-    if (m_isFirstFrame) {
+
+    if (m_firstFrame) {
 
         firstFramePreparation();
-        
 
         preparationPasses.push_back(m_diffuseConvolutionPass);
         preparationPasses.push_back(m_brdfLutPass);
@@ -408,7 +378,7 @@ void RenderFrontend::renderFrame() {
             preparationPasses.push_back(m_specularConvolutionPerMipPasses[i]);
         }
 
-        m_isFirstFrame = false;
+        m_firstFrame = false;
     }
 
     if (m_isBRDFLutShaderDescriptionStale) {
@@ -603,6 +573,7 @@ void RenderFrontend::renderFrame() {
         m_backend.drawDynamicMeshes({ m_shadowFrustumModel }, { defaultTransform }, m_debugGeoPass);
         drawDebugPass = true;
     }
+
     //update bounding box debug models
     if(m_drawBBs && m_bbsToDebugDraw.size() > 0) {
         std::vector<std::vector<glm::vec3>> positionsPerMesh;
@@ -630,6 +601,7 @@ void RenderFrontend::renderFrame() {
 
         drawDebugPass = true;
     }
+
     //debug pass
     if (drawDebugPass) {
         RenderPassExecution debugPassExecution;
@@ -637,7 +609,10 @@ void RenderFrontend::renderFrame() {
         debugPassExecution.parents = { m_mainPass };
         m_backend.setRenderPassExecution(debugPassExecution);
     }
-    //render sky
+
+    /*
+    render sky
+    */
     {
         const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
         const auto skySamplerResource = SamplerResource(m_cubeSampler, 1);
@@ -649,7 +624,7 @@ void RenderFrontend::renderFrame() {
         skyPassExecution.resources.sampledImages = { skyTextureResource };
         skyPassExecution.resources.samplers = { skySamplerResource };
         skyPassExecution.parents = { m_mainPass };
-        if (m_isFirstFrame) {
+        if (m_firstFrame) {
             skyPassExecution.parents.push_back(m_toCubemapPass);
         }
         if (drawDebugPass) {
@@ -657,6 +632,7 @@ void RenderFrontend::renderFrame() {
         }
         m_backend.setRenderPassExecution(skyPassExecution);
     }
+
     //taa
     {
         ImageResource colorBufferResource(m_colorBuffer, 0, 0);
@@ -677,6 +653,7 @@ void RenderFrontend::renderFrame() {
 
         m_backend.setRenderPassExecution(taaExecution);
     }
+
     //copy to for next frame
     {
         ImageResource lastFrameResource(m_historyBuffer, 0, 0);
@@ -695,6 +672,7 @@ void RenderFrontend::renderFrame() {
 
         m_backend.setRenderPassExecution(copyNextFrameExecution);
     }
+
     //tonemap
     {
         const auto swapchainInput = m_backend.getSwapchainInputImage();
@@ -859,17 +837,6 @@ void RenderFrontend::computeBRDFLut() {
     brdfLutExecution.dispatchCount[1] = m_brdfLutRes / 8;
     brdfLutExecution.dispatchCount[2] = 1;
     m_backend.setRenderPassExecution(brdfLutExecution);
-}
-
-/*
-=========
-renderHeightMap
-=========
-*/
-void RenderFrontend::renderHeightMap() {
-    RenderPassExecution exe;
-    exe.handle = m_heightMapPass;
-    m_backend.setRenderPassExecution(exe);
 }
 
 /*
@@ -1269,36 +1236,6 @@ void RenderFrontend::initImages() {
         defaultCubemapDesc.height = 1;
 
         m_defaultSkyTexture = m_backend.createImage(defaultCubemapDesc);
-    }
-    //height map
-    {
-        ImageDescription desc;
-        desc.autoCreateMips = true;
-        desc.width  = m_heightMapResolution;
-        desc.height = m_heightMapResolution;
-        desc.depth  = 1;
-        desc.format = ImageFormat::R16_sFloat;
-        desc.manualMipCount = 1;
-        desc.mipCount = MipCount::One;
-        desc.type = ImageType::Type2D;
-        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Attachment;
-
-        m_heightMap = m_backend.createImage(desc);
-    }
-    //height map depth
-    {
-        ImageDescription desc;
-        desc.autoCreateMips = false;
-        desc.width = m_heightMapResolution;
-        desc.height = m_heightMapResolution;
-        desc.depth = 1;
-        desc.format = ImageFormat::Depth16;
-        desc.manualMipCount = 1;
-        desc.mipCount = MipCount::One;
-        desc.type = ImageType::Type2D;
-        desc.usageFlags = ImageUsageFlags::Attachment;
-
-        m_heightMapDepth = m_backend.createImage(desc);
     }
 }
 
@@ -1818,23 +1755,6 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.name = "TAA";
         desc.shaderDescription = createTAAShaderDescription();
         m_taaPass = m_backend.createComputePass(desc);
-    }
-    //height map pass
-    {
-        Attachment heightAttachment(m_heightMap, 0, 1, AttachmentLoadOp::Clear);
-        Attachment depthAttachment(m_heightMapDepth, 0, 0, AttachmentLoadOp::Clear);
-
-        GraphicPassDescription desc;
-        desc.attachments = { heightAttachment, depthAttachment };
-        desc.blending = BlendState::None;
-        desc.depthTest.function = DepthFunction::LessEqual;
-        desc.depthTest.write = true;
-        desc.name = "Height map";
-        desc.rasterization.cullMode = CullMode::Back;
-        desc.shaderDescriptions.vertex.srcPathRelative      = "heightMap.vert";
-        desc.shaderDescriptions.fragment.srcPathRelative    = "heightMap.frag";
-
-        m_heightMapPass = m_backend.createGraphicPass(desc);
     }
 }
 
