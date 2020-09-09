@@ -40,6 +40,7 @@ struct ShadingConfig {
     DirectSpecularMultiscattering directMultiscatter = DirectSpecularMultiscattering::McAuley;
     bool useIndirectMultiscatter = true;
     bool useGeometryAA = true;
+    bool useSkyOcclusion = true;
 };
 
 struct TAASettings {
@@ -48,6 +49,14 @@ struct TAASettings {
     bool useYCoCg = true;
     bool useMotionVectorDilation = true;
     float textureLoDBias = -0.75f;
+};
+
+struct SkyOcclusionRenderData {
+    glm::mat4 shadowMatrix = glm::mat4(1.f);
+    glm::vec4 extends = glm::vec4(0.f);   //w unused
+    glm::vec4 sampleDirection = glm::vec4(0.f);
+    glm::vec4 offset = glm::vec4(0.f);
+    float weight = 0.f;
 };
 
 /*
@@ -77,6 +86,10 @@ private:
 
     void firstFramePreparation();
     void computeBRDFLut();
+
+    //compute sky occlusion for all existing meshes
+    //renders multiple frames, so all current render commands are consumed
+    void computeSkyOcclusion();
 
     uint32_t m_screenWidth = 800;
     uint32_t m_screenHeight = 600;
@@ -143,6 +156,8 @@ private:
     RenderPassHandle m_imageCopyHDRPass;
     RenderPassHandle m_tonemappingPass;
     RenderPassHandle m_taaPass;
+    RenderPassHandle m_skyShadowPass;
+    RenderPassHandle m_skyOcclusionGatherPass;  //gathers visibility from sky shadow map
 
     /*
     resources
@@ -161,6 +176,10 @@ private:
     const uint32_t m_histogramTileSizeX = 32;
     const uint32_t m_histogramTileSizeY = 32;
 
+    const uint32_t m_skyShadowMapRes = 1024;
+    const uint32_t m_skyOcclusionVolumeRes = 64;
+    const uint32_t skyOcclusionSampleCount = 1024;
+
     ImageHandle m_colorBuffer;
     ImageHandle m_depthBuffer;
     ImageHandle m_motionVectorBuffer;
@@ -171,6 +190,8 @@ private:
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
     ImageHandle m_historyBuffer;
+    ImageHandle m_skyShadowMap;
+    ImageHandle m_skyOcclusionVolume;
 
     std::vector<ImageHandle> m_shadowMaps;
 
@@ -182,6 +203,7 @@ private:
     SamplerHandle m_defaultTexelSampler;
     SamplerHandle m_clampedDepthSampler;
     SamplerHandle m_colorSampler;
+    SamplerHandle m_skyOcclusionSampler;
 
     MeshHandle m_skyCube;
 
@@ -195,6 +217,8 @@ private:
     StorageBufferHandle m_lightBuffer; //contains previous exposure and exposured light values
     StorageBufferHandle m_sunShadowInfoBuffer; //contains light matrices and cascade splits
     StorageBufferHandle m_depthPyramidSyncBuffer;
+
+    UniformBufferHandle m_skyOcclusionDataBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);

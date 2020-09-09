@@ -618,6 +618,7 @@ newFrame
 */
 void RenderBackend::newFrame() {
     m_renderPassExecutions.clear();
+    m_swapchainInputImageHandle.index = VK_NULL_HANDLE;
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -751,7 +752,7 @@ void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle pa
 renderFrame
 =========
 */
-void RenderBackend::renderFrame() {
+void RenderBackend::renderFrame(bool presentToScreen) {
 
     prepareRenderPasses();
 
@@ -830,7 +831,7 @@ void RenderBackend::renderFrame() {
     VkSubmitInfo submit = {};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.pNext = nullptr;
-    submit.waitSemaphoreCount = 1;
+    submit.waitSemaphoreCount = presentToScreen ? 1 : 0;
     submit.pWaitSemaphores = &m_swapchain.imageAvaible;
 
     VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -838,13 +839,15 @@ void RenderBackend::renderFrame() {
 
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &currentCommandBuffer;
-    submit.signalSemaphoreCount = 1;
+    submit.signalSemaphoreCount = presentToScreen ? 1 : 0;;
     submit.pSignalSemaphores = &m_renderFinishedSemaphore;
 
     vkQueueSubmit(vkContext.graphicQueue, 1, &submit, m_renderFinishedFence);
 
-    presentImage(m_renderFinishedSemaphore);
-    glfwPollEvents();
+    if (presentToScreen) {
+        presentImage(m_renderFinishedSemaphore);
+        glfwPollEvents();
+    }
 
     //get timestamp results
     {
@@ -1287,7 +1290,6 @@ setSwapchainInputImage
 =========
 */
 ImageHandle RenderBackend::getSwapchainInputImage() {
-
     vkAcquireNextImageKHR(vkContext.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvaible, VK_NULL_HANDLE, &m_swapchainInputImageIndex);
     m_swapchainInputImageHandle = m_swapchain.imageHandles[m_swapchainInputImageIndex];
     return m_swapchainInputImageHandle;

@@ -218,6 +218,8 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
     
     auto passList = m_shadowPasses;
     passList.push_back(m_mainPass);
+    passList.push_back(m_depthPrePass);
+    passList.push_back(m_skyShadowPass);
     const auto backendHandles = m_backend.createMeshes(dataInternal, passList);
 
     assert(backendHandles.size() == dataInternal.size());
@@ -370,6 +372,7 @@ void RenderFrontend::renderFrame() {
 
     if (m_firstFrame) {
 
+        computeSkyOcclusion();
         firstFramePreparation();
 
         preparationPasses.push_back(m_diffuseConvolutionPass);
@@ -539,23 +542,28 @@ void RenderFrontend::renderFrame() {
         const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
         const auto lightMatrixBuffer = StorageBufferResource(m_sunShadowInfoBuffer, true, 8);
 
+        const ImageResource occlusionVolumeResource(m_skyOcclusionVolume, 0, 13);
+        const UniformBufferResource skyOcclusionInfoBuffer(m_skyOcclusionDataBuffer, 14);
+        const SamplerResource occlusionSamplerResource(m_skyOcclusionSampler, 15);
+
         RenderPassExecution mainPassExecution;
         mainPassExecution.handle = m_mainPass;
         mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
-        mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource };
+        mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource };
+        mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
+        mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource,
+            cubeSamplerMipsResource, lustSamplerResource, occlusionSamplerResource };
 
         //add shadow map cascade resources
         for (uint32_t i = 0; i < m_shadowCascadeCount; i++) {
             const auto shadowMapResource = ImageResource(m_shadowMaps[i], 0, 9+i);
             mainPassExecution.resources.sampledImages.push_back(shadowMapResource);
         }
-
-        mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource, 
-            cubeSamplerMipsResource, lustSamplerResource };
+        
         mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
-
         mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
         mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
+
         m_backend.setRenderPassExecution(mainPassExecution);
     }
 
@@ -700,7 +708,7 @@ void RenderFrontend::renderFrame() {
     updateSun();
     updateGlobalShaderInfo();
     m_backend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, { defaultTransform }, m_skyPass);
-    m_backend.renderFrame();
+    m_backend.renderFrame(true);
 }
 
 /*
@@ -841,6 +849,97 @@ void RenderFrontend::computeBRDFLut() {
 
 /*
 =========
+computeSkyOcclusion
+=========
+*/
+void RenderFrontend::computeSkyOcclusion() {
+
+    RenderPassExecution skyShadowExecution;
+    //configure shadow pass
+    {
+        skyShadowExecution.handle = m_skyShadowPass;
+    }
+
+    RenderPassExecution gatherExecution;
+    //configure gather pass
+    {
+        gatherExecution.handle = m_skyOcclusionGatherPass;
+        gatherExecution.parents = { m_skyShadowPass };
+
+        const uint32_t threadgroupSize = 4;
+        const uint32_t dispatchCount = (uint32_t)std::ceilf((float)m_skyOcclusionVolumeRes / threadgroupSize);
+
+        gatherExecution.dispatchCount[0] = dispatchCount;
+        gatherExecution.dispatchCount[1] = dispatchCount;
+        gatherExecution.dispatchCount[2] = dispatchCount;
+
+        const ImageResource occlusionVolume(m_skyOcclusionVolume, 0, 0);
+        const ImageResource skyShadowMap(m_skyShadowMap, 0, 1);
+        const SamplerResource shadowSamplerResource(m_shadowSampler, 2);
+        const UniformBufferResource skyShadowInfo(m_skyOcclusionDataBuffer, 3);
+
+        gatherExecution.resources.storageImages = { occlusionVolume };
+        gatherExecution.resources.sampledImages = { skyShadowMap };
+        gatherExecution.resources.samplers = { shadowSamplerResource };
+        gatherExecution.resources.uniformBuffers = { skyShadowInfo };
+    }
+    
+    SkyOcclusionRenderData occlusionData;
+    occlusionData.extends = glm::vec4(glm::vec3(30.f), 0.f);
+
+    occlusionData.weight = 1.f / skyOcclusionSampleCount;
+
+    for (int i = 0; i < skyOcclusionSampleCount; i++) {
+
+        //compute sample
+        {
+            glm::vec2 sample = hammersley2D(i);
+
+            //using cosine weighted samples
+            //reference: http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
+            float cosTheta = sqrt(1.f - sample.x);
+            float sinTheta = sqrt(1 - cosTheta * cosTheta);
+            float phi = 2.f * 3.1415f * sample.y;
+            occlusionData.sampleDirection = glm::vec4(cos(phi) * sinTheta, cosTheta, sin(phi) * sinTheta, 0.f);
+        }
+        //compute bounding box and matrix
+        {
+            const float bbBias = 1.f;
+            glm::vec3 bbMin = glm::vec3(occlusionData.offset) - glm::vec3(occlusionData.extends) * 0.5f - glm::vec3(bbBias);
+            glm::vec3 bbMax = glm::vec3(occlusionData.offset) + glm::vec3(occlusionData.extends) * 0.5f + glm::vec3(bbBias);
+            occlusionData.shadowMatrix = viewProjectionMatrixAroundBB(
+                AxisAlignedBoundingBox{ bbMin, bbMax },
+                glm::vec3(occlusionData.sampleDirection));
+        }
+
+        //sky shadow pass mesh commands
+        {
+            std::vector<MeshHandle> meshHandles;
+            std::vector<std::array<glm::mat4, 2>> transforms;
+
+            for (const auto& meshState : m_meshStates) {
+
+                const std::array<glm::mat4, 2> t = {
+                    occlusionData.shadowMatrix* meshState.modelMatrix,
+                    glm::mat4(1.f) }; //unused
+
+                meshHandles.push_back(meshState.backendHandle);
+                transforms.push_back(t);
+            }
+            m_backend.drawMeshes(meshHandles, transforms, m_skyShadowPass);
+        }
+
+        m_backend.newFrame();
+        m_backend.setUniformBufferData(m_skyOcclusionDataBuffer, &occlusionData, sizeof(SkyOcclusionRenderData));
+        m_backend.setRenderPassExecution(skyShadowExecution);
+        m_backend.setRenderPassExecution(gatherExecution);
+        m_backend.renderFrame(false);
+    }
+    m_backend.newFrame();
+}
+
+/*
+=========
 updateCameraFrustum
 =========
 */
@@ -918,6 +1017,11 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
         constants.push_back({
             5,                                                                                          //location
             dataToCharArray((void*)&m_taaSettings.textureLoDBias, sizeof(m_taaSettings.textureLoDBias)) //value
+            });
+        //sky occlusion
+        constants.push_back({
+            6,                                                                              //location
+            dataToCharArray((void*)&config.useSkyOcclusion, sizeof(config.useSkyOcclusion)) //value
             });
     }
 
@@ -1237,6 +1341,36 @@ void RenderFrontend::initImages() {
 
         m_defaultSkyTexture = m_backend.createImage(defaultCubemapDesc);
     }
+    //sky shadow map
+    {
+        ImageDescription desc;
+        desc.width = m_skyShadowMapRes;
+        desc.height = m_skyShadowMapRes;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::Depth16;
+        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
+
+        m_skyShadowMap = m_backend.createImage(desc);
+    }
+    //sky occlusion volume
+    {
+        ImageDescription desc;
+        desc.width = m_skyOcclusionVolumeRes;
+        desc.height = m_skyOcclusionVolumeRes;
+        desc.depth = m_skyOcclusionVolumeRes;
+        desc.type = ImageType::Type3D;
+        desc.format = ImageFormat::R8;
+        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
+
+        m_skyOcclusionVolume = m_backend.createImage(desc);
+    }
 }
 
 /*
@@ -1351,6 +1485,17 @@ void RenderFrontend::initSamplers(){
 
         m_clampedDepthSampler = m_backend.createSampler(desc);
     }
+    //sky occlusion sampler
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Linear;
+        desc.maxMip = 0;
+        desc.useAnisotropy = false;
+        desc.wrapping = SamplerWrapping::Color;
+        desc.borderColor = SamplerBorderColor::White;
+
+        m_skyOcclusionSampler = m_backend.createSampler(desc);
+    }
 }
 
 /*
@@ -1393,6 +1538,12 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         const size_t lightMatrixSize = sizeof(glm::mat4) * m_shadowCascadeCount;
         desc.size = splitSize + lightMatrixSize;
         m_sunShadowInfoBuffer = m_backend.createStorageBuffer(desc);
+    }
+    //sky shadow info buffer
+    {
+        UniformBufferDescription desc;
+        desc.size = sizeof(SkyOcclusionRenderData);
+        m_skyOcclusionDataBuffer = m_backend.createUniformBuffer(desc);
     }
 }
 
@@ -1756,6 +1907,35 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.shaderDescription = createTAAShaderDescription();
         m_taaPass = m_backend.createComputePass(desc);
     }
+    //sky shadow pass
+    {
+        const auto shadowMapAttachment = Attachment(
+            m_skyShadowMap,
+            0,
+            0,
+            AttachmentLoadOp::Clear);
+
+        GraphicPassDescription config;
+        config.name = "Sky shadow map";
+        config.attachments = { shadowMapAttachment };
+        config.shaderDescriptions.vertex.srcPathRelative = "depthOnlySimple.vert";
+        config.shaderDescriptions.fragment.srcPathRelative = "depthOnlySimple.frag";
+        config.depthTest.function = DepthFunction::LessEqual;
+        config.depthTest.write = true;
+        config.rasterization.cullMode = CullMode::Back;
+        config.rasterization.mode = RasterizationeMode::Fill;
+        config.rasterization.clampDepth = true;
+        config.blending = BlendState::None;
+
+        m_skyShadowPass = m_backend.createGraphicPass(config);
+    }
+    //sky occlusion pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Sky occlusion gather";
+        desc.shaderDescription.srcPathRelative = "skyOcclusionGather.comp";
+        m_skyOcclusionGatherPass = m_backend.createComputePass(desc);
+    }
 }
 
 /*
@@ -1886,6 +2066,7 @@ void RenderFrontend::drawUi() {
     }
     ImGui::End();
 
+    ImGui::Begin("Rendering");
     //TAA Settings
     if(ImGui::CollapsingHeader("TAA settings")){
         
@@ -1926,6 +2107,7 @@ void RenderFrontend::drawUi() {
             directMultiscatterBRDFOptions, 4);
 
         m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Geometric AA", &m_shadingConfig.useGeometryAA);
+        m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion", &m_shadingConfig.useSkyOcclusion);
     }
     //camera settings
     if (ImGui::CollapsingHeader("Camera settings")) {

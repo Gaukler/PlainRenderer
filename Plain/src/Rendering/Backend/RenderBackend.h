@@ -175,7 +175,7 @@ public:
     actual rendering of frame using commands generated from drawMesh calls
     commands are reset after frame rendering so backend is ready to record next frame
     */
-    void renderFrame();    
+    void renderFrame(bool presentToScreen);    
 
     /*
     the public create pass functions save the descriptions and create the handle, then call 

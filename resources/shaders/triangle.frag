@@ -33,6 +33,7 @@ layout(constant_id = 3) const bool geometricAA = false;
 
 layout(constant_id = 4) const uint specularProbeMipCount = 0;
 layout(constant_id = 5) const float TextureLoDBias = 0;
+layout(constant_id = 6) const bool useSkyOcclusion = false;
 
 layout(set=1, binding = 0) uniform sampler depthSampler;
 
@@ -55,11 +56,22 @@ layout(set=1, binding = 8, std430) buffer sunShadowInfo{
     mat4 lightMatrices[cascadeCount];
 };
 
-//bindings currently limit cascade count to 6, however should always be enough 4 anyway
 layout(set=1, binding = 9)  uniform texture2D shadowMapCascade0;
 layout(set=1, binding = 10) uniform texture2D shadowMapCascade1;
 layout(set=1, binding = 11) uniform texture2D shadowMapCascade2;
 layout(set=1, binding = 12) uniform texture2D shadowMapCascade3;
+
+layout(set=1, binding = 13) uniform texture3D skyOcclusionVolume;
+
+layout(set=1, binding = 14, std140) uniform occlusionData{
+	mat4 skyShadowMatrix;
+    vec4 occlusionVolumeExtends;
+    vec4 sampleDirection;
+    vec4 occlusionVolumeOffset;
+    float weight;
+};
+
+layout(set=1, binding = 15) uniform sampler occlusionSampler;
 
 layout(set=2, binding = 0) uniform sampler colorSampler;
 layout(set=2, binding = 1) uniform sampler normalSampler;
@@ -138,6 +150,15 @@ float EnergyAverage(float roughness){
           r = 0.409255f + smoothness * r;
     return min(0.999f, r);
 
+}
+
+float sampleSkyOcclusion(vec3 worldPos){
+
+    vec3 samplePos = worldPos - occlusionVolumeOffset.xyz;  //in range[-extend/2, extend/2]
+    samplePos = samplePos/ occlusionVolumeExtends.xyz;      //in range [-0.5, 0.5]
+    samplePos += 0.5f;                                      //in range [0, 1]
+    
+    return texture(sampler3D(skyOcclusionVolume, occlusionSampler), samplePos).r;
 }
 
 void main(){
@@ -314,7 +335,21 @@ void main(){
     }
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
-	color = (diffuseDirect + specularDirect) * sunStrengthExposed + lightingIndirect * skyStrengthExposed;
+    //sky occlusion
+    if(useSkyOcclusion){
+        
+        vec3 geoN = normalize(passTBN[2]);
+        float normalOffset = 0.5f;
+        
+        vec3 aoSamplePoint = passPos;
+        aoSamplePoint += normalOffset * geoN;   
+        
+        float skyOcclusion = sampleSkyOcclusion(aoSamplePoint);
+        
+        lightingIndirect *= skyOcclusion;
+    }
+    
+    color = (diffuseDirect + specularDirect) * sunStrengthExposed + lightingIndirect * skyStrengthExposed;
     
     vec3 cascadeTestColor[4] = { 
     vec3(1, 0, 0), 
