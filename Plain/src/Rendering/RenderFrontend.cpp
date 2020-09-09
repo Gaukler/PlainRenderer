@@ -884,8 +884,23 @@ void RenderFrontend::computeSkyOcclusion() {
         gatherExecution.resources.uniformBuffers = { skyShadowInfo };
     }
     
+    std::vector<AxisAlignedBoundingBox> meshBoundingBoxes;
+    for (const auto& mesh : m_meshStates) {
+        meshBoundingBoxes.push_back(mesh.bb);
+    }
+
     SkyOcclusionRenderData occlusionData;
+    auto sceneBB = combineAxisAlignedBoundingBoxes(meshBoundingBoxes);
+
+    const float bbBias = 1.f;
+    sceneBB.max += bbBias;
+    sceneBB.min -= bbBias;
+
+    const auto sceneMean = (sceneBB.max + sceneBB.min) * 0.5f;
+    const auto sceneExtends = (sceneBB.max - sceneBB.min);
+
     occlusionData.extends = glm::vec4(glm::vec3(30.f), 0.f);
+    occlusionData.offset = glm::vec4(sceneMean, 0.f);
 
     occlusionData.weight = 1.f / skyOcclusionSampleCount;
 
@@ -902,15 +917,9 @@ void RenderFrontend::computeSkyOcclusion() {
             float phi = 2.f * 3.1415f * sample.y;
             occlusionData.sampleDirection = glm::vec4(cos(phi) * sinTheta, cosTheta, sin(phi) * sinTheta, 0.f);
         }
-        //compute bounding box and matrix
-        {
-            const float bbBias = 1.f;
-            glm::vec3 bbMin = glm::vec3(occlusionData.offset) - glm::vec3(occlusionData.extends) * 0.5f - glm::vec3(bbBias);
-            glm::vec3 bbMax = glm::vec3(occlusionData.offset) + glm::vec3(occlusionData.extends) * 0.5f + glm::vec3(bbBias);
-            occlusionData.shadowMatrix = viewProjectionMatrixAroundBB(
-                AxisAlignedBoundingBox{ bbMin, bbMax },
-                glm::vec3(occlusionData.sampleDirection));
-        }
+
+        //compute shadow matrix
+        occlusionData.shadowMatrix = viewProjectionMatrixAroundBB(sceneBB, glm::vec3(occlusionData.sampleDirection));
 
         //sky shadow pass mesh commands
         {

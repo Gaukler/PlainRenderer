@@ -11,6 +11,8 @@ AxisAlignedBoundingBox axisAlignedBoundingBoxTransformed(const AxisAlignedBoundi
 
 std::array<glm::vec3, 8> getAxisAlignedBoundingBoxPoints(const AxisAlignedBoundingBox& bb);
 
+AxisAlignedBoundingBox combineAxisAlignedBoundingBoxes(const std::vector<AxisAlignedBoundingBox>& bbs);
+
 //vertex count that axisAlignedBoundingBoxToLineStrip produces
 const uint32_t axisAlignedBoundingBoxPositionsPerMesh = 8;
 const uint32_t axisAlignedBoundingBoxIndicesPerMesh = 24;

@@ -40,6 +40,29 @@ AxisAlignedBoundingBox axisAlignedBoundingBoxTransformed(const AxisAlignedBoundi
 
 /*
 =========
+combineAxisAlignedBoundingBoxes
+=========
+*/
+AxisAlignedBoundingBox combineAxisAlignedBoundingBoxes(const std::vector<AxisAlignedBoundingBox>& bbs) {
+
+    if (bbs.size() == 0) {
+        return AxisAlignedBoundingBox{ glm::vec3(0), glm::vec3(0) };
+    }
+
+    AxisAlignedBoundingBox result;
+    result.min = bbs[0].min;
+    result.max = bbs[0].max;
+
+    for (const auto& bb : bbs) {
+        result.min = glm::min(result.min, bb.min);
+        result.max = glm::max(result.max, bb.max);
+    }
+
+    return result;
+}
+
+/*
+=========
 axisAlignedBoundingBoxToLineMesh
 =========
 */
