@@ -2731,13 +2731,13 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         throw("Unsupported format");
     }
 
-    VkDeviceSize bytesPerRow = (size_t)target.extent.width * (size_t)bytePerPixel;
+    VkDeviceSize bytesPerRow = (size_t)(target.extent.width * bytePerPixel);
 
     //if size is bigger than mip level 0 automatically switch to next mip level
     uint32_t mipLevel = 0;
     uint32_t currentMipWidth = target.extent.width;
     uint32_t currentMipHeight = target.extent.height;
-    VkDeviceSize currentMipSize = (VkDeviceSize)currentMipWidth * (VkDeviceSize)currentMipHeight * (VkDeviceSize)bytePerPixel;
+    VkDeviceSize currentMipSize = (VkDeviceSize)(currentMipWidth * currentMipHeight * bytePerPixel);
 
     //memory offset per mip is tracked separately to check if a mip border is reached
     VkDeviceSize mipMemoryOffset = 0;
@@ -2768,8 +2768,8 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
 
             //BCn compressed textures store at least a 4x4 pixel block, resulting in at least a 4 pixel row
             if (isBCnCompressed) {
-                bytesPerRow = std::max(bytesPerRow, 4 * (VkDeviceSize)bytePerPixel);
-                currentMipSize = std::max(currentMipSize, 4 * 4 * (VkDeviceSize)bytePerPixel);
+                bytesPerRow = std::max(bytesPerRow, (VkDeviceSize)(4 * bytePerPixel));
+                currentMipSize = std::max(currentMipSize, (VkDeviceSize)(4 * 4 * bytePerPixel));
             }
         }
 
