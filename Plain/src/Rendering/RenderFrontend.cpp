@@ -896,11 +896,8 @@ void RenderFrontend::computeSkyOcclusion() {
     sceneBB.max += bbBias;
     sceneBB.min -= bbBias;
 
-    const auto sceneMean = (sceneBB.max + sceneBB.min) * 0.5f;
-    const auto sceneExtends = (sceneBB.max - sceneBB.min);
-
-    occlusionData.extends = glm::vec4(glm::vec3(30.f), 0.f);
-    occlusionData.offset = glm::vec4(sceneMean, 0.f);
+    occlusionData.offset = glm::vec4((sceneBB.max + sceneBB.min) * 0.5f, 0.f);
+    occlusionData.extends = glm::vec4((sceneBB.max - sceneBB.min), 0.f);
 
     occlusionData.weight = 1.f / skyOcclusionSampleCount;
 
