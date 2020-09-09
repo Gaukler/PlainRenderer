@@ -126,6 +126,7 @@ private:
 
     ViewFrustum m_cameraFrustum;
     float m_exposureOffset = 0.f;
+    glm::ivec3 m_skyOcclusionVolumeRes = glm::ivec3(0);
     
     void updateCameraFrustum();
 
@@ -177,7 +178,8 @@ private:
     const uint32_t m_histogramTileSizeY = 32;
 
     const uint32_t m_skyShadowMapRes = 1024;
-    const uint32_t m_skyOcclusionVolumeRes = 64;
+    const uint32_t m_skyOcclusionVolumeMaxRes = 256;
+    const float m_skyOcclusionTargetDensity = 0.5f; //meter/texel
     const uint32_t skyOcclusionSampleCount = 1024;
 
     ImageHandle m_colorBuffer;

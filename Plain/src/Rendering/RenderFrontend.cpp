@@ -853,36 +853,6 @@ computeSkyOcclusion
 =========
 */
 void RenderFrontend::computeSkyOcclusion() {
-
-    RenderPassExecution skyShadowExecution;
-    //configure shadow pass
-    {
-        skyShadowExecution.handle = m_skyShadowPass;
-    }
-
-    RenderPassExecution gatherExecution;
-    //configure gather pass
-    {
-        gatherExecution.handle = m_skyOcclusionGatherPass;
-        gatherExecution.parents = { m_skyShadowPass };
-
-        const uint32_t threadgroupSize = 4;
-        const uint32_t dispatchCount = (uint32_t)std::ceilf((float)m_skyOcclusionVolumeRes / threadgroupSize);
-
-        gatherExecution.dispatchCount[0] = dispatchCount;
-        gatherExecution.dispatchCount[1] = dispatchCount;
-        gatherExecution.dispatchCount[2] = dispatchCount;
-
-        const ImageResource occlusionVolume(m_skyOcclusionVolume, 0, 0);
-        const ImageResource skyShadowMap(m_skyShadowMap, 0, 1);
-        const SamplerResource shadowSamplerResource(m_shadowSampler, 2);
-        const UniformBufferResource skyShadowInfo(m_skyOcclusionDataBuffer, 3);
-
-        gatherExecution.resources.storageImages = { occlusionVolume };
-        gatherExecution.resources.sampledImages = { skyShadowMap };
-        gatherExecution.resources.samplers = { shadowSamplerResource };
-        gatherExecution.resources.uniformBuffers = { skyShadowInfo };
-    }
     
     std::vector<AxisAlignedBoundingBox> meshBoundingBoxes;
     for (const auto& mesh : m_meshStates) {
@@ -900,6 +870,71 @@ void RenderFrontend::computeSkyOcclusion() {
     occlusionData.extends = glm::vec4((sceneBB.max - sceneBB.min), 0.f);
 
     occlusionData.weight = 1.f / skyOcclusionSampleCount;
+
+    m_skyOcclusionVolumeRes = glm::ivec3(
+        pow(2, int(std::ceil(log2f(occlusionData.extends.x / m_skyOcclusionTargetDensity)))),
+        pow(2, int(std::ceil(log2f(occlusionData.extends.y / m_skyOcclusionTargetDensity)))),
+        pow(2, int(std::ceil(log2f(occlusionData.extends.z / m_skyOcclusionTargetDensity))))
+    );
+    m_skyOcclusionVolumeRes = glm::min(m_skyOcclusionVolumeRes, glm::ivec3(m_skyOcclusionVolumeMaxRes));
+
+    std::cout << "\nSky occlusion resolution:\n"
+        << "x-axis: " << std::to_string(m_skyOcclusionVolumeRes.x) << "\n"
+        << "y-axis: " << std::to_string(m_skyOcclusionVolumeRes.y) << "\n"
+        << "z-axis: " << std::to_string(m_skyOcclusionVolumeRes.z) << "\n";
+
+    const glm::vec3 density = glm::vec3(occlusionData.extends) / glm::vec3(m_skyOcclusionVolumeRes);
+
+    std::cout << "\nSky occlusion density:\n" 
+        << "x-axis: " << std::to_string(density.x) << " texel/meter\n"
+        << "y-axis: " << std::to_string(density.y) << " texel/meter\n"
+        << "z-axis: " << std::to_string(density.z) << " texel/meter\n";
+
+    //create sky shadow volume
+    {
+        ImageDescription desc;
+        desc.width = m_skyOcclusionVolumeRes.x;
+        desc.height = m_skyOcclusionVolumeRes.y;
+        desc.depth = m_skyOcclusionVolumeRes.z;
+        desc.type = ImageType::Type3D;
+        desc.format = ImageFormat::R8;
+        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
+
+        m_skyOcclusionVolume = m_backend.createImage(desc);
+    }
+
+    RenderPassExecution skyShadowExecution;
+    //configure shadow pass
+    {
+        skyShadowExecution.handle = m_skyShadowPass;
+    }
+
+    RenderPassExecution gatherExecution;
+    //configure gather pass
+    {
+        gatherExecution.handle = m_skyOcclusionGatherPass;
+        gatherExecution.parents = { m_skyShadowPass };
+
+        const uint32_t threadgroupSize = 4;
+        const glm::ivec3 dispatchCount = glm::ivec3(glm::ceil(glm::vec3(m_skyOcclusionVolumeRes) / float(threadgroupSize)));
+
+        gatherExecution.dispatchCount[0] = dispatchCount.x;
+        gatherExecution.dispatchCount[1] = dispatchCount.y;
+        gatherExecution.dispatchCount[2] = dispatchCount.z;
+
+        const ImageResource occlusionVolume(m_skyOcclusionVolume, 0, 0);
+        const ImageResource skyShadowMap(m_skyShadowMap, 0, 1);
+        const SamplerResource shadowSamplerResource(m_shadowSampler, 2);
+        const UniformBufferResource skyShadowInfo(m_skyOcclusionDataBuffer, 3);
+
+        gatherExecution.resources.storageImages = { occlusionVolume };
+        gatherExecution.resources.sampledImages = { skyShadowMap };
+        gatherExecution.resources.samplers = { shadowSamplerResource };
+        gatherExecution.resources.uniformBuffers = { skyShadowInfo };
+    }
 
     for (int i = 0; i < skyOcclusionSampleCount; i++) {
 
@@ -1362,21 +1397,8 @@ void RenderFrontend::initImages() {
 
         m_skyShadowMap = m_backend.createImage(desc);
     }
-    //sky occlusion volume
-    {
-        ImageDescription desc;
-        desc.width = m_skyOcclusionVolumeRes;
-        desc.height = m_skyOcclusionVolumeRes;
-        desc.depth = m_skyOcclusionVolumeRes;
-        desc.type = ImageType::Type3D;
-        desc.format = ImageFormat::R8;
-        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        m_skyOcclusionVolume = m_backend.createImage(desc);
-    }
+    //sky occlusion volume is created later
+    //its resolution is dependent on scene size in order to fit desired texel density
 }
 
 /*
