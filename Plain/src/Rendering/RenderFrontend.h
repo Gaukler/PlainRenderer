@@ -36,12 +36,13 @@ enum class DiffuseBRDF : int { Lambert = 0, Disney = 1, CoDWWII = 2, Titanfall2 
 enum class DirectSpecularMultiscattering : int { McAuley = 0, Simplified = 1, ScaledGGX = 2, None = 3};
 
 struct ShadingConfig {
-    DiffuseBRDF diffuseBRDF = DiffuseBRDF::Titanfall2;
+    DiffuseBRDF diffuseBRDF = DiffuseBRDF::CoDWWII;
     DirectSpecularMultiscattering directMultiscatter = DirectSpecularMultiscattering::McAuley;
     bool useIndirectMultiscatter = true;
     bool useGeometryAA = true;
     bool useSkyOcclusion = true;
     bool useSkyOcclusionDirection = true;
+    bool useSkyBounceApproximation = true;
 };
 
 struct TAASettings {

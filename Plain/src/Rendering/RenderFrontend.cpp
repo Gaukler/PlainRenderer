@@ -1069,6 +1069,11 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
             7,                                                                                                  //location
             dataToCharArray((void*)&config.useSkyOcclusionDirection, sizeof(config.useSkyOcclusionDirection))   //value
             });
+        //sky bounce approximation
+        constants.push_back({
+            8,                                                                                                  //location
+            dataToCharArray((void*)&config.useSkyBounceApproximation, sizeof(config.useSkyBounceApproximation)) //value
+            });
     }
 
     return shaderDesc;
@@ -2142,6 +2147,7 @@ void RenderFrontend::drawUi() {
         m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Geometric AA", &m_shadingConfig.useGeometryAA);
         m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion", &m_shadingConfig.useSkyOcclusion);
         m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion direction", &m_shadingConfig.useSkyOcclusionDirection);
+        m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky bounce approximation", &m_shadingConfig.useSkyBounceApproximation);
     }
     //camera settings
     if (ImGui::CollapsingHeader("Camera settings")) {

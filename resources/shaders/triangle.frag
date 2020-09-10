@@ -35,6 +35,7 @@ layout(constant_id = 4) const uint specularProbeMipCount = 0;
 layout(constant_id = 5) const float TextureLoDBias = 0;
 layout(constant_id = 6) const bool useSkyOcclusion = false;
 layout(constant_id = 7) const bool useSkyOcclusionDirection = false;
+layout(constant_id = 8) const bool useSkyBounceApproximation = false;
 
 layout(set=1, binding = 0) uniform sampler depthSampler;
 
@@ -172,6 +173,14 @@ SkyOcclusion sampleSkyOcclusion(vec3 worldPos){
     return occlusion;
 }
 
+//from: "Practical Realtime Strategies for Accurate Indirect Occlusion", section 5
+vec3 AOIndirectBounceApproximation(vec3 albedo, float ao){
+    vec3 a = 2.0404 * albedo - 0.3324;
+    vec3 b = 4.7951 * albedo - 0.6417; 
+    vec3 c = 2.7552 * albedo + 0.6903;
+    return a * ao * ao * ao - b * ao * ao + c * ao;
+}
+
 void main(){
 	vec3 albedoTexel 		= texture(sampler2D(colorTexture, 		colorSampler), 		passUV, TextureLoDBias).rgb;
 	vec3 specularTexel 		= texture(sampler2D(specularTexture, 	specularSampler), 	passUV, TextureLoDBias).rgb;
@@ -279,6 +288,7 @@ void main(){
 	
     //sky occlusion
     SkyOcclusion skyOcclusion;
+    vec3 occlusionFactor = vec3(0.f);
     {
         vec3 geoN = normalize(passTBN[2]);
         float normalOffset = 0.5f;
@@ -287,10 +297,16 @@ void main(){
         aoSamplePoint += normalOffset * geoN;   
         
         skyOcclusion = sampleSkyOcclusion(aoSamplePoint);
+        
+        if(useSkyBounceApproximation){
+            occlusionFactor = AOIndirectBounceApproximation(albedo, skyOcclusion.factor);
+        }
+        else{
+            occlusionFactor = vec3(skyOcclusion.factor);
+        }
     }
     
     //indirect specular
-    vec3 lightingIndirect;
     float probeLoD = specularProbeMipCount * r;
     vec3 environmentSample = textureLod(samplerCube(specularProbe, specularProbeSampler), R, probeLoD).rgb;
     vec3 fresnelAverage = f0 + (1-f0) / 21.f;
@@ -304,7 +320,8 @@ void main(){
         irradiance = texture(samplerCube(diffuseProbe, cubeSampler), N).rgb;
     }
     
-    
+    vec3 diffuseIndirect;
+    vec3 specularIndirect;
     if(indirectMultiscatterBRDF){
         //multi scattering for IBL from "A Multiple-Scattering Microfacet Model for Real-Time Image-based Lighting"
         vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y); //includes fresnel and energy
@@ -317,17 +334,22 @@ void main(){
         vec3 energyDiffuseMultiScattering = 1.f - (singleScattering + multiScattering);
         vec3 diffuseCorrection = diffuseColor * energyDiffuseMultiScattering;
         
-        lightingIndirect = singleScattering * environmentSample + (multiScattering + diffuseCorrection * diffuseBRDFIntegral) * irradiance;
+        diffuseIndirect = diffuseCorrection * diffuseBRDFIntegral * irradiance;
+        specularIndirect = singleScattering * environmentSample + multiScattering * irradiance;
     }
     else {
         //single scattering only
         vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y);
-        lightingIndirect = singleScattering * environmentSample + irradiance * diffuseColor * diffuseBRDFIntegral;
+        diffuseIndirect = irradiance * diffuseColor * diffuseBRDFIntegral;
+        specularIndirect = singleScattering * environmentSample;
     }
     
     if(useSkyOcclusion){
-        lightingIndirect *= skyOcclusion.factor;
+        diffuseIndirect *= occlusionFactor;
+        specularIndirect *= occlusionFactor; //TODO: better specular occlusion
     }
+    
+    vec3 lightingIndirect = diffuseIndirect + specularIndirect;
     
     //direct specular
 	const float D = D_GGX(NoH, r);
