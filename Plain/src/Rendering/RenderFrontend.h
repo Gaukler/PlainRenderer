@@ -42,7 +42,6 @@ struct ShadingConfig {
     bool useGeometryAA = true;
     bool useSkyOcclusion = true;
     bool useSkyOcclusionDirection = true;
-    bool useSkyBounceApproximation = true;
 };
 
 struct TAASettings {

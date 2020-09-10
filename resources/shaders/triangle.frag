@@ -35,7 +35,6 @@ layout(constant_id = 4) const uint specularProbeMipCount = 0;
 layout(constant_id = 5) const float TextureLoDBias = 0;
 layout(constant_id = 6) const bool useSkyOcclusion = false;
 layout(constant_id = 7) const bool useSkyOcclusionDirection = false;
-layout(constant_id = 8) const bool useSkyBounceApproximation = false;
 
 layout(set=1, binding = 0) uniform sampler depthSampler;
 
@@ -173,14 +172,6 @@ SkyOcclusion sampleSkyOcclusion(vec3 worldPos){
     return occlusion;
 }
 
-//from: "Practical Realtime Strategies for Accurate Indirect Occlusion", section 5
-vec3 AOIndirectBounceApproximation(vec3 albedo, float ao){
-    vec3 a = 2.0404 * albedo - 0.3324;
-    vec3 b = 4.7951 * albedo - 0.6417; 
-    vec3 c = 2.7552 * albedo + 0.6903;
-    return a * ao * ao * ao - b * ao * ao + c * ao;
-}
-
 void main(){
 	vec3 albedoTexel 		= texture(sampler2D(colorTexture, 		colorSampler), 		passUV, TextureLoDBias).rgb;
 	vec3 specularTexel 		= texture(sampler2D(specularTexture, 	specularSampler), 	passUV, TextureLoDBias).rgb;
@@ -288,7 +279,6 @@ void main(){
 	
     //sky occlusion
     SkyOcclusion skyOcclusion;
-    vec3 occlusionFactor = vec3(0.f);
     {
         vec3 geoN = normalize(passTBN[2]);
         float normalOffset = 0.5f;
@@ -297,13 +287,6 @@ void main(){
         aoSamplePoint += normalOffset * geoN;   
         
         skyOcclusion = sampleSkyOcclusion(aoSamplePoint);
-        
-        if(useSkyBounceApproximation){
-            occlusionFactor = AOIndirectBounceApproximation(albedo, skyOcclusion.factor);
-        }
-        else{
-            occlusionFactor = vec3(skyOcclusion.factor);
-        }
     }
     
     //indirect specular
@@ -345,8 +328,8 @@ void main(){
     }
     
     if(useSkyOcclusion){
-        diffuseIndirect *= occlusionFactor;
-        specularIndirect *= occlusionFactor; //TODO: better specular occlusion
+        diffuseIndirect *= skyOcclusion.factor;
+        specularIndirect *= skyOcclusion.factor; //TODO: better specular occlusion
     }
     
     vec3 lightingIndirect = diffuseIndirect + specularIndirect;
