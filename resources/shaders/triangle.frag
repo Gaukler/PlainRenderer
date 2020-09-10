@@ -34,6 +34,7 @@ layout(constant_id = 3) const bool geometricAA = false;
 layout(constant_id = 4) const uint specularProbeMipCount = 0;
 layout(constant_id = 5) const float TextureLoDBias = 0;
 layout(constant_id = 6) const bool useSkyOcclusion = false;
+layout(constant_id = 7) const bool useSkyOcclusionDirection = false;
 
 layout(set=1, binding = 0) uniform sampler depthSampler;
 
@@ -152,13 +153,23 @@ float EnergyAverage(float roughness){
 
 }
 
-float sampleSkyOcclusion(vec3 worldPos){
+struct SkyOcclusion{
+    vec3 unoccludedDirection;
+    float factor;
+};
+
+SkyOcclusion sampleSkyOcclusion(vec3 worldPos){
 
     vec3 samplePos = worldPos - occlusionVolumeOffset.xyz;  //in range[-extend/2, extend/2]
     samplePos = samplePos/ occlusionVolumeExtends.xyz;      //in range [-0.5, 0.5]
     samplePos += 0.5f;                                      //in range [0, 1]
     
-    return texture(sampler3D(skyOcclusionVolume, occlusionSampler), samplePos).r;
+    vec4 occlusionTexel = texture(sampler3D(skyOcclusionVolume, occlusionSampler), samplePos);
+    SkyOcclusion occlusion;
+    occlusion.unoccludedDirection = normalize(occlusionTexel.rgb);
+    occlusion.factor = occlusionTexel.a;
+    
+    return occlusion;
 }
 
 void main(){
@@ -266,12 +277,32 @@ void main(){
     //see: https://seblagarde.wordpress.com/2011/08/17/hello-world/#comment-2405
     diffuseDirect *= (1.f - F_Schlick(f0, vec3(1.f), NoV)) * (1.f - F_Schlick(f0, vec3(1.f), NoL));
 	
+    //sky occlusion
+    SkyOcclusion skyOcclusion;
+    {
+        vec3 geoN = normalize(passTBN[2]);
+        float normalOffset = 0.5f;
+        
+        vec3 aoSamplePoint = passPos;
+        aoSamplePoint += normalOffset * geoN;   
+        
+        skyOcclusion = sampleSkyOcclusion(aoSamplePoint);
+    }
+    
     //indirect specular
     vec3 lightingIndirect;
     float probeLoD = specularProbeMipCount * r;
     vec3 environmentSample = textureLod(samplerCube(specularProbe, specularProbeSampler), R, probeLoD).rgb;
-    vec3 irradiance = texture(samplerCube(diffuseProbe, cubeSampler), N).rgb;
     vec3 fresnelAverage = f0 + (1-f0) / 21.f;
+    
+    vec3 irradiance;
+    if(useSkyOcclusionDirection){
+        irradiance = texture(samplerCube(diffuseProbe, cubeSampler), skyOcclusion.unoccludedDirection).rgb;
+        //irradiance = texture(samplerCube(diffuseProbe, cubeSampler), N).rgb;
+    }
+    else{
+        irradiance = texture(samplerCube(diffuseProbe, cubeSampler), N).rgb;
+    }
     
     
     if(indirectMultiscatterBRDF){
@@ -292,6 +323,10 @@ void main(){
         //single scattering only
         vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y);
         lightingIndirect = singleScattering * environmentSample + irradiance * diffuseColor * diffuseBRDFIntegral;
+    }
+    
+    if(useSkyOcclusion){
+        lightingIndirect *= skyOcclusion.factor;
     }
     
     //direct specular
@@ -334,20 +369,6 @@ void main(){
         multiScatteringLobe = vec3(0.f);
     }
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
-    
-    //sky occlusion
-    if(useSkyOcclusion){
-        
-        vec3 geoN = normalize(passTBN[2]);
-        float normalOffset = 0.5f;
-        
-        vec3 aoSamplePoint = passPos;
-        aoSamplePoint += normalOffset * geoN;   
-        
-        float skyOcclusion = sampleSkyOcclusion(aoSamplePoint);
-        
-        lightingIndirect *= skyOcclusion;
-    }
     
     color = (diffuseDirect + specularDirect) * sunStrengthExposed + lightingIndirect * skyStrengthExposed;
     
