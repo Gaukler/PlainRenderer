@@ -240,7 +240,7 @@ private:
     validation layers are disabled in release build using macro
     */
 #ifdef NDEBUG
-    const bool m_useValidationLayers = true;
+    const bool m_useValidationLayers = false;
 #else
     const bool m_useValidationLayers = true;
 #endif

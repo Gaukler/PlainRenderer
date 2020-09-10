@@ -897,7 +897,7 @@ void RenderFrontend::computeSkyOcclusion() {
         desc.height = m_skyOcclusionVolumeRes.y;
         desc.depth = m_skyOcclusionVolumeRes.z;
         desc.type = ImageType::Type3D;
-        desc.format = ImageFormat::R8;
+        desc.format = ImageFormat::RGBA16_sNorm;
         desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
         desc.mipCount = MipCount::One;
         desc.manualMipCount = 1;
@@ -1063,6 +1063,11 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
         constants.push_back({
             6,                                                                              //location
             dataToCharArray((void*)&config.useSkyOcclusion, sizeof(config.useSkyOcclusion)) //value
+            });
+        //sky occlusion direction
+        constants.push_back({
+            7,                                                                                                  //location
+            dataToCharArray((void*)&config.useSkyOcclusionDirection, sizeof(config.useSkyOcclusionDirection))   //value
             });
     }
 
@@ -2136,6 +2141,7 @@ void RenderFrontend::drawUi() {
 
         m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Geometric AA", &m_shadingConfig.useGeometryAA);
         m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion", &m_shadingConfig.useSkyOcclusion);
+        m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion direction", &m_shadingConfig.useSkyOcclusionDirection);
     }
     //camera settings
     if (ImGui::CollapsingHeader("Camera settings")) {

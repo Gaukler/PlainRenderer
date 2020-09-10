@@ -4,7 +4,7 @@
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
-layout(set=1, binding = 0, r8) 			    uniform image3D occlusionVolume;
+layout(set=1, binding = 0, rgba16_snorm) 		uniform image3D occlusionVolume;
 layout(set=1, binding = 1) 	                uniform texture2D skyShadowMap;
 layout(set=1, binding = 2)                  uniform sampler shadowSampler;
 
@@ -21,7 +21,8 @@ void main(){
 	ivec3 uv = ivec3(gl_GlobalInvocationID);
     
     //shadow test
-    float value;
+    float occlusion;
+    vec3 unoccludedDirection = vec3(0);
     {
         //TODO: move texel size computation to CPU
         vec3 texelSize = vec3(imageSize(occlusionVolume)) / occlusionVolumeExtends.xyz;
@@ -31,19 +32,19 @@ void main(){
         vec3 posWorld = samplePos / texelSize;          //stretch to range [0, extend]
         posWorld -= 0.5f * occlusionVolumeExtends.xyz;  //move to [-extend/2, extend/2]  
         posWorld += occlusionVolumeOffset.xyz;
-        //posWorld += sampleDirection.xyz * 0.1; //bias to avoid bleeding
         vec4 posLight = skyShadowMatrix * vec4(posWorld, 1.f);
         vec2 shadowUV = posLight.xy / posLight.w;
         shadowUV = shadowUV * 0.5f + 0.5f;
         //shadowUV.x = clamp(shadowUV.x, 0, 1);
         float shadowMapDepth = texture(sampler2D(skyShadowMap, shadowSampler), shadowUV).r;
-        value = posLight.z < shadowMapDepth ? 1 : 0;
+        occlusion = posLight.z < shadowMapDepth ? 1 : 0;
+        unoccludedDirection = posLight.z < shadowMapDepth ? -sampleDirection.xyz : vec3(0);
     }
-    
-    //add to volume value
-    float current = imageLoad(occlusionVolume, uv).r;
     float pdfWithoutNoL = 1.f / (3.1415); //NoL reduced by ao NoL
-    value = current + weight * value / pdfWithoutNoL;
+    occlusion *= weight / pdfWithoutNoL;
+    unoccludedDirection *= weight;
     
-    imageStore(occlusionVolume, uv, vec4(value, vec3(0.f)));
+    vec4 current = imageLoad(occlusionVolume, uv);
+    
+    imageStore(occlusionVolume, uv, current + vec4(unoccludedDirection, occlusion));
 }

@@ -41,6 +41,7 @@ struct ShadingConfig {
     bool useIndirectMultiscatter = true;
     bool useGeometryAA = true;
     bool useSkyOcclusion = true;
+    bool useSkyOcclusionDirection = true;
 };
 
 struct TAASettings {
