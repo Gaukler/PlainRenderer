@@ -942,9 +942,11 @@ void RenderFrontend::computeSkyOcclusion() {
         {
             glm::vec2 sample = hammersley2D(i);
 
-            //using cosine weighted samples
+            //using uniform distributed samples
+            //AO should use cosine weighing with respect to normal
+            //however the volume is used by surfaces with arbitrary normals, so use uniform distribution instead
             //reference: http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
-            float cosTheta = sqrt(1.f - sample.x);
+            float cosTheta = 1.f - sample.x;
             float sinTheta = sqrt(1 - cosTheta * cosTheta);
             float phi = 2.f * 3.1415f * sample.y;
             occlusionData.sampleDirection = glm::vec4(cos(phi) * sinTheta, cosTheta, sin(phi) * sinTheta, 0.f);
