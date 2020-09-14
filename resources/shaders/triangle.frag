@@ -8,6 +8,7 @@
 #include "GeometricAA.inc"
 #include "shadowCascadeConstants.inc"
 #include "linearDepth.inc"
+#include "specularOcclusion.inc"
 
 /*
 specialisation constants
@@ -329,7 +330,9 @@ void main(){
     
     if(useSkyOcclusion){
         diffuseIndirect *= skyOcclusion.factor;
-        specularIndirect *= skyOcclusion.factor; //TODO: better specular occlusion
+        
+        float specularOcclusion = computeSpecularOcclusion(R, skyOcclusion.unoccludedDirection, r, skyOcclusion.factor);
+        specularIndirect *= specularOcclusion;
     }
     
     vec3 lightingIndirect = diffuseIndirect + specularIndirect;
