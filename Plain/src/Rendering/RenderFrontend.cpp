@@ -972,13 +972,12 @@ void RenderFrontend::computeSkyOcclusion() {
             m_backend.drawMeshes(meshHandles, transforms, m_skyShadowPass);
         }
 
-        m_backend.newFrame();
         m_backend.setUniformBufferData(m_skyOcclusionDataBuffer, &occlusionData, sizeof(SkyOcclusionRenderData));
         m_backend.setRenderPassExecution(skyShadowExecution);
         m_backend.setRenderPassExecution(gatherExecution);
         m_backend.renderFrame(false);
+        m_backend.newFrame();   //newFrame is already called before this function is executed, call at the end to keep a valid new frame
     }
-    m_backend.newFrame();
 }
 
 /*
