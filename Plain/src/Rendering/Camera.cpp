@@ -1,11 +1,6 @@
 #include "pch.h"
 #include "Camera.h"
 
-/*
-=========
-viewMatrixFromCameraExtrinsic
-=========
-*/
 glm::mat4 viewMatrixFromCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     glm::mat4 viewMatrix = glm::mat4(1.f);
     viewMatrix[0] = glm::vec4(extrinsic.right, 0.f);
@@ -16,11 +11,6 @@ glm::mat4 viewMatrixFromCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     return viewMatrix;
 }
 
-/*
-=========
-projectionMatrixFromCameraIntrinsic
-=========
-*/
 glm::mat4 projectionMatrixFromCameraIntrinsic(const CameraIntrinsic& intrinsic) {
     glm::mat4 projectionMatrix = 
         glm::perspective(glm::radians(intrinsic.fov), intrinsic.aspectRatio, intrinsic.near, intrinsic.far);

@@ -1,34 +1,17 @@
 #include "pch.h"
 #include "CameraController.h"
-
-
 #include "Utilities/Timer.h"
 
-/*
-=========
-CameraController
-=========
-*/
 CameraController::CameraController(GLFWwindow* inputWindow) {
 	double mouseX, mouseY;
 	glfwGetCursorPos(inputWindow, &mouseX, &mouseY);
 	m_lastMousePositon = glm::vec2(mouseX, mouseY);
 }
 
-/*
-=========
-getExtrinsic
-=========
-*/
 CameraExtrinsic CameraController::getExtrinsic() {
 	return m_extrinsic;
 }
 
-/*
-=========
-update
-=========
-*/
 void CameraController::update(GLFWwindow* inputWindow) {
 
 	float deltaTime = Timer::getDeltaTimeFloat();

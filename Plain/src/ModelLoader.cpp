@@ -7,11 +7,6 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
-/*
-=========
-loadModel
-=========
-*/
 bool loadModel(const std::filesystem::path& filename, std::vector<MeshData>* outData){
 
     const std::filesystem::path fullPath = DirectoryUtils::getResourceDirectory() / filename;
@@ -137,11 +132,6 @@ bool loadModel(const std::filesystem::path& filename, std::vector<MeshData>* out
     return true;
 }
 
-/*
-=========
-computeTangentBitangent
-=========
-*/
 void computeTangentBitangent(MeshData* outMeshData) {
     assert(outMeshData != nullptr);
     assert(outMeshData->positions.size() == outMeshData->uvs.size());

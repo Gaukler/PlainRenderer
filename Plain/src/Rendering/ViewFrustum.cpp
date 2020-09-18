@@ -1,11 +1,6 @@
 #include "pch.h"
 #include "ViewFrustum.h"
 
-/*
-=========
-computeViewFrustum
-=========
-*/
 ViewFrustum computeViewFrustum(const Camera& camera) {
     //reference: http://www.lighthouse3d.com/tutorials/view-frustum-culling/view-frustums-shape/
     //reference: http://www.lighthouse3d.com/tutorials/view-frustum-culling/geometric-approach-extracting-the-planes/
@@ -41,11 +36,6 @@ ViewFrustum computeViewFrustum(const Camera& camera) {
     return frustum;
 }
 
-/*
-=========
-frustumToLineMesh
-=========
-*/
 ViewFrustumNormals computeViewFrustumNormals(const ViewFrustumPoints& p) {
     ViewFrustumNormals normals;
     normals.top = glm::normalize(glm::cross(p.r_u_n - p.l_u_n, p.r_u_f - p.r_u_n));
@@ -60,11 +50,6 @@ ViewFrustumNormals computeViewFrustumNormals(const ViewFrustumPoints& p) {
     return normals;
 }
 
-/*
-=========
-frustumToLineMesh
-=========
-*/
 void frustumToLineMesh(const ViewFrustum& frustum,
     std::vector<glm::vec3>* outPositions, std::vector<uint32_t>* outIndices) {
 
@@ -230,11 +215,6 @@ void frustumToLineMesh(const ViewFrustum& frustum,
     (*outIndices)[83] = 19;
 }
 
-/*
-=========
-getFrustumPoints
-=========
-*/
 std::array<glm::vec3, 8> getFrustumPoints(const ViewFrustum& frustum) {
     return {
         frustum.points.l_l_f,
@@ -248,11 +228,6 @@ std::array<glm::vec3, 8> getFrustumPoints(const ViewFrustum& frustum) {
     };
 }
 
-/*
-=========
-getFrustumPoints
-=========
-*/
 ViewFrustum computeOrthogonalFrustumFittedToCamera(const ViewFrustum& cameraFrustum, const glm::vec3& lightDirection) {
 
     //reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf

@@ -2,11 +2,6 @@
 #include "Utilities/DirectoryUtils.h"
 #include "ShaderCompile.h"
 
-/*
-=========
-loadShader
-=========
-*/
 bool loadShader(const ShaderDescription& desc, std::vector<uint32_t>* outSpirV) {
 
     const auto absolutePath = absoluteShaderPathFromRelative(desc.srcPathRelative);
@@ -55,11 +50,6 @@ bool loadGraphicPassShaders(const GraphicPassShaderDescriptions& shaderDescripti
     return success;
 }
 
-/*
-=========
-loadShaderFile
-=========
-*/
 bool loadShaderTextFile(const std::filesystem::path& absolutePath, std::vector<char>* outShaderCode) {
 
     std::ifstream file(absolutePath, std::ios::in | std::ios::ate);
@@ -96,11 +86,6 @@ bool loadShaderSpirVFile(const std::filesystem::path& absolutePath, std::vector<
     return true;
 }
 
-/*
-=========
-writeSpirVToFile
-=========
-*/
 void writeSpirVToFile(const std::vector<uint32_t>& spirV, const std::filesystem::path absolutePath) {
     std::ofstream spirVFile;
     spirVFile.open(absolutePath, std::ios::out | std::ios::binary);
@@ -109,40 +94,20 @@ void writeSpirVToFile(const std::vector<uint32_t>& spirV, const std::filesystem:
     spirVFile.close();
 }
 
-/*
-=========
-absoluteShaderPathFromRelative
-=========
-*/
 std::filesystem::path absoluteShaderPathFromRelative(std::filesystem::path relativePath) {
     return getShaderDirectory() / relativePath;
 }
 
-/*
-=========
-shaderCachePathFromRelative
-=========
-*/
 std::filesystem::path shaderCachePathFromRelative(std::filesystem::path relativePath) {
     std::filesystem::path shaderCachePath = getShaderCacheDirectory() / relativePath;
     shaderCachePath += ".spv";
     return shaderCachePath;
 }
 
-/*
-=========
-getShaderDirectory
-=========
-*/
 std::filesystem::path getShaderDirectory() {
     return DirectoryUtils::getResourceDirectory() / "shaders\\";
 }
 
-/*
-=========
-getShaderCacheDirectory
-=========
-*/
 std::filesystem::path getShaderCacheDirectory() {
     return DirectoryUtils::getResourceDirectory() / "shaders\\cache\\";
 }

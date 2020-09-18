@@ -1,12 +1,6 @@
 #include "SpirvReflection.h"
 #include "Utilities/GeneralUtils.h"
 
-/*
-=========
-spirvCrossErrorCallback
-=========
-*/
-
 //callback not using userdata, resulting in a warning
 //disable warning for the function
 #pragma warning( push )
@@ -19,11 +13,6 @@ void spirvCrossErrorCallback(void* userdata, const char* error) {
 //reenable warning
 #pragma warning( pop )
 
-/*
-=========
-performShaderReflection
-=========
-*/
 ShaderReflection performShaderReflection(const GraphicPassShaderSpirV& shaderCode) {
 
     ShaderReflection reflection;
@@ -43,11 +32,6 @@ ShaderReflection performShaderReflection(const GraphicPassShaderSpirV& shaderCod
     return reflection;
 }
 
-/*
-=========
-performComputeShaderReflection
-=========
-*/
 ShaderReflection performComputeShaderReflection(const std::vector<uint32_t>& shader) {
 
     ShaderReflection reflection;
@@ -58,11 +42,6 @@ ShaderReflection performComputeShaderReflection(const std::vector<uint32_t>& sha
     return reflection;
 }
 
-/*
-=========
-VkDescriptorSetLayoutBindingsFromSpirv
-=========
-*/
 void layoutFromSpirv(const std::vector<uint32_t>& spirv, const VkShaderStageFlags stageFlags, ShaderReflection* outReflection) {
 
     //pass shader to SPIRV cross 

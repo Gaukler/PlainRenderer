@@ -127,12 +127,6 @@ bool loadImage(const std::filesystem::path& path, const bool isFullPath, ImageDe
 	return true;
 }
 
-/*
-========
-DDS loading
-========
-*/
-
 //reference: https://docs.microsoft.com/en-us/windows/win32/direct3ddds/dx-graphics-dds-reference
 struct DDS_PixelFormat {
     uint32_t infoSize;

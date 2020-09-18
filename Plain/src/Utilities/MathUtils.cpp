@@ -1,11 +1,6 @@
 #include "pch.h"
 #include "MathUtils.h"
 
-/*
-=========
-directionToVector
-=========
-*/
 glm::vec3 directionToVector(const glm::vec2 direction) {
 
     const float theta   = direction.y / 180.f * 3.1415f;
@@ -18,30 +13,15 @@ glm::vec3 directionToVector(const glm::vec2 direction) {
     return vec;
 }
 
-/*
-=========
-mipCountFromResolution
-=========
-*/
 uint32_t mipCountFromResolution(const uint32_t width, const uint32_t height, const uint32_t depth) {
     return 1 + (uint32_t)std::floor(std::log2(std::max(std::max(width, height), depth)));
 }
 
-/*
-=========
-hammersley2D
-=========
-*/
 glm::vec2 hammersley2D(const uint32_t index) {
     //reference: http://www.pbr-book.org/3ed-2018/Sampling_and_Reconstruction/The_Halton_Sampler.html
     return glm::vec2(radicalInverseBase2(index), radicalInverseBase3(index));
 }
 
-/*
-=========
-reverse32Bit
-=========
-*/
 uint32_t reverse32Bit(const uint32_t in) {
     //reference: http://www.pbr-book.org/3ed-2018/Sampling_and_Reconstruction/The_Halton_Sampler.html
     uint32_t out = (in << 16) | (in >> 16);                         //swap adjacent 16 bits
@@ -52,22 +32,12 @@ uint32_t reverse32Bit(const uint32_t in) {
     return out;
 }
 
-/*
-=========
-radicalInverseBase2
-=========
-*/
 float radicalInverseBase2(const uint32_t in) {
     //reference: http://www.pbr-book.org/3ed-2018/Sampling_and_Reconstruction/The_Halton_Sampler.html
     const uint32_t rev = reverse32Bit(in);
     return float(rev) * (float)2.3283064365386963e-10;
 }
 
-/*
-=========
-radicalInverseBase3
-=========
-*/
 float radicalInverseBase3(const uint32_t in) {
     //reference: http://www.pbr-book.org/3ed-2018/Sampling_and_Reconstruction/The_Halton_Sampler.html
     const uint32_t base = 3;

@@ -3,11 +3,6 @@
 #include "RenderHandles.h"
 
 /*
-=========
-RenderPass resources
-=========
-*/
-/*
 resources are used to comunicate to a renderpass what and how a resource is used
 the shader dictates what type of resource must be bound where
 resources may be changed from frame to frame
@@ -74,12 +69,6 @@ struct RenderPassExecution {
     std::vector<RenderPassHandle>   parents;
     uint32_t                        dispatchCount[3] = { 1, 1, 1}; //compute pass only
 };
-
-/*
-=========
-RenderPass description
-=========
-*/
 
 /*
 config for rasterization
@@ -164,12 +153,6 @@ struct ComputePassDescription {
     std::string name; //used for debug labels
 };
 
-/*
-=========
-Image
-=========
-*/
-
 enum class ImageType { Type1D, Type2D, Type3D, TypeCube };
 enum class ImageFormat { R8, RG8, RGBA8, RG16_sFloat, RG32_sFloat, RGBA16_sFloat, RGBA16_sNorm, RGBA32_sFloat, R11G11B10_uFloat, Depth16, Depth32, BC1, BC3, BC5 };
 enum class MipCount { One, FullChain, Manual, FullChainAlreadyInData };
@@ -200,12 +183,6 @@ struct ImageDescription {
     bool        autoCreateMips  = false;
 };
 
-/*
-=========
-Buffer
-=========
-*/
-
 struct UniformBufferDescription {
     size_t  size = 0;
     void*   initialData = nullptr;
@@ -215,12 +192,6 @@ struct StorageBufferDescription {
     size_t  size = 0;
     void*   initialData = nullptr;
 };
-
-/*
-=========
-Sampler
-=========
-*/
 
 enum class SamplerInterpolation { Nearest, Linear };
 enum class SamplerWrapping { Clamp, Color, Repeat };
@@ -234,12 +205,6 @@ struct SamplerDescription {
     SamplerBorderColor      borderColor     = SamplerBorderColor::Black;    //only used if wrapping is Color
     uint32_t                maxMip          = 1;
 };
-
-/*
-=========
-Global shader info
-=========
-*/
 
 struct GlobalShaderInfo {
     glm::vec4 sunColor      = glm::vec4(1.f);

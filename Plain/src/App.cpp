@@ -7,11 +7,6 @@
 #include "ModelLoader.h"
 #include "Utilities/MathUtils.h"
 
-/*
-=========
-App
-=========
-*/
 App::App() {
 
     DirectoryUtils::init();
@@ -43,11 +38,6 @@ App::App() {
     }
 }
 
-/*
-=========
-run
-=========
-*/
 void App::run() {
 
 	CameraController cameraController(m_window);	
@@ -77,11 +67,6 @@ void App::run() {
 	}
 }
 
-/*
-=========
-shutdown
-=========
-*/
 void App::shutdown() {
 	m_renderer.shutdown();
 }

@@ -1,21 +1,11 @@
 #include "pch.h"
 #include "TypeConversion.h"
 
-/*
-=========
-floatToNormalizedUInt16
-=========
-*/
 uint16_t floatToNormalizedUInt16(const float f) {
     const float fClamped = glm::clamp(f, 0.f, 1.f);
     return (uint16_t)(fClamped * std::numeric_limits<uint16_t>::max());
 }
 
-/*
-=========
-floatToNormalizedInt16
-=========
-*/
 int16_t floatToNormalizedInt16(const float f) {
     const float fClamped = glm::clamp(f, -1.f, 1.f);
     constexpr float minValue = std::numeric_limits<int16_t>::min();

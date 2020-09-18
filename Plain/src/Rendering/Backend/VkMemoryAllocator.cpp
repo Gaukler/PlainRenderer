@@ -4,19 +4,6 @@
 
 VulkanContext vkContext;
 
-/*
-==================
-
-VkMemoryPool
-
-==================
-*/
-
-/*
-=========
-create
-=========
-*/
 bool VkMemoryPool::create(const uint32_t memoryIndex) {
     VkMemoryAllocateInfo allocateInfo = {};
     allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -35,20 +22,10 @@ bool VkMemoryPool::create(const uint32_t memoryIndex) {
     return success;
 }
 
-/*
-=========
-destroy
-=========
-*/
 void VkMemoryPool::destroy() {
     vkFreeMemory(vkContext.device, m_vulkanMemory, nullptr);
 }
 
-/*
-=========
-allocate
-=========
-*/
 bool VkMemoryPool::allocate(const VkDeviceSize size, const VkDeviceSize alignment, VulkanAllocation* outAllocation) {
     assert(outAllocation != nullptr);
     if (size > m_freeMemorySize) {
@@ -114,11 +91,6 @@ bool VkMemoryPool::allocate(const VkDeviceSize size, const VkDeviceSize alignmen
     return false;
 }
 
-/*
-=========
-free
-=========
-*/
 void VkMemoryPool::free(const VulkanAllocation& allocation) {
 
     //helper, creates new combined allocation, updates linked list pointers and deletes inputs
@@ -174,48 +146,20 @@ void VkMemoryPool::free(const VulkanAllocation& allocation) {
     std::cout << "Warning: VkMemoryAllocator::free did not find the input allocation, this should not happen\n";
 }
 
-/*
-=========
-getUsedMemorySize
-=========
-*/
 VkDeviceSize VkMemoryPool::getUsedMemorySize() const{
     return m_initialSize - m_freeMemorySize;
 }
 
-/*
-=========
-getAllocatedMemorySize
-=========
-*/
 VkDeviceSize VkMemoryPool::getAllocatedMemorySize() const {
     return m_initialSize;
 }
 
-/*
-==================
-
-VkMemoryAllocator
-
-==================
-*/
-
-/*
-=========
-create
-=========
-*/
 void VkMemoryAllocator::create() {
     VkPhysicalDeviceMemoryProperties memoryProperties = {};
     vkGetPhysicalDeviceMemoryProperties(vkContext.physicalDevice, &memoryProperties);
     m_memoryPoolsPerMemoryIndex.resize(memoryProperties.memoryTypeCount);
 }
 
-/*
-=========
-destroy
-=========
-*/
 void VkMemoryAllocator::destroy() {
     for (auto& poolList : m_memoryPoolsPerMemoryIndex) {
         for (auto& pool : poolList) {
@@ -224,11 +168,6 @@ void VkMemoryAllocator::destroy() {
     }
 }
 
-/*
-=========
-allocate
-=========
-*/
 bool VkMemoryAllocator::allocate(const VkMemoryRequirements& requirements, const VkMemoryPropertyFlags flags, VulkanAllocation* outAllocation) {
 
     //find memory index
@@ -257,21 +196,11 @@ bool VkMemoryAllocator::allocate(const VkMemoryRequirements& requirements, const
     }
 }
 
-/*
-=========
-free
-=========
-*/
 void VkMemoryAllocator::free(const VulkanAllocation& allocation) {
     auto& poolList = m_memoryPoolsPerMemoryIndex[allocation.memoryIndex];
     poolList[allocation.poolIndex].free(allocation);
 }
 
-/*
-=========
-getMemoryStats
-=========
-*/
 void VkMemoryAllocator::getMemoryStats(VkDeviceSize* outAllocatedSize, VkDeviceSize* outUsedSize) {
     assert(outAllocatedSize != nullptr);
     assert(outUsedSize != nullptr);
@@ -285,11 +214,6 @@ void VkMemoryAllocator::getMemoryStats(VkDeviceSize* outAllocatedSize, VkDeviceS
     }
 }
 
-/*
-=========
-findMemoryIndex
-=========
-*/
 uint32_t VkMemoryAllocator::findMemoryIndex(const VkMemoryPropertyFlags flags, const uint32_t memoryTypeBitsRequirement) {
 
     VkPhysicalDeviceMemoryProperties memoryProperties = {};

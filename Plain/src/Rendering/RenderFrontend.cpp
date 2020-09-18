@@ -19,21 +19,11 @@
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
 
-/*
-=========
-resizeCallback
-=========
-*/
 void resizeCallback(GLFWwindow* window, int width, int height) {
     RenderFrontend* frontEnd = reinterpret_cast<RenderFrontend*>(glfwGetWindowUserPointer(window));
     frontEnd->setResolution(width, height);
 }
 
-/*
-=========
-setup
-=========
-*/
 void RenderFrontend::setup(GLFWwindow* window) {
     m_window = window;
 
@@ -57,20 +47,10 @@ void RenderFrontend::setup(GLFWwindow* window) {
     initMeshs();
 }
 
-/*
-=========
-shutdown
-=========
-*/
 void RenderFrontend::shutdown() {
     m_backend.shutdown();
 }
 
-/*
-=========
-newFrame
-=========
-*/
 void RenderFrontend::newFrame() {
     if (m_didResolutionChange) {
         m_backend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
@@ -117,11 +97,6 @@ void RenderFrontend::newFrame() {
     }
 }
 
-/*
-=========
-setResolution
-=========
-*/
 void RenderFrontend::setResolution(const uint32_t width, const uint32_t height) {
     m_screenWidth = width;
     m_screenHeight = height;
@@ -136,11 +111,6 @@ void RenderFrontend::setResolution(const uint32_t width, const uint32_t height) 
     m_didResolutionChange = true;
 }
 
-/*
-=========
-setCameraExtrinsic
-=========
-*/
 void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     m_camera.extrinsic = extrinsic;
     const glm::mat4 viewMatrix = viewMatrixFromCameraExtrinsic(extrinsic);
@@ -183,11 +153,6 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     }
 }
 
-/*
-=========
-createMeshes
-=========
-*/
 std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>& meshData) {
 
     //this is a lot of copying... improve later?
@@ -250,11 +215,6 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
     return frontendHandles;
 }
 
-/*
-=========
-issueMeshDraws
-=========
-*/
 void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshes) {
 
     //if we prepare render commands without consuming them we will save up a huge amount of commands
@@ -345,20 +305,10 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
     }  
 }
 
-/*
-=========
-setModelMatrix
-=========
-*/
 void RenderFrontend::setModelMatrix(const FrontendMeshHandle handle, const glm::mat4& m) {
     m_meshStates[handle.index].modelMatrix = m;
 }
 
-/*
-=========
-renderFrame
-=========
-*/
 void RenderFrontend::renderFrame() {
 
     if (m_minimized) {
@@ -711,11 +661,6 @@ void RenderFrontend::renderFrame() {
     m_backend.renderFrame(true);
 }
 
-/*
-=========
-loadImageFromPath
-=========
-*/
 bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
 
     if (path == "") {
@@ -739,11 +684,6 @@ bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* 
     }
 }
 
-/*
-=========
-firstFramePreparation
-=========
-*/
 void RenderFrontend::firstFramePreparation() {
     /*
     write to sky texture
@@ -827,11 +767,6 @@ void RenderFrontend::firstFramePreparation() {
     }
 }
 
-/*
-=========
-computeBRDFLut
-=========
-*/
 void RenderFrontend::computeBRDFLut() {
     /*
     create brdf lut for split sum approximation
@@ -847,11 +782,6 @@ void RenderFrontend::computeBRDFLut() {
     m_backend.setRenderPassExecution(brdfLutExecution);
 }
 
-/*
-=========
-computeSkyOcclusion
-=========
-*/
 void RenderFrontend::computeSkyOcclusion() {
     
     std::vector<AxisAlignedBoundingBox> meshBoundingBoxes;
@@ -980,11 +910,6 @@ void RenderFrontend::computeSkyOcclusion() {
     }
 }
 
-/*
-=========
-updateCameraFrustum
-=========
-*/
 void RenderFrontend::updateCameraFrustum() {
     m_cameraFrustum = computeViewFrustum(m_camera);
 
@@ -998,11 +923,6 @@ void RenderFrontend::updateCameraFrustum() {
     }
 }
 
-/*
-=========
-computeHistogramSettings
-=========
-*/
 HistogramSettings RenderFrontend::createHistogramSettings() {
     HistogramSettings settings;
 
@@ -1015,11 +935,6 @@ HistogramSettings RenderFrontend::createHistogramSettings() {
     return settings;
 }
 
-/*
-=========
-createForwardPassShaderDescription
-=========
-*/
 GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription(const ShadingConfig& config) {
 
     GraphicPassShaderDescriptions shaderDesc;
@@ -1075,11 +990,6 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
     return shaderDesc;
 }
 
-/*
-=========
-createBRDFLutShaderDescription
-=========
-*/
 ShaderDescription RenderFrontend::createBRDFLutShaderDescription(const ShadingConfig& config) {
 
     ShaderDescription desc;
@@ -1094,11 +1004,6 @@ ShaderDescription RenderFrontend::createBRDFLutShaderDescription(const ShadingCo
     return desc;
 }
 
-/*
-=========
-createTAAShaderDescription
-=========
-*/
 ShaderDescription RenderFrontend::createTAAShaderDescription() {
     ShaderDescription desc;
     desc.srcPathRelative = "taa.comp";
@@ -1130,11 +1035,6 @@ ShaderDescription RenderFrontend::createTAAShaderDescription() {
     return desc;
 }
 
-/*
-=========
-updateGlobalShaderInfo
-=========
-*/
 void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.cameraPos = glm::vec4(m_camera.extrinsic.position, 1.f);
 
@@ -1151,11 +1051,6 @@ void RenderFrontend::updateGlobalShaderInfo() {
     m_backend.setGlobalShaderInfo(m_globalShaderInfo);
 }
 
-/*
-=========
-initImages
-=========
-*/
 void RenderFrontend::initImages() {
     //load skybox
     {
@@ -1407,11 +1302,6 @@ void RenderFrontend::initImages() {
     //its resolution is dependent on scene size in order to fit desired texel density
 }
 
-/*
-=========
-initSamplers
-=========
-*/
 void RenderFrontend::initSamplers(){
     //shadow sampler
     {
@@ -1532,11 +1422,6 @@ void RenderFrontend::initSamplers(){
     }
 }
 
-/*
-=========
-initBuffers
-=========
-*/
 void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
     //histogram buffer
     {
@@ -1581,11 +1466,6 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
     }
 }
 
-/*
-=========
-initMeshs
-=========
-*/
 void RenderFrontend::initMeshs() {
     //dynamic meshes for frustum debugging
     {
@@ -1621,11 +1501,6 @@ void RenderFrontend::initMeshs() {
     }
 }
 
-/*
-=========
-initRenderpasses
-=========
-*/
 void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings) {
     //main shading pass
     {
@@ -1972,11 +1847,6 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     }
 }
 
-/*
-=========
-updateDepthPyramidShaderDescription
-=========
-*/
 ShaderDescription RenderFrontend::createDepthPyramidShaderDescription(uint32_t* outThreadgroupCount) {
 
     ShaderDescription desc;
@@ -2010,11 +1880,6 @@ ShaderDescription RenderFrontend::createDepthPyramidShaderDescription(uint32_t* 
     return desc;
 }
 
-/*
-=========
-computeDepthPyramidDispatchCount
-=========
-*/
 glm::ivec2 RenderFrontend::computeDepthPyramidDispatchCount() {
     glm::ivec2 count;
 
@@ -2040,20 +1905,10 @@ glm::ivec2 RenderFrontend::computeDepthPyramidDispatchCount() {
     }
 }
 
-/*
-=========
-updateSun
-=========
-*/
 void RenderFrontend::updateSun() {
     m_globalShaderInfo.sunDirection = glm::vec4(directionToVector(m_sunDirection), 0.f);
 }
 
-/*
-=========
-drawUi
-=========
-*/
 void RenderFrontend::drawUi() {
     //rendering stats
     {

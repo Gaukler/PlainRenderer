@@ -1,11 +1,6 @@
 #include "pch.h"
 #include "BoundingBox.h"
 
-/*
-=========
-axisAlignedBoundingBoxFromPositions
-=========
-*/
 AxisAlignedBoundingBox axisAlignedBoundingBoxFromPositions(const std::vector<glm::vec3>& positions) {
     AxisAlignedBoundingBox bb;
     bb.min = glm::vec3(std::numeric_limits<float>::max());
@@ -18,11 +13,6 @@ AxisAlignedBoundingBox axisAlignedBoundingBoxFromPositions(const std::vector<glm
     return bb;
 }
 
-/*
-=========
-axisAlignedBoundingBoxTransformed
-=========
-*/
 AxisAlignedBoundingBox axisAlignedBoundingBoxTransformed(const AxisAlignedBoundingBox& bb, const glm::mat4& m) {
     //get object space points
     const auto bbPoints = getAxisAlignedBoundingBoxPoints(bb);
@@ -38,11 +28,6 @@ AxisAlignedBoundingBox axisAlignedBoundingBoxTransformed(const AxisAlignedBoundi
     return axisAlignedBoundingBoxFromPositions(bbPointsTransformed);
 }
 
-/*
-=========
-combineAxisAlignedBoundingBoxes
-=========
-*/
 AxisAlignedBoundingBox combineAxisAlignedBoundingBoxes(const std::vector<AxisAlignedBoundingBox>& bbs) {
 
     if (bbs.size() == 0) {
@@ -61,11 +46,6 @@ AxisAlignedBoundingBox combineAxisAlignedBoundingBoxes(const std::vector<AxisAli
     return result;
 }
 
-/*
-=========
-axisAlignedBoundingBoxToLineMesh
-=========
-*/
 void axisAlignedBoundingBoxToLineMesh(const AxisAlignedBoundingBox& bb, 
     std::vector<glm::vec3>* outPositions, std::vector<uint32_t>* outIndices) {
 
@@ -119,11 +99,6 @@ void axisAlignedBoundingBoxToLineMesh(const AxisAlignedBoundingBox& bb,
     (*outIndices)[23] = r_l_b;
 }
 
-/*
-=========
-axisAlignedBoundingBoxTransformed
-=========
-*/
 std::array<glm::vec3, 8> getAxisAlignedBoundingBoxPoints(const AxisAlignedBoundingBox& bb) {
     return {
         glm::vec3(bb.min.x, bb.min.y, bb.min.z),
@@ -137,11 +112,6 @@ std::array<glm::vec3, 8> getAxisAlignedBoundingBoxPoints(const AxisAlignedBoundi
     };
 }
 
-/*
-=========
-viewProjectionMatrixAroundBB
-=========
-*/
 glm::mat4 viewProjectionMatrixAroundBB(const AxisAlignedBoundingBox& bb, const glm::vec3& viewDirection) {
 
     glm::mat4 coordinateSystemCorrection = {

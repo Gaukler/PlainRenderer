@@ -3,9 +3,6 @@
 #include "Rendering/ResourceDescriptions.h"
 #include <glm/common.hpp>
 
-/*
-contains
-*/
 struct TexturePaths {
     std::filesystem::path albedoTexturePath;
     std::filesystem::path normalTexturePath;
