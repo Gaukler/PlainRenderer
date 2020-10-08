@@ -701,7 +701,7 @@ void RenderFrontend::firstFramePreparation() {
     cubeWriteExecution.dispatchCount[1] = m_skyTextureRes / 8;
     cubeWriteExecution.dispatchCount[2] = 6;
     m_backend.setRenderPassExecution(cubeWriteExecution);
-
+    
     /*
     create sky texture mips
     */
@@ -724,7 +724,7 @@ void RenderFrontend::firstFramePreparation() {
         skyMipExecution.dispatchCount[2] = 6;
         m_backend.setRenderPassExecution(skyMipExecution);
     }
-
+    
     /*
     diffuse convolution
     */
@@ -742,9 +742,9 @@ void RenderFrontend::firstFramePreparation() {
     diffuseConvolutionExecution.dispatchCount[1] = m_diffuseProbeRes / 8;
     diffuseConvolutionExecution.dispatchCount[2] = 6;
     m_backend.setRenderPassExecution(diffuseConvolutionExecution);
-
+    
     computeBRDFLut();
-
+    
     /*
     specular probe convolution
     */
@@ -760,8 +760,8 @@ void RenderFrontend::firstFramePreparation() {
         specularConvolutionExecution.resources.storageImages = { specularProbeResource };
         specularConvolutionExecution.resources.sampledImages = { specularConvolutionSrcResource };
         specularConvolutionExecution.resources.samplers = { specCubeSamplerResource };
-        specularConvolutionExecution.dispatchCount[0] = m_specularProbeRes / 8;
-        specularConvolutionExecution.dispatchCount[1] = m_specularProbeRes / 8;
+        specularConvolutionExecution.dispatchCount[0] = m_specularProbeRes / uint32_t(pow(2, mipLevel)) / 8;
+        specularConvolutionExecution.dispatchCount[1] = m_specularProbeRes / uint32_t(pow(2, mipLevel)) / 8;
         specularConvolutionExecution.dispatchCount[2] = 6;
         m_backend.setRenderPassExecution(specularConvolutionExecution);
     }

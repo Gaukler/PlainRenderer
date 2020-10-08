@@ -704,9 +704,19 @@ void RenderBackend::renderFrame(bool presentToScreen) {
 
         std::vector<uint32_t> timestamps;
         timestamps.resize(m_currentTimestampQueryCount);
-        res = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, 0, m_currentTimestampQueryCount,
-            timestamps.size() * sizeof(uint32_t), timestamps.data(), 0, VK_QUERY_RESULT_WAIT_BIT);
-        assert(res == VK_SUCCESS);
+
+        //res = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, 0, m_currentTimestampQueryCount,
+        //    timestamps.size() * sizeof(uint32_t), timestamps.data(), 0, VK_QUERY_RESULT_WAIT_BIT);
+        //assert(res == VK_SUCCESS);
+        //on Ryzen 4700U iGPU vkGetQueryPoolResults only returns correct results for the first query
+        //maybe it contains more info so needs more space per query?
+        //manually get every query for now
+        //FIXME: proper solution
+        for (int i = 0; i < m_currentTimestampQueryCount; i++) {
+            res = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, i, 1,
+                timestamps.size() * sizeof(uint32_t), &timestamps[i], 0, VK_QUERY_RESULT_WAIT_BIT);
+            assert(res == VK_SUCCESS);
+        }
 
         for (const auto query : m_timestampQueries) {
 
