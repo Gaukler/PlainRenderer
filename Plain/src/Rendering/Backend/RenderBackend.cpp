@@ -36,11 +36,6 @@ RenderPasses
 ==================
 */
 
-/*
-=========
-isGraphicPassHandle
-=========
-*/
 bool RenderPasses::isGraphicPassHandle(const RenderPassHandle handle) {
     //checks first bit
     const uint32_t upperBit = (uint32_t)1 << 31;
