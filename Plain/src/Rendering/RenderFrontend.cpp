@@ -183,11 +183,7 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
         dataInternal.push_back(mesh);
     }
     
-    auto passList = m_shadowPasses;
-    passList.push_back(m_mainPass);
-    passList.push_back(m_depthPrePass);
-    passList.push_back(m_skyShadowPass);
-    const auto backendHandles = gRenderBackend.createMeshes(dataInternal, passList);
+    const auto backendHandles = gRenderBackend.createMeshes(dataInternal);
 
     assert(backendHandles.size() == dataInternal.size());
     
@@ -1490,6 +1486,46 @@ void RenderFrontend::initMeshs() {
             glm::vec3(1.f, 1.f, 1.f),
             glm::vec3(-1.f, 1.f, 1.f)
         };
+        cubedata.uvs = {
+            glm::vec2(),
+            glm::vec2(),
+            glm::vec2(),
+            glm::vec2(),
+            glm::vec2(),
+            glm::vec2(),
+            glm::vec2(),
+            glm::vec2()
+        };
+        cubedata.normals = {
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3()
+        };
+        cubedata.tangents = {
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3()
+        };
+        cubedata.bitangents = {
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3()
+        };
         cubedata.indices = {
             0, 1, 3, 3, 1, 2,
             1, 5, 2, 2, 5, 6,
@@ -1498,8 +1534,11 @@ void RenderFrontend::initMeshs() {
             3, 2, 7, 7, 2, 6,
             4, 5, 0, 0, 5, 1
         };
-        m_skyCube = gRenderBackend.createMeshes(std::vector<MeshDataInternal> { cubedata }, 
-            std::vector<RenderPassHandle>{ m_skyPass })[0];
+        cubedata.diffuseTexture = m_defaultDiffuseTexture;
+        cubedata.normalTexture = m_defaultNormalTexture;
+        cubedata.specularTexture = m_defaultSpecularTexture;
+
+        m_skyCube = gRenderBackend.createMeshes(std::vector<MeshDataInternal> { cubedata }).back();
     }
 }
 

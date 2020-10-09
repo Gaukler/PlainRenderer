@@ -205,6 +205,8 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_commandBuffers[0] = allocateCommandBuffer();
     m_commandBuffers[1] = allocateCommandBuffer();
 
+    initMaterialDescriptorSetLayout();
+
     /*
     create global storage buffer
     */
@@ -278,6 +280,7 @@ void RenderBackend::shutdown() {
     for (const auto& sampler : m_samplers) {
         vkDestroySampler(vkContext.device, sampler, nullptr);
     }
+    vkDestroyDescriptorSetLayout(vkContext.device, m_materialDescriporSetLayout, nullptr);
 
     //destroy swapchain
     vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
@@ -514,24 +517,16 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles,
         const auto meshHandle = meshHandles[i];
         const auto mesh = m_meshes[meshHandle.index];
         MeshRenderCommand command;
+        command.vertexBuffer = mesh.vertexBuffer.vulkanHandle;
         command.indexBuffer = mesh.indexBuffer.vulkanHandle;
         command.indexPrecision = mesh.indexPrecision;
         command.indexCount = mesh.indexCount;
         command.primaryMatrix = primarySecondaryMatrices[i][0];
         command.secondaryMatrix = primarySecondaryMatrices[i][1];
+        command.materialSet = mesh.materialDescriptorSet;
 
         assert(m_renderPasses.isGraphicPassHandle(passHandle));
         auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-        for (const auto& material : mesh.materials) {
-            if (material.flags == pass.materialFeatures) {
-                command.materialSet = material.descriptorSet;
-            }
-        }
-        for (const auto& vertexBuffer : mesh.vertexBuffers) {
-            if (vertexBuffer.flags == pass.vertexInputFlags) {
-                command.vertexBuffer = vertexBuffer.buffer.vulkanHandle;
-            }
-        }
         pass.meshRenderCommands.push_back(command);
     }
 }
@@ -547,7 +542,7 @@ void RenderBackend::drawDynamicMeshes(const std::vector<DynamicMeshHandle> meshH
         const auto mesh = m_dynamicMeshes[meshHandle.index];
         DynamicMeshRenderCommand command;
         command.indexCount = mesh.indexCount;
-        command.vertexBuffer = mesh.vertexBuffer.buffer.vulkanHandle;
+        command.vertexBuffer = mesh.vertexBuffer.vulkanHandle;
         command.indexBuffer = mesh.indexBuffer.vulkanHandle;
         command.primaryMatrix = primarySecondaryMatrices[i][0];
         command.secondaryMatrix = primarySecondaryMatrices[i][1];
@@ -766,10 +761,143 @@ RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& 
     return m_renderPasses.addGraphicPass(pass);;
 }
 
-std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshDataInternal>& meshes, const std::vector<RenderPassHandle>& passes) {
+std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshDataInternal>& meshes) {
     std::vector<MeshHandle> handles;
     for (const auto& data : meshes) {
-        handles.push_back(createMeshInternal(data, passes));
+
+        std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphicsQueueIndex };
+        Mesh mesh;
+        mesh.indexCount = (uint32_t)data.indices.size();
+
+        //index buffer
+        if (mesh.indexCount < std::numeric_limits<uint16_t>::max()) {
+            //half precision indices are enough
+            mesh.indexPrecision = VK_INDEX_TYPE_UINT16;
+            VkDeviceSize indexDataSize = data.indices.size() * sizeof(uint16_t);
+            mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+            //calculate lower precision indices
+            std::vector<uint16_t> halfPrecisionIndices;
+            halfPrecisionIndices.reserve(data.indices.size());
+            for (const auto index : data.indices) {
+                halfPrecisionIndices.push_back((uint16_t)index);
+            }
+            fillBuffer(mesh.indexBuffer, halfPrecisionIndices.data(), indexDataSize);
+        }
+        else {
+            //full precision required
+            mesh.indexPrecision = VK_INDEX_TYPE_UINT32;
+            VkDeviceSize indexDataSize = data.indices.size() * sizeof(uint32_t);
+            mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            fillBuffer(mesh.indexBuffer, data.indices.data(), indexDataSize);
+        }
+
+        //vertex buffer
+        std::vector<uint8_t> vertexData;
+
+        size_t nVertices = data.positions.size();
+
+        //precision and type must correspond to types in VertexInput.h
+        for (size_t i = 0; i < nVertices; i++) {
+            //position
+            vertexData.push_back(((uint8_t*)&data.positions[i].x)[0]);
+            vertexData.push_back(((uint8_t*)&data.positions[i].x)[1]);
+            vertexData.push_back(((uint8_t*)&data.positions[i].x)[2]);
+            vertexData.push_back(((uint8_t*)&data.positions[i].x)[3]);
+
+            vertexData.push_back(((uint8_t*)&data.positions[i].y)[0]);
+            vertexData.push_back(((uint8_t*)&data.positions[i].y)[1]);
+            vertexData.push_back(((uint8_t*)&data.positions[i].y)[2]);
+            vertexData.push_back(((uint8_t*)&data.positions[i].y)[3]);
+
+            vertexData.push_back(((uint8_t*)&data.positions[i].z)[0]);
+            vertexData.push_back(((uint8_t*)&data.positions[i].z)[1]);
+            vertexData.push_back(((uint8_t*)&data.positions[i].z)[2]);
+            vertexData.push_back(((uint8_t*)&data.positions[i].z)[3]);
+
+            //uv stored as 16 bit signed float
+            const auto uHalf = glm::packHalf(glm::vec1(data.uvs[i].x));
+            vertexData.push_back(((uint8_t*)&uHalf)[0]);
+            vertexData.push_back(((uint8_t*)&uHalf)[1]);
+
+            const auto vHalf = glm::packHalf(glm::vec1(data.uvs[i].y));
+            vertexData.push_back(((uint8_t*)&vHalf)[0]);
+            vertexData.push_back(((uint8_t*)&vHalf)[1]);
+
+            //normal stored as 32 bit R10G10B10A2
+            const uint32_t normalR10G10B10A2 = vec3ToNormalizedR10B10G10A2(data.normals[i]);
+
+            vertexData.push_back(((uint8_t*)&normalR10G10B10A2)[0]);
+            vertexData.push_back(((uint8_t*)&normalR10G10B10A2)[1]);
+            vertexData.push_back(((uint8_t*)&normalR10G10B10A2)[2]);
+            vertexData.push_back(((uint8_t*)&normalR10G10B10A2)[3]);
+
+            //tangent stored as 32 bit R10G10B10A2
+            const uint32_t tangentR10G10B10A2 = vec3ToNormalizedR10B10G10A2(data.tangents[i]);
+
+            vertexData.push_back(((uint8_t*)&tangentR10G10B10A2)[0]);
+            vertexData.push_back(((uint8_t*)&tangentR10G10B10A2)[1]);
+            vertexData.push_back(((uint8_t*)&tangentR10G10B10A2)[2]);
+            vertexData.push_back(((uint8_t*)&tangentR10G10B10A2)[3]);
+
+            //stored as 32 bit R10G10B10A2
+            const uint32_t bitangentR10G10B10A2 = vec3ToNormalizedR10B10G10A2(data.tangents[i]);
+
+            vertexData.push_back(((uint8_t*)&bitangentR10G10B10A2)[0]);
+            vertexData.push_back(((uint8_t*)&bitangentR10G10B10A2)[1]);
+            vertexData.push_back(((uint8_t*)&bitangentR10G10B10A2)[2]);
+            vertexData.push_back(((uint8_t*)&bitangentR10G10B10A2)[3]);
+        }
+
+        //create vertex buffer
+        VkDeviceSize vertexDataSize = vertexData.size() * sizeof(uint8_t);
+
+        mesh.vertexBuffer = createBufferInternal(vertexDataSize, queueFamilies,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        fillBuffer(mesh.vertexBuffer, vertexData.data(), vertexDataSize);
+
+        //material descriptor set
+        DescriptorPoolAllocationSizes layoutSizes;
+        layoutSizes.imageSampled = 3;
+        layoutSizes.sampler = 3;
+        mesh.materialDescriptorSet = allocateDescriptorSet(m_materialDescriporSetLayout, layoutSizes);
+
+        const auto albedoTextureResource = ImageResource(
+            data.diffuseTexture,
+            0,
+            3);
+
+        const auto albedoSamplerResource = SamplerResource(
+            m_materialSamplers.albedoSampler,
+            0);
+
+        const auto normalTextureResource = ImageResource(
+            data.normalTexture,
+            0,
+            4);
+
+        const auto normalSamplerResource = SamplerResource(
+            m_materialSamplers.normalSampler,
+            1);
+
+        const auto specularTextureResource = ImageResource(
+            data.specularTexture,
+            0,
+            5);
+
+        const auto specularSamplerResource = SamplerResource(
+            m_materialSamplers.specularSampler,
+            2);
+
+        RenderPassResources resources;
+        resources.sampledImages = { albedoTextureResource, normalTextureResource, specularTextureResource };
+        resources.samplers = { albedoSamplerResource, normalSamplerResource, specularSamplerResource };
+        updateDescriptorSet(mesh.materialDescriptorSet, resources);
+
+        //store and return handle
+        MeshHandle handle = { (uint32_t)m_meshes.size() };
+        handles.push_back(handle);
+        m_meshes.push_back(mesh);
     }
     return handles;
 }
@@ -808,7 +936,7 @@ void RenderBackend::updateDynamicMeshes(const std::vector<DynamicMeshHandle>& ha
 
         //validate position count
         const uint32_t floatPerPosition = 3; //xyz
-        const uint32_t maxPositionCount = (uint32_t)mesh.vertexBuffer.buffer.size / (sizeof(float) * floatPerPosition);
+        const uint32_t maxPositionCount = (uint32_t)mesh.vertexBuffer.size / (sizeof(float) * floatPerPosition);
 
         if (positions.size() > maxPositionCount) {
             std::cout << "Warning: RenderBackend::updateDynamicMeshes position count exceeds allocated vertex buffer size\n";
@@ -824,7 +952,7 @@ void RenderBackend::updateDynamicMeshes(const std::vector<DynamicMeshHandle>& ha
         //update buffers
         //there memory is host visible so it can be mapped and copied
         const VkDeviceSize vertexCopySize = std::min(positions.size(), (size_t)maxPositionCount) * sizeof(float) * floatPerPosition;
-        fillHostVisibleCoherentBuffer(mesh.vertexBuffer.buffer, (char*)positions.data(), vertexCopySize);
+        fillHostVisibleCoherentBuffer(mesh.vertexBuffer, (char*)positions.data(), vertexCopySize);
 
         //index count has already been validated
         const VkDeviceSize indexCopySize = mesh.indexCount * sizeof(uint32_t);
@@ -1985,280 +2113,6 @@ VkImageView RenderBackend::createImageView(const Image image, const VkImageViewT
     return view;
 }
 
-MeshHandle RenderBackend::createMeshInternal(const MeshDataInternal data, const std::vector<RenderPassHandle>& passes) {
-    std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphicsQueueIndex };
-    Mesh mesh;
-    mesh.indexCount = (uint32_t)data.indices.size();
-
-    /*
-    index buffer
-    */
-
-    if (mesh.indexCount < std::numeric_limits<uint16_t>::max()) {
-        //half precision indices are enough
-        mesh.indexPrecision = VK_INDEX_TYPE_UINT16;
-        VkDeviceSize indexDataSize = data.indices.size() * sizeof(uint16_t);
-        mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-        //calculate lower precision indices
-        std::vector<uint16_t> halfPrecisionIndices;
-        halfPrecisionIndices.reserve(data.indices.size());
-        for (const auto index : data.indices) {
-            halfPrecisionIndices.push_back((uint16_t)index);
-        }
-        fillBuffer(mesh.indexBuffer, halfPrecisionIndices.data(), indexDataSize);
-    }
-    else {
-        //full precision required
-        mesh.indexPrecision = VK_INDEX_TYPE_UINT32;
-        VkDeviceSize indexDataSize = data.indices.size() * sizeof(uint32_t);
-        mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        fillBuffer(mesh.indexBuffer, data.indices.data(), indexDataSize);
-    }
-    
-
-    /*
-    vertex buffer per pass
-    */
-    for (const auto passHandle : passes) {
-
-        assert(m_renderPasses.isGraphicPassHandle(passHandle));
-        const auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-
-        /*
-        check if there exists a buffer with the required vertex input
-        only add new vertex buffer if thats not the case
-        */
-        bool foundSameInput = false;
-        for (auto& buffer : mesh.vertexBuffers) {
-            if (pass.vertexInputFlags == buffer.flags) {
-                foundSameInput = true;
-                break;
-            }
-        }
-        if (foundSameInput) {
-            continue;
-        }
-
-        /*
-        create new buffer
-        */
-        //using fixed size type to guarantee byte size
-        std::vector<uint8_t> vertexData;
-
-        size_t nVertices = 0;
-        if (bool(pass.vertexInputFlags & VertexInputFlags::Position)) {
-            nVertices = data.positions.size();
-        }
-        else if (bool(pass.vertexInputFlags & VertexInputFlags::UV)) {
-            nVertices = data.uvs.size();
-        }
-        else if (bool(pass.vertexInputFlags & VertexInputFlags::Normal)) {
-            nVertices = data.normals.size();
-        }
-        else if (bool(pass.vertexInputFlags & VertexInputFlags::Tangent)) {
-            nVertices = data.tangents.size();
-        }
-        else if (bool(pass.vertexInputFlags & VertexInputFlags::Bitangent)) {
-            nVertices = data.bitangents.size();
-        }
-
-        //fill in vertex data
-        //precision and type must correspond to types in VertexInput.h
-        for (size_t i = 0; i < nVertices; i++) {
-            if (bool(pass.vertexInputFlags & VertexInputFlags::Position)) {
-
-                vertexData.push_back(((uint8_t*)&data.positions[i].x)[0]);
-                vertexData.push_back(((uint8_t*)&data.positions[i].x)[1]);
-                vertexData.push_back(((uint8_t*)&data.positions[i].x)[2]);
-                vertexData.push_back(((uint8_t*)&data.positions[i].x)[3]);
-
-                vertexData.push_back(((uint8_t*)&data.positions[i].y)[0]);
-                vertexData.push_back(((uint8_t*)&data.positions[i].y)[1]);
-                vertexData.push_back(((uint8_t*)&data.positions[i].y)[2]);
-                vertexData.push_back(((uint8_t*)&data.positions[i].y)[3]);
-
-                vertexData.push_back(((uint8_t*)&data.positions[i].z)[0]);
-                vertexData.push_back(((uint8_t*)&data.positions[i].z)[1]);
-                vertexData.push_back(((uint8_t*)&data.positions[i].z)[2]);
-                vertexData.push_back(((uint8_t*)&data.positions[i].z)[3]);
-            }
-            if (bool(pass.vertexInputFlags & VertexInputFlags::UV)) {
-                //stored as 16 bit signed float
-                const auto uHalf = glm::packHalf(glm::vec1(data.uvs[i].x));
-                vertexData.push_back(((uint8_t*)&uHalf)[0]);
-                vertexData.push_back(((uint8_t*)&uHalf)[1]);
-
-                const auto vHalf = glm::packHalf(glm::vec1(data.uvs[i].y));
-                vertexData.push_back(((uint8_t*)&vHalf)[0]);
-                vertexData.push_back(((uint8_t*)&vHalf)[1]);
-            }
-            if (bool(pass.vertexInputFlags & VertexInputFlags::Normal)) {
-                //stored as 32 bit R10G10B10A2
-                const auto converted = vec3ToNormalizedR10B10G10A2(data.normals[i]);
-
-                vertexData.push_back(((uint8_t*)&converted)[0]);
-                vertexData.push_back(((uint8_t*)&converted)[1]);
-                vertexData.push_back(((uint8_t*)&converted)[2]);
-                vertexData.push_back(((uint8_t*)&converted)[3]);
-            }
-            if (bool(pass.vertexInputFlags & VertexInputFlags::Tangent)) {
-                //stored as 32 bit R10G10B10A2
-                const auto converted = vec3ToNormalizedR10B10G10A2(data.tangents[i]);
-
-                vertexData.push_back(((uint8_t*)&converted)[0]);
-                vertexData.push_back(((uint8_t*)&converted)[1]);
-                vertexData.push_back(((uint8_t*)&converted)[2]);
-                vertexData.push_back(((uint8_t*)&converted)[3]);
-            }
-            if (bool(pass.vertexInputFlags & VertexInputFlags::Bitangent)) {
-                //stored as 32 bit R10G10B10A2
-                const auto converted = vec3ToNormalizedR10B10G10A2(data.bitangents[i]);
-
-                vertexData.push_back(((uint8_t*)&converted)[0]);
-                vertexData.push_back(((uint8_t*)&converted)[1]);
-                vertexData.push_back(((uint8_t*)&converted)[2]);
-                vertexData.push_back(((uint8_t*)&converted)[3]);
-            }
-        }
-
-        /*
-        create vertex buffer
-        */
-        MeshVertexBuffer buffer;
-        buffer.flags = pass.vertexInputFlags;
-        VkDeviceSize vertexDataSize = vertexData.size() * sizeof(uint8_t);
-
-        buffer.buffer = createBufferInternal(vertexDataSize, queueFamilies,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        fillBuffer(buffer.buffer, vertexData.data(), vertexDataSize);
-
-        mesh.vertexBuffers.push_back(buffer);
-    }
-
-    /*
-    material per pass
-    */
-    ImageHandle albedoTexture = data.diffuseTexture;
-    ImageHandle normalTexture = data.normalTexture;
-    ImageHandle specularTexture = data.specularTexture;
-
-    std::optional<SamplerHandle> albedoSampler;
-    std::optional<SamplerHandle> normalSampler;
-    std::optional<SamplerHandle> specularSampler;
-
-    for (const auto passHandle : passes) {
-
-        const auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-
-        /*
-        check if there exists a material with the required features
-        only add new material if thats not the case
-        */
-        bool foundSameMaterial = false;
-        for (auto& material : mesh.materials) {
-            if (pass.materialFeatures == material.flags) {
-                foundSameMaterial = true;
-                break;
-            }
-        }
-        if (foundSameMaterial) {
-            continue;
-        }
-
-        /*
-        create resources
-        */
-        RenderPassResources resources;
-
-        //add resources depending on material flags
-        if (bool(pass.materialFeatures & MaterialFeatureFlags::AlbedoTexture)) {
-
-            //create sampler if needed
-            if (!albedoSampler.has_value()) {
-                if (albedoTexture.index != invalidIndex) {
-                    albedoSampler = m_materialSamplers.albedoSampler;
-                }
-                else {
-                    std::cout << "Mesh misses required albedo texture \n";
-                }
-            }
-
-            const auto albedoTextureResource = ImageResource(
-                albedoTexture,
-                0,
-                3);
-
-            const auto albedoSamplerResource = SamplerResource(
-                albedoSampler.value(),
-                0);
-
-            resources.sampledImages.push_back(albedoTextureResource);
-            resources.samplers.push_back(albedoSamplerResource);
-        }
-        if (bool(pass.materialFeatures & MaterialFeatureFlags::NormalTexture)) {
-            if (!normalSampler.has_value()) {
-                if (normalTexture.index != invalidIndex) {
-                    normalSampler = m_materialSamplers.normalSampler;
-                }
-                else {
-                    std::cout << "Mesh misses required normal texture \n";
-                }
-            }
-
-            const auto normalTextureResource = ImageResource(
-                normalTexture,
-                0,
-                4);
-
-            const auto normalSamplerResource = SamplerResource(
-                normalSampler.value(),
-                1);
-
-            resources.sampledImages.push_back(normalTextureResource);
-            resources.samplers.push_back(normalSamplerResource);
-
-        }
-        if (bool(pass.materialFeatures & MaterialFeatureFlags::SpecularTexture)) {
-            if (!specularSampler.has_value()) {
-                if (specularTexture.index != invalidIndex) {
-                    specularSampler = m_materialSamplers.specularSampler;
-                }
-                else {
-                    std::cout << "Mesh misses required specular texture \n";
-                }
-            }
-
-            const auto specularTextureResource = ImageResource(
-                specularTexture,
-                0,
-                5);
-
-            const auto specularSamplerResource = SamplerResource(
-                specularSampler.value(),
-                2);
-
-            resources.sampledImages.push_back(specularTextureResource);
-            resources.samplers.push_back(specularSamplerResource);
-        }
-        MeshMaterial material;
-        material.flags = pass.materialFeatures;
-        const auto setSizes = descriptorSetAllocationSizeFromMaterialFlags(pass.materialFeatures);
-        material.descriptorSet = allocateDescriptorSet(pass.materialSetLayout, setSizes);
-        updateDescriptorSet(material.descriptorSet, resources);
-
-        mesh.materials.push_back(material);
-    }
-
-    /*
-    save and return handle
-    */
-    MeshHandle handle = { (uint32_t)m_meshes.size() };
-    m_meshes.push_back(mesh);
-
-    return handle;
-}
-
 DynamicMeshHandle RenderBackend::createDynamicMeshInternal(const uint32_t maxPositions, const uint32_t maxIndices) {
     
     DynamicMesh mesh;
@@ -2268,11 +2122,10 @@ DynamicMeshHandle RenderBackend::createDynamicMeshInternal(const uint32_t maxPos
     const uint32_t memoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
     //create vertex buffer    
-    mesh.vertexBuffer.flags = VertexInputFlags::Position;
     const uint32_t floatsPerPosition = 3; //xyz
     VkDeviceSize vertexDataSize = maxPositions * sizeof(float) * floatsPerPosition;
 
-    mesh.vertexBuffer.buffer = createBufferInternal(vertexDataSize, queueFamilies,
+    mesh.vertexBuffer = createBufferInternal(vertexDataSize, queueFamilies,
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, memoryFlags);
 
     //create index buffer
@@ -2809,26 +2662,6 @@ DescriptorPoolAllocationSizes RenderBackend::descriptorSetAllocationSizeFromShad
     return sizes;
 }
 
-DescriptorPoolAllocationSizes RenderBackend::descriptorSetAllocationSizeFromMaterialFlags(const MaterialFeatureFlags& flags) {
-    
-    DescriptorPoolAllocationSizes sizes;
-    sizes.setCount = 1;
-
-    const MaterialFeatureFlags materialFlagsBits[] = {
-        MaterialFeatureFlags::AlbedoTexture,
-        MaterialFeatureFlags::NormalTexture,
-        MaterialFeatureFlags::SpecularTexture
-    };
-    for (const MaterialFeatureFlags feature : materialFlagsBits) {
-        if (bool(flags & feature)) {
-            //every material flag corresponds to a sampled texture and it's sampler
-            sizes.imageSampled += 1;
-            sizes.sampler += 1;
-        }
-    }
-    return sizes;
-}
-
 VkDescriptorSet RenderBackend::allocateDescriptorSet(const VkDescriptorSetLayout setLayout, const DescriptorPoolAllocationSizes& requiredSizes) {
 
     VkDescriptorSetAllocateInfo setInfo;
@@ -3042,16 +2875,15 @@ VkDescriptorSetLayout RenderBackend::createDescriptorSetLayout(const ShaderLayou
     return setLayout;
 }
 
-VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout setLayout, const VkDescriptorSetLayout materialSetLayout, 
-    const bool isGraphicPass) {
+VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout setLayout, const bool isGraphicPass) {
 
     VkPushConstantRange matrices = {};
     matrices.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     matrices.offset = 0;
     matrices.size = 128;
 
-    VkDescriptorSetLayout setLayouts[3] = { m_globalDescriptorSetLayout, setLayout, materialSetLayout };
-    uint32_t setCount = materialSetLayout != VK_NULL_HANDLE ? 3 : 2;
+    VkDescriptorSetLayout setLayouts[3] = { m_globalDescriptorSetLayout, setLayout, m_materialDescriporSetLayout };
+    uint32_t setCount = isGraphicPass ? 3 : 2;
 
     VkPipelineLayoutCreateInfo layoutInfo = {};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -3078,7 +2910,7 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     VkShaderModule module = createShaderModule(spirV);
     ShaderReflection reflection = performComputeShaderReflection(spirV);
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
-    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, VK_NULL_HANDLE, false);
+    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, false);
 
     VulkanShaderCreateAdditionalStructs additionalStructs;
 
@@ -3104,6 +2936,13 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     pass.descriptorSet = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
 
     return pass;
+}
+
+void RenderBackend::initMaterialDescriptorSetLayout() {
+    ShaderLayout shaderLayout;
+    shaderLayout.samplerBindings = { 0, 1, 2 };
+    shaderLayout.sampledImageBindings = { 3, 4, 5 };
+    m_materialDescriporSetLayout = createDescriptorSetLayout(shaderLayout);
 }
 
 GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV) {
@@ -3160,28 +2999,8 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     shader reflection
     */
     ShaderReflection reflection = performShaderReflection(spirV);
-    pass.vertexInputFlags = reflection.vertexInputFlags;
-    pass.materialFeatures = reflection.materialFeatures;
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
-
-    /*
-    material set layout
-    */
-    ShaderLayout shaderLayout;
-    if (bool(reflection.materialFeatures & MaterialFeatureFlags::AlbedoTexture)) {
-        shaderLayout.samplerBindings.push_back(0);
-        shaderLayout.sampledImageBindings.push_back(3);
-    }
-    if (bool(reflection.materialFeatures & MaterialFeatureFlags::NormalTexture)) {
-        shaderLayout.samplerBindings.push_back(1);
-        shaderLayout.sampledImageBindings.push_back(4);
-    }
-    if (bool(reflection.materialFeatures & MaterialFeatureFlags::SpecularTexture)) {
-        shaderLayout.samplerBindings.push_back(2);
-        shaderLayout.sampledImageBindings.push_back(5);
-    }
-    pass.materialSetLayout = createDescriptorSetLayout(shaderLayout);
-    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, pass.materialSetLayout, true);
+    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, true);
 
     /*
     get width and height from output
@@ -3219,8 +3038,9 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
             attribute.format = vertexInputFormatsPerLocation[(size_t)location];
             attribute.offset = currentOffset;
             attributes.push_back(attribute);
-            currentOffset += vertexInputBytePerLocation[(size_t)location];
         }
+        //vertex buffer has attributes even if not used
+        currentOffset += vertexInputBytePerLocation[(size_t)location];
     }
 
     VkVertexInputBindingDescription vertexBinding;
@@ -3947,21 +3767,18 @@ void RenderBackend::destroyBuffer(const Buffer& buffer) {
 }
 
 void RenderBackend::destroyMesh(const Mesh& mesh) {
-    for (const auto& buffer : mesh.vertexBuffers) {
-        destroyBuffer(buffer.buffer);
-    }
+    destroyBuffer(mesh.vertexBuffer);
     destroyBuffer(mesh.indexBuffer);
 }
 
 void RenderBackend::destroyDynamicMesh(const DynamicMesh& mesh) {
-    destroyBuffer(mesh.vertexBuffer.buffer);
+    destroyBuffer(mesh.vertexBuffer);
     destroyBuffer(mesh.indexBuffer);
 }
 
 void RenderBackend::destroyGraphicPass(const GraphicPass& pass) {
     vkDestroyRenderPass(vkContext.device, pass.vulkanRenderPass, nullptr);
     vkDestroyFramebuffer(vkContext.device, pass.beginInfo.framebuffer, nullptr);
-    vkDestroyDescriptorSetLayout(vkContext.device, pass.materialSetLayout, nullptr);
     vkDestroyPipelineLayout(vkContext.device, pass.pipelineLayout, nullptr);
     vkDestroyPipeline(vkContext.device, pass.pipeline, nullptr);
     vkDestroyDescriptorSetLayout(vkContext.device, pass.descriptorSetLayout, nullptr);

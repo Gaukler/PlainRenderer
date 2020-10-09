@@ -184,8 +184,7 @@ public:
     RenderPassHandle    createComputePass(const ComputePassDescription& desc);
     RenderPassHandle    createGraphicPass(const GraphicPassDescription& desc);
 
-    std::vector<MeshHandle> createMeshes(const std::vector<MeshDataInternal>& meshes, 
-        const std::vector<RenderPassHandle>& passes);
+    std::vector<MeshHandle> createMeshes(const std::vector<MeshDataInternal>& meshes);
 
     //dynamic meshes can be updated
     //they use host visible memory which makes the update fast but rendering slow
@@ -209,6 +208,9 @@ public:
     std::vector<RenderPassTime> getRenderpassTimings();
 
 private:
+
+    VkDescriptorSetLayout m_materialDescriporSetLayout;
+    void initMaterialDescriptorSetLayout();
 
     MaterialSamplers m_materialSamplers;
     MaterialSamplers createMaterialSamplers();
@@ -240,7 +242,7 @@ private:
     validation layers are disabled in release build using macro
     */
 #ifdef NDEBUG
-    const bool m_useValidationLayers = false;
+    const bool m_useValidationLayers = true;
 #else
     const bool m_useValidationLayers = true;
 #endif
@@ -320,7 +322,6 @@ private:
 
     VkImageView createImageView(const Image image, const VkImageViewType viewType, const uint32_t baseMip, const uint32_t mipLevels, const VkImageAspectFlags aspectMask);
     Buffer      createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
-    MeshHandle  createMeshInternal(const MeshDataInternal data, const std::vector<RenderPassHandle>& passes);
     DynamicMeshHandle  createDynamicMeshInternal(const uint32_t maxPositions, const uint32_t maxIndices);
 
     VkImageSubresourceLayers createSubresourceLayers(const Image& image, const uint32_t mipLevel);
@@ -405,7 +406,6 @@ private:
     VkDescriptorSetLayout m_globalDescriptorSetLayout = VK_NULL_HANDLE;    //contains global info, always bound to set 0
 
     DescriptorPoolAllocationSizes descriptorSetAllocationSizeFromShaderReflection(const ShaderReflection& reflection);
-    DescriptorPoolAllocationSizes descriptorSetAllocationSizeFromMaterialFlags(const MaterialFeatureFlags& flags);
 
     //creates new descriptor pool if needed
     //currently now way to free descriptor set
@@ -417,8 +417,7 @@ private:
     materialSetLayout may be VK_NULL_HANDLE, this is the case for compute passes
     isGraphicsPass controls if the push constant range is setup for the MVP matrix
     */
-    VkPipelineLayout        createPipelineLayout(const VkDescriptorSetLayout setLayout, const VkDescriptorSetLayout materialSetLayout, 
-        const bool isGraphicPass);
+    VkPipelineLayout        createPipelineLayout(const VkDescriptorSetLayout setLayout, const bool isGraphicPass);
 
 
     /*

@@ -13,9 +13,8 @@ set index is not a parameter as the reflection only takes care of the second set
 second set is always pass specific, first is global, third is materials
 */
 struct ShaderReflection {
-    ShaderLayout            shaderLayout;
-    VertexInputFlags        vertexInputFlags = VertexInputFlags(0);
-    MaterialFeatureFlags    materialFeatures = MaterialFeatureFlags(0);
+    ShaderLayout        shaderLayout;
+    VertexInputFlags    vertexInputFlags = VertexInputFlags(0);
 };
 
 /*

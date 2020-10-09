@@ -110,40 +110,21 @@ void layoutFromSpirv(const std::vector<uint32_t>& spirv, const VkShaderStageFlag
             const auto id = lists[type][i].id;
             uint32_t set = spvc_compiler_get_decoration(compiler, id, SpvDecorationDescriptorSet);
 
-            /*
-            set 0 is global, set 1 is per pass, set 2 is material
-            we only want bindings for set 1
-            */
+            //set 0 is global, set 1 is per pass, set 2 is material
+            //we only want bindings for set 1            
             if (set == 1) {
                 const uint32_t binding = spvc_compiler_get_decoration(compiler, id, SpvDecorationBinding);
                 if (!vectorContains(*results[type], binding)) {
                     results[type]->push_back(binding);
                 }
             }
-            /*
-            material features
-            */
-            if (set == 2) {
-                const uint32_t binding = spvc_compiler_get_decoration(compiler, id, SpvDecorationBinding);
-                if (binding == 0 || binding == 3) {
-                    outReflection->materialFeatures = outReflection->materialFeatures | MaterialFeatureFlags::AlbedoTexture;
-                }
-                if (binding == 1 || binding == 4) {
-                    outReflection->materialFeatures = outReflection->materialFeatures | MaterialFeatureFlags::NormalTexture;
-                }
-                if (binding == 2 || binding == 5) {
-                    outReflection->materialFeatures = outReflection->materialFeatures | MaterialFeatureFlags::SpecularTexture;
-                }
-            }
         }
     }
 
-    /*
-    vertex input
-    */
+    //vertex input
     if (stageFlags & VK_SHADER_STAGE_VERTEX_BIT) {
-        const spvc_reflected_resource*  vertexInputList     = NULL;
-        size_t                          vertexInputCount    = NULL;
+        const spvc_reflected_resource* vertexInputList = NULL;
+        size_t vertexInputCount = NULL;
 
         spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_STAGE_INPUT, &vertexInputList, &vertexInputCount);
         //FIXME also lists unused variables
