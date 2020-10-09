@@ -11,21 +11,18 @@ not worth it to write an input handler for camera and a few hotkeys
 */
 class CameraController {
 public:
-	CameraController(GLFWwindow* inputWindow);
-	void update(GLFWwindow* inputWindow);
+	void update();
     CameraExtrinsic getExtrinsic();
 
 	//controls
-	float m_speed = 1.f;
+	float m_movementSpeed = 1.f;
 	float m_mouseSensitivity = 20.f;
 	float m_controllerSensitivity = 100.f;
-	float m_speedMod = 10.f;
+	float m_sprintSpeedFactor = 10.f;
 
 private:
 	float m_pitch = 0.f;
 	float m_yaw = -90.f;
-
-	glm::vec2 m_lastMousePositon;
 
     CameraExtrinsic m_extrinsic;
 };

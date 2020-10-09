@@ -117,7 +117,6 @@ private:
 
     //stored for resizing
     GLFWwindow* m_window = nullptr;
-    RenderBackend m_backend;
     GlobalShaderInfo m_globalShaderInfo;
 
     Camera m_camera;    
@@ -261,3 +260,5 @@ private:
     //ui    
     void drawUi();
 };
+
+extern RenderFrontend gRenderFrontend;

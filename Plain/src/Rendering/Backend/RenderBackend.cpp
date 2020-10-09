@@ -21,6 +21,9 @@
 #include <imgui/examples/imgui_impl_glfw.h>
 #include <imgui/examples/imgui_impl_vulkan.h>
 
+//definition of extern variable from header
+RenderBackend gRenderBackend;
+
 //reenable warnings
 #pragma warning( pop )
 

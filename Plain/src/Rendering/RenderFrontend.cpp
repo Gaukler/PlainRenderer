@@ -19,6 +19,9 @@
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
 
+//definition of extern variable from header
+RenderFrontend gRenderFrontend;
+
 void resizeCallback(GLFWwindow* window, int width, int height) {
     RenderFrontend* frontEnd = reinterpret_cast<RenderFrontend*>(glfwGetWindowUserPointer(window));
     frontEnd->setResolution(width, height);
@@ -33,7 +36,6 @@ void RenderFrontend::setup(GLFWwindow* window) {
     m_screenHeight = height;
     m_camera.intrinsic.aspectRatio = (float)width / (float)height;
 
-    m_backend.setup(window);
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, resizeCallback);
 
@@ -48,19 +50,19 @@ void RenderFrontend::setup(GLFWwindow* window) {
 }
 
 void RenderFrontend::shutdown() {
-    m_backend.shutdown();
+    gRenderBackend.shutdown();
 }
 
 void RenderFrontend::newFrame() {
     if (m_didResolutionChange) {
-        m_backend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
-        m_backend.resizeImages( { m_colorBuffer, m_depthBuffer, m_motionVectorBuffer, 
+        gRenderBackend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
+        gRenderBackend.resizeImages( { m_colorBuffer, m_depthBuffer, m_motionVectorBuffer, 
             m_historyBuffer }, m_screenWidth, m_screenHeight);
-        m_backend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
+        gRenderBackend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
 
         uint32_t threadgroupCount = 0;
-        m_backend.updateComputePassShaderDescription(m_depthPyramidPass, createDepthPyramidShaderDescription(&threadgroupCount));
+        gRenderBackend.updateComputePassShaderDescription(m_depthPyramidPass, createDepthPyramidShaderDescription(&threadgroupCount));
     }
     if (m_minimized) {
         return;
@@ -71,23 +73,23 @@ void RenderFrontend::newFrame() {
     m_currentShadowPassDrawcallCount = 0;
 
     if (m_isMainPassShaderDescriptionStale) {
-        m_backend.updateGraphicPassShaderDescription(m_mainPass, createForwardPassShaderDescription(m_shadingConfig));
+        gRenderBackend.updateGraphicPassShaderDescription(m_mainPass, createForwardPassShaderDescription(m_shadingConfig));
         m_isMainPassShaderDescriptionStale = false;
     }
 
     if (m_isBRDFLutShaderDescriptionStale) {
-        m_backend.updateComputePassShaderDescription(m_brdfLutPass, createBRDFLutShaderDescription(m_shadingConfig));
+        gRenderBackend.updateComputePassShaderDescription(m_brdfLutPass, createBRDFLutShaderDescription(m_shadingConfig));
         //don't reset m_isMainPassShaderDescriptionStale, this is done when rendering as it's used to trigger lut recreation
     }
 
     if (m_isTAAShaderDescriptionStale) {
-        m_backend.updateComputePassShaderDescription(m_taaPass, createTAAShaderDescription());
+        gRenderBackend.updateComputePassShaderDescription(m_taaPass, createTAAShaderDescription());
         m_isTAAShaderDescriptionStale = false;
     }
 
-    m_backend.updateShaderCode();
+    gRenderBackend.updateShaderCode();
 
-    m_backend.newFrame();
+    gRenderBackend.newFrame();
 
     m_bbsToDebugDraw.clear();
 
@@ -149,7 +151,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
 
         const auto shadowFrustum = computeOrthogonalFrustumFittedToCamera(m_cameraFrustum, directionToVector(m_sunDirection));
         frustumToLineMesh(shadowFrustum, &frustumPoints, &frustumIndices);
-        m_backend.updateDynamicMeshes({ m_shadowFrustumModel }, { frustumPoints }, { frustumIndices });
+        gRenderBackend.updateDynamicMeshes({ m_shadowFrustumModel }, { frustumPoints }, { frustumIndices });
     }
 }
 
@@ -185,7 +187,7 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
     passList.push_back(m_mainPass);
     passList.push_back(m_depthPrePass);
     passList.push_back(m_skyShadowPass);
-    const auto backendHandles = m_backend.createMeshes(dataInternal, passList);
+    const auto backendHandles = gRenderBackend.createMeshes(dataInternal, passList);
 
     assert(backendHandles.size() == dataInternal.size());
     
@@ -207,7 +209,7 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
         m_meshStates.push_back(state);
 
         //create debug mesh for rendering
-        const auto debugMesh = m_backend.createDynamicMeshes(
+        const auto debugMesh = gRenderBackend.createDynamicMeshes(
             { axisAlignedBoundingBoxPositionsPerMesh }, { axisAlignedBoundingBoxIndicesPerMesh }).back();
         m_bbDebugMeshes.push_back(debugMesh);
     }
@@ -259,8 +261,8 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
                 }
             }
         }
-        m_backend.drawMeshes(culledMeshes, culledTransformsMainPass, m_mainPass);
-        m_backend.drawMeshes(culledMeshes, culledTransformsPrepass, m_depthPrePass);
+        gRenderBackend.drawMeshes(culledMeshes, culledTransformsMainPass, m_mainPass);
+        gRenderBackend.drawMeshes(culledMeshes, culledTransformsPrepass, m_depthPrePass);
     }
     
     //shadow pass
@@ -300,7 +302,7 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
             }
         }
         for (uint32_t shadowPass = 0; shadowPass < m_shadowPasses.size(); shadowPass++) {
-            m_backend.drawMeshes(culledMeshes, culledTransforms, m_shadowPasses[shadowPass]);
+            gRenderBackend.drawMeshes(culledMeshes, culledTransforms, m_shadowPasses[shadowPass]);
         }
     }  
 }
@@ -352,7 +354,7 @@ void RenderFrontend::renderFrame() {
             StorageBufferResource lightMatrixBufferResource(m_sunShadowInfoBuffer, true, 0);
             shadowPassExecution.resources.storageBuffers = { lightMatrixBufferResource };
 
-            m_backend.setRenderPassExecution(shadowPassExecution);
+            gRenderBackend.setRenderPassExecution(shadowPassExecution);
         }
     }
     
@@ -377,7 +379,7 @@ void RenderFrontend::renderFrame() {
         histogramPerTileExecution.dispatchCount[1] = uint32_t(std::ceilf((float)m_screenHeight / float(m_histogramTileSizeY)));
         histogramPerTileExecution.dispatchCount[2] = 1;
 
-        m_backend.setRenderPassExecution(histogramPerTileExecution);
+        gRenderBackend.setRenderPassExecution(histogramPerTileExecution);
     }
 
     const float binsPerDispatch = 64.f;
@@ -390,7 +392,7 @@ void RenderFrontend::renderFrame() {
         histogramResetExecution.dispatchCount[1] = 1;
         histogramResetExecution.dispatchCount[2] = 1;
 
-        m_backend.setRenderPassExecution(histogramResetExecution);
+        gRenderBackend.setRenderPassExecution(histogramResetExecution);
     }
     //combine tiles
     {
@@ -405,7 +407,7 @@ void RenderFrontend::renderFrame() {
         histogramCombineTilesExecution.dispatchCount[2] = 1;
         histogramCombineTilesExecution.parents = { m_histogramPerTilePass, m_histogramResetPass };
 
-        m_backend.setRenderPassExecution(histogramCombineTilesExecution);
+        gRenderBackend.setRenderPassExecution(histogramCombineTilesExecution);
     }
     //pre expose
     {
@@ -419,13 +421,13 @@ void RenderFrontend::renderFrame() {
         preExposeLightsExecution.dispatchCount[1] = 1;
         preExposeLightsExecution.dispatchCount[2] = 1;
 
-        m_backend.setRenderPassExecution(preExposeLightsExecution);
+        gRenderBackend.setRenderPassExecution(preExposeLightsExecution);
     }
     //depth prepass
     {
         RenderPassExecution prepassExe;
         prepassExe.handle = m_depthPrePass;
-        m_backend.setRenderPassExecution(prepassExe);
+        gRenderBackend.setRenderPassExecution(prepassExe);
     }
     //depth pyramid
     {
@@ -460,7 +462,7 @@ void RenderFrontend::renderFrame() {
             ImageResource pyramidMip(m_minMaxDepthPyramid, mipLevel, i);
             exe.resources.storageImages.push_back(pyramidMip);
         }
-        m_backend.setRenderPassExecution(exe);
+        gRenderBackend.setRenderPassExecution(exe);
     }
     //compute light matrix
     {
@@ -478,7 +480,7 @@ void RenderFrontend::renderFrame() {
         StorageBufferResource lightMatrixBuffer(m_sunShadowInfoBuffer, false, 0);
         exe.resources.storageBuffers = { lightMatrixBuffer };
 
-        m_backend.setRenderPassExecution(exe);
+        gRenderBackend.setRenderPassExecution(exe);
     }
     //render scene geometry
     {
@@ -514,7 +516,7 @@ void RenderFrontend::renderFrame() {
         mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
         mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
 
-        m_backend.setRenderPassExecution(mainPassExecution);
+        gRenderBackend.setRenderPassExecution(mainPassExecution);
     }
 
     bool drawDebugPass = false;
@@ -524,11 +526,11 @@ void RenderFrontend::renderFrame() {
 
     //update view frustum debug model
     if (m_freezeAndDrawCameraFrustum) {
-        m_backend.drawDynamicMeshes({ m_cameraFrustumModel }, { defaultTransform }, m_debugGeoPass);
+        gRenderBackend.drawDynamicMeshes({ m_cameraFrustumModel }, { defaultTransform }, m_debugGeoPass);
         drawDebugPass = true;
     }
     if (m_drawShadowFrustum) {
-        m_backend.drawDynamicMeshes({ m_shadowFrustumModel }, { defaultTransform }, m_debugGeoPass);
+        gRenderBackend.drawDynamicMeshes({ m_shadowFrustumModel }, { defaultTransform }, m_debugGeoPass);
         drawDebugPass = true;
     }
 
@@ -552,10 +554,10 @@ void RenderFrontend::renderFrame() {
         //subvector with correct handle count
         std::vector<DynamicMeshHandle> bbMeshHandles(&m_bbDebugMeshes[0], &m_bbDebugMeshes[positionsPerMesh.size()]);
 
-        m_backend.updateDynamicMeshes(bbMeshHandles, positionsPerMesh, indicesPerMesh);
+        gRenderBackend.updateDynamicMeshes(bbMeshHandles, positionsPerMesh, indicesPerMesh);
 
         std::vector<std::array<glm::mat4, 2>> debugMeshTransforms(m_bbsToDebugDraw.size(), defaultTransform);
-        m_backend.drawDynamicMeshes(bbMeshHandles, debugMeshTransforms, m_debugGeoPass);
+        gRenderBackend.drawDynamicMeshes(bbMeshHandles, debugMeshTransforms, m_debugGeoPass);
 
         drawDebugPass = true;
     }
@@ -565,7 +567,7 @@ void RenderFrontend::renderFrame() {
         RenderPassExecution debugPassExecution;
         debugPassExecution.handle = m_debugGeoPass;
         debugPassExecution.parents = { m_mainPass };
-        m_backend.setRenderPassExecution(debugPassExecution);
+        gRenderBackend.setRenderPassExecution(debugPassExecution);
     }
 
     /*
@@ -588,7 +590,7 @@ void RenderFrontend::renderFrame() {
         if (drawDebugPass) {
             skyPassExecution.parents.push_back(m_debugGeoPass);
         }
-        m_backend.setRenderPassExecution(skyPassExecution);
+        gRenderBackend.setRenderPassExecution(skyPassExecution);
     }
 
     //taa
@@ -609,7 +611,7 @@ void RenderFrontend::renderFrame() {
         taaExecution.dispatchCount[2] = 1;
         taaExecution.parents = { m_skyPass };
 
-        m_backend.setRenderPassExecution(taaExecution);
+        gRenderBackend.setRenderPassExecution(taaExecution);
     }
 
     //copy to for next frame
@@ -628,12 +630,12 @@ void RenderFrontend::renderFrame() {
         copyNextFrameExecution.dispatchCount[2] = 1;
         copyNextFrameExecution.parents = { m_taaPass };
 
-        m_backend.setRenderPassExecution(copyNextFrameExecution);
+        gRenderBackend.setRenderPassExecution(copyNextFrameExecution);
     }
 
     //tonemap
     {
-        const auto swapchainInput = m_backend.getSwapchainInputImage();
+        const auto swapchainInput = gRenderBackend.getSwapchainInputImage();
         ImageResource targetResource(swapchainInput, 0, 0);
         ImageResource colorBufferResource(m_colorBuffer, 0, 1);
         SamplerResource samplerResource(m_defaultTexelSampler, 2);
@@ -648,7 +650,7 @@ void RenderFrontend::renderFrame() {
         tonemappingExecution.dispatchCount[2] = 1;
         tonemappingExecution.parents = { m_taaPass };
 
-        m_backend.setRenderPassExecution(tonemappingExecution);
+        gRenderBackend.setRenderPassExecution(tonemappingExecution);
     }
 
     /*
@@ -657,8 +659,8 @@ void RenderFrontend::renderFrame() {
     drawUi();
     updateSun();
     updateGlobalShaderInfo();
-    m_backend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, { defaultTransform }, m_skyPass);
-    m_backend.renderFrame(true);
+    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, { defaultTransform }, m_skyPass);
+    gRenderBackend.renderFrame(true);
 }
 
 bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
@@ -670,7 +672,7 @@ bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* 
     if (m_textureMap.find(path) == m_textureMap.end()) {
         ImageDescription image;
         if (loadImage(path, true, &image)) {
-            *outImageHandle = m_backend.createImage(image);
+            *outImageHandle = gRenderBackend.createImage(image);
             m_textureMap[path] = *outImageHandle;
             return true;
         }
@@ -700,7 +702,7 @@ void RenderFrontend::firstFramePreparation() {
     cubeWriteExecution.dispatchCount[0] = m_skyTextureRes / 8;
     cubeWriteExecution.dispatchCount[1] = m_skyTextureRes / 8;
     cubeWriteExecution.dispatchCount[2] = 6;
-    m_backend.setRenderPassExecution(cubeWriteExecution);
+    gRenderBackend.setRenderPassExecution(cubeWriteExecution);
     
     /*
     create sky texture mips
@@ -722,7 +724,7 @@ void RenderFrontend::firstFramePreparation() {
         skyMipExecution.dispatchCount[0] = m_skyTextureRes / 8 / (uint32_t)glm::pow(2, i);
         skyMipExecution.dispatchCount[1] = m_skyTextureRes / 8 / (uint32_t)glm::pow(2, i);
         skyMipExecution.dispatchCount[2] = 6;
-        m_backend.setRenderPassExecution(skyMipExecution);
+        gRenderBackend.setRenderPassExecution(skyMipExecution);
     }
     
     /*
@@ -741,7 +743,7 @@ void RenderFrontend::firstFramePreparation() {
     diffuseConvolutionExecution.dispatchCount[0] = m_diffuseProbeRes / 8;
     diffuseConvolutionExecution.dispatchCount[1] = m_diffuseProbeRes / 8;
     diffuseConvolutionExecution.dispatchCount[2] = 6;
-    m_backend.setRenderPassExecution(diffuseConvolutionExecution);
+    gRenderBackend.setRenderPassExecution(diffuseConvolutionExecution);
     
     computeBRDFLut();
     
@@ -763,7 +765,7 @@ void RenderFrontend::firstFramePreparation() {
         specularConvolutionExecution.dispatchCount[0] = m_specularProbeRes / uint32_t(pow(2, mipLevel)) / 8;
         specularConvolutionExecution.dispatchCount[1] = m_specularProbeRes / uint32_t(pow(2, mipLevel)) / 8;
         specularConvolutionExecution.dispatchCount[2] = 6;
-        m_backend.setRenderPassExecution(specularConvolutionExecution);
+        gRenderBackend.setRenderPassExecution(specularConvolutionExecution);
     }
 }
 
@@ -779,7 +781,7 @@ void RenderFrontend::computeBRDFLut() {
     brdfLutExecution.dispatchCount[0] = m_brdfLutRes / 8;
     brdfLutExecution.dispatchCount[1] = m_brdfLutRes / 8;
     brdfLutExecution.dispatchCount[2] = 1;
-    m_backend.setRenderPassExecution(brdfLutExecution);
+    gRenderBackend.setRenderPassExecution(brdfLutExecution);
 }
 
 void RenderFrontend::computeSkyOcclusion() {
@@ -833,7 +835,7 @@ void RenderFrontend::computeSkyOcclusion() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_skyOcclusionVolume = m_backend.createImage(desc);
+        m_skyOcclusionVolume = gRenderBackend.createImage(desc);
     }
 
     RenderPassExecution skyShadowExecution;
@@ -899,14 +901,14 @@ void RenderFrontend::computeSkyOcclusion() {
                 meshHandles.push_back(meshState.backendHandle);
                 transforms.push_back(t);
             }
-            m_backend.drawMeshes(meshHandles, transforms, m_skyShadowPass);
+            gRenderBackend.drawMeshes(meshHandles, transforms, m_skyShadowPass);
         }
 
-        m_backend.setUniformBufferData(m_skyOcclusionDataBuffer, &occlusionData, sizeof(SkyOcclusionRenderData));
-        m_backend.setRenderPassExecution(skyShadowExecution);
-        m_backend.setRenderPassExecution(gatherExecution);
-        m_backend.renderFrame(false);
-        m_backend.newFrame();   //newFrame is already called before this function is executed, call at the end to keep a valid new frame
+        gRenderBackend.setUniformBufferData(m_skyOcclusionDataBuffer, &occlusionData, sizeof(SkyOcclusionRenderData));
+        gRenderBackend.setRenderPassExecution(skyShadowExecution);
+        gRenderBackend.setRenderPassExecution(gatherExecution);
+        gRenderBackend.renderFrame(false);
+        gRenderBackend.newFrame();   //newFrame is already called before this function is executed, call at the end to keep a valid new frame
     }
 }
 
@@ -919,7 +921,7 @@ void RenderFrontend::updateCameraFrustum() {
         std::vector<uint32_t> frustumIndices;
 
         frustumToLineMesh(m_cameraFrustum, &frustumPoints, &frustumIndices);
-        m_backend.updateDynamicMeshes({ m_cameraFrustumModel }, { frustumPoints }, { frustumIndices });
+        gRenderBackend.updateDynamicMeshes({ m_cameraFrustumModel }, { frustumPoints }, { frustumIndices });
     }
 }
 
@@ -1048,7 +1050,7 @@ void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.cameraTanFovHalf = glm::tan(glm::radians(m_camera.intrinsic.fov) * 0.5f);
     m_globalShaderInfo.cameraAspectRatio = m_camera.intrinsic.aspectRatio;
 
-    m_backend.setGlobalShaderInfo(m_globalShaderInfo);
+    gRenderBackend.setGlobalShaderInfo(m_globalShaderInfo);
 }
 
 void RenderFrontend::initImages() {
@@ -1056,7 +1058,7 @@ void RenderFrontend::initImages() {
     {
         ImageDescription hdrCapture;
         if (loadImage("textures\\sunset_in_the_chalk_quarry_2k.hdr", false, &hdrCapture)) {
-            m_environmentMapSrc = m_backend.createImage(hdrCapture);
+            m_environmentMapSrc = gRenderBackend.createImage(hdrCapture);
         }
         else {
             m_environmentMapSrc = m_defaultSkyTexture;
@@ -1076,7 +1078,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 0;
         desc.autoCreateMips = false;
 
-        m_colorBuffer = m_backend.createImage(desc);
+        m_colorBuffer = gRenderBackend.createImage(desc);
     }
     //depth buffer
     {
@@ -1092,7 +1094,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 0;
         desc.autoCreateMips = false;
 
-        m_depthBuffer = m_backend.createImage(desc);
+        m_depthBuffer = gRenderBackend.createImage(desc);
     }
     //motion vector buffer
     {
@@ -1107,7 +1109,7 @@ void RenderFrontend::initImages() {
         desc.type = ImageType::Type2D;
         desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
 
-        m_motionVectorBuffer = m_backend.createImage(desc);
+        m_motionVectorBuffer = gRenderBackend.createImage(desc);
     }
     //history buffer for TAA
     {
@@ -1122,7 +1124,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_historyBuffer = m_backend.createImage(desc);
+        m_historyBuffer = gRenderBackend.createImage(desc);
     }
     //shadow map cascades
     {
@@ -1139,7 +1141,7 @@ void RenderFrontend::initImages() {
 
         m_shadowMaps.reserve(m_shadowCascadeCount);
         for (uint32_t i = 0; i < m_shadowCascadeCount; i++) {
-            const auto shadowMap = m_backend.createImage(desc);
+            const auto shadowMap = gRenderBackend.createImage(desc);
             m_shadowMaps.push_back(shadowMap);
         }
     }
@@ -1158,7 +1160,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = m_specularProbeMipCount;
         desc.autoCreateMips = false;
 
-        m_specularProbe = m_backend.createImage(desc);
+        m_specularProbe = gRenderBackend.createImage(desc);
     }
     //diffuse probe
     {
@@ -1173,7 +1175,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 0;
         desc.autoCreateMips = false;
 
-        m_diffuseProbe = m_backend.createImage(desc);
+        m_diffuseProbe = gRenderBackend.createImage(desc);
     }
     //sky cubemap
     {
@@ -1188,7 +1190,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 8;
         desc.autoCreateMips = false;
 
-        m_skyTexture = m_backend.createImage(desc);
+        m_skyTexture = gRenderBackend.createImage(desc);
     }
     //brdf LUT
     {
@@ -1203,7 +1205,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_brdfLut = m_backend.createImage(desc);
+        m_brdfLut = gRenderBackend.createImage(desc);
     }
     //min/max depth pyramid
     {
@@ -1217,7 +1219,7 @@ void RenderFrontend::initImages() {
         desc.format = ImageFormat::RG32_sFloat;
         desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
 
-        m_minMaxDepthPyramid = m_backend.createImage(desc);
+        m_minMaxDepthPyramid = gRenderBackend.createImage(desc);
     }
     //default albedo texture
     {
@@ -1233,7 +1235,7 @@ void RenderFrontend::initImages() {
         defaultDiffuseDesc.width = 1;
         defaultDiffuseDesc.height = 1;
 
-        m_defaultDiffuseTexture = m_backend.createImage(defaultDiffuseDesc);
+        m_defaultDiffuseTexture = gRenderBackend.createImage(defaultDiffuseDesc);
     }
     //default specular texture
     {
@@ -1249,7 +1251,7 @@ void RenderFrontend::initImages() {
         defaultSpecularDesc.width = 1;
         defaultSpecularDesc.height = 1;
 
-        m_defaultSpecularTexture = m_backend.createImage(defaultSpecularDesc);
+        m_defaultSpecularTexture = gRenderBackend.createImage(defaultSpecularDesc);
     }
     //default normal texture
     {
@@ -1265,7 +1267,7 @@ void RenderFrontend::initImages() {
         defaultNormalDesc.width = 1;
         defaultNormalDesc.height = 1;
 
-        m_defaultNormalTexture = m_backend.createImage(defaultNormalDesc);
+        m_defaultNormalTexture = gRenderBackend.createImage(defaultNormalDesc);
     }
     //default cubemap texture
     {
@@ -1281,7 +1283,7 @@ void RenderFrontend::initImages() {
         defaultCubemapDesc.width = 1;
         defaultCubemapDesc.height = 1;
 
-        m_defaultSkyTexture = m_backend.createImage(defaultCubemapDesc);
+        m_defaultSkyTexture = gRenderBackend.createImage(defaultCubemapDesc);
     }
     //sky shadow map
     {
@@ -1296,7 +1298,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_skyShadowMap = m_backend.createImage(desc);
+        m_skyShadowMap = gRenderBackend.createImage(desc);
     }
     //sky occlusion volume is created later
     //its resolution is dependent on scene size in order to fit desired texel density
@@ -1313,7 +1315,7 @@ void RenderFrontend::initSamplers(){
         desc.borderColor = SamplerBorderColor::White;
         desc.maxMip = 0;
 
-        m_shadowSampler = m_backend.createSampler(desc);
+        m_shadowSampler = gRenderBackend.createSampler(desc);
     }
     //cube map sampler
     {
@@ -1325,7 +1327,7 @@ void RenderFrontend::initSamplers(){
         desc.borderColor = SamplerBorderColor::White;
         desc.maxMip = 0;
 
-        m_cubeSampler = m_backend.createSampler(desc);
+        m_cubeSampler = gRenderBackend.createSampler(desc);
     }
     //lut sampler
     {
@@ -1337,7 +1339,7 @@ void RenderFrontend::initSamplers(){
         desc.borderColor = SamplerBorderColor::White;
         desc.maxMip = 0;
 
-        m_lutSampler = m_backend.createSampler(desc);
+        m_lutSampler = gRenderBackend.createSampler(desc);
     }
     //color sampler
     {
@@ -1349,7 +1351,7 @@ void RenderFrontend::initSamplers(){
         desc.borderColor = SamplerBorderColor::White;
         desc.maxMip = 0;
 
-        m_colorSampler = m_backend.createSampler(desc);
+        m_colorSampler = gRenderBackend.createSampler(desc);
     }
     //hdri sampler
     {
@@ -1361,7 +1363,7 @@ void RenderFrontend::initSamplers(){
         desc.borderColor = SamplerBorderColor::Black;
         desc.maxMip = 0;
 
-        m_hdriSampler = m_backend.createSampler(desc);
+        m_hdriSampler = gRenderBackend.createSampler(desc);
     }
     //cubemap sampler
     {
@@ -1373,7 +1375,7 @@ void RenderFrontend::initSamplers(){
         desc.borderColor = SamplerBorderColor::Black;
         desc.maxMip = 0;
 
-        m_cubeSampler = m_backend.createSampler(desc);
+        m_cubeSampler = gRenderBackend.createSampler(desc);
     }
     //sky sampler
     {
@@ -1385,7 +1387,7 @@ void RenderFrontend::initSamplers(){
         desc.borderColor = SamplerBorderColor::Black;
         desc.maxMip = m_skyTextureMipCount;
 
-        m_skySamplerWithMips = m_backend.createSampler(desc);
+        m_skySamplerWithMips = gRenderBackend.createSampler(desc);
     }
     //texel sampler
     {
@@ -1397,7 +1399,7 @@ void RenderFrontend::initSamplers(){
         desc.borderColor = SamplerBorderColor::Black;
         desc.maxMip = 0;
 
-        m_defaultTexelSampler = m_backend.createSampler(desc);
+        m_defaultTexelSampler = gRenderBackend.createSampler(desc);
     }
     //depth sampler
     {
@@ -1407,7 +1409,7 @@ void RenderFrontend::initSamplers(){
         desc.useAnisotropy = false;
         desc.wrapping = SamplerWrapping::Clamp;
 
-        m_clampedDepthSampler = m_backend.createSampler(desc);
+        m_clampedDepthSampler = gRenderBackend.createSampler(desc);
     }
     //sky occlusion sampler
     {
@@ -1418,7 +1420,7 @@ void RenderFrontend::initSamplers(){
         desc.wrapping = SamplerWrapping::Color;
         desc.borderColor = SamplerBorderColor::White;
 
-        m_skyOcclusionSampler = m_backend.createSampler(desc);
+        m_skyOcclusionSampler = gRenderBackend.createSampler(desc);
     }
 }
 
@@ -1427,7 +1429,7 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
     {
         StorageBufferDescription histogramBufferDesc;
         histogramBufferDesc.size = m_nHistogramBins * sizeof(uint32_t);
-        m_histogramBuffer = m_backend.createStorageBuffer(histogramBufferDesc);
+        m_histogramBuffer = gRenderBackend.createStorageBuffer(histogramBufferDesc);
     }
     //light buffer 
     {
@@ -1435,20 +1437,20 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         StorageBufferDescription lightBufferDesc;
         lightBufferDesc.size = 3 * sizeof(uint32_t);
         lightBufferDesc.initialData = initialLightBufferData;
-        m_lightBuffer = m_backend.createStorageBuffer(lightBufferDesc);
+        m_lightBuffer = gRenderBackend.createStorageBuffer(lightBufferDesc);
     }
     //per tile histogram
     {
         StorageBufferDescription histogramPerTileBufferDesc;
         histogramPerTileBufferDesc.size = (size_t)histogramSettings.maxTileCount * m_nHistogramBins * sizeof(uint32_t);
-        m_histogramPerTileBuffer = m_backend.createStorageBuffer(histogramPerTileBufferDesc);
+        m_histogramPerTileBuffer = gRenderBackend.createStorageBuffer(histogramPerTileBufferDesc);
     }
     //depth pyramid syncing buffer
     {
         StorageBufferDescription desc;
         desc.size = sizeof(uint32_t);
         desc.initialData = { (uint32_t)0 };
-        m_depthPyramidSyncBuffer = m_backend.createStorageBuffer(desc);
+        m_depthPyramidSyncBuffer = gRenderBackend.createStorageBuffer(desc);
     }
     //light matrix buffer
     {
@@ -1456,23 +1458,23 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         const size_t splitSize = sizeof(glm::vec4);
         const size_t lightMatrixSize = sizeof(glm::mat4) * m_shadowCascadeCount;
         desc.size = splitSize + lightMatrixSize;
-        m_sunShadowInfoBuffer = m_backend.createStorageBuffer(desc);
+        m_sunShadowInfoBuffer = gRenderBackend.createStorageBuffer(desc);
     }
     //sky shadow info buffer
     {
         UniformBufferDescription desc;
         desc.size = sizeof(SkyOcclusionRenderData);
-        m_skyOcclusionDataBuffer = m_backend.createUniformBuffer(desc);
+        m_skyOcclusionDataBuffer = gRenderBackend.createUniformBuffer(desc);
     }
 }
 
 void RenderFrontend::initMeshs() {
     //dynamic meshes for frustum debugging
     {
-        m_cameraFrustumModel = m_backend.createDynamicMeshes(
+        m_cameraFrustumModel = gRenderBackend.createDynamicMeshes(
             { positionsInViewFrustumLineMesh }, { indicesInViewFrustumLineMesh }).front();
 
-        m_shadowFrustumModel = m_backend.createDynamicMeshes(
+        m_shadowFrustumModel = gRenderBackend.createDynamicMeshes(
             { positionsInViewFrustumLineMesh }, { indicesInViewFrustumLineMesh }).front();
     }
     //skybox cube
@@ -1496,7 +1498,7 @@ void RenderFrontend::initMeshs() {
             3, 2, 7, 7, 2, 6,
             4, 5, 0, 0, 5, 1
         };
-        m_skyCube = m_backend.createMeshes(std::vector<MeshDataInternal> { cubedata }, 
+        m_skyCube = gRenderBackend.createMeshes(std::vector<MeshDataInternal> { cubedata }, 
             std::vector<RenderPassHandle>{ m_skyPass })[0];
     }
 }
@@ -1526,7 +1528,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         mainPassDesc.rasterization.mode = RasterizationeMode::Fill;
         mainPassDesc.blending = BlendState::None;
 
-        m_mainPass = m_backend.createGraphicPass(mainPassDesc);
+        m_mainPass = gRenderBackend.createGraphicPass(mainPassDesc);
     }
     //shadow cascade passes
     for (uint32_t cascade = 0; cascade < m_shadowCascadeCount; cascade++) {
@@ -1556,7 +1558,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
             }};
         
 
-        const auto shadowPass = m_backend.createGraphicPass(shadowPassConfig);
+        const auto shadowPass = gRenderBackend.createGraphicPass(shadowPassConfig);
         m_shadowPasses.push_back(shadowPass);
     }
     //sky copy pass
@@ -1564,7 +1566,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         ComputePassDescription cubeWriteDesc;
         cubeWriteDesc.name = "Copy sky to cubemap";
         cubeWriteDesc.shaderDescription.srcPathRelative = "copyToCube.comp";
-        m_toCubemapPass = m_backend.createComputePass(cubeWriteDesc);
+        m_toCubemapPass = gRenderBackend.createComputePass(cubeWriteDesc);
     }
     //cubemap mip creation pass
     {
@@ -1575,7 +1577,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         first map is written to by different shader
         */
         for (uint32_t i = 0; i < m_skyTextureMipCount - 1; i++) {
-            m_cubemapMipPasses.push_back(m_backend.createComputePass(cubemapMipPassDesc));
+            m_cubemapMipPasses.push_back(gRenderBackend.createComputePass(cubemapMipPassDesc));
         }
     }
     //specular convolution pass
@@ -1606,7 +1608,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
                     dataToCharArray((void*)&i, sizeof(i))   //value
                     });
             }
-            m_specularConvolutionPerMipPasses.push_back(m_backend.createComputePass(specularConvolutionDesc));
+            m_specularConvolutionPerMipPasses.push_back(gRenderBackend.createComputePass(specularConvolutionDesc));
         }
     }
     //diffuse convolution pass
@@ -1614,7 +1616,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         ComputePassDescription diffuseConvolutionDesc;
         diffuseConvolutionDesc.name = "Diffuse probe convolution";
         diffuseConvolutionDesc.shaderDescription.srcPathRelative = "diffuseCubeConvolution.comp";
-        m_diffuseConvolutionPass = m_backend.createComputePass(diffuseConvolutionDesc);
+        m_diffuseConvolutionPass = gRenderBackend.createComputePass(diffuseConvolutionDesc);
     }
     //sky pass
     {
@@ -1632,14 +1634,14 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         skyPassConfig.rasterization.mode = RasterizationeMode::Fill;
         skyPassConfig.blending = BlendState::None;
 
-        m_skyPass = m_backend.createGraphicPass(skyPassConfig);
+        m_skyPass = gRenderBackend.createGraphicPass(skyPassConfig);
     }
     //BRDF Lut creation pass
     {
         ComputePassDescription brdfLutPassDesc;
         brdfLutPassDesc.name = "BRDF Lut creation";
         brdfLutPassDesc.shaderDescription = createBRDFLutShaderDescription(m_shadingConfig);
-        m_brdfLutPass = m_backend.createComputePass(brdfLutPassDesc);
+        m_brdfLutPass = gRenderBackend.createComputePass(brdfLutPassDesc);
     }
     //geometry debug pass
     {
@@ -1657,7 +1659,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         debugPassConfig.rasterization.mode = RasterizationeMode::Line;
         debugPassConfig.blending = BlendState::None;
 
-        m_debugGeoPass = m_backend.createGraphicPass(debugPassConfig);
+        m_debugGeoPass = gRenderBackend.createGraphicPass(debugPassConfig);
     }
     //histogram per tile pass
     {
@@ -1691,7 +1693,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
                 dataToCharArray((void*)&histogramSettings.maxTileCount, sizeof(histogramSettings.maxTileCount)) //value
                 });
         }
-        m_histogramPerTilePass = m_backend.createComputePass(histogramPerTileDesc);
+        m_histogramPerTilePass = gRenderBackend.createComputePass(histogramPerTileDesc);
     }
     //histogram reset pass
     {
@@ -1705,7 +1707,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
             dataToCharArray((void*)&m_nHistogramBins, sizeof(m_nHistogramBins)) //value
             });
 
-        m_histogramResetPass = m_backend.createComputePass(resetDesc);
+        m_histogramResetPass = gRenderBackend.createComputePass(resetDesc);
     }
     //histogram combine tiles pass
     {
@@ -1728,7 +1730,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
             dataToCharArray((void*)&histogramSettings.maxTileCount, sizeof(histogramSettings.maxTileCount)) //value
                 });
 
-        m_histogramCombinePass = m_backend.createComputePass(histogramCombineDesc);
+        m_histogramCombinePass = gRenderBackend.createComputePass(histogramCombineDesc);
     }
     //pre-expose lights pass
     {
@@ -1756,7 +1758,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
                 dataToCharArray((void*)&histogramSettings.maxValue, sizeof(histogramSettings.maxValue)) //value
                 });
         }
-        m_preExposeLightsPass = m_backend.createComputePass(preExposeLightsDesc);
+        m_preExposeLightsPass = gRenderBackend.createComputePass(preExposeLightsDesc);
     }
     //depth prepass
     {
@@ -1773,7 +1775,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.shaderDescriptions.vertex.srcPathRelative = "depthPrepass.vert";
         desc.shaderDescriptions.fragment.srcPathRelative = "depthPrepass.frag";
 
-        m_depthPrePass = m_backend.createGraphicPass(desc);
+        m_depthPrePass = gRenderBackend.createGraphicPass(desc);
     }
     //depth pyramid pass
     {
@@ -1783,7 +1785,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         uint32_t threadgroupCount = 0;
         desc.shaderDescription = createDepthPyramidShaderDescription(&threadgroupCount);
 
-        m_depthPyramidPass = m_backend.createComputePass(desc);
+        m_depthPyramidPass = gRenderBackend.createComputePass(desc);
     }
     //light matrix pass
     {
@@ -1791,7 +1793,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.name = "Compute light matrix";
         desc.shaderDescription.srcPathRelative = "lightMatrix.comp";
 
-        m_lightMatrixPass = m_backend.createComputePass(desc);
+        m_lightMatrixPass = gRenderBackend.createComputePass(desc);
     }
     //tonemapping pass
     {
@@ -1799,7 +1801,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.name = "Tonemapping";
         desc.shaderDescription.srcPathRelative = "tonemapping.comp";
 
-        m_tonemappingPass = m_backend.createComputePass(desc);
+        m_tonemappingPass = gRenderBackend.createComputePass(desc);
     }
     //image copy pass
     {
@@ -1807,14 +1809,14 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.name = "Image copy";
         desc.shaderDescription.srcPathRelative = "imageCopyHDR.comp";
 
-        m_imageCopyHDRPass = m_backend.createComputePass(desc);
+        m_imageCopyHDRPass = gRenderBackend.createComputePass(desc);
     }
     //TAA pass
     {
         ComputePassDescription desc;
         desc.name = "TAA";
         desc.shaderDescription = createTAAShaderDescription();
-        m_taaPass = m_backend.createComputePass(desc);
+        m_taaPass = gRenderBackend.createComputePass(desc);
     }
     //sky shadow pass
     {
@@ -1836,14 +1838,14 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         config.rasterization.clampDepth = true;
         config.blending = BlendState::None;
 
-        m_skyShadowPass = m_backend.createGraphicPass(config);
+        m_skyShadowPass = gRenderBackend.createGraphicPass(config);
     }
     //sky occlusion pass
     {
         ComputePassDescription desc;
         desc.name = "Sky occlusion gather";
         desc.shaderDescription.srcPathRelative = "skyOcclusionGather.comp";
-        m_skyOcclusionGatherPass = m_backend.createComputePass(desc);
+        m_skyOcclusionGatherPass = gRenderBackend.createComputePass(desc);
     }
 }
 
@@ -1920,7 +1922,7 @@ void RenderFrontend::drawUi() {
 
         uint64_t allocatedMemorySizeByte;
         uint64_t usedMemorySizeByte;
-        m_backend.getMemoryStats(&allocatedMemorySizeByte, &usedMemorySizeByte);
+        gRenderBackend.getMemoryStats(&allocatedMemorySizeByte, &usedMemorySizeByte);
 
         const float byteToMbDivider = 1048576;
         const float allocatedMemorySizeMegaByte = allocatedMemorySizeByte / byteToMbDivider;
@@ -1934,7 +1936,7 @@ void RenderFrontend::drawUi() {
     {
         m_renderTimingTimeSinceLastUpdate += m_globalShaderInfo.deltaTime;
         if (m_renderTimingTimeSinceLastUpdate > m_renderTimingUpdateFrequency) {
-            m_currentRenderTimings = m_backend.getRenderpassTimings();
+            m_currentRenderTimings = gRenderBackend.getRenderpassTimings();
             m_renderTimingTimeSinceLastUpdate = 0.f;
         }
         

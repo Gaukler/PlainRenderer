@@ -516,3 +516,5 @@ private:
     void destroyGraphicPass(const GraphicPass& pass);
     void destroyComputePass(const ComputePass& pass);
 };
+
+extern RenderBackend gRenderBackend;
