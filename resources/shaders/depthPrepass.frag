@@ -21,11 +21,12 @@ void main(){
     
     //computing per pixel motion vectors
     //reference: "Temporal Antialiasing in Uncharted 4"
-    vec2 ndcCurrent = passPos.xy / passPos.w;
-    vec2 ndcPrevious = passPosPrevious.xy / passPosPrevious.w;
+    vec2 ndcCurrent  = passPos.xy           / passPos.w;
+    vec2 ndcPrevious = passPosPrevious.xy   / passPosPrevious.w;
     
-    ndcCurrent  += g_currentFrameCameraJitter;
-    ndcPrevious += g_previousFrameCameraJitter;
+    ndcCurrent  -= g_currentFrameCameraJitter;
+    ndcPrevious -= g_previousFrameCameraJitter;
     
     motion = (ndcPrevious - ndcCurrent) * vec2(0.5f, 0.5f);
+    //motion = vec2(0);
 }

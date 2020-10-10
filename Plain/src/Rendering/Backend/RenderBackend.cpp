@@ -192,24 +192,24 @@ void RenderBackend::setup(GLFWwindow* window) {
         const auto stagingBufferUsageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         const auto stagingBufferMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         const std::vector<uint32_t> stagingBufferQueueFamilies = { vkContext.queueFamilies.transferQueueFamilyIndex };
-        m_stagingBuffer = createBufferInternal(m_stagingBufferSize, stagingBufferQueueFamilies, stagingBufferUsageFlags, stagingBufferMemoryFlags);
+        m_stagingBuffer = createBufferInternal(
+            m_stagingBufferSize, 
+            stagingBufferQueueFamilies, 
+            stagingBufferUsageFlags, 
+            stagingBufferMemoryFlags);
     }
     
-    /*
-    create common descriptor set layouts
-    */
+    //create common descriptor set layouts
     ShaderLayout globalLayout;
     globalLayout.uniformBufferBindings.push_back(0);
     m_globalDescriptorSetLayout = createDescriptorSetLayout(globalLayout);
 
-    m_commandBuffers[0] = allocateCommandBuffer();
-    m_commandBuffers[1] = allocateCommandBuffer();
+    m_commandBuffers[0] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+    m_commandBuffers[1] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
 
     initMaterialDescriptorSetLayout();
 
-    /*
-    create global storage buffer
-    */
+    //create global storage buffer    
     std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphicsQueueIndex, vkContext.queueFamilies.computeQueueIndex };
     GlobalShaderInfo defaultInfo;
     UniformBufferDescription globalShaderBufferDesc;
@@ -217,9 +217,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     globalShaderBufferDesc.initialData = &defaultInfo;
     m_globalShaderInfoBuffer = createUniformBuffer(globalShaderBufferDesc);
 
-    /*
-    create global info descriptor set
-    */
+    //create global info descriptor set    
     {
         RenderPassResources globalResources;
         UniformBufferResource globalBufferResource(m_globalShaderInfoBuffer, 0);
@@ -234,9 +232,6 @@ void RenderBackend::setup(GLFWwindow* window) {
 
     m_materialSamplers = createMaterialSamplers();
 
-    /*
-    imgui
-    */
     setupImgui(window);
 
     //query pools
@@ -495,61 +490,129 @@ void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const u
 }
 
 void RenderBackend::newFrame() {
+
+    //wait for previous frame to render so resources are avaible
+    auto res = vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, UINT64_MAX);
+    assert(res == VK_SUCCESS);
+    res = vkResetFences(vkContext.device, 1, &m_renderFinishedFence);
+    assert(res == VK_SUCCESS);
+
     m_renderPassExecutions.clear();
     m_swapchainInputImageHandle.index = VK_NULL_HANDLE;
+
+    startMeshCommandBufferRecording();
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 }
 
+void RenderBackend::startMeshCommandBufferRecording() {
+
+    for (int i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
+        const auto& pass = m_renderPasses.getGraphicPassRefByIndex(i);
+
+        const auto res = vkResetCommandBuffer(pass.meshCommandBuffer, 0);
+        assert(res == VK_SUCCESS);
+
+        VkCommandBufferInheritanceInfo inheritanceInfo;
+        inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+        inheritanceInfo.pNext = nullptr;
+        inheritanceInfo.renderPass = pass.vulkanRenderPass;
+        inheritanceInfo.subpass = 0;
+        inheritanceInfo.framebuffer = pass.beginInfo.framebuffer;
+        inheritanceInfo.occlusionQueryEnable = false;
+        inheritanceInfo.queryFlags = 0;
+        inheritanceInfo.pipelineStatistics = 0;
+
+        VkCommandBufferBeginInfo cmdBeginInfo;
+        cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        cmdBeginInfo.pNext = nullptr;
+        cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+        cmdBeginInfo.pInheritanceInfo = &inheritanceInfo;
+
+        vkBeginCommandBuffer(pass.meshCommandBuffer, &cmdBeginInfo);
+        vkCmdBindPipeline(pass.meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipeline);
+        vkCmdSetViewport(pass.meshCommandBuffer, 0, 1, &pass.viewport);
+        vkCmdSetScissor(pass.meshCommandBuffer, 0, 1, &pass.scissor);
+    }
+}
+
 void RenderBackend::setRenderPassExecution(const RenderPassExecution& execution) {
+
+    if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
+        updateDescriptorSet(m_renderPasses.getGraphicPassRefByHandle(execution.handle).descriptorSet, execution.resources);
+    }
+    else {
+        updateDescriptorSet(m_renderPasses.getComputePassRefByHandle(execution.handle).descriptorSet, execution.resources);
+    }
+
     m_renderPassExecutions.push_back(execution);
 }
 
-void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, 
-    const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle) {
+void RenderBackend::drawMeshes(
+    const std::vector<MeshHandle> meshHandles, 
+    const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, 
+    const RenderPassHandle passHandle) {
+    auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+
     if (meshHandles.size() != primarySecondaryMatrices.size()) {
         std::cout << "Error: drawMeshes handle and matrix count does not match\n";
     }
+
     for (uint32_t i = 0; i < std::min(meshHandles.size(), primarySecondaryMatrices.size()); i++) {
 
-        const auto meshHandle = meshHandles[i];
-        const auto mesh = m_meshes[meshHandle.index];
-        MeshRenderCommand command;
-        command.vertexBuffer = mesh.vertexBuffer.vulkanHandle;
-        command.indexBuffer = mesh.indexBuffer.vulkanHandle;
-        command.indexPrecision = mesh.indexPrecision;
-        command.indexCount = mesh.indexCount;
-        command.primaryMatrix = primarySecondaryMatrices[i][0];
-        command.secondaryMatrix = primarySecondaryMatrices[i][1];
-        command.materialSet = mesh.materialDescriptorSet;
+        const auto mesh = m_meshes[meshHandles[i].index];
 
-        assert(m_renderPasses.isGraphicPassHandle(passHandle));
-        auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-        pass.meshRenderCommands.push_back(command);
+        //vertex/index buffers            
+        VkDeviceSize offset[] = { 0 };
+        vkCmdBindVertexBuffers(pass.meshCommandBuffer, 0, 1, &mesh.vertexBuffer.vulkanHandle, offset);
+        vkCmdBindIndexBuffer(pass.meshCommandBuffer, mesh.indexBuffer.vulkanHandle, offset[0], mesh.indexPrecision);
+
+        //update push constants
+        const auto& matrices = primarySecondaryMatrices[i];
+        vkCmdPushConstants(
+            pass.meshCommandBuffer, 
+            pass.pipelineLayout, 
+            VK_SHADER_STAGE_VERTEX_BIT, 
+            0, 
+            sizeof(matrices),
+            &matrices);
+
+        //materials            
+        VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, mesh.materialDescriptorSet };
+        vkCmdBindDescriptorSets(pass.meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
+
+        vkCmdDrawIndexed(pass.meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
     }
 }
 
-void RenderBackend::drawDynamicMeshes(const std::vector<DynamicMeshHandle> meshHandles,
-    const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle) {
+void RenderBackend::drawDynamicMeshes(
+    const std::vector<DynamicMeshHandle> meshHandles,
+    const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, 
+    const RenderPassHandle passHandle) {
+
     if (meshHandles.size() != primarySecondaryMatrices.size()) {
         std::cout << "Error: drawMeshes handle and modelMatrix count does not match\n";
     }
+
+    auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+
     for (uint32_t i = 0; i < std::min(meshHandles.size(), primarySecondaryMatrices.size()); i++) {
 
         const auto meshHandle = meshHandles[i];
         const auto mesh = m_dynamicMeshes[meshHandle.index];
-        DynamicMeshRenderCommand command;
-        command.indexCount = mesh.indexCount;
-        command.vertexBuffer = mesh.vertexBuffer.vulkanHandle;
-        command.indexBuffer = mesh.indexBuffer.vulkanHandle;
-        command.primaryMatrix = primarySecondaryMatrices[i][0];
-        command.secondaryMatrix = primarySecondaryMatrices[i][1];
 
-        assert(m_renderPasses.isGraphicPassHandle(passHandle));
-        auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-        pass.dynamicMeshRenderCommands.push_back(command);
+        //vertex/index buffers
+        VkDeviceSize offset[] = { 0 };
+        vkCmdBindVertexBuffers(pass.meshCommandBuffer, 0, 1, &mesh.vertexBuffer.vulkanHandle, offset);
+        vkCmdBindIndexBuffer(pass.meshCommandBuffer, mesh.indexBuffer.vulkanHandle, offset[0], VK_INDEX_TYPE_UINT32);
+
+        //update push constants
+        const auto& matrices = primarySecondaryMatrices[i];
+        vkCmdPushConstants(pass.meshCommandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(matrices), &matrices);
+
+        vkCmdDrawIndexed(pass.meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
     }
 }
 
@@ -592,12 +655,6 @@ void RenderBackend::renderFrame(bool presentToScreen) {
 
     prepareRenderPasses();
 
-    //wait for previous frame to render so resources are avaible
-    auto res = vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, UINT64_MAX);
-    assert(res == VK_SUCCESS);
-    res = vkResetFences(vkContext.device, 1, &m_renderFinishedFence);
-    assert(res == VK_SUCCESS);
-
     //reset doesn't work before waiting for render finished fence
     resetTimestampQueryPool();
 
@@ -611,7 +668,7 @@ void RenderBackend::renderFrame(bool presentToScreen) {
     const auto currentCommandBuffer = m_commandBuffers[m_currentCommandBufferIndex];
     m_currentCommandBufferIndex = (m_currentCommandBufferIndex + 1) % 2;
 
-    res = vkResetCommandBuffer(currentCommandBuffer, 0);
+    auto res = vkResetCommandBuffer(currentCommandBuffer, 0);
     assert(res == VK_SUCCESS);
     res = vkBeginCommandBuffer(currentCommandBuffer, &beginInfo);
     assert(res == VK_SUCCESS);
@@ -725,15 +782,6 @@ void RenderBackend::renderFrame(bool presentToScreen) {
             timing.timeMs = milliseconds;
             m_renderpassTimings.push_back(timing);
         }
-    }
-    
-
-    /*
-    cleanup
-    */
-    for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
-        m_renderPasses.getGraphicPassRefByIndex(i).meshRenderCommands.clear();
-        m_renderPasses.getGraphicPassRefByIndex(i).dynamicMeshRenderCommands.clear();
     }
 }
 
@@ -1269,18 +1317,6 @@ MaterialSamplers RenderBackend::createMaterialSamplers(){
 }
 
 void RenderBackend::prepareRenderPasses() {
-
-    /*
-    update descriptor set
-    */
-    for (const auto pass : m_renderPassExecutions) {
-        if (m_renderPasses.isGraphicPassHandle(pass.handle)) {
-            updateDescriptorSet(m_renderPasses.getGraphicPassRefByHandle(pass.handle).descriptorSet, pass.resources);
-        }
-        else {
-            updateDescriptorSet(m_renderPasses.getComputePassRefByHandle(pass.handle).descriptorSet, pass.resources);
-        }
-    }
     
     m_renderPassInternalExecutions.clear();
     auto renderPassesToAdd = m_renderPassExecutions;
@@ -1469,55 +1505,21 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
         timeQuery.name = pass.graphicPassDesc.name;
         timeQuery.startQuery = issueTimestampQuery(commandBuffer);
 
-        /*
-        update pointer: might become invalid if pass vector was changed
-        */
+        //update pointer: might become invalid if pass vector was changed        
         pass.beginInfo.pClearValues = pass.clearValues.data();
 
         //prepare pass
-        vkCmdBeginRenderPass(commandBuffer, &pass.beginInfo, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipeline);
-        vkCmdSetViewport(commandBuffer, 0, 1, &pass.viewport);
-        vkCmdSetScissor(commandBuffer, 0, 1, &pass.scissor);
+        vkCmdBeginRenderPass(commandBuffer, &pass.beginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+        
+        
 
-        //meshes
-        for (const auto& mesh : pass.meshRenderCommands) {
+        //stop recording mesh commands
+        vkEndCommandBuffer(pass.meshCommandBuffer);
 
-            //vertex/index buffers            
-            VkDeviceSize offset[] = { 0 };
-            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer, offset);
-            vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer, offset[0], mesh.indexPrecision);
+        //execute mesh commands
+        vkCmdExecuteCommands(commandBuffer, 1, &pass.meshCommandBuffer);
 
-            //update push constants
-            glm::mat4 matrices[2] = { mesh.primaryMatrix, mesh.secondaryMatrix };
-            vkCmdPushConstants(commandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(matrices), &matrices);
-
-            //materials            
-            VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, mesh.materialSet };
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
-
-            vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, 0, 0, 0);
-        }
-
-        //dynamic meshes
-        for (const auto& mesh : pass.dynamicMeshRenderCommands) {
-
-            //vertex/index buffers
-            VkDeviceSize offset[] = { 0 };
-            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer, offset);
-            vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer, offset[0], VK_INDEX_TYPE_UINT32);
-
-            //update push constants
-            glm::mat4 matrices[2] = { mesh.primaryMatrix, mesh.secondaryMatrix };
-            vkCmdPushConstants(commandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(matrices), &matrices);
-
-            vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, 0, 0, 0);
-        }
-
-        vkCmdEndRenderPass(commandBuffer);     
-
-        timeQuery.endQuery = issueTimestampQuery(commandBuffer);
-        endDebugLabel(commandBuffer);
+        vkCmdEndRenderPass(commandBuffer);
     }
     else {
         auto& pass = m_renderPasses.getComputePassRefByHandle(execution.handle);
@@ -1530,10 +1532,10 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
         VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet };
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 2, sets, 0, nullptr);
         vkCmdDispatch(commandBuffer, execution.dispatches[0], execution.dispatches[1], execution.dispatches[2]);
-
-        timeQuery.endQuery = issueTimestampQuery(commandBuffer);
-        endDebugLabel(commandBuffer);
     }
+
+    timeQuery.endQuery = issueTimestampQuery(commandBuffer);
+    endDebugLabel(commandBuffer);
     m_timestampQueries.push_back(timeQuery);
 }
 
@@ -2504,13 +2506,13 @@ VkCommandPool RenderBackend::createCommandPool(const uint32_t queueFamilyIndex, 
     return pool;
 }
 
-VkCommandBuffer RenderBackend::allocateCommandBuffer() {
+VkCommandBuffer RenderBackend::allocateCommandBuffer(const VkCommandBufferLevel level) {
 
     VkCommandBufferAllocateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     bufferInfo.pNext = nullptr;
     bufferInfo.commandPool = m_commandPool;
-    bufferInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    bufferInfo.level = level;
     bufferInfo.commandBufferCount = 1;
 
     VkCommandBuffer commandBuffer;
@@ -2954,9 +2956,8 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         pass.attachments.push_back(attachment.image);
     }
 
-    /*
-    load shader modules
-     */
+    pass.meshCommandBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+
     VkShaderModule vertexModule   = createShaderModule(spirV.vertex);
     VkShaderModule fragmentModule = createShaderModule(spirV.fragment);
 
@@ -2972,9 +2973,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         tesselationEvaluationModule = createShaderModule(spirV.tesselationEvaluation.value());
     }
 
-    /*
-    create module infos
-    */
+    //create module infos    
     std::vector<VkPipelineShaderStageCreateInfo> stages;
 
     VulkanShaderCreateAdditionalStructs additionalStructs[5];
@@ -2995,23 +2994,15 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
             desc.shaderDescriptions.tesselationEvaluation.value().specialisationConstants, &additionalStructs[4]));
     }
 
-    /*
-    shader reflection
-    */
     ShaderReflection reflection = performShaderReflection(spirV);
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
     pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, true);
-
-    /*
-    get width and height from output
-    */
+    
     assert(desc.attachments.size() >= 1); //need at least a single attachment to write to
     const uint32_t width = m_images[desc.attachments[0].image.index].extent.width;
     const uint32_t height = m_images[desc.attachments[0].image.index].extent.height;
 
-    /*
-    validate attachments
-    */
+    //validate attachments    
     for (const auto attachmentDefinition : desc.attachments) {
 
         const Image attachment = m_images[attachmentDefinition.image.index];
@@ -3024,9 +3015,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         assert(attachment.extent.depth == 1);
     }
 
-    /*
-    vertex input
-    */
     std::vector<VkVertexInputAttributeDescription> attributes;
     uint32_t currentOffset = 0;
 
@@ -3052,7 +3040,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         default: vertexBinding.stride = currentOffset; std::cout << "Warning: unknown vertex format\n"; break;
     }
     
-
     VkPipelineVertexInputStateCreateInfo vertexInputInfo;
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInputInfo.pNext = nullptr;
@@ -3062,14 +3049,8 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     vertexInputInfo.vertexAttributeDescriptionCount = (uint32_t)attributes.size();
     vertexInputInfo.pVertexAttributeDescriptions = attributes.data();
 
-    /*
-    renderpass
-    */
     pass.vulkanRenderPass = createVulkanRenderPass(desc.attachments);
 
-    /*
-    viewport settings
-    */
     VkExtent2D extent;
     extent.width = width;
     extent.height = height;
@@ -3093,14 +3074,8 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     viewportState.scissorCount = 1;
     viewportState.pScissors = nullptr;
 
-    /*
-    blending
-    */
-
-    /*
-    only global blending state for all attachments
-    currently only no blending and additive supported
-    */
+    //only global blending state for all attachments
+    //currently only no blending and additive supported    
     VkPipelineColorBlendAttachmentState blendingAttachment = {};
     blendingAttachment.blendEnable = desc.blending != BlendState::None ? VK_TRUE : VK_FALSE;
     blendingAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
@@ -3119,7 +3094,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         }
     }
 
-    //color blending
     VkPipelineColorBlendStateCreateInfo blending = {};
     blending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     blending.pNext = nullptr;
@@ -3133,9 +3107,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     blending.blendConstants[2] = 0.f;
     blending.blendConstants[3] = 0.f;
 
-    /*
-    graphic pipeline
-    */
     const auto rasterizationState = createRasterizationState(desc.rasterization);
     const auto multisamplingState = createDefaultMultisamplingInfo();
     const auto depthStencilState = createDepthStencilState(desc.depthTest);
@@ -3159,9 +3130,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
     }
 
-    /*
-    dynamic state
-    */
     std::vector<VkDynamicState> dynamicStates;
     dynamicStates.push_back(VK_DYNAMIC_STATE_VIEWPORT);
     dynamicStates.push_back(VK_DYNAMIC_STATE_SCISSOR);
@@ -3209,9 +3177,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         vkDestroyShaderModule(vkContext.device, tesselationEvaluationModule, nullptr);
     }
 
-    /*
-    clear values
-    */
+    //clear values    
     for (const auto& attachment : desc.attachments) {
         const auto image = m_images[attachment.image.index];
         if (!isDepthFormat(image.format)) {
@@ -3226,9 +3192,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         }
     }
 
-    /*
-    create pass begin info
-    */
     VkRect2D rect = {};
     rect.extent = extent;
     rect.offset = { 0, 0 };
@@ -3241,9 +3204,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pass.beginInfo.pClearValues = pass.clearValues.data();
     pass.beginInfo.renderArea = rect;
 
-    /*
-    descriptor set
-    */
     const auto setSizes = descriptorSetAllocationSizeFromShaderReflection(reflection);
     pass.descriptorSet = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
 

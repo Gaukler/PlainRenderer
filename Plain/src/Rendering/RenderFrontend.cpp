@@ -205,6 +205,68 @@ void RenderFrontend::newFrame() {
     for (auto& meshState : m_meshStates) {
         meshState.previousFrameModelMatrix = meshState.modelMatrix;
     }
+
+    //
+
+    //additional passes that have to be executed before the main pass    
+    std::vector<RenderPassHandle> preparationPasses;
+
+    if (m_firstFrame) {
+
+        computeSkyOcclusion();
+        firstFramePreparation();
+
+        preparationPasses.push_back(m_diffuseConvolutionPass);
+        preparationPasses.push_back(m_brdfLutPass);
+        for (uint32_t i = 0; i < m_specularConvolutionPerMipPasses.size(); i++) {
+            preparationPasses.push_back(m_specularConvolutionPerMipPasses[i]);
+        }
+
+        m_firstFrame = false;
+    }
+
+    if (m_isBRDFLutShaderDescriptionStale) {
+        computeBRDFLut();
+        preparationPasses.push_back(m_brdfLutPass);
+        m_isBRDFLutShaderDescriptionStale = false;
+    }
+
+    renderSunShadowCascades();
+    computeColorBufferHistogram();
+    computeExposure();
+    renderDepthPrepass();
+    computeDepthPyramid();
+    computeSunLightMatrices();
+    renderForwardShading(preparationPasses);
+
+    //for sky and debug models, first matrix is mvp with identity model matrix, secondary is unused
+    const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
+
+    //update debug geo
+    if (m_freezeAndDrawCameraFrustum) {
+        gRenderBackend.drawDynamicMeshes({ m_cameraFrustumModel }, { defaultTransform }, m_debugGeoPass);
+    }
+    if (m_drawShadowFrustum) {
+        gRenderBackend.drawDynamicMeshes({ m_shadowFrustumModel }, { defaultTransform }, m_debugGeoPass);
+    }
+    if (m_drawBBs) {
+        updateBoundingBoxDebugGeo();
+    }
+
+    const bool drawDebugPass =
+        m_freezeAndDrawCameraFrustum ||
+        m_drawShadowFrustum ||
+        m_drawBBs;
+
+    //debug pass
+    if (drawDebugPass) {
+        renderDebugGeometry();
+    }
+    renderSky(drawDebugPass);
+    computeTAA();
+    copyColorToHistoryBuffer();
+    computeTonemapping();
+    updateGlobalShaderInfo();
 }
 
 void RenderFrontend::setResolution(const uint32_t width, const uint32_t height) {
@@ -222,18 +284,19 @@ void RenderFrontend::setResolution(const uint32_t width, const uint32_t height) 
 }
 
 void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
+
+    m_previousViewProjectionMatrix = m_viewProjectionMatrix;
+    m_globalShaderInfo.previousFrameCameraJitter = m_globalShaderInfo.currentFrameCameraJitter;
+
     m_camera.extrinsic = extrinsic;
     const glm::mat4 viewMatrix = viewMatrixFromCameraExtrinsic(extrinsic);
     const glm::mat4 projectionMatrix = projectionMatrixFromCameraIntrinsic(m_camera.intrinsic);
-
-    m_previousViewProjectionMatrix = m_viewProjectionMatrix;
 
     //jitter matrix for TAA
     {
         const float pixelSizeX = 1.f / m_screenWidth;
         const float pixelSizeY = 1.f / m_screenHeight;
 
-        m_globalShaderInfo.previousFrameCameraJitter = m_globalShaderInfo.currentFrameCameraJitter;
         m_globalShaderInfo.currentFrameCameraJitter = computeProjectionMatrixJitter(pixelSizeX, pixelSizeY);
         const glm::mat4 jitteredProjection = applyProjectionMatrixJitter(projectionMatrix, m_globalShaderInfo.currentFrameCameraJitter);
 
@@ -404,66 +467,8 @@ void RenderFrontend::renderFrame() {
         return;
     }
 
-    //additional passes that have to be executed before the main pass    
-    std::vector<RenderPassHandle> preparationPasses;
-
-    if (m_firstFrame) {
-
-        computeSkyOcclusion();
-        firstFramePreparation();
-
-        preparationPasses.push_back(m_diffuseConvolutionPass);
-        preparationPasses.push_back(m_brdfLutPass);
-        for (uint32_t i = 0; i < m_specularConvolutionPerMipPasses.size(); i++) {
-            preparationPasses.push_back(m_specularConvolutionPerMipPasses[i]);
-        }
-
-        m_firstFrame = false;
-    }
-
-    if (m_isBRDFLutShaderDescriptionStale) {
-        computeBRDFLut();
-        preparationPasses.push_back(m_brdfLutPass);
-        m_isBRDFLutShaderDescriptionStale = false;
-    }
-
-    renderSunShadowCascades();
-    computeColorBufferHistogram();
-    computeExposure();
-    renderDepthPrepass();
-    computeDepthPyramid();
-    computeSunLightMatrices();
-    renderForwardShading(preparationPasses);
-
-    //for sky and debug models, first matrix is mvp with identity model matrix, secondary is unused
-    const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
-
-    //update debug geo
-    if (m_freezeAndDrawCameraFrustum) {
-        gRenderBackend.drawDynamicMeshes({ m_cameraFrustumModel }, { defaultTransform }, m_debugGeoPass);
-    }
-    if (m_drawShadowFrustum) {
-        gRenderBackend.drawDynamicMeshes({ m_shadowFrustumModel }, { defaultTransform }, m_debugGeoPass);
-    }
-    if(m_drawBBs) {
-        updateBoundingBoxDebugGeo();
-    }
-
-    const bool drawDebugPass = 
-        m_freezeAndDrawCameraFrustum || 
-        m_drawShadowFrustum || 
-        m_drawBBs;
-
-    //debug pass
-    if (drawDebugPass) {
-        renderDebugGeometry();
-    }
-    renderSky(drawDebugPass);
-    computeTAA();
-    copyColorToHistoryBuffer();
-    computeTonemapping();  
     drawUi();
-    updateGlobalShaderInfo();
+    const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
     gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, { defaultTransform }, m_skyPass);
     gRenderBackend.renderFrame(true);
 }

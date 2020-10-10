@@ -93,15 +93,9 @@ public:
 
     bool isGraphicPassHandle(const RenderPassHandle handle);
 
-    /*
-    add
-    */
     RenderPassHandle addGraphicPass(const GraphicPass pass);
     RenderPassHandle addComputePass(const ComputePass pass);
 
-    /*
-    getters
-    */
     uint32_t getNGraphicPasses();
     uint32_t getNComputePasses();
 
@@ -111,9 +105,6 @@ public:
     GraphicPass& getGraphicPassRefByIndex(const uint32_t index);
     ComputePass& getComputePassRefByIndex(const uint32_t index);
 
-    /*
-    updates
-    */
     void updateGraphicPassByHandle(const GraphicPass pass, const RenderPassHandle handle);
     void updateComputePassByHandle(const ComputePass pass, const RenderPassHandle handle);
 
@@ -124,12 +115,10 @@ private:
     std::vector<GraphicPass> m_graphicPasses;
     std::vector<ComputePass> m_computePasses;
 
-    /*
-    utilities
-    renderpass handles are indices into the respective vector
-    graphic passes have the first bit set to 1
-    */
-
+    //utilities
+    //renderpass handles are indices into the respective vector
+    //graphic passes have the first bit set to 1
+    
     uint32_t graphicPassHandleToIndex(const RenderPassHandle handle);
     uint32_t computePassHandleToIndex(const RenderPassHandle handle);
     RenderPassHandle indexToGraphicPassHandle(const uint32_t index);
@@ -152,6 +141,7 @@ public:
     void resizeImages(const std::vector<ImageHandle>& images, const uint32_t width, const uint32_t height);
 
     void newFrame();
+    void startMeshCommandBufferRecording();
     void setRenderPassExecution(const RenderPassExecution& execution);
 
     /*
@@ -177,10 +167,8 @@ public:
     */
     void renderFrame(bool presentToScreen);    
 
-    /*
-    the public create pass functions save the descriptions and create the handle, then call 
-    the internal ones for creation of actual API objects
-    */
+    //the public create pass functions save the descriptions and create the handle, then call 
+    //the internal ones for creation of actual API objects    
     RenderPassHandle    createComputePass(const ComputePassDescription& desc);
     RenderPassHandle    createGraphicPass(const GraphicPassDescription& desc);
 
@@ -357,7 +345,7 @@ private:
     VkCommandPool   createCommandPool(const uint32_t queueFamilyIndex, const VkCommandPoolCreateFlagBits flags);
 
     //allocates a single primary command buffer from m_commandPool
-    VkCommandBuffer allocateCommandBuffer();
+    VkCommandBuffer allocateCommandBuffer(const VkCommandBufferLevel level);
 
     /*
     allocate and begin a one time use command buffer
