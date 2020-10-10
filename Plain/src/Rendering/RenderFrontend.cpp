@@ -457,29 +457,9 @@ void RenderFrontend::renderFrame() {
     }
     renderSky(drawDebugPass);
     computeTAA();
-    //copy to for next frame
-    {
-        ImageResource lastFrameResource(m_historyBuffer, 0, 0);
-        ImageResource colorBufferResource(m_colorBuffer, 0, 1);
-        SamplerResource samplerResource(m_defaultTexelSampler, 2);
-
-        RenderPassExecution copyNextFrameExecution;
-        copyNextFrameExecution.handle = m_imageCopyHDRPass;
-        copyNextFrameExecution.resources.storageImages = { lastFrameResource };
-        copyNextFrameExecution.resources.sampledImages = { colorBufferResource };
-        copyNextFrameExecution.resources.samplers = { samplerResource };
-        copyNextFrameExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-        copyNextFrameExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-        copyNextFrameExecution.dispatchCount[2] = 1;
-        copyNextFrameExecution.parents = { m_taaPass };
-
-        gRenderBackend.setRenderPassExecution(copyNextFrameExecution);
-    }
-    computeTonemapping();
-
-    //update and final commands    
+    copyColorToHistoryBuffer();
+    computeTonemapping();  
     drawUi();
-    updateSun();
     updateGlobalShaderInfo();
     gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, { defaultTransform }, m_skyPass);
     gRenderBackend.renderFrame(true);
@@ -750,6 +730,24 @@ void RenderFrontend::updateBoundingBoxDebugGeo() {
     const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
     std::vector<std::array<glm::mat4, 2>> debugMeshTransforms(m_bbsToDebugDraw.size(), defaultTransform);
     gRenderBackend.drawDynamicMeshes(bbMeshHandles, debugMeshTransforms, m_debugGeoPass);
+}
+
+void RenderFrontend::copyColorToHistoryBuffer() const {
+    ImageResource lastFrameResource(m_historyBuffer, 0, 0);
+    ImageResource colorBufferResource(m_colorBuffer, 0, 1);
+    SamplerResource samplerResource(m_defaultTexelSampler, 2);
+
+    RenderPassExecution copyNextFrameExecution;
+    copyNextFrameExecution.handle = m_imageCopyHDRPass;
+    copyNextFrameExecution.resources.storageImages = { lastFrameResource };
+    copyNextFrameExecution.resources.sampledImages = { colorBufferResource };
+    copyNextFrameExecution.resources.samplers = { samplerResource };
+    copyNextFrameExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+    copyNextFrameExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+    copyNextFrameExecution.dispatchCount[2] = 1;
+    copyNextFrameExecution.parents = { m_taaPass };
+
+    gRenderBackend.setRenderPassExecution(copyNextFrameExecution);
 }
 
 bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
@@ -1127,6 +1125,7 @@ ShaderDescription RenderFrontend::createTAAShaderDescription() {
 }
 
 void RenderFrontend::updateGlobalShaderInfo() {
+    m_globalShaderInfo.sunDirection = glm::vec4(directionToVector(m_sunDirection), 0.f);
     m_globalShaderInfo.cameraPos = glm::vec4(m_camera.extrinsic.position, 1.f);
 
     m_globalShaderInfo.deltaTime = Timer::getDeltaTimeFloat();
@@ -1979,10 +1978,6 @@ glm::ivec2 RenderFrontend::computeDepthPyramidDispatchCount() const{
 
         return count;
     }
-}
-
-void RenderFrontend::updateSun() {
-    m_globalShaderInfo.sunDirection = glm::vec4(directionToVector(m_sunDirection), 0.f);
 }
 
 void RenderFrontend::drawUi() {

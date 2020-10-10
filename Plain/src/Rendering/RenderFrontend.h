@@ -95,6 +95,7 @@ private:
     void computeTAA() const;
     void computeTonemapping() const;
     void renderDebugGeometry() const;
+    void copyColorToHistoryBuffer() const;
 
     void updateBoundingBoxDebugGeo();
 
@@ -246,7 +247,6 @@ private:
     glm::ivec2 computeDepthPyramidDispatchCount() const;    
 
     glm::vec2 m_sunDirection = glm::vec2(-120.f, 150.f);
-    void updateSun();
    
     void drawUi();
 };
