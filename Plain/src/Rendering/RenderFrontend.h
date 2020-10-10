@@ -165,23 +165,6 @@ private:
     */
     uint32_t m_specularProbeMipCount = 0;
 
-    const uint32_t m_shadowMapRes = 2048;
-    const uint32_t m_skyTextureRes = 1024;
-    const uint32_t m_specularProbeRes = 512;
-    const uint32_t m_diffuseProbeRes = 256;
-    const uint32_t m_skyTextureMipCount = 8;
-    const uint32_t m_brdfLutRes = 512;
-    const uint32_t m_nHistogramBins = 128;
-    const uint32_t m_shadowCascadeCount = 4;
-
-    const uint32_t m_histogramTileSizeX = 32;
-    const uint32_t m_histogramTileSizeY = 32;
-
-    const uint32_t m_skyShadowMapRes = 1024;
-    const uint32_t m_skyOcclusionVolumeMaxRes = 256;
-    const float m_skyOcclusionTargetDensity = 0.5f; //meter/texel
-    const uint32_t skyOcclusionSampleCount = 1024;
-
     ImageHandle m_colorBuffer;
     ImageHandle m_depthBuffer;
     ImageHandle m_motionVectorBuffer;

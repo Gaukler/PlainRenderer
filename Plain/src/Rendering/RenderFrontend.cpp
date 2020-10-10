@@ -22,6 +22,24 @@
 //definition of extern variable from header
 RenderFrontend gRenderFrontend;
 
+const uint32_t shadowMapRes = 2048;
+const uint32_t skyTextureRes = 1024;
+const uint32_t specularProbeRes = 512;
+const uint32_t diffuseProbeRes = 256;
+const uint32_t skyTextureMipCount = 8;
+const uint32_t brdfLutRes = 512;
+const uint32_t nHistogramBins = 128;
+const uint32_t shadowCascadeCount = 4;
+
+const uint32_t histogramTileSizeX = 32;
+const uint32_t histogramTileSizeY = 32;
+
+const uint32_t  skyShadowMapRes = 1024;
+const uint32_t  skyOcclusionVolumeMaxRes = 256;
+const float     skyOcclusionTargetDensity = 0.5f; //meter/texel
+const uint32_t  skyOcclusionSampleCount = 1024;
+
+
 void resizeCallback(GLFWwindow* window, int width, int height) {
     RenderFrontend* frontEnd = reinterpret_cast<RenderFrontend*>(glfwGetWindowUserPointer(window));
     frontEnd->setResolution(width, height);
@@ -342,7 +360,7 @@ void RenderFrontend::renderFrame() {
     render sun shadow
     */
     {
-        for (uint32_t i = 0; i < m_shadowCascadeCount; i++) {
+        for (uint32_t i = 0; i < shadowCascadeCount; i++) {
             RenderPassExecution shadowPassExecution;
             shadowPassExecution.handle = m_shadowPasses[i];
             shadowPassExecution.parents = { m_lightMatrixPass };
@@ -371,8 +389,8 @@ void RenderFrontend::renderFrame() {
         histogramPerTileExecution.resources.storageBuffers = { histogramPerTileResource, lightBufferResource };
         histogramPerTileExecution.resources.samplers = { texelSamplerResource };
         histogramPerTileExecution.resources.sampledImages = { colorTextureResource };
-        histogramPerTileExecution.dispatchCount[0] = uint32_t(std::ceilf((float)m_screenWidth  / float(m_histogramTileSizeX)));
-        histogramPerTileExecution.dispatchCount[1] = uint32_t(std::ceilf((float)m_screenHeight / float(m_histogramTileSizeY)));
+        histogramPerTileExecution.dispatchCount[0] = uint32_t(std::ceilf((float)m_screenWidth  / float(histogramTileSizeX)));
+        histogramPerTileExecution.dispatchCount[1] = uint32_t(std::ceilf((float)m_screenHeight / float(histogramTileSizeY)));
         histogramPerTileExecution.dispatchCount[2] = 1;
 
         gRenderBackend.setRenderPassExecution(histogramPerTileExecution);
@@ -384,7 +402,7 @@ void RenderFrontend::renderFrame() {
         RenderPassExecution histogramResetExecution;
         histogramResetExecution.handle = m_histogramResetPass;
         histogramResetExecution.resources.storageBuffers = { histogramResource };
-        histogramResetExecution.dispatchCount[0] = uint32_t(std::ceilf(float(m_nHistogramBins) / binsPerDispatch));
+        histogramResetExecution.dispatchCount[0] = uint32_t(std::ceilf(float(nHistogramBins) / binsPerDispatch));
         histogramResetExecution.dispatchCount[1] = 1;
         histogramResetExecution.dispatchCount[2] = 1;
 
@@ -396,10 +414,10 @@ void RenderFrontend::renderFrame() {
         histogramCombineTilesExecution.handle = m_histogramCombinePass;
         histogramCombineTilesExecution.resources.storageBuffers = { histogramPerTileResource, histogramResource };
         uint32_t tileCount =
-            (uint32_t)std::ceilf(m_screenWidth  / float(m_histogramTileSizeX)) * 
-            (uint32_t)std::ceilf(m_screenHeight / float(m_histogramTileSizeY));
+            (uint32_t)std::ceilf(m_screenWidth  / float(histogramTileSizeX)) * 
+            (uint32_t)std::ceilf(m_screenHeight / float(histogramTileSizeY));
         histogramCombineTilesExecution.dispatchCount[0] = tileCount;
-        histogramCombineTilesExecution.dispatchCount[1] = uint32_t(std::ceilf(float(m_nHistogramBins) / binsPerDispatch));
+        histogramCombineTilesExecution.dispatchCount[1] = uint32_t(std::ceilf(float(nHistogramBins) / binsPerDispatch));
         histogramCombineTilesExecution.dispatchCount[2] = 1;
         histogramCombineTilesExecution.parents = { m_histogramPerTilePass, m_histogramResetPass };
 
@@ -503,7 +521,7 @@ void RenderFrontend::renderFrame() {
             cubeSamplerMipsResource, lustSamplerResource, occlusionSamplerResource };
 
         //add shadow map cascade resources
-        for (uint32_t i = 0; i < m_shadowCascadeCount; i++) {
+        for (uint32_t i = 0; i < shadowCascadeCount; i++) {
             const auto shadowMapResource = ImageResource(m_shadowMaps[i], 0, 9+i);
             mainPassExecution.resources.sampledImages.push_back(shadowMapResource);
         }
@@ -695,15 +713,15 @@ void RenderFrontend::firstFramePreparation() {
     cubeWriteExecution.resources.storageImages = { skyTextureResource };
     cubeWriteExecution.resources.sampledImages = { hdrCaptureResource };
     cubeWriteExecution.resources.samplers = { hdrSamplerResource };
-    cubeWriteExecution.dispatchCount[0] = m_skyTextureRes / 8;
-    cubeWriteExecution.dispatchCount[1] = m_skyTextureRes / 8;
+    cubeWriteExecution.dispatchCount[0] = skyTextureRes / 8;
+    cubeWriteExecution.dispatchCount[1] = skyTextureRes / 8;
     cubeWriteExecution.dispatchCount[2] = 6;
     gRenderBackend.setRenderPassExecution(cubeWriteExecution);
     
     /*
     create sky texture mips
     */
-    for (uint32_t i = 1; i < m_skyTextureMipCount; i++) {
+    for (uint32_t i = 1; i < skyTextureMipCount; i++) {
         const uint32_t srcMip = i - 1;
         const auto skyMipSrcResource = ImageResource(m_skyTexture, srcMip, 0);
         const auto skyMipDstResource = ImageResource(m_skyTexture, i, 1);
@@ -717,8 +735,8 @@ void RenderFrontend::firstFramePreparation() {
         else {
             skyMipExecution.parents = { m_cubemapMipPasses[srcMip - 1] };
         }
-        skyMipExecution.dispatchCount[0] = m_skyTextureRes / 8 / (uint32_t)glm::pow(2, i);
-        skyMipExecution.dispatchCount[1] = m_skyTextureRes / 8 / (uint32_t)glm::pow(2, i);
+        skyMipExecution.dispatchCount[0] = skyTextureRes / 8 / (uint32_t)glm::pow(2, i);
+        skyMipExecution.dispatchCount[1] = skyTextureRes / 8 / (uint32_t)glm::pow(2, i);
         skyMipExecution.dispatchCount[2] = 6;
         gRenderBackend.setRenderPassExecution(skyMipExecution);
     }
@@ -736,8 +754,8 @@ void RenderFrontend::firstFramePreparation() {
     diffuseConvolutionExecution.resources.storageImages = { diffuseProbeResource };
     diffuseConvolutionExecution.resources.sampledImages = { diffuseConvolutionSrcResource };
     diffuseConvolutionExecution.resources.samplers = { cubeSamplerResource };
-    diffuseConvolutionExecution.dispatchCount[0] = m_diffuseProbeRes / 8;
-    diffuseConvolutionExecution.dispatchCount[1] = m_diffuseProbeRes / 8;
+    diffuseConvolutionExecution.dispatchCount[0] = diffuseProbeRes / 8;
+    diffuseConvolutionExecution.dispatchCount[1] = diffuseProbeRes / 8;
     diffuseConvolutionExecution.dispatchCount[2] = 6;
     gRenderBackend.setRenderPassExecution(diffuseConvolutionExecution);
     
@@ -758,8 +776,8 @@ void RenderFrontend::firstFramePreparation() {
         specularConvolutionExecution.resources.storageImages = { specularProbeResource };
         specularConvolutionExecution.resources.sampledImages = { specularConvolutionSrcResource };
         specularConvolutionExecution.resources.samplers = { specCubeSamplerResource };
-        specularConvolutionExecution.dispatchCount[0] = m_specularProbeRes / uint32_t(pow(2, mipLevel)) / 8;
-        specularConvolutionExecution.dispatchCount[1] = m_specularProbeRes / uint32_t(pow(2, mipLevel)) / 8;
+        specularConvolutionExecution.dispatchCount[0] = specularProbeRes / uint32_t(pow(2, mipLevel)) / 8;
+        specularConvolutionExecution.dispatchCount[1] = specularProbeRes / uint32_t(pow(2, mipLevel)) / 8;
         specularConvolutionExecution.dispatchCount[2] = 6;
         gRenderBackend.setRenderPassExecution(specularConvolutionExecution);
     }
@@ -774,8 +792,8 @@ void RenderFrontend::computeBRDFLut() {
     RenderPassExecution brdfLutExecution;
     brdfLutExecution.handle = m_brdfLutPass;
     brdfLutExecution.resources.storageImages = { brdfLutStorageResource };
-    brdfLutExecution.dispatchCount[0] = m_brdfLutRes / 8;
-    brdfLutExecution.dispatchCount[1] = m_brdfLutRes / 8;
+    brdfLutExecution.dispatchCount[0] = brdfLutRes / 8;
+    brdfLutExecution.dispatchCount[1] = brdfLutRes / 8;
     brdfLutExecution.dispatchCount[2] = 1;
     gRenderBackend.setRenderPassExecution(brdfLutExecution);
 }
@@ -800,11 +818,11 @@ void RenderFrontend::computeSkyOcclusion() {
     occlusionData.weight = 1.f / skyOcclusionSampleCount;
 
     m_skyOcclusionVolumeRes = glm::ivec3(
-        pow(2, int(std::ceil(log2f(occlusionData.extends.x / m_skyOcclusionTargetDensity)))),
-        pow(2, int(std::ceil(log2f(occlusionData.extends.y / m_skyOcclusionTargetDensity)))),
-        pow(2, int(std::ceil(log2f(occlusionData.extends.z / m_skyOcclusionTargetDensity))))
+        pow(2, int(std::ceil(log2f(occlusionData.extends.x / skyOcclusionTargetDensity)))),
+        pow(2, int(std::ceil(log2f(occlusionData.extends.y / skyOcclusionTargetDensity)))),
+        pow(2, int(std::ceil(log2f(occlusionData.extends.z / skyOcclusionTargetDensity))))
     );
-    m_skyOcclusionVolumeRes = glm::min(m_skyOcclusionVolumeRes, glm::ivec3(m_skyOcclusionVolumeMaxRes));
+    m_skyOcclusionVolumeRes = glm::min(m_skyOcclusionVolumeRes, glm::ivec3(skyOcclusionVolumeMaxRes));
 
     std::cout << "\nSky occlusion resolution:\n"
         << "x-axis: " << std::to_string(m_skyOcclusionVolumeRes.x) << "\n"
@@ -927,7 +945,7 @@ HistogramSettings RenderFrontend::createHistogramSettings() {
     settings.minValue = 0.001f;
     settings.maxValue = 200000.f;
 
-    uint32_t pixelsPerTile = m_histogramTileSizeX * m_histogramTileSizeX;
+    uint32_t pixelsPerTile = histogramTileSizeX * histogramTileSizeX;
     settings.maxTileCount = 1920 * 1080 / pixelsPerTile; //FIXME: update buffer on rescale
 
     return settings;
@@ -1125,8 +1143,8 @@ void RenderFrontend::initImages() {
     //shadow map cascades
     {
         ImageDescription desc;
-        desc.width = m_shadowMapRes;
-        desc.height = m_shadowMapRes;
+        desc.width = shadowMapRes;
+        desc.height = shadowMapRes;
         desc.depth = 1;
         desc.type = ImageType::Type2D;
         desc.format = ImageFormat::Depth16;
@@ -1135,19 +1153,19 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_shadowMaps.reserve(m_shadowCascadeCount);
-        for (uint32_t i = 0; i < m_shadowCascadeCount; i++) {
+        m_shadowMaps.reserve(shadowCascadeCount);
+        for (uint32_t i = 0; i < shadowCascadeCount; i++) {
             const auto shadowMap = gRenderBackend.createImage(desc);
             m_shadowMaps.push_back(shadowMap);
         }
     }
     //specular probe
     {
-        m_specularProbeMipCount = mipCountFromResolution(m_specularProbeRes, m_specularProbeRes, 1);
+        m_specularProbeMipCount = mipCountFromResolution(specularProbeRes, specularProbeRes, 1);
 
         ImageDescription desc;
-        desc.width = m_specularProbeRes;
-        desc.height = m_specularProbeRes;
+        desc.width = specularProbeRes;
+        desc.height = specularProbeRes;
         desc.depth = 1;
         desc.type = ImageType::TypeCube;
         desc.format = ImageFormat::R11G11B10_uFloat;
@@ -1161,8 +1179,8 @@ void RenderFrontend::initImages() {
     //diffuse probe
     {
         ImageDescription desc;
-        desc.width = m_diffuseProbeRes;
-        desc.height = m_diffuseProbeRes;
+        desc.width = diffuseProbeRes;
+        desc.height = diffuseProbeRes;
         desc.depth = 1;
         desc.type = ImageType::TypeCube;
         desc.format = ImageFormat::R11G11B10_uFloat;
@@ -1176,8 +1194,8 @@ void RenderFrontend::initImages() {
     //sky cubemap
     {
         ImageDescription desc;
-        desc.width = m_skyTextureRes;
-        desc.height = m_skyTextureRes;
+        desc.width = skyTextureRes;
+        desc.height = skyTextureRes;
         desc.depth = 1;
         desc.type = ImageType::TypeCube;
         desc.format = ImageFormat::R11G11B10_uFloat;
@@ -1191,8 +1209,8 @@ void RenderFrontend::initImages() {
     //brdf LUT
     {
         ImageDescription desc;
-        desc.width = m_brdfLutRes;
-        desc.height = m_brdfLutRes;
+        desc.width = brdfLutRes;
+        desc.height = brdfLutRes;
         desc.depth = 1;
         desc.type = ImageType::Type2D;
         desc.format = ImageFormat::RGBA16_sFloat;
@@ -1284,8 +1302,8 @@ void RenderFrontend::initImages() {
     //sky shadow map
     {
         ImageDescription desc;
-        desc.width = m_skyShadowMapRes;
-        desc.height = m_skyShadowMapRes;
+        desc.width = skyShadowMapRes;
+        desc.height = skyShadowMapRes;
         desc.depth = 1;
         desc.type = ImageType::Type2D;
         desc.format = ImageFormat::Depth16;
@@ -1381,7 +1399,7 @@ void RenderFrontend::initSamplers(){
         desc.useAnisotropy = false;
         desc.maxAnisotropy = 0;
         desc.borderColor = SamplerBorderColor::Black;
-        desc.maxMip = m_skyTextureMipCount;
+        desc.maxMip = skyTextureMipCount;
 
         m_skySamplerWithMips = gRenderBackend.createSampler(desc);
     }
@@ -1424,7 +1442,7 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
     //histogram buffer
     {
         StorageBufferDescription histogramBufferDesc;
-        histogramBufferDesc.size = m_nHistogramBins * sizeof(uint32_t);
+        histogramBufferDesc.size = nHistogramBins * sizeof(uint32_t);
         m_histogramBuffer = gRenderBackend.createStorageBuffer(histogramBufferDesc);
     }
     //light buffer 
@@ -1438,7 +1456,7 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
     //per tile histogram
     {
         StorageBufferDescription histogramPerTileBufferDesc;
-        histogramPerTileBufferDesc.size = (size_t)histogramSettings.maxTileCount * m_nHistogramBins * sizeof(uint32_t);
+        histogramPerTileBufferDesc.size = (size_t)histogramSettings.maxTileCount * nHistogramBins * sizeof(uint32_t);
         m_histogramPerTileBuffer = gRenderBackend.createStorageBuffer(histogramPerTileBufferDesc);
     }
     //depth pyramid syncing buffer
@@ -1452,7 +1470,7 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
     {
         StorageBufferDescription desc;
         const size_t splitSize = sizeof(glm::vec4);
-        const size_t lightMatrixSize = sizeof(glm::mat4) * m_shadowCascadeCount;
+        const size_t lightMatrixSize = sizeof(glm::mat4) * shadowCascadeCount;
         desc.size = splitSize + lightMatrixSize;
         m_sunShadowInfoBuffer = gRenderBackend.createStorageBuffer(desc);
     }
@@ -1570,7 +1588,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         m_mainPass = gRenderBackend.createGraphicPass(mainPassDesc);
     }
     //shadow cascade passes
-    for (uint32_t cascade = 0; cascade < m_shadowCascadeCount; cascade++) {
+    for (uint32_t cascade = 0; cascade < shadowCascadeCount; cascade++) {
 
         const auto shadowMapAttachment = Attachment(
             m_shadowMaps[cascade],
@@ -1615,7 +1633,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         /*
         first map is written to by different shader
         */
-        for (uint32_t i = 0; i < m_skyTextureMipCount - 1; i++) {
+        for (uint32_t i = 0; i < skyTextureMipCount - 1; i++) {
             m_cubemapMipPasses.push_back(gRenderBackend.createComputePass(cubemapMipPassDesc));
         }
     }
@@ -1715,7 +1733,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
             //bin count
             constants.push_back({
                 0,                                                                  //location
-                dataToCharArray((void*)&m_nHistogramBins, sizeof(m_nHistogramBins)) //value
+                dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) //value
                 });
             //min luminance constant
             constants.push_back({
@@ -1743,7 +1761,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         //bin count constant
         resetDesc.shaderDescription.specialisationConstants.push_back({
             0,                                                                  //location
-            dataToCharArray((void*)&m_nHistogramBins, sizeof(m_nHistogramBins)) //value
+            dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) //value
             });
 
         m_histogramResetPass = gRenderBackend.createComputePass(resetDesc);
@@ -1761,7 +1779,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         //bin count
         constants.push_back({
             0,                                                                  //location
-            dataToCharArray((void*)&m_nHistogramBins, sizeof(m_nHistogramBins)) //value
+            dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) //value
                 });
         //max luminance constant
         constants.push_back({
@@ -1784,7 +1802,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
             //bin count
             constants.push_back({
                 0,                                                                  //location
-                dataToCharArray((void*)&m_nHistogramBins, sizeof(m_nHistogramBins)) //value
+                dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) //value
                 });
             //min luminance constant
             constants.push_back({
