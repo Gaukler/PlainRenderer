@@ -94,6 +94,9 @@ private:
     void renderForwardShading(const std::vector<RenderPassHandle>& preparationPasses) const;
     void computeTAA() const;
     void computeTonemapping() const;
+    void renderDebugGeometry() const;
+
+    void updateBoundingBoxDebugGeo();
 
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
     bool loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);

@@ -135,6 +135,8 @@ struct GraphicPassShaderDescriptions {
     std::optional<ShaderDescription>  tesselationEvaluation;
 };
 
+enum class VertexFormat { Full, PositionOnly };
+
 struct GraphicPassDescription {
     GraphicPassShaderDescriptions   shaderDescriptions;
     std::vector<Attachment>         attachments;
@@ -144,6 +146,7 @@ struct GraphicPassDescription {
     RasterizationConfig     rasterization;
     BlendState              blending = BlendState::None;
     DepthTest               depthTest;
+    VertexFormat            vertexFormat;
 
     std::string name; //used for debug labels
 };

@@ -432,54 +432,28 @@ void RenderFrontend::renderFrame() {
     computeSunLightMatrices();
     renderForwardShading(preparationPasses);
 
-    bool drawDebugPass = false;
-
     //for sky and debug models, first matrix is mvp with identity model matrix, secondary is unused
     const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
 
-    //update view frustum debug model
+    //update debug geo
     if (m_freezeAndDrawCameraFrustum) {
         gRenderBackend.drawDynamicMeshes({ m_cameraFrustumModel }, { defaultTransform }, m_debugGeoPass);
-        drawDebugPass = true;
     }
     if (m_drawShadowFrustum) {
         gRenderBackend.drawDynamicMeshes({ m_shadowFrustumModel }, { defaultTransform }, m_debugGeoPass);
-        drawDebugPass = true;
     }
-    //update bounding box debug models
-    if(m_drawBBs && m_bbsToDebugDraw.size() > 0) {
-        std::vector<std::vector<glm::vec3>> positionsPerMesh;
-        std::vector<std::vector<uint32_t>>  indicesPerMesh;
-
-        positionsPerMesh.reserve(m_bbDebugMeshes.size());
-        indicesPerMesh.reserve(m_bbDebugMeshes.size());
-        for (const auto& bb : m_bbsToDebugDraw) {
-            std::vector<glm::vec3> vertices;
-            std::vector<uint32_t> indices;
-
-            axisAlignedBoundingBoxToLineMesh(bb, &vertices, &indices);
-
-            positionsPerMesh.push_back(vertices);
-            indicesPerMesh.push_back(indices);
-        }
-
-        //subvector with correct handle count
-        std::vector<DynamicMeshHandle> bbMeshHandles(&m_bbDebugMeshes[0], &m_bbDebugMeshes[positionsPerMesh.size()]);
-
-        gRenderBackend.updateDynamicMeshes(bbMeshHandles, positionsPerMesh, indicesPerMesh);
-
-        std::vector<std::array<glm::mat4, 2>> debugMeshTransforms(m_bbsToDebugDraw.size(), defaultTransform);
-        gRenderBackend.drawDynamicMeshes(bbMeshHandles, debugMeshTransforms, m_debugGeoPass);
-
-        drawDebugPass = true;
+    if(m_drawBBs) {
+        updateBoundingBoxDebugGeo();
     }
+
+    const bool drawDebugPass = 
+        m_freezeAndDrawCameraFrustum || 
+        m_drawShadowFrustum || 
+        m_drawBBs;
 
     //debug pass
     if (drawDebugPass) {
-        RenderPassExecution debugPassExecution;
-        debugPassExecution.handle = m_debugGeoPass;
-        debugPassExecution.parents = { m_mainPass };
-        gRenderBackend.setRenderPassExecution(debugPassExecution);
+        renderDebugGeometry();
     }
     renderSky(drawDebugPass);
     computeTAA();
@@ -743,6 +717,39 @@ void RenderFrontend::computeTonemapping() const {
     tonemappingExecution.parents = { m_taaPass };
 
     gRenderBackend.setRenderPassExecution(tonemappingExecution);
+}
+
+void RenderFrontend::renderDebugGeometry() const {
+    RenderPassExecution debugPassExecution;
+    debugPassExecution.handle = m_debugGeoPass;
+    debugPassExecution.parents = { m_mainPass };
+    gRenderBackend.setRenderPassExecution(debugPassExecution);
+}
+
+void RenderFrontend::updateBoundingBoxDebugGeo() {
+    std::vector<std::vector<glm::vec3>> positionsPerMesh;
+    std::vector<std::vector<uint32_t>>  indicesPerMesh;
+
+    positionsPerMesh.reserve(m_bbDebugMeshes.size());
+    indicesPerMesh.reserve(m_bbDebugMeshes.size());
+    for (const auto& bb : m_bbsToDebugDraw) {
+        std::vector<glm::vec3> vertices;
+        std::vector<uint32_t> indices;
+
+        axisAlignedBoundingBoxToLineMesh(bb, &vertices, &indices);
+
+        positionsPerMesh.push_back(vertices);
+        indicesPerMesh.push_back(indices);
+    }
+
+    //subvector with correct handle count
+    std::vector<DynamicMeshHandle> bbMeshHandles(&m_bbDebugMeshes[0], &m_bbDebugMeshes[positionsPerMesh.size()]);
+
+    gRenderBackend.updateDynamicMeshes(bbMeshHandles, positionsPerMesh, indicesPerMesh);
+
+    const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
+    std::vector<std::array<glm::mat4, 2>> debugMeshTransforms(m_bbsToDebugDraw.size(), defaultTransform);
+    gRenderBackend.drawDynamicMeshes(bbMeshHandles, debugMeshTransforms, m_debugGeoPass);
 }
 
 bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
@@ -1588,6 +1595,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         mainPassDesc.rasterization.cullMode = CullMode::Back;
         mainPassDesc.rasterization.mode = RasterizationeMode::Fill;
         mainPassDesc.blending = BlendState::None;
+        mainPassDesc.vertexFormat = VertexFormat::Full;
 
         m_mainPass = gRenderBackend.createGraphicPass(mainPassDesc);
     }
@@ -1611,6 +1619,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         shadowPassConfig.rasterization.mode = RasterizationeMode::Fill;
         shadowPassConfig.rasterization.clampDepth = true;
         shadowPassConfig.blending = BlendState::None;
+        shadowPassConfig.vertexFormat = VertexFormat::Full;
 
         //cascade index specialisation constant
         shadowPassConfig.shaderDescriptions.vertex.specialisationConstants = { {
@@ -1694,6 +1703,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         skyPassConfig.rasterization.cullMode = CullMode::None;
         skyPassConfig.rasterization.mode = RasterizationeMode::Fill;
         skyPassConfig.blending = BlendState::None;
+        skyPassConfig.vertexFormat = VertexFormat::Full;
 
         m_skyPass = gRenderBackend.createGraphicPass(skyPassConfig);
     }
@@ -1719,6 +1729,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         debugPassConfig.rasterization.cullMode = CullMode::None;
         debugPassConfig.rasterization.mode = RasterizationeMode::Line;
         debugPassConfig.blending = BlendState::None;
+        debugPassConfig.vertexFormat = VertexFormat::PositionOnly;
 
         m_debugGeoPass = gRenderBackend.createGraphicPass(debugPassConfig);
     }
@@ -1835,6 +1846,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.rasterization.cullMode = CullMode::Back;
         desc.shaderDescriptions.vertex.srcPathRelative = "depthPrepass.vert";
         desc.shaderDescriptions.fragment.srcPathRelative = "depthPrepass.frag";
+        desc.vertexFormat = VertexFormat::Full;
 
         m_depthPrePass = gRenderBackend.createGraphicPass(desc);
     }
@@ -1898,6 +1910,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         config.rasterization.mode = RasterizationeMode::Fill;
         config.rasterization.clampDepth = true;
         config.blending = BlendState::None;
+        config.vertexFormat = VertexFormat::Full;
 
         m_skyShadowPass = gRenderBackend.createGraphicPass(config);
     }
