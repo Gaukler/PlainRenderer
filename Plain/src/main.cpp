@@ -31,4 +31,5 @@ void main(){
     }
 
     gRenderFrontend.shutdown();
+    gRenderBackend.shutdown();
 }

@@ -29,6 +29,7 @@ App::App() {
 void App::runUpdate() {
 
     m_cameraController.update();
+    gRenderFrontend.setCameraExtrinsic(m_cameraController.getExtrinsic());
 
     //comment in to move first mesh
     //if (m_meshes.size() >= 1) {
@@ -37,7 +38,6 @@ void App::runUpdate() {
     //    //m = glm::mat4(glm::rotate(glm::mat4(1.f), glm::radians(time) * 10.f, glm::vec3(0, -1, 0))
     //    m_renderer.setModelMatrix(m_meshes[0], m);
     //}
-
-    gRenderFrontend.setCameraExtrinsic(m_cameraController.getExtrinsic());
+    
     gRenderFrontend.issueMeshDraws(m_meshes);
 }

@@ -114,6 +114,28 @@ DefaultTextures createDefaultTextures() {
     return defaultTextures;
 }
 
+glm::vec2 computeProjectionMatrixJitter(const float pixelSizeX, const float pixelSizeY) {
+    static uint32_t jitterIndex;
+    glm::vec2 offset = hammersley2D(jitterIndex) - glm::vec2(0.5f);
+    offset.x *= pixelSizeX;
+    offset.y *= pixelSizeY;
+
+    jitterIndex++;
+    const uint32_t sampleCount = 16;
+    jitterIndex %= sampleCount;
+
+    return offset;
+}
+
+glm::mat4 applyProjectionMatrixJitter(const glm::mat4& projectionMatrix, const glm::vec2& offset) {
+
+    glm::mat4 jitteredProjection = projectionMatrix;
+    jitteredProjection[2][0] += offset.x;
+    jitteredProjection[2][1] += offset.y;
+
+    return jitteredProjection;
+}
+
 void RenderFrontend::setup(GLFWwindow* window) {
     m_window = window;
 
@@ -126,19 +148,19 @@ void RenderFrontend::setup(GLFWwindow* window) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, resizeCallback);
 
-    const auto histogramSettings = createHistogramSettings();
-
     m_defaultTextures = createDefaultTextures();
     initSamplers();
     initImages();
-    initBuffers(histogramSettings);
 
+    const auto histogramSettings = createHistogramSettings();
+    initBuffers(histogramSettings);
     initRenderpasses(histogramSettings);
+
     initMeshs();
 }
 
 void RenderFrontend::shutdown() {
-    gRenderBackend.shutdown();
+    
 }
 
 void RenderFrontend::newFrame() {
@@ -176,9 +198,7 @@ void RenderFrontend::newFrame() {
     }
 
     gRenderBackend.updateShaderCode();
-
     gRenderBackend.newFrame();
-
     m_bbsToDebugDraw.clear();
 
     //update previous matrices
@@ -208,39 +228,23 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
 
     m_previousViewProjectionMatrix = m_viewProjectionMatrix;
 
-    //jitter matrix
+    //jitter matrix for TAA
     {
-        static uint32_t jitterIndex;
-        glm::vec2 offset = hammersley2D(jitterIndex) - glm::vec2(0.5f);
-        offset.x /= float(m_screenWidth);
-        offset.y /= float(m_screenHeight);
-        jitterIndex++;
-        const uint32_t sampleCount = 16;
-        jitterIndex %= sampleCount;
-
-        glm::mat4 jitteredProjection = projectionMatrix;
-        jitteredProjection[2][0] += offset.x;
-        jitteredProjection[2][1] += offset.y;
-
-        m_viewProjectionMatrix = jitteredProjection * viewMatrix;
+        const float pixelSizeX = 1.f / m_screenWidth;
+        const float pixelSizeY = 1.f / m_screenHeight;
 
         m_globalShaderInfo.previousFrameCameraJitter = m_globalShaderInfo.currentFrameCameraJitter;
-        m_globalShaderInfo.currentFrameCameraJitter = offset;
+        m_globalShaderInfo.currentFrameCameraJitter = computeProjectionMatrixJitter(pixelSizeX, pixelSizeY);
+        const glm::mat4 jitteredProjection = applyProjectionMatrixJitter(projectionMatrix, m_globalShaderInfo.currentFrameCameraJitter);
+
+        m_viewProjectionMatrix = jitteredProjection * viewMatrix;
     }    
 
     if (!m_freezeAndDrawCameraFrustum) {
         updateCameraFrustum();
     }
 
-    //update shadow frustum
-    {
-        std::vector<glm::vec3> frustumPoints;
-        std::vector<uint32_t> frustumIndices;
-
-        const auto shadowFrustum = computeOrthogonalFrustumFittedToCamera(m_cameraFrustum, directionToVector(m_sunDirection));
-        frustumToLineMesh(shadowFrustum, &frustumPoints, &frustumIndices);
-        gRenderBackend.updateDynamicMeshes({ m_shadowFrustumModel }, { frustumPoints }, { frustumIndices });
-    }
+    updateShadowFrustum();
 }
 
 std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>& meshData) {
@@ -355,16 +359,15 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
         std::vector<std::array<glm::mat4, 2>> culledTransforms; //model matrix and secondary unused for now 
 
         const glm::vec3 sunDirection = directionToVector(m_sunDirection);
-        auto shadowFrustum = computeOrthogonalFrustumFittedToCamera(m_cameraFrustum, sunDirection);
         //we must not cull behind the shadow frustum near plane, as objects there cast shadows into the visible area
         //for now we simply offset the near plane points very far into the light direction
         //this means that all objects in that direction within the moved distance will intersect our frustum and aren't culled
         const float nearPlaneExtensionLength = 10000.f;
         const glm::vec3 nearPlaneOffset = sunDirection * nearPlaneExtensionLength;
-        shadowFrustum.points.l_l_n += nearPlaneOffset;
-        shadowFrustum.points.r_l_n += nearPlaneOffset;
-        shadowFrustum.points.l_u_n += nearPlaneOffset;
-        shadowFrustum.points.r_u_n += nearPlaneOffset;
+        m_sunShadowFrustum.points.l_l_n += nearPlaneOffset;
+        m_sunShadowFrustum.points.r_l_n += nearPlaneOffset;
+        m_sunShadowFrustum.points.l_u_n += nearPlaneOffset;
+        m_sunShadowFrustum.points.r_u_n += nearPlaneOffset;
 
         //coarse frustum culling for shadow rendering, assuming shadow frustum if fitted to camera frustum
         //actual frustum is fitted tightly to depth buffer values, but that is done on the GPU
@@ -376,7 +379,7 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
 
             //account for transform
             const auto bbTransformed = axisAlignedBoundingBoxTransformed(meshState.bb, meshState.modelMatrix);
-            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(shadowFrustum, meshState.bb);
+            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_sunShadowFrustum, meshState.bb);
 
             if (renderMesh) {
                 m_currentShadowPassDrawcallCount++;
@@ -994,14 +997,22 @@ void RenderFrontend::computeSkyOcclusion() {
 void RenderFrontend::updateCameraFrustum() {
     m_cameraFrustum = computeViewFrustum(m_camera);
 
-    //camera frustum debug geo
-    {
-        std::vector<glm::vec3> frustumPoints;
-        std::vector<uint32_t> frustumIndices;
+    //debug geo
+    std::vector<glm::vec3> frustumPoints;
+    std::vector<uint32_t> frustumIndices;
 
-        frustumToLineMesh(m_cameraFrustum, &frustumPoints, &frustumIndices);
-        gRenderBackend.updateDynamicMeshes({ m_cameraFrustumModel }, { frustumPoints }, { frustumIndices });
-    }
+    frustumToLineMesh(m_cameraFrustum, &frustumPoints, &frustumIndices);
+    gRenderBackend.updateDynamicMeshes({ m_cameraFrustumModel }, { frustumPoints }, { frustumIndices });
+}
+
+void RenderFrontend::updateShadowFrustum() {
+    m_sunShadowFrustum = computeOrthogonalFrustumFittedToCamera(m_cameraFrustum, directionToVector(m_sunDirection));
+
+    //debug geo
+    std::vector<glm::vec3> frustumPoints;
+    std::vector<uint32_t> frustumIndices;
+    frustumToLineMesh(m_sunShadowFrustum, &frustumPoints, &frustumIndices);
+    gRenderBackend.updateDynamicMeshes({ m_shadowFrustumModel }, { frustumPoints }, { frustumIndices });
 }
 
 HistogramSettings RenderFrontend::createHistogramSettings() {

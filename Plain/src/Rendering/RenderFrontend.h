@@ -143,10 +143,13 @@ private:
     glm::mat4 m_previousViewProjectionMatrix = glm::mat4(1.f);
 
     ViewFrustum m_cameraFrustum;
+    ViewFrustum m_sunShadowFrustum;
+
     float m_exposureOffset = 0.f;
     glm::ivec3 m_skyOcclusionVolumeRes = glm::ivec3(0);
     
     void updateCameraFrustum();
+    void updateShadowFrustum();
 
     HistogramSettings createHistogramSettings();
 
