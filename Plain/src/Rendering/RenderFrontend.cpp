@@ -45,6 +45,75 @@ void resizeCallback(GLFWwindow* window, int width, int height) {
     frontEnd->setResolution(width, height);
 }
 
+DefaultTextures createDefaultTextures() {
+    DefaultTextures defaultTextures;
+    //albedo
+    {
+        ImageDescription defaultDiffuseDesc;
+        defaultDiffuseDesc.autoCreateMips = true;
+        defaultDiffuseDesc.depth = 1;
+        defaultDiffuseDesc.format = ImageFormat::RGBA8;
+        defaultDiffuseDesc.initialData = { 255, 255, 255, 255 };
+        defaultDiffuseDesc.manualMipCount = 1;
+        defaultDiffuseDesc.mipCount = MipCount::FullChain;
+        defaultDiffuseDesc.type = ImageType::Type2D;
+        defaultDiffuseDesc.usageFlags = ImageUsageFlags::Sampled;
+        defaultDiffuseDesc.width = 1;
+        defaultDiffuseDesc.height = 1;
+
+        defaultTextures.diffuse = gRenderBackend.createImage(defaultDiffuseDesc);
+    }
+    //specular
+    {
+        ImageDescription defaultSpecularDesc;
+        defaultSpecularDesc.autoCreateMips = true;
+        defaultSpecularDesc.depth = 1;
+        defaultSpecularDesc.format = ImageFormat::RGBA8;
+        defaultSpecularDesc.initialData = { 0, 128, 255, 0 };
+        defaultSpecularDesc.manualMipCount = 1;
+        defaultSpecularDesc.mipCount = MipCount::FullChain;
+        defaultSpecularDesc.type = ImageType::Type2D;
+        defaultSpecularDesc.usageFlags = ImageUsageFlags::Sampled;
+        defaultSpecularDesc.width = 1;
+        defaultSpecularDesc.height = 1;
+
+        defaultTextures.specular = gRenderBackend.createImage(defaultSpecularDesc);
+    }
+    //normal
+    {
+        ImageDescription defaultNormalDesc;
+        defaultNormalDesc.autoCreateMips = true;
+        defaultNormalDesc.depth = 1;
+        defaultNormalDesc.format = ImageFormat::RG8;
+        defaultNormalDesc.initialData = { 128, 128 };
+        defaultNormalDesc.manualMipCount = 1;
+        defaultNormalDesc.mipCount = MipCount::FullChain;
+        defaultNormalDesc.type = ImageType::Type2D;
+        defaultNormalDesc.usageFlags = ImageUsageFlags::Sampled;
+        defaultNormalDesc.width = 1;
+        defaultNormalDesc.height = 1;
+
+        defaultTextures.normal = gRenderBackend.createImage(defaultNormalDesc);
+    }
+    //sky
+    {
+        ImageDescription defaultCubemapDesc;
+        defaultCubemapDesc.autoCreateMips = true;
+        defaultCubemapDesc.depth = 1;
+        defaultCubemapDesc.format = ImageFormat::RGBA8;
+        defaultCubemapDesc.initialData = { 255, 255, 255, 255 };
+        defaultCubemapDesc.manualMipCount = 1;
+        defaultCubemapDesc.mipCount = MipCount::FullChain;
+        defaultCubemapDesc.type = ImageType::Type2D;
+        defaultCubemapDesc.usageFlags = ImageUsageFlags::Sampled;
+        defaultCubemapDesc.width = 1;
+        defaultCubemapDesc.height = 1;
+
+        defaultTextures.sky = gRenderBackend.createImage(defaultCubemapDesc);
+    }
+    return defaultTextures;
+}
+
 void RenderFrontend::setup(GLFWwindow* window) {
     m_window = window;
 
@@ -59,6 +128,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
 
     const auto histogramSettings = createHistogramSettings();
 
+    m_defaultTextures = createDefaultTextures();
     initSamplers();
     initImages();
     initBuffers(histogramSettings);
@@ -189,13 +259,13 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
         mesh.bitangents = data.bitangents;
 
         if (!loadImageFromPath(data.material.albedoTexturePath, &mesh.diffuseTexture)) {
-            mesh.diffuseTexture = m_defaultDiffuseTexture;
+            mesh.diffuseTexture = m_defaultTextures.diffuse;
         }
         if (!loadImageFromPath(data.material.normalTexturePath, &mesh.normalTexture)) {
-            mesh.normalTexture = m_defaultNormalTexture;
+            mesh.normalTexture = m_defaultTextures.normal;
         }
         if (!loadImageFromPath(data.material.specularTexturePath, &mesh.specularTexture)) {
-            mesh.specularTexture = m_defaultSpecularTexture;
+            mesh.specularTexture = m_defaultTextures.specular;
         }
 
         dataInternal.push_back(mesh);
@@ -1075,7 +1145,7 @@ void RenderFrontend::initImages() {
             m_environmentMapSrc = gRenderBackend.createImage(hdrCapture);
         }
         else {
-            m_environmentMapSrc = m_defaultSkyTexture;
+            m_environmentMapSrc = m_defaultTextures.sky;
         }
     }
     //main color buffer
@@ -1234,70 +1304,6 @@ void RenderFrontend::initImages() {
         desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
 
         m_minMaxDepthPyramid = gRenderBackend.createImage(desc);
-    }
-    //default albedo texture
-    {
-        ImageDescription defaultDiffuseDesc;
-        defaultDiffuseDesc.autoCreateMips = true;
-        defaultDiffuseDesc.depth = 1;
-        defaultDiffuseDesc.format = ImageFormat::RGBA8;
-        defaultDiffuseDesc.initialData = { 255, 255, 255, 255 };
-        defaultDiffuseDesc.manualMipCount = 1;
-        defaultDiffuseDesc.mipCount = MipCount::FullChain;
-        defaultDiffuseDesc.type = ImageType::Type2D;
-        defaultDiffuseDesc.usageFlags = ImageUsageFlags::Sampled;
-        defaultDiffuseDesc.width = 1;
-        defaultDiffuseDesc.height = 1;
-
-        m_defaultDiffuseTexture = gRenderBackend.createImage(defaultDiffuseDesc);
-    }
-    //default specular texture
-    {
-        ImageDescription defaultSpecularDesc;
-        defaultSpecularDesc.autoCreateMips = true;
-        defaultSpecularDesc.depth = 1;
-        defaultSpecularDesc.format = ImageFormat::RGBA8;
-        defaultSpecularDesc.initialData = { 0, 128, 255, 0 };
-        defaultSpecularDesc.manualMipCount = 1;
-        defaultSpecularDesc.mipCount = MipCount::FullChain;
-        defaultSpecularDesc.type = ImageType::Type2D;
-        defaultSpecularDesc.usageFlags = ImageUsageFlags::Sampled;
-        defaultSpecularDesc.width = 1;
-        defaultSpecularDesc.height = 1;
-
-        m_defaultSpecularTexture = gRenderBackend.createImage(defaultSpecularDesc);
-    }
-    //default normal texture
-    {
-        ImageDescription defaultNormalDesc;
-        defaultNormalDesc.autoCreateMips = true;
-        defaultNormalDesc.depth = 1;
-        defaultNormalDesc.format = ImageFormat::RG8;
-        defaultNormalDesc.initialData = { 128, 128 };
-        defaultNormalDesc.manualMipCount = 1;
-        defaultNormalDesc.mipCount = MipCount::FullChain;
-        defaultNormalDesc.type = ImageType::Type2D;
-        defaultNormalDesc.usageFlags = ImageUsageFlags::Sampled;
-        defaultNormalDesc.width = 1;
-        defaultNormalDesc.height = 1;
-
-        m_defaultNormalTexture = gRenderBackend.createImage(defaultNormalDesc);
-    }
-    //default cubemap texture
-    {
-        ImageDescription defaultCubemapDesc;
-        defaultCubemapDesc.autoCreateMips = true;
-        defaultCubemapDesc.depth = 1;
-        defaultCubemapDesc.format = ImageFormat::RGBA8;
-        defaultCubemapDesc.initialData = { 255, 255, 255, 255 };
-        defaultCubemapDesc.manualMipCount = 1;
-        defaultCubemapDesc.mipCount = MipCount::FullChain;
-        defaultCubemapDesc.type = ImageType::Type2D;
-        defaultCubemapDesc.usageFlags = ImageUsageFlags::Sampled;
-        defaultCubemapDesc.width = 1;
-        defaultCubemapDesc.height = 1;
-
-        m_defaultSkyTexture = gRenderBackend.createImage(defaultCubemapDesc);
     }
     //sky shadow map
     {
@@ -1552,9 +1558,9 @@ void RenderFrontend::initMeshs() {
             3, 2, 7, 7, 2, 6,
             4, 5, 0, 0, 5, 1
         };
-        cubedata.diffuseTexture = m_defaultDiffuseTexture;
-        cubedata.normalTexture = m_defaultNormalTexture;
-        cubedata.specularTexture = m_defaultSpecularTexture;
+        cubedata.diffuseTexture = m_defaultTextures.diffuse;
+        cubedata.normalTexture = m_defaultTextures.normal;
+        cubedata.specularTexture = m_defaultTextures.specular;
 
         m_skyCube = gRenderBackend.createMeshes(std::vector<MeshDataInternal> { cubedata }).back();
     }

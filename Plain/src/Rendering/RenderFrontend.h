@@ -60,11 +60,16 @@ struct SkyOcclusionRenderData {
     float weight = 0.f;
 };
 
-/*
-shader resource types
-define inputs and outputs of renderpass
-*/
 enum class ShaderResourceType { SampledImage, Sampler, StorageImage, StorageBuffer, UniformBuffer };
+
+struct DefaultTextures {
+    ImageHandle diffuse;
+    ImageHandle specular;
+    ImageHandle normal;
+    ImageHandle sky;
+};
+
+DefaultTextures createDefaultTextures();
 
 class RenderFrontend {
 public:
@@ -178,6 +183,8 @@ private:
     ImageHandle m_skyShadowMap;
     ImageHandle m_skyOcclusionVolume;
 
+    DefaultTextures m_defaultTextures;
+
     std::vector<ImageHandle> m_shadowMaps;
 
     SamplerHandle m_shadowSampler;
@@ -228,13 +235,7 @@ private:
 
     //threadgroup count is needed as a pointer in a specialisation constant, so it must be from outer scope to stay valid
     ShaderDescription createDepthPyramidShaderDescription(uint32_t* outThreadgroupCount);
-    glm::ivec2 computeDepthPyramidDispatchCount();
-
-    //default textures
-    ImageHandle m_defaultDiffuseTexture;
-    ImageHandle m_defaultSpecularTexture;
-    ImageHandle m_defaultNormalTexture;
-    ImageHandle m_defaultSkyTexture;
+    glm::ivec2 computeDepthPyramidDispatchCount();    
 
     //sun
     glm::vec2 m_sunDirection = glm::vec2(-120.f, 150.f);
