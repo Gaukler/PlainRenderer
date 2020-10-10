@@ -774,26 +774,23 @@ bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* 
 }
 
 void RenderFrontend::firstFramePreparation() {
-    /*
-    write to sky texture
-    */
-    const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
-    const auto hdrCaptureResource = ImageResource(m_environmentMapSrc, 0, 1);
-    const auto hdrSamplerResource = SamplerResource(m_cubeSampler, 2);
+    //write to sky texture
+    {
+        const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
+        const auto hdrCaptureResource = ImageResource(m_environmentMapSrc, 0, 1);
+        const auto hdrSamplerResource = SamplerResource(m_cubeSampler, 2);
 
-    RenderPassExecution cubeWriteExecution;
-    cubeWriteExecution.handle = m_toCubemapPass;
-    cubeWriteExecution.resources.storageImages = { skyTextureResource };
-    cubeWriteExecution.resources.sampledImages = { hdrCaptureResource };
-    cubeWriteExecution.resources.samplers = { hdrSamplerResource };
-    cubeWriteExecution.dispatchCount[0] = skyTextureRes / 8;
-    cubeWriteExecution.dispatchCount[1] = skyTextureRes / 8;
-    cubeWriteExecution.dispatchCount[2] = 6;
-    gRenderBackend.setRenderPassExecution(cubeWriteExecution);
-    
-    /*
-    create sky texture mips
-    */
+        RenderPassExecution cubeWriteExecution;
+        cubeWriteExecution.handle = m_toCubemapPass;
+        cubeWriteExecution.resources.storageImages = { skyTextureResource };
+        cubeWriteExecution.resources.sampledImages = { hdrCaptureResource };
+        cubeWriteExecution.resources.samplers = { hdrSamplerResource };
+        cubeWriteExecution.dispatchCount[0] = skyTextureRes / 8;
+        cubeWriteExecution.dispatchCount[1] = skyTextureRes / 8;
+        cubeWriteExecution.dispatchCount[2] = 6;
+        gRenderBackend.setRenderPassExecution(cubeWriteExecution);
+    }
+    //create sky texture mips
     for (uint32_t i = 1; i < skyTextureMipCount; i++) {
         const uint32_t srcMip = i - 1;
         const auto skyMipSrcResource = ImageResource(m_skyTexture, srcMip, 0);
@@ -813,30 +810,27 @@ void RenderFrontend::firstFramePreparation() {
         skyMipExecution.dispatchCount[2] = 6;
         gRenderBackend.setRenderPassExecution(skyMipExecution);
     }
-    
-    /*
-    diffuse convolution
-    */
-    const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 0);
-    const auto diffuseConvolutionSrcResource = ImageResource(m_skyTexture, 0, 1);
-    const auto cubeSamplerResource = SamplerResource(m_skySamplerWithMips, 2);
+    //diffuse convolution
+    {
+        const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 0);
+        const auto diffuseConvolutionSrcResource = ImageResource(m_skyTexture, 0, 1);
+        const auto cubeSamplerResource = SamplerResource(m_skySamplerWithMips, 2);
 
-    RenderPassExecution diffuseConvolutionExecution;
-    diffuseConvolutionExecution.handle = m_diffuseConvolutionPass;
-    diffuseConvolutionExecution.parents = { m_toCubemapPass };
-    diffuseConvolutionExecution.resources.storageImages = { diffuseProbeResource };
-    diffuseConvolutionExecution.resources.sampledImages = { diffuseConvolutionSrcResource };
-    diffuseConvolutionExecution.resources.samplers = { cubeSamplerResource };
-    diffuseConvolutionExecution.dispatchCount[0] = diffuseProbeRes / 8;
-    diffuseConvolutionExecution.dispatchCount[1] = diffuseProbeRes / 8;
-    diffuseConvolutionExecution.dispatchCount[2] = 6;
-    gRenderBackend.setRenderPassExecution(diffuseConvolutionExecution);
+        RenderPassExecution diffuseConvolutionExecution;
+        diffuseConvolutionExecution.handle = m_diffuseConvolutionPass;
+        diffuseConvolutionExecution.parents = { m_toCubemapPass };
+        diffuseConvolutionExecution.resources.storageImages = { diffuseProbeResource };
+        diffuseConvolutionExecution.resources.sampledImages = { diffuseConvolutionSrcResource };
+        diffuseConvolutionExecution.resources.samplers = { cubeSamplerResource };
+        diffuseConvolutionExecution.dispatchCount[0] = diffuseProbeRes / 8;
+        diffuseConvolutionExecution.dispatchCount[1] = diffuseProbeRes / 8;
+        diffuseConvolutionExecution.dispatchCount[2] = 6;
+        gRenderBackend.setRenderPassExecution(diffuseConvolutionExecution);
+    }
     
     computeBRDFLut();
     
-    /*
-    specular probe convolution
-    */
+    //specular probe convolution
     for (uint32_t mipLevel = 0; mipLevel < m_specularProbeMipCount; mipLevel++) {
 
         const auto specularProbeResource = ImageResource(m_specularProbe, mipLevel, 0);
@@ -857,9 +851,7 @@ void RenderFrontend::firstFramePreparation() {
 }
 
 void RenderFrontend::computeBRDFLut() {
-    /*
-    create brdf lut for split sum approximation
-    */
+
     const auto brdfLutStorageResource = ImageResource(m_brdfLut, 0, 0);
 
     RenderPassExecution brdfLutExecution;
@@ -1002,7 +994,7 @@ void RenderFrontend::computeSkyOcclusion() {
 void RenderFrontend::updateCameraFrustum() {
     m_cameraFrustum = computeViewFrustum(m_camera);
 
-    //camera frustum
+    //camera frustum debug geo
     {
         std::vector<glm::vec3> frustumPoints;
         std::vector<uint32_t> frustumIndices;
