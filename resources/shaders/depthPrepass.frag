@@ -28,5 +28,10 @@ void main(){
     ndcPrevious -= g_previousFrameCameraJitter;
     
     motion = (ndcPrevious - ndcCurrent) * vec2(0.5f, 0.5f);
-    //motion = vec2(0);
+    
+    //FIXME: this is hacky, motion vectors should be zero without movement
+    //problem with jitter
+    if(abs(motion.x) + abs(motion.y) < 0.0007){
+        motion = vec2(0);
+    }
 }

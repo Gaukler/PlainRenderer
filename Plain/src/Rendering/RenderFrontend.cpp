@@ -130,8 +130,8 @@ glm::vec2 computeProjectionMatrixJitter(const float pixelSizeX, const float pixe
 glm::mat4 applyProjectionMatrixJitter(const glm::mat4& projectionMatrix, const glm::vec2& offset) {
 
     glm::mat4 jitteredProjection = projectionMatrix;
-    jitteredProjection[2][0] += offset.x;
-    jitteredProjection[2][1] += offset.y;
+    jitteredProjection[2][0] = offset.x;
+    jitteredProjection[2][1] = offset.y;
 
     return jitteredProjection;
 }
