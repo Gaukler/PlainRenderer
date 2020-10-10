@@ -469,7 +469,7 @@ void RenderFrontend::renderFrame() {
 }
 
 void RenderFrontend::computeColorBufferHistogram() const {
-    //histogram and exposure computation
+
     StorageBufferResource histogramPerTileResource(m_histogramPerTileBuffer, false, 0);
     StorageBufferResource histogramResource(m_histogramBuffer, false, 1);
 
