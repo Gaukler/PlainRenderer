@@ -401,9 +401,7 @@ void RenderFrontend::renderFrame() {
         return;
     }
 
-    /*
-    additional passes that have to be executed before the main pass
-    */
+    //additional passes that have to be executed before the main pass    
     std::vector<RenderPassHandle> preparationPasses;
 
     if (m_firstFrame) {
@@ -426,182 +424,13 @@ void RenderFrontend::renderFrame() {
         m_isBRDFLutShaderDescriptionStale = false;
     }
 
-    /*
-    render sun shadow
-    */
-    {
-        for (uint32_t i = 0; i < shadowCascadeCount; i++) {
-            RenderPassExecution shadowPassExecution;
-            shadowPassExecution.handle = m_shadowPasses[i];
-            shadowPassExecution.parents = { m_lightMatrixPass };
-
-            StorageBufferResource lightMatrixBufferResource(m_sunShadowInfoBuffer, true, 0);
-            shadowPassExecution.resources.storageBuffers = { lightMatrixBufferResource };
-
-            gRenderBackend.setRenderPassExecution(shadowPassExecution);
-        }
-    }
-    
-    /*
-    histogram and exposure computation
-    */
-    StorageBufferResource histogramPerTileResource(m_histogramPerTileBuffer, false, 0);
-    StorageBufferResource histogramResource(m_histogramBuffer, false, 1);  
-
-    //histogram per tile
-    {
-        ImageResource colorTextureResource(m_colorBuffer, 0, 2);
-        SamplerResource texelSamplerResource(m_defaultTexelSampler, 4);
-        StorageBufferResource lightBufferResource(m_lightBuffer, true, 3);
-
-        RenderPassExecution histogramPerTileExecution;
-        histogramPerTileExecution.handle = m_histogramPerTilePass;
-        histogramPerTileExecution.resources.storageBuffers = { histogramPerTileResource, lightBufferResource };
-        histogramPerTileExecution.resources.samplers = { texelSamplerResource };
-        histogramPerTileExecution.resources.sampledImages = { colorTextureResource };
-        histogramPerTileExecution.dispatchCount[0] = uint32_t(std::ceilf((float)m_screenWidth  / float(histogramTileSizeX)));
-        histogramPerTileExecution.dispatchCount[1] = uint32_t(std::ceilf((float)m_screenHeight / float(histogramTileSizeY)));
-        histogramPerTileExecution.dispatchCount[2] = 1;
-
-        gRenderBackend.setRenderPassExecution(histogramPerTileExecution);
-    }
-
-    const float binsPerDispatch = 64.f;
-    //reset global tile
-    {
-        RenderPassExecution histogramResetExecution;
-        histogramResetExecution.handle = m_histogramResetPass;
-        histogramResetExecution.resources.storageBuffers = { histogramResource };
-        histogramResetExecution.dispatchCount[0] = uint32_t(std::ceilf(float(nHistogramBins) / binsPerDispatch));
-        histogramResetExecution.dispatchCount[1] = 1;
-        histogramResetExecution.dispatchCount[2] = 1;
-
-        gRenderBackend.setRenderPassExecution(histogramResetExecution);
-    }
-    //combine tiles
-    {
-        RenderPassExecution histogramCombineTilesExecution;
-        histogramCombineTilesExecution.handle = m_histogramCombinePass;
-        histogramCombineTilesExecution.resources.storageBuffers = { histogramPerTileResource, histogramResource };
-        uint32_t tileCount =
-            (uint32_t)std::ceilf(m_screenWidth  / float(histogramTileSizeX)) * 
-            (uint32_t)std::ceilf(m_screenHeight / float(histogramTileSizeY));
-        histogramCombineTilesExecution.dispatchCount[0] = tileCount;
-        histogramCombineTilesExecution.dispatchCount[1] = uint32_t(std::ceilf(float(nHistogramBins) / binsPerDispatch));
-        histogramCombineTilesExecution.dispatchCount[2] = 1;
-        histogramCombineTilesExecution.parents = { m_histogramPerTilePass, m_histogramResetPass };
-
-        gRenderBackend.setRenderPassExecution(histogramCombineTilesExecution);
-    }
-    //pre expose
-    {
-        StorageBufferResource lightBufferResource(m_lightBuffer, false, 0);
-
-        RenderPassExecution preExposeLightsExecution;
-        preExposeLightsExecution.handle = m_preExposeLightsPass;
-        preExposeLightsExecution.resources.storageBuffers = { histogramResource, lightBufferResource };
-        preExposeLightsExecution.parents = { m_histogramCombinePass };
-        preExposeLightsExecution.dispatchCount[0] = 1;
-        preExposeLightsExecution.dispatchCount[1] = 1;
-        preExposeLightsExecution.dispatchCount[2] = 1;
-
-        gRenderBackend.setRenderPassExecution(preExposeLightsExecution);
-    }
-    //depth prepass
-    {
-        RenderPassExecution prepassExe;
-        prepassExe.handle = m_depthPrePass;
-        gRenderBackend.setRenderPassExecution(prepassExe);
-    }
-    //depth pyramid
-    {
-        RenderPassExecution exe;
-        exe.handle = m_depthPyramidPass;
-        exe.parents = { m_depthPrePass };
-        const auto dispatchCount = computeDepthPyramidDispatchCount();
-        exe.dispatchCount[0] = dispatchCount.x;
-        exe.dispatchCount[1] = dispatchCount.y;
-        exe.dispatchCount[2] = 1;
-
-        ImageResource depthBufferResource(m_depthBuffer, 0, 13);
-        ImageResource depthPyramidResource(m_minMaxDepthPyramid, 0, 15);
-
-        exe.resources.sampledImages = { depthBufferResource, depthPyramidResource };
-
-        SamplerResource clampedDepthSamplerResource(m_clampedDepthSampler, 14);
-        exe.resources.samplers = { clampedDepthSamplerResource };
-        
-        StorageBufferResource syncBuffer(m_depthPyramidSyncBuffer, false, 16);
-        exe.resources.storageBuffers = { syncBuffer };
-
-        const uint32_t mipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
-        const uint32_t maxMipCount = 11; //see shader for details
-        if (mipCount > maxMipCount) {
-            std::cout << "Warning: depth pyramid mip count exceeds calculation shader max\n";
-        }
-        exe.resources.storageImages.reserve(maxMipCount);
-        const uint32_t unusedMipCount = maxMipCount - mipCount;
-        for (uint32_t i = 0; i < maxMipCount; i++) {
-            const uint32_t mipLevel = i >= unusedMipCount ?  i - unusedMipCount : 0;
-            ImageResource pyramidMip(m_minMaxDepthPyramid, mipLevel, i);
-            exe.resources.storageImages.push_back(pyramidMip);
-        }
-        gRenderBackend.setRenderPassExecution(exe);
-    }
-    //compute light matrix
-    {
-        RenderPassExecution exe;
-        exe.handle = m_lightMatrixPass;
-        exe.parents = { m_depthPyramidPass };
-        exe.dispatchCount[0] = 1;
-        exe.dispatchCount[1] = 1;
-        exe.dispatchCount[2] = 1;
-
-        const uint32_t depthPyramidMipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
-        ImageResource depthPyramidLowestMipResource(m_minMaxDepthPyramid, depthPyramidMipCount-1, 1);
-        exe.resources.storageImages = { depthPyramidLowestMipResource };
-
-        StorageBufferResource lightMatrixBuffer(m_sunShadowInfoBuffer, false, 0);
-        exe.resources.storageBuffers = { lightMatrixBuffer };
-
-        gRenderBackend.setRenderPassExecution(exe);
-    }
-    //render scene geometry
-    {
-        const auto shadowSamplerResource = SamplerResource(m_shadowSampler, 0);
-        const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 1);
-        const auto cubeSamplerResource = SamplerResource(m_cubeSampler, 2);
-        const auto brdfLutResource = ImageResource(m_brdfLut, 0, 3);
-        const auto specularProbeResource = ImageResource(m_specularProbe, 0, 4);
-        const auto cubeSamplerMipsResource = SamplerResource(m_skySamplerWithMips, 5);
-        const auto lustSamplerResource = SamplerResource(m_lutSampler, 6);
-        const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
-        const auto lightMatrixBuffer = StorageBufferResource(m_sunShadowInfoBuffer, true, 8);
-
-        const ImageResource occlusionVolumeResource(m_skyOcclusionVolume, 0, 13);
-        const UniformBufferResource skyOcclusionInfoBuffer(m_skyOcclusionDataBuffer, 14);
-        const SamplerResource occlusionSamplerResource(m_skyOcclusionSampler, 15);
-
-        RenderPassExecution mainPassExecution;
-        mainPassExecution.handle = m_mainPass;
-        mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
-        mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource };
-        mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
-        mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource,
-            cubeSamplerMipsResource, lustSamplerResource, occlusionSamplerResource };
-
-        //add shadow map cascade resources
-        for (uint32_t i = 0; i < shadowCascadeCount; i++) {
-            const auto shadowMapResource = ImageResource(m_shadowMaps[i], 0, 9+i);
-            mainPassExecution.resources.sampledImages.push_back(shadowMapResource);
-        }
-        
-        mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
-        mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
-        mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
-
-        gRenderBackend.setRenderPassExecution(mainPassExecution);
-    }
+    renderSunShadowCascades();
+    computeColorBufferHistogram();
+    computeExposure();
+    renderDepthPrepass();
+    computeDepthPyramid();
+    computeSunLightMatrices();
+    renderForwardShading(preparationPasses);
 
     bool drawDebugPass = false;
 
@@ -617,7 +446,6 @@ void RenderFrontend::renderFrame() {
         gRenderBackend.drawDynamicMeshes({ m_shadowFrustumModel }, { defaultTransform }, m_debugGeoPass);
         drawDebugPass = true;
     }
-
     //update bounding box debug models
     if(m_drawBBs && m_bbsToDebugDraw.size() > 0) {
         std::vector<std::vector<glm::vec3>> positionsPerMesh;
@@ -653,51 +481,8 @@ void RenderFrontend::renderFrame() {
         debugPassExecution.parents = { m_mainPass };
         gRenderBackend.setRenderPassExecution(debugPassExecution);
     }
-
-    /*
-    render sky
-    */
-    {
-        const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
-        const auto skySamplerResource = SamplerResource(m_cubeSampler, 1);
-        const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 2);
-
-        RenderPassExecution skyPassExecution;
-        skyPassExecution.handle = m_skyPass;
-        skyPassExecution.resources.storageBuffers = { lightBufferResource };
-        skyPassExecution.resources.sampledImages = { skyTextureResource };
-        skyPassExecution.resources.samplers = { skySamplerResource };
-        skyPassExecution.parents = { m_mainPass };
-        if (m_firstFrame) {
-            skyPassExecution.parents.push_back(m_toCubemapPass);
-        }
-        if (drawDebugPass) {
-            skyPassExecution.parents.push_back(m_debugGeoPass);
-        }
-        gRenderBackend.setRenderPassExecution(skyPassExecution);
-    }
-
-    //taa
-    {
-        ImageResource colorBufferResource(m_colorBuffer, 0, 0);
-        ImageResource previousFrameResource(m_historyBuffer, 0, 1);
-        ImageResource motionBufferResource(m_motionVectorBuffer, 0, 2);
-        ImageResource depthBufferResource(m_depthBuffer, 0, 3);
-        SamplerResource samplerResource(m_colorSampler, 4);
-
-        RenderPassExecution taaExecution;
-        taaExecution.handle = m_taaPass;
-        taaExecution.resources.storageImages = { colorBufferResource };
-        taaExecution.resources.sampledImages = { previousFrameResource, motionBufferResource, depthBufferResource };
-        taaExecution.resources.samplers = { samplerResource };
-        taaExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-        taaExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-        taaExecution.dispatchCount[2] = 1;
-        taaExecution.parents = { m_skyPass };
-
-        gRenderBackend.setRenderPassExecution(taaExecution);
-    }
-
+    renderSky(drawDebugPass);
+    computeTAA();
     //copy to for next frame
     {
         ImageResource lastFrameResource(m_historyBuffer, 0, 0);
@@ -716,35 +501,248 @@ void RenderFrontend::renderFrame() {
 
         gRenderBackend.setRenderPassExecution(copyNextFrameExecution);
     }
+    computeTonemapping();
 
-    //tonemap
-    {
-        const auto swapchainInput = gRenderBackend.getSwapchainInputImage();
-        ImageResource targetResource(swapchainInput, 0, 0);
-        ImageResource colorBufferResource(m_colorBuffer, 0, 1);
-        SamplerResource samplerResource(m_defaultTexelSampler, 2);
-
-        RenderPassExecution tonemappingExecution;
-        tonemappingExecution.handle = m_tonemappingPass;
-        tonemappingExecution.resources.storageImages = { targetResource };
-        tonemappingExecution.resources.sampledImages = { colorBufferResource };
-        tonemappingExecution.resources.samplers = { samplerResource };
-        tonemappingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-        tonemappingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-        tonemappingExecution.dispatchCount[2] = 1;
-        tonemappingExecution.parents = { m_taaPass };
-
-        gRenderBackend.setRenderPassExecution(tonemappingExecution);
-    }
-
-    /*
-    update and final commands
-    */
+    //update and final commands    
     drawUi();
     updateSun();
     updateGlobalShaderInfo();
     gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, { defaultTransform }, m_skyPass);
     gRenderBackend.renderFrame(true);
+}
+
+void RenderFrontend::computeColorBufferHistogram() const {
+    //histogram and exposure computation
+    StorageBufferResource histogramPerTileResource(m_histogramPerTileBuffer, false, 0);
+    StorageBufferResource histogramResource(m_histogramBuffer, false, 1);
+
+    //histogram per tile
+    {
+        ImageResource colorTextureResource(m_colorBuffer, 0, 2);
+        SamplerResource texelSamplerResource(m_defaultTexelSampler, 4);
+        StorageBufferResource lightBufferResource(m_lightBuffer, true, 3);
+
+        RenderPassExecution histogramPerTileExecution;
+        histogramPerTileExecution.handle = m_histogramPerTilePass;
+        histogramPerTileExecution.resources.storageBuffers = { histogramPerTileResource, lightBufferResource };
+        histogramPerTileExecution.resources.samplers = { texelSamplerResource };
+        histogramPerTileExecution.resources.sampledImages = { colorTextureResource };
+        histogramPerTileExecution.dispatchCount[0] = uint32_t(std::ceilf((float)m_screenWidth / float(histogramTileSizeX)));
+        histogramPerTileExecution.dispatchCount[1] = uint32_t(std::ceilf((float)m_screenHeight / float(histogramTileSizeY)));
+        histogramPerTileExecution.dispatchCount[2] = 1;
+
+        gRenderBackend.setRenderPassExecution(histogramPerTileExecution);
+    }
+
+    const float binsPerDispatch = 64.f;
+    //reset global tile
+    {
+        RenderPassExecution histogramResetExecution;
+        histogramResetExecution.handle = m_histogramResetPass;
+        histogramResetExecution.resources.storageBuffers = { histogramResource };
+        histogramResetExecution.dispatchCount[0] = uint32_t(std::ceilf(float(nHistogramBins) / binsPerDispatch));
+        histogramResetExecution.dispatchCount[1] = 1;
+        histogramResetExecution.dispatchCount[2] = 1;
+
+        gRenderBackend.setRenderPassExecution(histogramResetExecution);
+    }
+    //combine tiles
+    {
+        RenderPassExecution histogramCombineTilesExecution;
+        histogramCombineTilesExecution.handle = m_histogramCombinePass;
+        histogramCombineTilesExecution.resources.storageBuffers = { histogramPerTileResource, histogramResource };
+        uint32_t tileCount =
+            (uint32_t)std::ceilf(m_screenWidth / float(histogramTileSizeX)) *
+            (uint32_t)std::ceilf(m_screenHeight / float(histogramTileSizeY));
+        histogramCombineTilesExecution.dispatchCount[0] = tileCount;
+        histogramCombineTilesExecution.dispatchCount[1] = uint32_t(std::ceilf(float(nHistogramBins) / binsPerDispatch));
+        histogramCombineTilesExecution.dispatchCount[2] = 1;
+        histogramCombineTilesExecution.parents = { m_histogramPerTilePass, m_histogramResetPass };
+
+        gRenderBackend.setRenderPassExecution(histogramCombineTilesExecution);
+    }
+}
+   
+void RenderFrontend::renderSky(const bool drewDebugPasses) const {
+    const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
+    const auto skySamplerResource = SamplerResource(m_cubeSampler, 1);
+    const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 2);
+
+    RenderPassExecution skyPassExecution;
+    skyPassExecution.handle = m_skyPass;
+    skyPassExecution.resources.storageBuffers = { lightBufferResource };
+    skyPassExecution.resources.sampledImages = { skyTextureResource };
+    skyPassExecution.resources.samplers = { skySamplerResource };
+    skyPassExecution.parents = { m_mainPass };
+    if (m_firstFrame) {
+        skyPassExecution.parents.push_back(m_toCubemapPass);
+    }
+    if (drewDebugPasses) {
+        skyPassExecution.parents.push_back(m_debugGeoPass);
+    }
+    gRenderBackend.setRenderPassExecution(skyPassExecution);
+}
+
+void RenderFrontend::renderSunShadowCascades() const {
+    for (uint32_t i = 0; i < shadowCascadeCount; i++) {
+        RenderPassExecution shadowPassExecution;
+        shadowPassExecution.handle = m_shadowPasses[i];
+        shadowPassExecution.parents = { m_lightMatrixPass };
+
+        StorageBufferResource lightMatrixBufferResource(m_sunShadowInfoBuffer, true, 0);
+        shadowPassExecution.resources.storageBuffers = { lightMatrixBufferResource };
+
+        gRenderBackend.setRenderPassExecution(shadowPassExecution);
+    }
+}
+
+void RenderFrontend::computeExposure() const {
+    StorageBufferResource lightBufferResource(m_lightBuffer, false, 0);
+    StorageBufferResource histogramResource(m_histogramBuffer, false, 1);
+
+    RenderPassExecution preExposeLightsExecution;
+    preExposeLightsExecution.handle = m_preExposeLightsPass;
+    preExposeLightsExecution.resources.storageBuffers = { histogramResource, lightBufferResource };
+    preExposeLightsExecution.parents = { m_histogramCombinePass };
+    preExposeLightsExecution.dispatchCount[0] = 1;
+    preExposeLightsExecution.dispatchCount[1] = 1;
+    preExposeLightsExecution.dispatchCount[2] = 1;
+
+    gRenderBackend.setRenderPassExecution(preExposeLightsExecution);
+}
+
+void RenderFrontend::renderDepthPrepass() const {
+    RenderPassExecution prepassExe;
+    prepassExe.handle = m_depthPrePass;
+    gRenderBackend.setRenderPassExecution(prepassExe);
+}
+
+void RenderFrontend::computeDepthPyramid() const {
+    RenderPassExecution exe;
+    exe.handle = m_depthPyramidPass;
+    exe.parents = { m_depthPrePass };
+    const glm::ivec2 dispatchCount = computeDepthPyramidDispatchCount();
+    exe.dispatchCount[0] = dispatchCount.x;
+    exe.dispatchCount[1] = dispatchCount.y;
+    exe.dispatchCount[2] = 1;
+
+    ImageResource depthBufferResource(m_depthBuffer, 0, 13);
+    ImageResource depthPyramidResource(m_minMaxDepthPyramid, 0, 15);
+
+    exe.resources.sampledImages = { depthBufferResource, depthPyramidResource };
+
+    SamplerResource clampedDepthSamplerResource(m_clampedDepthSampler, 14);
+    exe.resources.samplers = { clampedDepthSamplerResource };
+
+    StorageBufferResource syncBuffer(m_depthPyramidSyncBuffer, false, 16);
+    exe.resources.storageBuffers = { syncBuffer };
+
+    const uint32_t mipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
+    const uint32_t maxMipCount = 11; //see shader for details
+    if (mipCount > maxMipCount) {
+        std::cout << "Warning: depth pyramid mip count exceeds calculation shader max\n";
+    }
+    exe.resources.storageImages.reserve(maxMipCount);
+    const uint32_t unusedMipCount = maxMipCount - mipCount;
+    for (uint32_t i = 0; i < maxMipCount; i++) {
+        const uint32_t mipLevel = i >= unusedMipCount ? i - unusedMipCount : 0;
+        ImageResource pyramidMip(m_minMaxDepthPyramid, mipLevel, i);
+        exe.resources.storageImages.push_back(pyramidMip);
+    }
+    gRenderBackend.setRenderPassExecution(exe);
+}
+
+void RenderFrontend::computeSunLightMatrices() const{
+    RenderPassExecution exe;
+    exe.handle = m_lightMatrixPass;
+    exe.parents = { m_depthPyramidPass };
+    exe.dispatchCount[0] = 1;
+    exe.dispatchCount[1] = 1;
+    exe.dispatchCount[2] = 1;
+
+    const uint32_t depthPyramidMipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
+    ImageResource depthPyramidLowestMipResource(m_minMaxDepthPyramid, depthPyramidMipCount - 1, 1);
+    exe.resources.storageImages = { depthPyramidLowestMipResource };
+
+    StorageBufferResource lightMatrixBuffer(m_sunShadowInfoBuffer, false, 0);
+    exe.resources.storageBuffers = { lightMatrixBuffer };
+
+    gRenderBackend.setRenderPassExecution(exe);
+}
+
+void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& preparationPasses) const {
+    const auto shadowSamplerResource = SamplerResource(m_shadowSampler, 0);
+    const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 1);
+    const auto cubeSamplerResource = SamplerResource(m_cubeSampler, 2);
+    const auto brdfLutResource = ImageResource(m_brdfLut, 0, 3);
+    const auto specularProbeResource = ImageResource(m_specularProbe, 0, 4);
+    const auto cubeSamplerMipsResource = SamplerResource(m_skySamplerWithMips, 5);
+    const auto lustSamplerResource = SamplerResource(m_lutSampler, 6);
+    const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
+    const auto lightMatrixBuffer = StorageBufferResource(m_sunShadowInfoBuffer, true, 8);
+
+    const ImageResource occlusionVolumeResource(m_skyOcclusionVolume, 0, 13);
+    const UniformBufferResource skyOcclusionInfoBuffer(m_skyOcclusionDataBuffer, 14);
+    const SamplerResource occlusionSamplerResource(m_skyOcclusionSampler, 15);
+
+    RenderPassExecution mainPassExecution;
+    mainPassExecution.handle = m_mainPass;
+    mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
+    mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource };
+    mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
+    mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource,
+        cubeSamplerMipsResource, lustSamplerResource, occlusionSamplerResource };
+
+    //add shadow map cascade resources
+    for (uint32_t i = 0; i < shadowCascadeCount; i++) {
+        const auto shadowMapResource = ImageResource(m_shadowMaps[i], 0, 9 + i);
+        mainPassExecution.resources.sampledImages.push_back(shadowMapResource);
+    }
+
+    mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
+    mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
+    mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
+
+    gRenderBackend.setRenderPassExecution(mainPassExecution);
+}
+
+void RenderFrontend::computeTAA() const {
+    ImageResource colorBufferResource(m_colorBuffer, 0, 0);
+    ImageResource previousFrameResource(m_historyBuffer, 0, 1);
+    ImageResource motionBufferResource(m_motionVectorBuffer, 0, 2);
+    ImageResource depthBufferResource(m_depthBuffer, 0, 3);
+    SamplerResource samplerResource(m_colorSampler, 4);
+
+    RenderPassExecution taaExecution;
+    taaExecution.handle = m_taaPass;
+    taaExecution.resources.storageImages = { colorBufferResource };
+    taaExecution.resources.sampledImages = { previousFrameResource, motionBufferResource, depthBufferResource };
+    taaExecution.resources.samplers = { samplerResource };
+    taaExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+    taaExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+    taaExecution.dispatchCount[2] = 1;
+    taaExecution.parents = { m_skyPass };
+
+    gRenderBackend.setRenderPassExecution(taaExecution);
+}
+
+void RenderFrontend::computeTonemapping() const {
+    const auto swapchainInput = gRenderBackend.getSwapchainInputImage();
+    ImageResource targetResource(swapchainInput, 0, 0);
+    ImageResource colorBufferResource(m_colorBuffer, 0, 1);
+    SamplerResource samplerResource(m_defaultTexelSampler, 2);
+
+    RenderPassExecution tonemappingExecution;
+    tonemappingExecution.handle = m_tonemappingPass;
+    tonemappingExecution.resources.storageImages = { targetResource };
+    tonemappingExecution.resources.sampledImages = { colorBufferResource };
+    tonemappingExecution.resources.samplers = { samplerResource };
+    tonemappingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+    tonemappingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+    tonemappingExecution.dispatchCount[2] = 1;
+    tonemappingExecution.parents = { m_taaPass };
+
+    gRenderBackend.setRenderPassExecution(tonemappingExecution);
 }
 
 bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
@@ -1945,7 +1943,7 @@ ShaderDescription RenderFrontend::createDepthPyramidShaderDescription(uint32_t* 
     return desc;
 }
 
-glm::ivec2 RenderFrontend::computeDepthPyramidDispatchCount() {
+glm::ivec2 RenderFrontend::computeDepthPyramidDispatchCount() const{
     glm::ivec2 count;
 
     //shader can process up to 11 mip levels

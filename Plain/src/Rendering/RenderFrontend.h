@@ -69,8 +69,6 @@ struct DefaultTextures {
     ImageHandle sky;
 };
 
-DefaultTextures createDefaultTextures();
-
 class RenderFrontend {
 public:
     RenderFrontend() {};
@@ -85,6 +83,17 @@ public:
     void renderFrame();
 
 private:
+    //computes image histogram using compute shaders
+    void computeColorBufferHistogram() const;
+    void renderSky(const bool drewDebugPasses) const;
+    void renderSunShadowCascades() const;
+    void computeExposure() const;
+    void renderDepthPrepass() const;
+    void computeDepthPyramid() const;
+    void computeSunLightMatrices() const;
+    void renderForwardShading(const std::vector<RenderPassHandle>& preparationPasses) const;
+    void computeTAA() const;
+    void computeTonemapping() const;
 
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
     bool loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);
@@ -165,9 +174,6 @@ private:
     RenderPassHandle m_skyShadowPass;
     RenderPassHandle m_skyOcclusionGatherPass;  //gathers visibility from sky shadow map
 
-    /*
-    resources
-    */
     uint32_t m_specularProbeMipCount = 0;
 
     ImageHandle m_colorBuffer;
@@ -230,18 +236,15 @@ private:
     //must be called after initImages as images have to be created to be used as attachments
     void initRenderpasses(const HistogramSettings& histogramSettings);
 
-    //must be called after initRenderpasses as meshes are created in regards to pass
     void initMeshs();
 
     //threadgroup count is needed as a pointer in a specialisation constant, so it must be from outer scope to stay valid
     ShaderDescription createDepthPyramidShaderDescription(uint32_t* outThreadgroupCount);
-    glm::ivec2 computeDepthPyramidDispatchCount();    
+    glm::ivec2 computeDepthPyramidDispatchCount() const;    
 
-    //sun
     glm::vec2 m_sunDirection = glm::vec2(-120.f, 150.f);
     void updateSun();
-
-    //ui    
+   
     void drawUi();
 };
 
