@@ -20,6 +20,7 @@ void main(){
     gInputManager.setup(window);
 
 	App app;
+    app.setup();
 
     while (!glfwWindowShouldClose(window)) {
         Timer::markNewFrame();

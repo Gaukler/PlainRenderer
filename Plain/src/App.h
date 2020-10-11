@@ -11,7 +11,7 @@
 class App {
 public:
 	App();
-    void setup(GLFWwindow* window);
+    void setup();
 	void runUpdate();
 private:
     CameraController m_cameraController;

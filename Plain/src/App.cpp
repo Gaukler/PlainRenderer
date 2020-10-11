@@ -7,6 +7,10 @@
 #include "Utilities/MathUtils.h"
 
 App::App() {
+    
+}
+
+void App::setup() {
     //load static scene
     std::filesystem::path paths[] = {
         //"Models\\cerberus\\cerberus.obj",
@@ -14,7 +18,7 @@ App::App() {
         //"Models\\Bistro\\exterior.obj"
     };
 
-    for(const auto file : paths)
+    for (const auto file : paths)
     {
         std::vector<MeshData> meshData;
         if (loadModel(file, &meshData)) {
@@ -22,6 +26,7 @@ App::App() {
             gRenderFrontend.addStaticMeshes(meshData, transforms);
         }
     }
+    gRenderFrontend.bakeSkyOcclusion();
 }
 
 void App::runUpdate() {

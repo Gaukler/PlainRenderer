@@ -216,11 +216,6 @@ void RenderFrontend::prepareRenderpasses(){
 
     std::vector<RenderPassHandle> preparationPasses;
 
-    if (m_firstFrame) {
-        computeSkyOcclusion();
-        m_firstFrame = false;
-    }
-
     if (m_isBRDFLutShaderDescriptionStale) {
         computeBRDFLut();
         preparationPasses.push_back(m_brdfLutPass);
@@ -515,9 +510,6 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
     skyPassExecution.resources.sampledImages = { skyTextureResource };
     skyPassExecution.resources.samplers = { skySamplerResource };
     skyPassExecution.parents = { m_mainPass };
-    if (m_firstFrame) {
-        skyPassExecution.parents.push_back(m_toCubemapPass);
-    }
     if (drewDebugPasses) {
         skyPassExecution.parents.push_back(m_debugGeoPass);
     }
@@ -850,7 +842,7 @@ void RenderFrontend::computeBRDFLut() {
     gRenderBackend.setRenderPassExecution(brdfLutExecution);
 }
 
-void RenderFrontend::computeSkyOcclusion() {
+void RenderFrontend::bakeSkyOcclusion() {
     
     std::vector<AxisAlignedBoundingBox> meshBoundingBoxes;
     for (const auto& mesh : m_staticMeshes) {
@@ -935,7 +927,6 @@ void RenderFrontend::computeSkyOcclusion() {
     }
 
     for (int i = 0; i < skyOcclusionSampleCount; i++) {
-
         //compute sample
         {
             glm::vec2 sample = hammersley2D(i);
@@ -949,9 +940,10 @@ void RenderFrontend::computeSkyOcclusion() {
             float phi = 2.f * 3.1415f * sample.y;
             occlusionData.sampleDirection = glm::vec4(cos(phi) * sinTheta, cosTheta, sin(phi) * sinTheta, 0.f);
         }
-
         //compute shadow matrix
         occlusionData.shadowMatrix = viewProjectionMatrixAroundBB(sceneBB, glm::vec3(occlusionData.sampleDirection));
+
+        gRenderBackend.newFrame();
 
         //sky shadow pass mesh commands
         {
@@ -974,7 +966,6 @@ void RenderFrontend::computeSkyOcclusion() {
         gRenderBackend.setRenderPassExecution(skyShadowExecution);
         gRenderBackend.setRenderPassExecution(gatherExecution);
         gRenderBackend.renderFrame(false);
-        gRenderBackend.newFrame();   //newFrame is already called before this function is executed, call at the end to keep a valid new frame
     }
 }
 

@@ -73,6 +73,10 @@ public:
     void renderStaticMeshes();
     void renderFrame();
 
+    //compute sky occlusion for all static meshes
+    //must be called between frames as it calls gRenderBackend.newFrame() and gRenderBackend.renderFrame();
+    void bakeSkyOcclusion();
+
 private:
 
     //declare render passes to backend
@@ -105,10 +109,6 @@ private:
     //diffuse and specular convolution of sky cubemap for image based lighting
     void skyCubemapIBLPreProcessing(const std::vector<RenderPassHandle>& dependencies);
 
-    //compute sky occlusion for all existing meshes
-    //renders multiple frames, so all current render commands are consumed
-    void computeSkyOcclusion();
-
     uint32_t m_screenWidth = 800;
     uint32_t m_screenHeight = 600;
 
@@ -127,7 +127,6 @@ private:
 
     bool m_didResolutionChange = false;
     bool m_minimized = false;
-    bool m_firstFrame = true;
     bool m_drawBBs = false; //debug rendering of bounding boxes
     bool m_freezeAndDrawCameraFrustum = false;
     bool m_drawShadowFrustum = false;
