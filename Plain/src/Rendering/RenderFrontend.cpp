@@ -300,8 +300,6 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     updateShadowFrustum();
 }
 
-void renderStaticMeshes();
-
 void RenderFrontend::addStaticMeshes(const std::vector<MeshData>& meshData, const std::vector<glm::mat4>& transforms) {
 
     assert(meshData.size() == transform.size());
