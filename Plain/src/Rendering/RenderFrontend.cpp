@@ -206,12 +206,7 @@ void RenderFrontend::prepareNewFrame() {
 
     gRenderBackend.updateShaderCode();
     gRenderBackend.newFrame();
-    m_bbsToDebugDraw.clear();
-
-    //update previous matrices
-    for (auto& meshState : m_meshStates) {
-        meshState.previousFrameModelMatrix = meshState.modelMatrix;
-    }   
+    m_bbsToDebugDraw.clear(); 
 
     prepareRenderpasses();
     updateGlobalShaderInfo();
@@ -310,8 +305,11 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     updateShadowFrustum();
 }
 
-std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<MeshData>& meshData) {
+void renderStaticMeshes();
 
+void RenderFrontend::addStaticMeshes(const std::vector<MeshData>& meshData, const std::vector<glm::mat4>& transforms) {
+
+    assert(meshData.size() == transform.size());
     //this is a lot of copying... improve later?
     std::vector<MeshDataInternal> dataInternal;
     dataInternal.reserve(meshData.size());
@@ -343,32 +341,26 @@ std::vector<FrontendMeshHandle> RenderFrontend::createMeshes(const std::vector<M
     assert(backendHandles.size() == dataInternal.size());
     
     //compute and store bounding boxes    
-    std::vector<FrontendMeshHandle> frontendHandles;
-    for (uint32_t i = 0; i < backendHandles.size(); i++) {
+    const uint32_t meshCount = glm::min(backendHandles.size(), transforms.size());
 
-        //create and store state and frontend handle        
-        frontendHandles.push_back({ (uint32_t)m_meshStates.size() });
-        MeshState state;
-        state.backendHandle = backendHandles[i];
-        state.modelMatrix = glm::mat4(1.f);
-        state.previousFrameModelMatrix = glm::mat4(1.f);
-        
-        //compute bounding box
-        const auto& internalmeshData = dataInternal[i];
-        state.bb = axisAlignedBoundingBoxFromPositions(internalmeshData.positions);
+    for (uint32_t i = 0; i < meshCount; i++) {
 
-        m_meshStates.push_back(state);
+        StaticMesh staticMesh;
+        staticMesh.backendHandle = backendHandles[i];
+        staticMesh.modelMatrix = transforms[i];
+        const AxisAlignedBoundingBox bbObjectSpace = axisAlignedBoundingBoxFromPositions(dataInternal[i].positions);
+        staticMesh.bbWorldSpace = axisAlignedBoundingBoxTransformed(bbObjectSpace, staticMesh.modelMatrix);
+
+        m_staticMeshes.push_back(staticMesh);
 
         //create debug mesh for rendering
         const auto debugMesh = gRenderBackend.createDynamicMeshes(
             { axisAlignedBoundingBoxPositionsPerMesh }, { axisAlignedBoundingBoxIndicesPerMesh }).back();
         m_bbDebugMeshes.push_back(debugMesh);
     }
-
-    return frontendHandles;
 }
 
-void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshes) {
+void RenderFrontend::renderStaticMeshes() {
 
     //if we prepare render commands without consuming them we will save up a huge amount of commands
     //so commands are not recorded if minmized in the first place
@@ -376,7 +368,7 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
         return;
     }
 
-    m_currentMeshCount += (uint32_t)meshes.size();
+    m_currentMeshCount += (uint32_t)m_staticMeshes.size();
 
     //main and prepass
     {
@@ -385,30 +377,26 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
         std::vector<std::array<glm::mat4, 2>> culledTransformsPrepass; //contains MVP and previous mvp
 
         //frustum culling
-        for (uint32_t i = 0; i < meshes.size(); i++) {
-            const auto frontendHandle = meshes[i];
-            const auto& meshState = m_meshStates[frontendHandle.index];
+        for (const StaticMesh& mesh : m_staticMeshes) {
 
-            const auto mvp = m_viewProjectionMatrix * meshState.modelMatrix;
+            const auto mvp = m_viewProjectionMatrix * mesh.modelMatrix;
 
-            //account for transform
-            const auto bbTransformed = axisAlignedBoundingBoxTransformed(meshState.bb, meshState.modelMatrix);
-            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, meshState.bb);
+            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, mesh.bbWorldSpace);
 
             if (renderMesh) {
                 m_currentMainPassDrawcallCount++;
 
-                culledMeshes.push_back(meshState.backendHandle);
+                culledMeshes.push_back(mesh.backendHandle);
 
-                const std::array<glm::mat4, 2> mainPassTransforms = { mvp, meshState.modelMatrix };
+                const std::array<glm::mat4, 2> mainPassTransforms = { mvp, mesh.modelMatrix };
                 culledTransformsMainPass.push_back(mainPassTransforms);
 
-                const glm::mat4 previousMVP = m_previousViewProjectionMatrix * meshState.previousFrameModelMatrix;
+                const glm::mat4 previousMVP = m_previousViewProjectionMatrix * mesh.modelMatrix;
                 const std::array<glm::mat4, 2> prePassTransforms = { mvp, previousMVP };
                 culledTransformsPrepass.push_back(prePassTransforms);
 
                 if (m_drawBBs) {
-                    m_bbsToDebugDraw.push_back(bbTransformed);
+                    m_bbsToDebugDraw.push_back(mesh.bbWorldSpace);
                 }
             }
         }
@@ -434,20 +422,15 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
 
         //coarse frustum culling for shadow rendering, assuming shadow frustum if fitted to camera frustum
         //actual frustum is fitted tightly to depth buffer values, but that is done on the GPU
-        for (uint32_t i = 0; i < meshes.size(); i++) {
-            const auto frontendHandle = meshes[i];
-            const auto& meshState = m_meshStates[frontendHandle.index];
+        for (const StaticMesh& mesh : m_staticMeshes) {
 
-            const std::array<glm::mat4, 2> transforms = { glm::mat4(1.f), meshState.modelMatrix };
-
-            //account for transform
-            const auto bbTransformed = axisAlignedBoundingBoxTransformed(meshState.bb, meshState.modelMatrix);
-            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_sunShadowFrustum, meshState.bb);
+            const std::array<glm::mat4, 2> transforms = { glm::mat4(1.f), mesh.modelMatrix };
+            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_sunShadowFrustum, mesh.bbWorldSpace);
 
             if (renderMesh) {
                 m_currentShadowPassDrawcallCount++;
 
-                culledMeshes.push_back(meshState.backendHandle);
+                culledMeshes.push_back(mesh.backendHandle);
                 culledTransforms.push_back(transforms);
             }
         }
@@ -455,10 +438,6 @@ void RenderFrontend::issueMeshDraws(const std::vector<FrontendMeshHandle>& meshe
             gRenderBackend.drawMeshes(culledMeshes, culledTransforms, m_shadowPasses[shadowPass]);
         }
     }  
-}
-
-void RenderFrontend::setModelMatrix(const FrontendMeshHandle handle, const glm::mat4& m) {
-    m_meshStates[handle.index].modelMatrix = m;
 }
 
 void RenderFrontend::renderFrame() {
@@ -874,8 +853,8 @@ void RenderFrontend::computeBRDFLut() {
 void RenderFrontend::computeSkyOcclusion() {
     
     std::vector<AxisAlignedBoundingBox> meshBoundingBoxes;
-    for (const auto& mesh : m_meshStates) {
-        meshBoundingBoxes.push_back(mesh.bb);
+    for (const auto& mesh : m_staticMeshes) {
+        meshBoundingBoxes.push_back(mesh.bbWorldSpace);
     }
 
     SkyOcclusionRenderData occlusionData;
@@ -979,13 +958,13 @@ void RenderFrontend::computeSkyOcclusion() {
             std::vector<MeshHandle> meshHandles;
             std::vector<std::array<glm::mat4, 2>> transforms;
 
-            for (const auto& meshState : m_meshStates) {
+            for (const StaticMesh& mesh : m_staticMeshes) {
 
                 const std::array<glm::mat4, 2> t = {
-                    occlusionData.shadowMatrix* meshState.modelMatrix,
+                    occlusionData.shadowMatrix * mesh.modelMatrix,
                     glm::mat4(1.f) }; //unused
 
-                meshHandles.push_back(meshState.backendHandle);
+                meshHandles.push_back(mesh.backendHandle);
                 transforms.push_back(t);
             }
             gRenderBackend.drawMeshes(meshHandles, transforms, m_skyShadowPass);

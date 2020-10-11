@@ -15,5 +15,4 @@ public:
 	void runUpdate();
 private:
     CameraController m_cameraController;
-    std::vector<FrontendMeshHandle> m_meshes;
 };

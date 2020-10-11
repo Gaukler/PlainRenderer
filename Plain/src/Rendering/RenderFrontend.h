@@ -9,19 +9,10 @@
 
 struct GLFWwindow;
 
-//FrontendMeshHandle are given out by createMeshes
-//they are indices into m_meshStates
-//as the frontend creates meshes for internal use (like the skybox) the do not correspong to the backend handles
-//like all handles contained in a struct to enforce type safety
-struct FrontendMeshHandle {
-    uint32_t index = invalidIndex;
-};
-
-struct MeshState {
+struct StaticMesh {
     MeshHandle  backendHandle;
     glm::mat4   modelMatrix = glm::mat4(1.f);
-    glm::mat4   previousFrameModelMatrix = glm::mat4(1.f); //required for reprojection
-    AxisAlignedBoundingBox bb;
+    AxisAlignedBoundingBox bbWorldSpace;
 };
 
 //settings are passed as specialisation constans, so they need to be encoded as ints
@@ -77,9 +68,9 @@ public:
     void prepareNewFrame();
     void setResolution(const uint32_t width, const uint32_t height);
     void setCameraExtrinsic(const CameraExtrinsic& extrinsic);
-    std::vector<FrontendMeshHandle> createMeshes(const std::vector<MeshData>& meshData);
-    void issueMeshDraws(const std::vector<FrontendMeshHandle>& meshs);
-    void setModelMatrix(const FrontendMeshHandle handle, const glm::mat4& m);
+    //static meshes are used for baking and thus cannot be moved
+    void addStaticMeshes(const std::vector<MeshData>& meshData, const std::vector<glm::mat4>& transforms);
+    void renderStaticMeshes();
     void renderFrame();
 
 private:
@@ -122,7 +113,7 @@ private:
     uint32_t m_screenHeight = 600;
 
     //contains meshes created by createMeshes()
-    std::vector<MeshState> m_meshStates;
+    std::vector<StaticMesh> m_staticMeshes;
 
     //drawcall stats
     uint32_t m_currentMeshCount = 0;                //mesh commands received
