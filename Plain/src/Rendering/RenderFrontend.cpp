@@ -163,7 +163,7 @@ void RenderFrontend::shutdown() {
     
 }
 
-void RenderFrontend::newFrame() {
+void RenderFrontend::prepareNewFrame() {
     if (m_didResolutionChange) {
         gRenderBackend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
         gRenderBackend.resizeImages( { m_colorBuffer, m_depthBuffer, m_motionVectorBuffer, 
@@ -204,11 +204,14 @@ void RenderFrontend::newFrame() {
     //update previous matrices
     for (auto& meshState : m_meshStates) {
         meshState.previousFrameModelMatrix = meshState.modelMatrix;
-    }
+    }   
 
-    //
+    prepareRenderpasses();
+    updateGlobalShaderInfo();
+}
 
-    //additional passes that have to be executed before the main pass    
+void RenderFrontend::prepareRenderpasses(){
+
     std::vector<RenderPassHandle> preparationPasses;
 
     if (m_firstFrame) {
@@ -266,7 +269,6 @@ void RenderFrontend::newFrame() {
     computeTAA();
     copyColorToHistoryBuffer();
     computeTonemapping();
-    updateGlobalShaderInfo();
 }
 
 void RenderFrontend::setResolution(const uint32_t width, const uint32_t height) {

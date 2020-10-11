@@ -23,7 +23,7 @@ void main(){
 
     while (!glfwWindowShouldClose(window)) {
         Timer::markNewFrame();
-        gRenderFrontend.newFrame();
+        gRenderFrontend.prepareNewFrame();
         gInputManager.update();
         app.runUpdate();
         gRenderFrontend.renderFrame();

@@ -74,7 +74,7 @@ public:
     RenderFrontend() {};
     void setup(GLFWwindow* window);
     void shutdown();
-    void newFrame();
+    void prepareNewFrame();
     void setResolution(const uint32_t width, const uint32_t height);
     void setCameraExtrinsic(const CameraExtrinsic& extrinsic);
     std::vector<FrontendMeshHandle> createMeshes(const std::vector<MeshData>& meshData);
@@ -83,6 +83,11 @@ public:
     void renderFrame();
 
 private:
+
+    //declare render passes to backend
+    //this has to be done before meshes drawcalls can be issued
+    void prepareRenderpasses();
+
     //computes image histogram using compute shaders
     void computeColorBufferHistogram() const;
     void renderSky(const bool drewDebugPasses) const;
