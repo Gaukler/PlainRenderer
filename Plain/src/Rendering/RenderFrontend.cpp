@@ -157,6 +157,13 @@ void RenderFrontend::setup(GLFWwindow* window) {
     initRenderpasses(histogramSettings);
 
     initMeshs();
+    
+    //IBL preprocessing
+    gRenderBackend.newFrame();
+    computeBRDFLut();
+    skyCubemapFromTexture();
+    skyCubemapIBLPreProcessing(m_cubemapMipPasses);
+    gRenderBackend.renderFrame(false);
 }
 
 void RenderFrontend::shutdown() {
@@ -215,16 +222,7 @@ void RenderFrontend::prepareRenderpasses(){
     std::vector<RenderPassHandle> preparationPasses;
 
     if (m_firstFrame) {
-
         computeSkyOcclusion();
-        firstFramePreparation();
-
-        preparationPasses.push_back(m_diffuseConvolutionPass);
-        preparationPasses.push_back(m_brdfLutPass);
-        for (uint32_t i = 0; i < m_specularConvolutionPerMipPasses.size(); i++) {
-            preparationPasses.push_back(m_specularConvolutionPerMipPasses[i]);
-        }
-
         m_firstFrame = false;
     }
 
@@ -634,7 +632,7 @@ void RenderFrontend::computeSunLightMatrices() const{
     gRenderBackend.setRenderPassExecution(exe);
 }
 
-void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& preparationPasses) const {
+void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const {
     const auto shadowSamplerResource = SamplerResource(m_shadowSampler, 0);
     const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 1);
     const auto cubeSamplerResource = SamplerResource(m_cubeSampler, 2);
@@ -665,7 +663,7 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& p
 
     mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
     mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
-    mainPassExecution.parents.insert(mainPassExecution.parents.begin(), preparationPasses.begin(), preparationPasses.end());
+    mainPassExecution.parents.insert(mainPassExecution.parents.begin(), externalDependencies.begin(), externalDependencies.end());
 
     gRenderBackend.setRenderPassExecution(mainPassExecution);
 }
@@ -783,7 +781,7 @@ bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* 
     }
 }
 
-void RenderFrontend::firstFramePreparation() {
+void RenderFrontend::skyCubemapFromTexture() {
     //write to sky texture
     {
         const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
@@ -800,7 +798,7 @@ void RenderFrontend::firstFramePreparation() {
         cubeWriteExecution.dispatchCount[2] = 6;
         gRenderBackend.setRenderPassExecution(cubeWriteExecution);
     }
-    //create sky texture mips
+    //mips
     for (uint32_t i = 1; i < skyTextureMipCount; i++) {
         const uint32_t srcMip = i - 1;
         const auto skyMipSrcResource = ImageResource(m_skyTexture, srcMip, 0);
@@ -820,6 +818,9 @@ void RenderFrontend::firstFramePreparation() {
         skyMipExecution.dispatchCount[2] = 6;
         gRenderBackend.setRenderPassExecution(skyMipExecution);
     }
+}
+
+void RenderFrontend::skyCubemapIBLPreProcessing(const std::vector<RenderPassHandle>& dependencies) {
     //diffuse convolution
     {
         const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 0);
@@ -828,7 +829,7 @@ void RenderFrontend::firstFramePreparation() {
 
         RenderPassExecution diffuseConvolutionExecution;
         diffuseConvolutionExecution.handle = m_diffuseConvolutionPass;
-        diffuseConvolutionExecution.parents = { m_toCubemapPass };
+        diffuseConvolutionExecution.parents = dependencies;
         diffuseConvolutionExecution.resources.storageImages = { diffuseProbeResource };
         diffuseConvolutionExecution.resources.sampledImages = { diffuseConvolutionSrcResource };
         diffuseConvolutionExecution.resources.samplers = { cubeSamplerResource };
@@ -837,9 +838,6 @@ void RenderFrontend::firstFramePreparation() {
         diffuseConvolutionExecution.dispatchCount[2] = 6;
         gRenderBackend.setRenderPassExecution(diffuseConvolutionExecution);
     }
-    
-    computeBRDFLut();
-    
     //specular probe convolution
     for (uint32_t mipLevel = 0; mipLevel < m_specularProbeMipCount; mipLevel++) {
 
@@ -849,7 +847,7 @@ void RenderFrontend::firstFramePreparation() {
 
         RenderPassExecution specularConvolutionExecution;
         specularConvolutionExecution.handle = m_specularConvolutionPerMipPasses[mipLevel];
-        specularConvolutionExecution.parents = { m_toCubemapPass, m_cubemapMipPasses.back() };
+        specularConvolutionExecution.parents = dependencies;
         specularConvolutionExecution.resources.storageImages = { specularProbeResource };
         specularConvolutionExecution.resources.sampledImages = { specularConvolutionSrcResource };
         specularConvolutionExecution.resources.samplers = { specCubeSamplerResource };
@@ -1652,9 +1650,8 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         ComputePassDescription cubemapMipPassDesc;
         cubemapMipPassDesc.name = "Sky mip creation";
         cubemapMipPassDesc.shaderDescription.srcPathRelative = "cubemapMip.comp";
-        /*
-        first map is written to by different shader
-        */
+
+        //first map is written to by different shader        
         for (uint32_t i = 0; i < skyTextureMipCount - 1; i++) {
             m_cubemapMipPasses.push_back(gRenderBackend.createComputePass(cubemapMipPassDesc));
         }

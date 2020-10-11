@@ -96,7 +96,7 @@ private:
     void renderDepthPrepass() const;
     void computeDepthPyramid() const;
     void computeSunLightMatrices() const;
-    void renderForwardShading(const std::vector<RenderPassHandle>& preparationPasses) const;
+    void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const;
     void computeTAA() const;
     void computeTonemapping() const;
     void renderDebugGeometry() const;
@@ -108,8 +108,11 @@ private:
     bool loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);
     std::map<std::filesystem::path, ImageHandle> m_textureMap;
 
-    void firstFramePreparation();
     void computeBRDFLut();
+    //copies 2D sky texture from m_environmentMapSrc into cubemap and creates mips
+    void skyCubemapFromTexture();
+    //diffuse and specular convolution of sky cubemap for image based lighting
+    void skyCubemapIBLPreProcessing(const std::vector<RenderPassHandle>& dependencies);
 
     //compute sky occlusion for all existing meshes
     //renders multiple frames, so all current render commands are consumed
