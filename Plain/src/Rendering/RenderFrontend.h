@@ -151,12 +151,9 @@ private:
 
     HistogramSettings createHistogramSettings();
 
-    ShadingConfig m_shadingConfig;
-    TAASettings m_taaSettings;
+    ShadingConfig   m_shadingConfig;
+    TAASettings     m_taaSettings;
 
-    /*
-    passes
-    */
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
     RenderPassHandle m_skyPass;
@@ -212,13 +209,13 @@ private:
 
     DynamicMeshHandle m_cameraFrustumModel;
     DynamicMeshHandle m_shadowFrustumModel;
-    std::vector<DynamicMeshHandle> m_bbDebugMeshes; //bounding box debug mesh
-    std::vector<AxisAlignedBoundingBox> m_bbsToDebugDraw; //bounding boxes for debug rendering this frame
+    std::vector<DynamicMeshHandle>      m_bbDebugMeshes;    //bounding box debug mesh
+    std::vector<AxisAlignedBoundingBox> m_bbsToDebugDraw;   //bounding boxes for debug rendering this frame
 
     StorageBufferHandle m_histogramPerTileBuffer;
     StorageBufferHandle m_histogramBuffer;
-    StorageBufferHandle m_lightBuffer; //contains previous exposure and exposured light values
-    StorageBufferHandle m_sunShadowInfoBuffer; //contains light matrices and cascade splits
+    StorageBufferHandle m_lightBuffer;          //previous exposure and exposured light values
+    StorageBufferHandle m_sunShadowInfoBuffer;  //light matrices and cascade splits
     StorageBufferHandle m_depthPyramidSyncBuffer;
 
     UniformBufferHandle m_skyOcclusionDataBuffer;
