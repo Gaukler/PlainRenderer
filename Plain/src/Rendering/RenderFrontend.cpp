@@ -303,7 +303,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
 
 void RenderFrontend::addStaticMeshes(const std::vector<MeshBinary>& meshData, const std::vector<glm::mat4>& transforms) {
 
-    assert(meshData.size() == transform.size());
+    assert(meshData.size() == transforms.size());
     
     std::vector<Material> materials;
     materials.reserve(meshData.size());
@@ -325,8 +325,6 @@ void RenderFrontend::addStaticMeshes(const std::vector<MeshBinary>& meshData, co
     }
     
     const auto backendHandles = gRenderBackend.createMeshes(meshData, materials);
-
-    assert(backendHandles.size() == dataInternal.size());
     
     //compute and store bounding boxes    
     const uint32_t meshCount = glm::min(backendHandles.size(), transforms.size());

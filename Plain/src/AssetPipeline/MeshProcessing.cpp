@@ -155,10 +155,10 @@ std::vector<MeshBinary> meshesToBinary(const std::vector<MeshData>& meshes) {
         assert(meshData.positions.size() == meshData.tangents.size());
         assert(meshData.positions.size() == meshData.bitangents.size());
 
-        size_t vertexCount = meshData.positions.size();
+        meshBinary.vertexCount = meshData.positions.size();
 
         //precision and type must correspond to types in VertexInput.h
-        for (size_t i = 0; i < vertexCount; i++) {
+        for (size_t i = 0; i < meshBinary.vertexCount; i++) {
             //position
             meshBinary.vertexBuffer.push_back(((uint8_t*)&meshData.positions[i].x)[0]);
             meshBinary.vertexBuffer.push_back(((uint8_t*)&meshData.positions[i].x)[1]);

@@ -44,3 +44,5 @@ const uint32_t vertexInputBytePerLocation[VERTEX_INPUT_ATTRIBUTE_COUNT] = {
     4,
     4 
 };
+
+const uint32_t vertexFormatFullByteSize = 28;

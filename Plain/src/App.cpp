@@ -15,19 +15,34 @@ void App::setup() {
     //load static scene
     std::filesystem::path paths[] = {
         //"Models\\cerberus\\cerberus.obj",
+        //"Models\\monkey.obj",
         "Models\\Sponza\\Sponza.obj",
         //"Models\\Bistro\\exterior.obj"
     };
 
-    for (const auto file : paths)
-    {
-        std::vector<MeshData> meshData;
-        if (loadModelOBJ(file, &meshData)) {
-            std::vector<MeshBinary> meshesBinary = meshesToBinary(meshData);
-            std::vector<glm::mat4> transforms(meshData.size(), glm::mat4(1.f));
-            gRenderFrontend.addStaticMeshes(meshesBinary, transforms);
+    const bool write = true;
+    if (false) {
+        for (const auto file : paths)
+        {
+            std::vector<MeshData> meshData;
+            if (loadModelOBJ(file, &meshData)) {
+                std::vector<MeshBinary> meshesBinary = meshesToBinary(meshData);
+                saveBinaryMeshData(DirectoryUtils::getResourceDirectory() / "test.bin", meshesBinary);
+                std::vector<glm::mat4> transforms(meshesBinary.size(), glm::mat4(1.f));
+                gRenderFrontend.addStaticMeshes(meshesBinary, transforms);
+            }
         }
     }
+    else {
+        std::vector<MeshBinary> meshesBinary;
+        loadBinaryMeshData(DirectoryUtils::getResourceDirectory() / "test.bin", &meshesBinary);
+        std::vector<glm::mat4> transforms(meshesBinary.size(), glm::mat4(1.f));
+        gRenderFrontend.addStaticMeshes(meshesBinary, transforms);
+    }
+    
+
+    
+
     gRenderFrontend.bakeSkyOcclusion();
 }
 
