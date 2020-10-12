@@ -15,6 +15,7 @@
 #include "Utilities/Timer.h"
 #include "Culling.h"
 #include "Utilities/GeneralUtils.h"
+#include "AssetPipeline/MeshProcessing.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -300,36 +301,30 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     updateShadowFrustum();
 }
 
-void RenderFrontend::addStaticMeshes(const std::vector<MeshData>& meshData, const std::vector<glm::mat4>& transforms) {
+void RenderFrontend::addStaticMeshes(const std::vector<MeshBinary>& meshData, const std::vector<glm::mat4>& transforms) {
 
     assert(meshData.size() == transform.size());
-    //this is a lot of copying... improve later?
-    std::vector<MeshDataInternal> dataInternal;
-    dataInternal.reserve(meshData.size());
+    
+    std::vector<Material> materials;
+    materials.reserve(meshData.size());
 
     for (const auto& data : meshData) {
-        MeshDataInternal mesh;
-        mesh.indices = data.indices;
-        mesh.positions = data.positions;
-        mesh.uvs = data.uvs;
-        mesh.normals = data.normals;
-        mesh.tangents = data.tangents;
-        mesh.bitangents = data.bitangents;
+        Material material;
 
-        if (!loadImageFromPath(data.material.albedoTexturePath, &mesh.diffuseTexture)) {
-            mesh.diffuseTexture = m_defaultTextures.diffuse;
+        if (!loadImageFromPath(data.texturePaths.albedoTexturePath, &material.diffuseTexture)) {
+            material.diffuseTexture = m_defaultTextures.diffuse;
         }
-        if (!loadImageFromPath(data.material.normalTexturePath, &mesh.normalTexture)) {
-            mesh.normalTexture = m_defaultTextures.normal;
+        if (!loadImageFromPath(data.texturePaths.normalTexturePath, &material.normalTexture)) {
+            material.normalTexture = m_defaultTextures.normal;
         }
-        if (!loadImageFromPath(data.material.specularTexturePath, &mesh.specularTexture)) {
-            mesh.specularTexture = m_defaultTextures.specular;
+        if (!loadImageFromPath(data.texturePaths.specularTexturePath, &material.specularTexture)) {
+            material.specularTexture = m_defaultTextures.specular;
         }
 
-        dataInternal.push_back(mesh);
+        materials.push_back(material);
     }
     
-    const auto backendHandles = gRenderBackend.createMeshes(dataInternal);
+    const auto backendHandles = gRenderBackend.createMeshes(meshData, materials);
 
     assert(backendHandles.size() == dataInternal.size());
     
@@ -341,8 +336,7 @@ void RenderFrontend::addStaticMeshes(const std::vector<MeshData>& meshData, cons
         StaticMesh staticMesh;
         staticMesh.backendHandle = backendHandles[i];
         staticMesh.modelMatrix = transforms[i];
-        const AxisAlignedBoundingBox bbObjectSpace = axisAlignedBoundingBoxFromPositions(dataInternal[i].positions);
-        staticMesh.bbWorldSpace = axisAlignedBoundingBoxTransformed(bbObjectSpace, staticMesh.modelMatrix);
+        staticMesh.bbWorldSpace = axisAlignedBoundingBoxTransformed(meshData[i].boundingBox, staticMesh.modelMatrix);
 
         m_staticMeshes.push_back(staticMesh);
 
@@ -367,7 +361,7 @@ void RenderFrontend::renderStaticMeshes() {
     {
         std::vector<MeshHandle> culledMeshes;
         std::vector<std::array<glm::mat4, 2>> culledTransformsMainPass; //contains MVP and model matrix
-        std::vector<std::array<glm::mat4, 2>> culledTransformsPrepass; //contains MVP and previous mvp
+        std::vector<std::array<glm::mat4, 2>> culledTransformsPrepass;  //contains MVP and previous mvp
 
         //frustum culling
         for (const StaticMesh& mesh : m_staticMeshes) {
@@ -1479,8 +1473,8 @@ void RenderFrontend::initMeshs() {
     }
     //skybox cube
     {
-        MeshDataInternal cubedata;
-        cubedata.positions = {
+        MeshData cubeData;
+        cubeData.positions = {
             glm::vec3(-1.f, -1.f, -1.f),
             glm::vec3(1.f, -1.f, -1.f),
             glm::vec3(1.f, 1.f, -1.f),
@@ -1490,7 +1484,7 @@ void RenderFrontend::initMeshs() {
             glm::vec3(1.f, 1.f, 1.f),
             glm::vec3(-1.f, 1.f, 1.f)
         };
-        cubedata.uvs = {
+        cubeData.uvs = {
             glm::vec2(),
             glm::vec2(),
             glm::vec2(),
@@ -1500,7 +1494,7 @@ void RenderFrontend::initMeshs() {
             glm::vec2(),
             glm::vec2()
         };
-        cubedata.normals = {
+        cubeData.normals = {
             glm::vec3(),
             glm::vec3(),
             glm::vec3(),
@@ -1510,7 +1504,7 @@ void RenderFrontend::initMeshs() {
             glm::vec3(),
             glm::vec3()
         };
-        cubedata.tangents = {
+        cubeData.tangents = {
             glm::vec3(),
             glm::vec3(),
             glm::vec3(),
@@ -1520,7 +1514,7 @@ void RenderFrontend::initMeshs() {
             glm::vec3(),
             glm::vec3()
         };
-        cubedata.bitangents = {
+        cubeData.bitangents = {
             glm::vec3(),
             glm::vec3(),
             glm::vec3(),
@@ -1530,7 +1524,7 @@ void RenderFrontend::initMeshs() {
             glm::vec3(),
             glm::vec3()
         };
-        cubedata.indices = {
+        cubeData.indices = {
             0, 1, 3, 3, 1, 2,
             1, 5, 2, 2, 5, 6,
             5, 4, 6, 6, 4, 7,
@@ -1538,11 +1532,14 @@ void RenderFrontend::initMeshs() {
             3, 2, 7, 7, 2, 6,
             4, 5, 0, 0, 5, 1
         };
-        cubedata.diffuseTexture = m_defaultTextures.diffuse;
-        cubedata.normalTexture = m_defaultTextures.normal;
-        cubedata.specularTexture = m_defaultTextures.specular;
+        const std::vector<MeshBinary> cubeBinary = meshesToBinary(std::vector<MeshData>{cubeData});
 
-        m_skyCube = gRenderBackend.createMeshes(std::vector<MeshDataInternal> { cubedata }).back();
+        Material cubeMaterial;
+        cubeMaterial.diffuseTexture = m_defaultTextures.diffuse;
+        cubeMaterial.normalTexture = m_defaultTextures.normal;
+        cubeMaterial.specularTexture = m_defaultTextures.specular;
+
+        m_skyCube = gRenderBackend.createMeshes(cubeBinary, std::vector<Material> {cubeMaterial}).back();
     }
 }
 

@@ -92,14 +92,7 @@ struct DepthTest {
     bool            write = false;
 };
 
-/*
-config for blending
-*/
 enum class BlendState { None, Additive };
-
-/*
-attachments are fixed after renderpass creation and can't be changed from frame to frame
-*/
 enum class AttachmentLoadOp { Load, Clear, DontCare };
 
 struct Attachment {

@@ -809,100 +809,42 @@ RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& 
     return m_renderPasses.addGraphicPass(pass);;
 }
 
-std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshDataInternal>& meshes) {
-    std::vector<MeshHandle> handles;
-    for (const auto& data : meshes) {
+std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary>& meshes, const std::vector<Material>& materials) {
+    assert(meshes.size() == materials.size());
 
+    std::vector<MeshHandle> handles;
+    for (uint32_t i = 0; i < meshes.size(); i++) {
+
+        const MeshBinary& meshData = meshes[i];
         std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphicsQueueIndex };
+
         Mesh mesh;
-        mesh.indexCount = (uint32_t)data.indices.size();
+        mesh.indexCount = meshData.indexCount;
 
         //index buffer
         if (mesh.indexCount < std::numeric_limits<uint16_t>::max()) {
-            //half precision indices are enough
             mesh.indexPrecision = VK_INDEX_TYPE_UINT16;
-            VkDeviceSize indexDataSize = data.indices.size() * sizeof(uint16_t);
-            mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-            //calculate lower precision indices
-            std::vector<uint16_t> halfPrecisionIndices;
-            halfPrecisionIndices.reserve(data.indices.size());
-            for (const auto index : data.indices) {
-                halfPrecisionIndices.push_back((uint16_t)index);
-            }
-            fillBuffer(mesh.indexBuffer, halfPrecisionIndices.data(), indexDataSize);
         }
         else {
-            //full precision required
             mesh.indexPrecision = VK_INDEX_TYPE_UINT32;
-            VkDeviceSize indexDataSize = data.indices.size() * sizeof(uint32_t);
-            mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-            fillBuffer(mesh.indexBuffer, data.indices.data(), indexDataSize);
         }
+
+        const VkDeviceSize indexBufferSize = meshData.indexBuffer.size() * sizeof(uint16_t);
+        mesh.indexBuffer = createBufferInternal(
+            indexBufferSize, 
+            queueFamilies, 
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        fillBuffer(mesh.indexBuffer, meshData.indexBuffer.data(), indexBufferSize);
 
         //vertex buffer
-        std::vector<uint8_t> vertexData;
-
-        size_t nVertices = data.positions.size();
-
-        //precision and type must correspond to types in VertexInput.h
-        for (size_t i = 0; i < nVertices; i++) {
-            //position
-            vertexData.push_back(((uint8_t*)&data.positions[i].x)[0]);
-            vertexData.push_back(((uint8_t*)&data.positions[i].x)[1]);
-            vertexData.push_back(((uint8_t*)&data.positions[i].x)[2]);
-            vertexData.push_back(((uint8_t*)&data.positions[i].x)[3]);
-
-            vertexData.push_back(((uint8_t*)&data.positions[i].y)[0]);
-            vertexData.push_back(((uint8_t*)&data.positions[i].y)[1]);
-            vertexData.push_back(((uint8_t*)&data.positions[i].y)[2]);
-            vertexData.push_back(((uint8_t*)&data.positions[i].y)[3]);
-
-            vertexData.push_back(((uint8_t*)&data.positions[i].z)[0]);
-            vertexData.push_back(((uint8_t*)&data.positions[i].z)[1]);
-            vertexData.push_back(((uint8_t*)&data.positions[i].z)[2]);
-            vertexData.push_back(((uint8_t*)&data.positions[i].z)[3]);
-
-            //uv stored as 16 bit signed float
-            const auto uHalf = glm::packHalf(glm::vec1(data.uvs[i].x));
-            vertexData.push_back(((uint8_t*)&uHalf)[0]);
-            vertexData.push_back(((uint8_t*)&uHalf)[1]);
-
-            const auto vHalf = glm::packHalf(glm::vec1(data.uvs[i].y));
-            vertexData.push_back(((uint8_t*)&vHalf)[0]);
-            vertexData.push_back(((uint8_t*)&vHalf)[1]);
-
-            //normal stored as 32 bit R10G10B10A2
-            const uint32_t normalR10G10B10A2 = vec3ToNormalizedR10B10G10A2(data.normals[i]);
-
-            vertexData.push_back(((uint8_t*)&normalR10G10B10A2)[0]);
-            vertexData.push_back(((uint8_t*)&normalR10G10B10A2)[1]);
-            vertexData.push_back(((uint8_t*)&normalR10G10B10A2)[2]);
-            vertexData.push_back(((uint8_t*)&normalR10G10B10A2)[3]);
-
-            //tangent stored as 32 bit R10G10B10A2
-            const uint32_t tangentR10G10B10A2 = vec3ToNormalizedR10B10G10A2(data.tangents[i]);
-
-            vertexData.push_back(((uint8_t*)&tangentR10G10B10A2)[0]);
-            vertexData.push_back(((uint8_t*)&tangentR10G10B10A2)[1]);
-            vertexData.push_back(((uint8_t*)&tangentR10G10B10A2)[2]);
-            vertexData.push_back(((uint8_t*)&tangentR10G10B10A2)[3]);
-
-            //stored as 32 bit R10G10B10A2
-            const uint32_t bitangentR10G10B10A2 = vec3ToNormalizedR10B10G10A2(data.tangents[i]);
-
-            vertexData.push_back(((uint8_t*)&bitangentR10G10B10A2)[0]);
-            vertexData.push_back(((uint8_t*)&bitangentR10G10B10A2)[1]);
-            vertexData.push_back(((uint8_t*)&bitangentR10G10B10A2)[2]);
-            vertexData.push_back(((uint8_t*)&bitangentR10G10B10A2)[3]);
-        }
-
-        //create vertex buffer
-        VkDeviceSize vertexDataSize = vertexData.size() * sizeof(uint8_t);
-
-        mesh.vertexBuffer = createBufferInternal(vertexDataSize, queueFamilies,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        fillBuffer(mesh.vertexBuffer, vertexData.data(), vertexDataSize);
+        const VkDeviceSize vertexBufferSize = meshData.vertexBuffer.size() * sizeof(uint8_t);
+        mesh.vertexBuffer = createBufferInternal(
+            vertexBufferSize, 
+            queueFamilies,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        fillBuffer(mesh.vertexBuffer, meshData.vertexBuffer.data(), vertexBufferSize);
 
         //material descriptor set
         DescriptorPoolAllocationSizes layoutSizes;
@@ -910,8 +852,9 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshDataIn
         layoutSizes.sampler = 3;
         mesh.materialDescriptorSet = allocateDescriptorSet(m_materialDescriporSetLayout, layoutSizes);
 
+        const Material& material = materials[i];
         const auto albedoTextureResource = ImageResource(
-            data.diffuseTexture,
+            material.diffuseTexture,
             0,
             3);
 
@@ -920,7 +863,7 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshDataIn
             0);
 
         const auto normalTextureResource = ImageResource(
-            data.normalTexture,
+            material.normalTexture,
             0,
             4);
 
@@ -929,7 +872,7 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshDataIn
             1);
 
         const auto specularTextureResource = ImageResource(
-            data.specularTexture,
+            material.specularTexture,
             0,
             5);
 

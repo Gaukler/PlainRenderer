@@ -69,7 +69,7 @@ public:
     void setResolution(const uint32_t width, const uint32_t height);
     void setCameraExtrinsic(const CameraExtrinsic& extrinsic);
     //static meshes are used for baking and thus cannot be moved
-    void addStaticMeshes(const std::vector<MeshData>& meshData, const std::vector<glm::mat4>& transforms);
+    void addStaticMeshes(const std::vector<MeshBinary>& meshData, const std::vector<glm::mat4>& transforms);
     void renderStaticMeshes();
     void renderFrame();
 

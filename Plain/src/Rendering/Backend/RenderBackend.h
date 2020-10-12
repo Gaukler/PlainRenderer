@@ -5,10 +5,10 @@
 #include "Rendering/RenderHandles.h"
 #include "Rendering/ResourceDescriptions.h"
 #include "Resources.h"
-#include "Rendering/MeshDataInternal.h"
 #include "VulkanContext.h"
 #include "VkMemoryAllocator.h"
 #include "Rendering/Backend/SpirvReflection.h"
+#include "Rendering/MeshData.h"
 
 struct GLFWwindow;
 
@@ -172,7 +172,7 @@ public:
     RenderPassHandle    createComputePass(const ComputePassDescription& desc);
     RenderPassHandle    createGraphicPass(const GraphicPassDescription& desc);
 
-    std::vector<MeshHandle> createMeshes(const std::vector<MeshDataInternal>& meshes);
+    std::vector<MeshHandle> createMeshes(const std::vector<MeshBinary>& meshes, const std::vector<Material>& materials);
 
     //dynamic meshes can be updated
     //they use host visible memory which makes the update fast but rendering slow

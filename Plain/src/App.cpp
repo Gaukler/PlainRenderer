@@ -5,6 +5,7 @@
 #include "Utilities/Timer.h"
 #include "ModelLoader.h"
 #include "Utilities/MathUtils.h"
+#include "AssetPipeline/MeshProcessing.h"
 
 App::App() {
     
@@ -21,9 +22,10 @@ void App::setup() {
     for (const auto file : paths)
     {
         std::vector<MeshData> meshData;
-        if (loadModel(file, &meshData)) {
+        if (loadModelOBJ(file, &meshData)) {
+            std::vector<MeshBinary> meshesBinary = meshesToBinary(meshData);
             std::vector<glm::mat4> transforms(meshData.size(), glm::mat4(1.f));
-            gRenderFrontend.addStaticMeshes(meshData, transforms);
+            gRenderFrontend.addStaticMeshes(meshesBinary, transforms);
         }
     }
     gRenderFrontend.bakeSkyOcclusion();

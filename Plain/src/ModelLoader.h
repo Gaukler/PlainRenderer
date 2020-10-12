@@ -4,6 +4,4 @@
 
 #include "Rendering/MeshData.h"
 
-bool loadModel(const std::filesystem::path& filename, std::vector<MeshData>* outData);
-void        computeTangentBitangent(MeshData* outMeshData);
-MeshData buildIndexedData(const MeshData& rawData);
+bool loadModelOBJ(const std::filesystem::path& filename, std::vector<MeshData>* outData);
