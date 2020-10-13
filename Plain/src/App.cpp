@@ -20,14 +20,14 @@ void App::setup() {
         //"Models\\Bistro\\exterior.obj"
     };
 
-    const bool write = true;
-    if (false) {
+    const bool write = false;
+    if (true) {
         for (const auto file : paths)
         {
             std::vector<MeshData> meshData;
             if (loadModelOBJ(file, &meshData)) {
                 std::vector<MeshBinary> meshesBinary = meshesToBinary(meshData);
-                saveBinaryMeshData(DirectoryUtils::getResourceDirectory() / "test.bin", meshesBinary);
+                saveBinaryMeshData("Models\\Sponza\\Sponza.bin", meshesBinary);
                 std::vector<glm::mat4> transforms(meshesBinary.size(), glm::mat4(1.f));
                 gRenderFrontend.addStaticMeshes(meshesBinary, transforms);
             }
@@ -35,14 +35,11 @@ void App::setup() {
     }
     else {
         std::vector<MeshBinary> meshesBinary;
-        loadBinaryMeshData(DirectoryUtils::getResourceDirectory() / "test.bin", &meshesBinary);
+        loadBinaryMeshData("Models\\Sponza\\Sponza.bin", &meshesBinary);
         std::vector<glm::mat4> transforms(meshesBinary.size(), glm::mat4(1.f));
         gRenderFrontend.addStaticMeshes(meshesBinary, transforms);
     }
     
-
-    
-
     gRenderFrontend.bakeSkyOcclusion();
 }
 

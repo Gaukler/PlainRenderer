@@ -234,15 +234,17 @@ void saveBinaryMeshData(const std::filesystem::path& filename, const std::vector
 
     assert(writePointer == fileSize);
 
-    std::ofstream file(filename, std::ios::binary);
+    const auto fullPath = DirectoryUtils::getResourceDirectory() / filename;
+    std::ofstream file(fullPath, std::ios::binary);
     file.write((char*)fileData, fileSize);
     file.close();
 }
 
 bool loadBinaryMeshData(const std::filesystem::path& filename, std::vector<MeshBinary>* outMeshes) {
-    std::ifstream file(filename, std::ios::binary | std::ios::ate);
+    const auto fullPath = DirectoryUtils::getResourceDirectory() / filename;
+    std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        std::cout << "Could not open file: " << filename << "\n";
+        std::cout << "Could not open file: " << fullPath << "\n";
         return false;
     }
 
@@ -253,7 +255,7 @@ bool loadBinaryMeshData(const std::filesystem::path& filename, std::vector<MeshB
     file.read((char*)&header, sizeof(header));
 
     if (header.magicNumber != binaryModelMagicNumber) {
-        std::cout << "Binary model file validation failed: " << filename << "\n";
+        std::cout << "Binary model file validation failed: " << fullPath << "\n";
         file.close();
         return false;
     }
