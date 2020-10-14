@@ -2,13 +2,13 @@
 #include "pch.h"
 #include <vulkan/vulkan.h>
 
-#include "Rendering/RenderHandles.h"
-#include "Rendering/ResourceDescriptions.h"
+#include "Runtime/Rendering/RenderHandles.h"
+#include "Runtime/Rendering/ResourceDescriptions.h"
 #include "Resources.h"
 #include "VulkanContext.h"
 #include "VkMemoryAllocator.h"
-#include "Rendering/Backend/SpirvReflection.h"
-#include "Rendering/MeshData.h"
+#include "Runtime/Rendering/Backend/SpirvReflection.h"
+#include "Runtime/Rendering/MeshData.h"
 
 struct GLFWwindow;
 

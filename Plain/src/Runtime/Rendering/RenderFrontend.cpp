@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "RenderFrontend.h"
-#include "ImageLoader.h"
+#include "Runtime/ImageLoader.h"
 
 //disable ImGui warning
 #pragma warning( push )
@@ -15,7 +15,7 @@
 #include "Utilities/Timer.h"
 #include "Culling.h"
 #include "Utilities/GeneralUtils.h"
-#include "AssetPipeline/MeshProcessing.h"
+#include "Common/MeshProcessing.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"

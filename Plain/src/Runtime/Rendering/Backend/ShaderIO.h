@@ -1,7 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "Resources.h"
-#include "Rendering/ResourceDescriptions.h"
+#include "Runtime/Rendering/ResourceDescriptions.h"
 
 /*
 entire shader loading process, returns spirV code

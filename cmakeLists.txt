@@ -7,22 +7,36 @@ Project(Plain)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# add source files
-file(GLOB_RECURSE SOURCE_FILES
-	${CMAKE_SOURCE_DIR}/Plain/src/*.c
-	${CMAKE_SOURCE_DIR}/Plain/src/*.cpp)
+file(GLOB_RECURSE RUNTIME_FILES
+	${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.c
+	${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.cpp
+    ${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.h
+	${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.hpp)
 
-# add header files
-file(GLOB_RECURSE HEADER_FILES
-	${CMAKE_SOURCE_DIR}/Plain/src/*.h
-	${CMAKE_SOURCE_DIR}/Plain/src/*.hpp)
+file(GLOB_RECURSE ASSET_PIPELINE_FILES
+	${CMAKE_SOURCE_DIR}/Plain/src/AssetPipeline/*.c
+	${CMAKE_SOURCE_DIR}/Plain/src/AssetPipeline/*.cpp
+    ${CMAKE_SOURCE_DIR}/Plain/src/AssetPipeline/*.h
+	${CMAKE_SOURCE_DIR}/Plain/src/AssetPipeline/*.hpp)
+    
+file(GLOB_RECURSE COMMON_FILES
+    ${CMAKE_SOURCE_DIR}/Plain/src/Common/*.c
+	${CMAKE_SOURCE_DIR}/Plain/src/Common/*.cpp
+    ${CMAKE_SOURCE_DIR}/Plain/src/Common/*.h
+	${CMAKE_SOURCE_DIR}/Plain/src/Common/*.hpp)
 
 add_executable(${PROJECT_NAME}
-	${HEADER_FILES}
-	${SOURCE_FILES})
+	${RUNTIME_FILES}
+    ${COMMON_FILES})
+
+#asset pipeline executable
+add_executable(AssetPipeline
+    ${ASSET_PIPELINE_FILES}
+    ${COMMON_FILES})
 
 #add src/ as include to avoid relative include paths
 include_directories(Plain/src)
+include_directories(Plain/src/Common)
 
 #add vendor folder to allow direct inclusion of header libraries
 include_directories(Plain/vendor)
@@ -79,8 +93,10 @@ target_include_directories(Plain PRIVATE Vulkan::Vulkan)
 target_link_libraries(Plain Vulkan::Vulkan)
 
 #configure precompiled headers
-target_precompile_headers(Plain PRIVATE ${CMAKE_SOURCE_DIR}/Plain/src/pch.h)
+target_precompile_headers(Plain PRIVATE ${CMAKE_SOURCE_DIR}/Plain/src/Common/pch.h)
 
 #set source groups to create proper filters in visual studio
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${HEADER_FILES})
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCE_FILES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${RUNTIME_FILES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${UTILITIES_FILES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ASSET_PIPELINE_FILES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${COMMON_FILES})

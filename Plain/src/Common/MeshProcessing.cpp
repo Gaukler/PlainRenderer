@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "MeshProcessing.h"
-#include "Rendering/Backend/TypeConversion.h"
+#include "Common/TypeConversion.h"
 
 void computeTangentBitangent(MeshData* outMeshData) {
     assert(outMeshData != nullptr);

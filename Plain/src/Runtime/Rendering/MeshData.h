@@ -1,7 +1,7 @@
 #pragma once
 #include "pch.h"
 #include <glm/common.hpp>
-#include "Rendering/ResourceDescriptions.h"
+#include "Runtime/Rendering/ResourceDescriptions.h"
 #include "BoundingBox.h"
 
 struct TexturePaths {

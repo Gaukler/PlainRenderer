@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "CameraController.h"
-#include "Utilities/Timer.h"
+#include "Timer.h"
 #include "InputManager.h"
 
 CameraExtrinsic CameraController::getExtrinsic() {

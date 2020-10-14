@@ -1,7 +1,6 @@
 #pragma once
 #include "pch.h"
-
-#include "Rendering/MeshData.h"
+#include "Runtime/Rendering/MeshData.h"
 
 void computeTangentBitangent(MeshData* outMeshData);
 MeshData buildIndexedData(const MeshData& rawData);
