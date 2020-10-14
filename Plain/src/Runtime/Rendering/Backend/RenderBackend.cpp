@@ -2979,7 +2979,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
     switch (desc.vertexFormat) {
         case VertexFormat::Full: vertexBinding.stride = currentOffset; break;
-        case VertexFormat::PositionOnly: vertexBinding.stride = 12; break;
+        case VertexFormat::PositionOnly: vertexBinding.stride = vertexInputBytePerLocation[0]; break; //location 0 is position
         default: vertexBinding.stride = currentOffset; std::cout << "Warning: unknown vertex format\n"; break;
     }
     
