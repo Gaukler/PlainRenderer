@@ -16,7 +16,7 @@ int main() {
         saveBinaryMeshData(outputFile, meshesBinary);
         std::cout << "Input model: " << inputFile << "\n";
         std::cout << "Sucessfully converted model to binary format\n";
-        std::cout << "Stored binary file: " << outputFile << "\n";
+        std::cout << "Saved binary file: " << outputFile << "\n";
     }
     return 0;
 }
