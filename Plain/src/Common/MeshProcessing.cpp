@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "MeshProcessing.h"
-#include "Common/TypeConversion.h"
+#include "Common/CompressedTypes.h"
 
 void computeTangentBitangent(MeshData* outMeshData) {
     assert(outMeshData != nullptr);
@@ -185,28 +185,34 @@ std::vector<MeshBinary> meshesToBinary(const std::vector<MeshData>& meshes) {
             meshBinary.vertexBuffer.push_back(((uint8_t*)&vHalf)[1]);
 
             //normal stored as 32 bit R10G10B10A2
-            const uint32_t normalR10G10B10A2 = vec3ToNormalizedR10B10G10A2(meshData.normals[i]);
+            {
+                const NormalizedR10G10B10A2 normalCompressed = vec3ToNormalizedR10B10G10A2(meshData.normals[i]);
 
-            meshBinary.vertexBuffer.push_back(((uint8_t*)&normalR10G10B10A2)[0]);
-            meshBinary.vertexBuffer.push_back(((uint8_t*)&normalR10G10B10A2)[1]);
-            meshBinary.vertexBuffer.push_back(((uint8_t*)&normalR10G10B10A2)[2]);
-            meshBinary.vertexBuffer.push_back(((uint8_t*)&normalR10G10B10A2)[3]);
+                meshBinary.vertexBuffer.push_back(((uint8_t*)&normalCompressed)[0]);
+                meshBinary.vertexBuffer.push_back(((uint8_t*)&normalCompressed)[1]);
+                meshBinary.vertexBuffer.push_back(((uint8_t*)&normalCompressed)[2]);
+                meshBinary.vertexBuffer.push_back(((uint8_t*)&normalCompressed)[3]);
+            }
 
             //tangent stored as 32 bit R10G10B10A2
-            const uint32_t tangentR10G10B10A2 = vec3ToNormalizedR10B10G10A2(meshData.tangents[i]);
+            {
+                const NormalizedR10G10B10A2 tangentCompressed = vec3ToNormalizedR10B10G10A2(meshData.tangents[i]);
 
-            meshBinary.vertexBuffer.push_back(((uint8_t*)&tangentR10G10B10A2)[0]);
-            meshBinary.vertexBuffer.push_back(((uint8_t*)&tangentR10G10B10A2)[1]);
-            meshBinary.vertexBuffer.push_back(((uint8_t*)&tangentR10G10B10A2)[2]);
-            meshBinary.vertexBuffer.push_back(((uint8_t*)&tangentR10G10B10A2)[3]);
+                meshBinary.vertexBuffer.push_back(((uint8_t*)&tangentCompressed)[0]);
+                meshBinary.vertexBuffer.push_back(((uint8_t*)&tangentCompressed)[1]);
+                meshBinary.vertexBuffer.push_back(((uint8_t*)&tangentCompressed)[2]);
+                meshBinary.vertexBuffer.push_back(((uint8_t*)&tangentCompressed)[3]);
+            }
 
-            //stored as 32 bit R10G10B10A2
-            const uint32_t bitangentR10G10B10A2 = vec3ToNormalizedR10B10G10A2(meshData.tangents[i]);
+            //bitangent stored as 32 bit R10G10B10A2
+            {
+                const NormalizedR10G10B10A2 bitangentCompressed = vec3ToNormalizedR10B10G10A2(meshData.tangents[i]);
 
-            meshBinary.vertexBuffer.push_back(((uint8_t*)&bitangentR10G10B10A2)[0]);
-            meshBinary.vertexBuffer.push_back(((uint8_t*)&bitangentR10G10B10A2)[1]);
-            meshBinary.vertexBuffer.push_back(((uint8_t*)&bitangentR10G10B10A2)[2]);
-            meshBinary.vertexBuffer.push_back(((uint8_t*)&bitangentR10G10B10A2)[3]);
+                meshBinary.vertexBuffer.push_back(((uint8_t*)&bitangentCompressed)[0]);
+                meshBinary.vertexBuffer.push_back(((uint8_t*)&bitangentCompressed)[1]);
+                meshBinary.vertexBuffer.push_back(((uint8_t*)&bitangentCompressed)[2]);
+                meshBinary.vertexBuffer.push_back(((uint8_t*)&bitangentCompressed)[3]);
+            }
         }
         meshesBinary.push_back(meshBinary);
     }

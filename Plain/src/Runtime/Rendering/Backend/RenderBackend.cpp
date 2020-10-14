@@ -11,7 +11,6 @@
 #include "ShaderIO.h"
 #include "Utilities/GeneralUtils.h"
 #include "Utilities/MathUtils.h"
-#include "TypeConversion.h"
 #include "VertexInputVulkan.h"
 
 //disable ImGui warnings
