@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "ModelImport.h"
-#include "Common/ModelLoadingBinary.h"
+#include "Common/ModelLoadSaveBinary.h"
 #include "Common/MeshProcessing.h"
 #include "Utilities/DirectoryUtils.h"
 
