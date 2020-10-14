@@ -12,7 +12,7 @@
 #pragma warning( pop )
 
 #include <Utilities/MathUtils.h>
-#include "Utilities/Timer.h"
+#include "Runtime/Timer.h"
 #include "Culling.h"
 #include "Utilities/GeneralUtils.h"
 #include "Common/MeshProcessing.h"

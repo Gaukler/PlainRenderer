@@ -1,7 +1,6 @@
 #pragma once
 #include "pch.h"
 #include <glm/common.hpp>
-#include "Runtime/Rendering/ResourceDescriptions.h"
 #include "BoundingBox.h"
 
 struct TexturePaths {
@@ -30,10 +29,4 @@ struct MeshBinary {
     TexturePaths            texturePaths;
     std::vector<uint16_t>   indexBuffer;    //stored as 16 or 32 bit unsigned int
     std::vector<uint8_t>    vertexBuffer;
-};
-
-struct Material {
-    ImageHandle diffuseTexture;
-    ImageHandle normalTexture;
-    ImageHandle specularTexture;
 };

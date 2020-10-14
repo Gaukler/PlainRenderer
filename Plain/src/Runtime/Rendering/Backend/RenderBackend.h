@@ -8,7 +8,7 @@
 #include "VulkanContext.h"
 #include "VkMemoryAllocator.h"
 #include "Runtime/Rendering/Backend/SpirvReflection.h"
-#include "Runtime/Rendering/MeshData.h"
+#include "Common/MeshData.h"
 
 struct GLFWwindow;
 

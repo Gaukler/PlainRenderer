@@ -2,11 +2,10 @@
 #include "pch.h"
 #include "RenderHandles.h"
 
-/*
-resources are used to comunicate to a renderpass what and how a resource is used
-the shader dictates what type of resource must be bound where
-resources may be changed from frame to frame
-*/
+
+//resources are used to comunicate to a renderpass what and how a resource is used
+//the shader dictates what type of resource must be bound where
+//resources may be changed from frame to frame
 struct StorageBufferResource {
     StorageBufferResource(
         const StorageBufferHandle   buffer,
@@ -25,13 +24,9 @@ struct UniformBufferResource {
     uint32_t            binding;
 };
 
-/*
-if used as a storage image it is considered to be written to, causing additional barriers
-*/
+
+//if used as a storage image it is considered to be written to, causing additional barriers
 struct ImageResource {
-    /*
-    initializer list constructor with all members
-    */
     ImageResource(
         const ImageHandle image,
         const uint32_t    mipLevel,
@@ -42,9 +37,6 @@ struct ImageResource {
 };
 
 struct SamplerResource {
-    /*
-    initializer list constructor with all members
-    */
     SamplerResource(
         const SamplerHandle sampler,
         const uint32_t      binding) : sampler(sampler), binding(binding){};
@@ -60,9 +52,8 @@ struct RenderPassResources {
     std::vector<ImageResource>          storageImages;
 };
 
-/*
-contains all info used to submit a renderpass execution to the backend
-*/
+
+//contains all info used to submit a renderpass execution to the backend
 struct RenderPassExecution {
     RenderPassHandle                handle;
     RenderPassResources             resources;
@@ -70,9 +61,7 @@ struct RenderPassExecution {
     uint32_t                        dispatchCount[3] = { 1, 1, 1}; //compute pass only
 };
 
-/*
-config for rasterization
-*/
+
 enum class RasterizationeMode { Fill, Line, Point };
 enum class CullMode { None, Front, Back };
 
@@ -82,15 +71,14 @@ struct RasterizationConfig {
     bool                clampDepth = false;
 };
 
-/*
-config for depth testing
-*/
+
 enum class DepthFunction { Never, Always, Less, Greater, LessEqual, GreaterEqual, Equal };
 
 struct DepthTest {
     DepthFunction   function = DepthFunction::Always;
     bool            write = false;
 };
+
 
 enum class BlendState { None, Additive };
 enum class AttachmentLoadOp { Load, Clear, DontCare };
@@ -220,4 +208,10 @@ struct GlobalShaderInfo {
     float exposureOffset = 1.f;
     float exposureAdaptionSpeedEvPerSec = 2.f;
     float deltaTime = 0.016f;
+};
+
+struct Material {
+    ImageHandle diffuseTexture;
+    ImageHandle normalTexture;
+    ImageHandle specularTexture;
 };
