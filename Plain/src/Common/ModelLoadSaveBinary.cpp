@@ -2,7 +2,7 @@
 #include "ModelLoadSaveBinary.h"
 
 #include "Utilities/DirectoryUtils.h"
-#include "Runtime/Rendering/Backend/VertexInput.h"
+#include "VertexInput.h"
 
 const uint32_t binaryModelMagicNumber = *(uint32_t*)"PlMB"; //stands for Plain Model Binary
 
