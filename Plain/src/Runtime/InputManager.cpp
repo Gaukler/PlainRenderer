@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "InputManager.h"
-#include "Utilities/Timer.h"
+#include "Timer.h"
 
 //definition of extern variable from header
 InputManager gInputManager;
