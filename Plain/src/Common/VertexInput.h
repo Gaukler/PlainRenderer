@@ -14,9 +14,8 @@ VertexInputFlags operator|(const VertexInputFlags l, const VertexInputFlags r);
 
 #define VERTEX_INPUT_ATTRIBUTE_COUNT 5
 
-/*
-defines which vertex attribute goes to which binding
-*/
+
+//defines which vertex attribute goes to which binding
 const VertexInputFlags vertexInputFlagPerLocation[VERTEX_INPUT_ATTRIBUTE_COUNT] = {
     VertexInputFlags::Position,
     VertexInputFlags::UV,
