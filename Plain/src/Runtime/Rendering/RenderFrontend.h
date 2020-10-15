@@ -97,7 +97,8 @@ private:
     void renderDebugGeometry() const;
     void copyColorToHistoryBuffer() const;
 
-    void updateBoundingBoxDebugGeo();
+    //issues mesh drawcalls for visible bounding boxes
+    void renderBoundingBoxDebugGeo();
 
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
     bool loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);
@@ -127,7 +128,7 @@ private:
 
     bool m_didResolutionChange = false;
     bool m_minimized = false;
-    bool m_drawBBs = false; //debug rendering of bounding boxes
+    bool m_drawStaticMeshesBBs = false; //debug rendering of bounding boxes
     bool m_freezeAndDrawCameraFrustum = false;
     bool m_drawShadowFrustum = false;
 
@@ -209,8 +210,7 @@ private:
 
     DynamicMeshHandle m_cameraFrustumModel;
     DynamicMeshHandle m_shadowFrustumModel;
-    std::vector<DynamicMeshHandle>      m_bbDebugMeshes;    //bounding box debug mesh
-    std::vector<AxisAlignedBoundingBox> m_bbsToDebugDraw;   //bounding boxes for debug rendering this frame
+    std::vector<DynamicMeshHandle> m_staticMeshesBBDebugMeshes;   //bounding box debug meshes
 
     StorageBufferHandle m_histogramPerTileBuffer;
     StorageBufferHandle m_histogramBuffer;

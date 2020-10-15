@@ -207,7 +207,6 @@ void RenderFrontend::prepareNewFrame() {
 
     gRenderBackend.updateShaderCode();
     gRenderBackend.newFrame();
-    m_bbsToDebugDraw.clear(); 
 
     prepareRenderpasses();
     updateGlobalShaderInfo();
@@ -241,14 +240,11 @@ void RenderFrontend::prepareRenderpasses(){
     if (m_drawShadowFrustum) {
         gRenderBackend.drawDynamicMeshes({ m_shadowFrustumModel }, { defaultTransform }, m_debugGeoPass);
     }
-    if (m_drawBBs) {
-        updateBoundingBoxDebugGeo();
-    }
 
     const bool drawDebugPass =
         m_freezeAndDrawCameraFrustum ||
         m_drawShadowFrustum ||
-        m_drawBBs;
+        m_drawStaticMeshesBBs;
 
     //debug pass
     if (drawDebugPass) {
@@ -323,10 +319,8 @@ void RenderFrontend::addStaticMeshes(const std::vector<MeshBinary>& meshData, co
 
         materials.push_back(material);
     }
-    
     const auto backendHandles = gRenderBackend.createMeshes(meshData, materials);
-    
-    //compute and store bounding boxes    
+       
     const uint32_t meshCount = glm::min(backendHandles.size(), transforms.size());
 
     for (uint32_t i = 0; i < meshCount; i++) {
@@ -337,18 +331,39 @@ void RenderFrontend::addStaticMeshes(const std::vector<MeshBinary>& meshData, co
         staticMesh.bbWorldSpace = axisAlignedBoundingBoxTransformed(meshData[i].boundingBox, staticMesh.modelMatrix);
 
         m_staticMeshes.push_back(staticMesh);
-
-        //create debug mesh for rendering
-        const auto debugMesh = gRenderBackend.createDynamicMeshes(
-            { axisAlignedBoundingBoxPositionsPerMesh }, { axisAlignedBoundingBoxIndicesPerMesh }).back();
-        m_bbDebugMeshes.push_back(debugMesh);
     }
+
+    //create bounding box debug meshes
+    const std::vector<DynamicMeshHandle> debugMeshes = gRenderBackend.createDynamicMeshes(
+        std::vector<uint32_t> (meshCount, axisAlignedBoundingBoxPositionsPerMesh), 
+        std::vector<uint32_t> (meshCount, axisAlignedBoundingBoxIndicesPerMesh));
+
+    //append to existing
+    m_staticMeshesBBDebugMeshes.insert(m_staticMeshesBBDebugMeshes.end(), debugMeshes.begin(), debugMeshes.end());
+
+    //compute bounding boxes
+    std::vector<std::vector<glm::vec3>> positionsPerMesh;
+    std::vector<std::vector<uint32_t>>  indicesPerMesh;
+
+    positionsPerMesh.reserve(meshCount);
+    indicesPerMesh.reserve(meshCount);
+    for (const auto& mesh : meshData) {
+        std::vector<glm::vec3> vertices;
+        std::vector<uint32_t> indices;
+
+        axisAlignedBoundingBoxToLineMesh(mesh.boundingBox, &vertices, &indices);
+
+        positionsPerMesh.push_back(vertices);
+        indicesPerMesh.push_back(indices);
+    }
+
+    gRenderBackend.updateDynamicMeshes(debugMeshes, positionsPerMesh, indicesPerMesh);
 }
 
 void RenderFrontend::renderStaticMeshes() {
 
     //if we prepare render commands without consuming them we will save up a huge amount of commands
-    //so commands are not recorded if minmized in the first place
+    //to avoid this commands are not recorded if minmized
     if (m_minimized) {
         return;
     }
@@ -358,12 +373,15 @@ void RenderFrontend::renderStaticMeshes() {
     //main and prepass
     {
         std::vector<MeshHandle> culledMeshes;
+        std::vector<DynamicMeshHandle> culledBoundingBoxMeshes;
         std::vector<std::array<glm::mat4, 2>> culledTransformsMainPass; //contains MVP and model matrix
         std::vector<std::array<glm::mat4, 2>> culledTransformsPrepass;  //contains MVP and previous mvp
 
         //frustum culling
-        for (const StaticMesh& mesh : m_staticMeshes) {
+        assert(m_staticMeshes.size() == m_staticMeshesBBDebugMeshes.size());
+        for (size_t i = 0; i < m_staticMeshes.size(); i++) {
 
+            StaticMesh mesh = m_staticMeshes[i];
             const auto mvp = m_viewProjectionMatrix * mesh.modelMatrix;
 
             const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, mesh.bbWorldSpace);
@@ -372,6 +390,7 @@ void RenderFrontend::renderStaticMeshes() {
                 m_currentMainPassDrawcallCount++;
 
                 culledMeshes.push_back(mesh.backendHandle);
+                culledBoundingBoxMeshes.push_back(m_staticMeshesBBDebugMeshes[i]);
 
                 const std::array<glm::mat4, 2> mainPassTransforms = { mvp, mesh.modelMatrix };
                 culledTransformsMainPass.push_back(mainPassTransforms);
@@ -380,13 +399,17 @@ void RenderFrontend::renderStaticMeshes() {
                 const std::array<glm::mat4, 2> prePassTransforms = { mvp, previousMVP };
                 culledTransformsPrepass.push_back(prePassTransforms);
 
-                if (m_drawBBs) {
-                    m_bbsToDebugDraw.push_back(mesh.bbWorldSpace);
+                if (m_drawStaticMeshesBBs) {
+                    m_staticMeshesBBDebugMeshes.push_back(m_staticMeshesBBDebugMeshes[i]);
                 }
             }
         }
         gRenderBackend.drawMeshes(culledMeshes, culledTransformsMainPass, m_mainPass);
         gRenderBackend.drawMeshes(culledMeshes, culledTransformsPrepass, m_depthPrePass);
+        if (m_drawStaticMeshesBBs) {
+            //transform uses only first mvp matrix, so just reuse
+            gRenderBackend.drawDynamicMeshes(culledBoundingBoxMeshes, culledTransformsMainPass, m_debugGeoPass);
+        }
     }
     
     //shadow pass
@@ -673,32 +696,6 @@ void RenderFrontend::renderDebugGeometry() const {
     debugPassExecution.handle = m_debugGeoPass;
     debugPassExecution.parents = { m_mainPass };
     gRenderBackend.setRenderPassExecution(debugPassExecution);
-}
-
-void RenderFrontend::updateBoundingBoxDebugGeo() {
-    std::vector<std::vector<glm::vec3>> positionsPerMesh;
-    std::vector<std::vector<uint32_t>>  indicesPerMesh;
-
-    positionsPerMesh.reserve(m_bbDebugMeshes.size());
-    indicesPerMesh.reserve(m_bbDebugMeshes.size());
-    for (const auto& bb : m_bbsToDebugDraw) {
-        std::vector<glm::vec3> vertices;
-        std::vector<uint32_t> indices;
-
-        axisAlignedBoundingBoxToLineMesh(bb, &vertices, &indices);
-
-        positionsPerMesh.push_back(vertices);
-        indicesPerMesh.push_back(indices);
-    }
-
-    //subvector with correct handle count
-    std::vector<DynamicMeshHandle> bbMeshHandles(&m_bbDebugMeshes[0], &m_bbDebugMeshes[positionsPerMesh.size()]);
-
-    gRenderBackend.updateDynamicMeshes(bbMeshHandles, positionsPerMesh, indicesPerMesh);
-
-    const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
-    std::vector<std::array<glm::mat4, 2>> debugMeshTransforms(m_bbsToDebugDraw.size(), defaultTransform);
-    gRenderBackend.drawDynamicMeshes(bbMeshHandles, debugMeshTransforms, m_debugGeoPass);
 }
 
 void RenderFrontend::copyColorToHistoryBuffer() const {
@@ -2048,7 +2045,7 @@ void RenderFrontend::drawUi() {
     
     //debug settings
     if (ImGui::CollapsingHeader("Debug settings")) {
-        ImGui::Checkbox("Draw bounding boxes", &m_drawBBs);
+        ImGui::Checkbox("Draw static meshes bounding boxes", &m_drawStaticMeshesBBs);
         ImGui::Checkbox("Freeze and draw camera frustum", &m_freezeAndDrawCameraFrustum);
         ImGui::Checkbox("Draw shadow frustum", &m_drawShadowFrustum);
     }    
