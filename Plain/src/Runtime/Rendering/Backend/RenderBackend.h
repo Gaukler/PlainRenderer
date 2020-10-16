@@ -226,13 +226,10 @@ private:
     */
     VkDebugReportCallbackEXT    m_debugCallback = VK_NULL_HANDLE;
 
-    /*
-    validation layers are disabled in release build using macro
-    */
-#ifdef NDEBUG
+#ifdef USE_VK_VALIDATION_LAYERS
     const bool m_useValidationLayers = true;
 #else
-    const bool m_useValidationLayers = true;
+    const bool m_useValidationLayers = false;
 #endif
 
     std::vector<const char*>    getRequiredExtensions();
