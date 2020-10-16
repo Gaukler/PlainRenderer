@@ -144,7 +144,7 @@ std::vector<MeshBinary> meshesToBinary(const std::vector<MeshData>& meshes) {
         else {
             //copy full precision indices
             const uint32_t entryPerIndex = 2; //two 16 bit entries needed for one 32 bit index
-            meshBinary.indexBuffer.resize(meshBinary.indexCount * entryPerIndex);
+            meshBinary.indexBuffer.resize((size_t)meshBinary.indexCount * (size_t)entryPerIndex);
             const size_t copySize = sizeof(uint32_t) * meshBinary.indexCount;
             memcpy(meshBinary.indexBuffer.data(), meshData.indices.data(), copySize);
         }
@@ -155,7 +155,7 @@ std::vector<MeshBinary> meshesToBinary(const std::vector<MeshData>& meshes) {
         assert(meshData.positions.size() == meshData.tangents.size());
         assert(meshData.positions.size() == meshData.bitangents.size());
 
-        meshBinary.vertexCount = meshData.positions.size();
+        meshBinary.vertexCount = (uint32_t)meshData.positions.size();
 
         //precision and type must correspond to types in VertexInput.h
         for (size_t i = 0; i < meshBinary.vertexCount; i++) {

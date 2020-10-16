@@ -321,7 +321,7 @@ void RenderFrontend::addStaticMeshes(const std::vector<MeshBinary>& meshData, co
     }
     const auto backendHandles = gRenderBackend.createMeshes(meshData, materials);
        
-    const uint32_t meshCount = glm::min(backendHandles.size(), transforms.size());
+    const uint32_t meshCount = (uint32_t)glm::min(backendHandles.size(), transforms.size());
 
     for (uint32_t i = 0; i < meshCount; i++) {
 

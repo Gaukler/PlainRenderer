@@ -153,6 +153,10 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugReportCallback(
 //reenable warnings
 #pragma warning( pop )
 
+void checkVulkanResult(const VkResult result) {
+    assert(result == VK_SUCCESS);
+}
+
 void RenderBackend::setup(GLFWwindow* window) {
 
     createVulkanInstance();
@@ -316,8 +320,8 @@ void RenderBackend::shutdown() {
 
 void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t height, GLFWwindow* window) {
 
-    auto res = vkDeviceWaitIdle(vkContext.device);
-    assert(res == VK_SUCCESS);
+    auto result = vkDeviceWaitIdle(vkContext.device);
+    checkVulkanResult(result);
 
     /*
     destroy swapchain and views
@@ -414,8 +418,8 @@ void RenderBackend::updateShaderCode() {
     }
 
     //when updating passes they must not be used
-    auto res = vkDeviceWaitIdle(vkContext.device);
-    assert(res == VK_SUCCESS);
+    auto result = vkDeviceWaitIdle(vkContext.device);
+    checkVulkanResult(result);
 
     /*
     iterate over all out of date passes
@@ -509,7 +513,7 @@ void RenderBackend::newFrame() {
 
 void RenderBackend::startMeshCommandBufferRecording() {
 
-    for (size_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
+    for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
         const auto& pass = m_renderPasses.getGraphicPassRefByIndex(i);
 
         const auto res = vkResetCommandBuffer(pass.meshCommandBuffer, 0);
@@ -631,8 +635,8 @@ void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle pa
     pass.graphicPassDesc.shaderDescriptions = desc;
     GraphicPassShaderSpirV spirV;
     if (loadGraphicPassShaders(pass.graphicPassDesc.shaderDescriptions, &spirV)) {
-        auto res = vkDeviceWaitIdle(vkContext.device);
-        assert(res == VK_SUCCESS);
+        auto result = vkDeviceWaitIdle(vkContext.device);
+        checkVulkanResult(result);
         destroyGraphicPass(pass);
         pass = createGraphicPassInternal(pass.graphicPassDesc, spirV);
     }
@@ -644,8 +648,8 @@ void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle pa
     pass.computePassDesc.shaderDescription = desc;
     std::vector<uint32_t> spirV;
     if (loadShader(pass.computePassDesc.shaderDescription, &spirV)) {
-        auto res = vkDeviceWaitIdle(vkContext.device);
-        assert(res == VK_SUCCESS);
+        auto result = vkDeviceWaitIdle(vkContext.device);
+        checkVulkanResult(result);
         destroyComputePass(pass);
         pass = createComputePassInternal(pass.computePassDesc, spirV);
     }
@@ -763,9 +767,9 @@ void RenderBackend::renderFrame(bool presentToScreen) {
         //manually get every query for now
         //FIXME: proper solution
         for (size_t i = 0; i < m_currentTimestampQueryCount; i++) {
-            res = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, i, 1,
-                timestamps.size() * sizeof(uint32_t), &timestamps[i], 0, VK_QUERY_RESULT_WAIT_BIT);
-            assert(res == VK_SUCCESS);
+            auto result = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, i, 1,
+                (uint32_t)timestamps.size() * sizeof(uint32_t), &timestamps[i], 0, VK_QUERY_RESULT_WAIT_BIT);
+            checkVulkanResult(result);
         }
 
         for (const auto query : m_timestampQueries) {
@@ -1204,8 +1208,8 @@ SamplerHandle RenderBackend::createSampler(const SamplerDescription& desc) {
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
 
     VkSampler sampler;
-    const auto res = vkCreateSampler(vkContext.device, &samplerInfo, nullptr, &sampler);
-    assert(res == VK_SUCCESS);
+    const auto result = vkCreateSampler(vkContext.device, &samplerInfo, nullptr, &sampler);
+    checkVulkanResult(result);
 
     SamplerHandle handle = { (uint32_t)m_samplers.size() };
     m_samplers.push_back(sampler);
@@ -1213,8 +1217,8 @@ SamplerHandle RenderBackend::createSampler(const SamplerDescription& desc) {
 }
 
 ImageHandle RenderBackend::getSwapchainInputImage() {
-    auto res = vkAcquireNextImageKHR(vkContext.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvaible, VK_NULL_HANDLE, &m_swapchainInputImageIndex);
-    assert(res == VK_SUCCESS);
+    auto result = vkAcquireNextImageKHR(vkContext.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvaible, VK_NULL_HANDLE, &m_swapchainInputImageIndex);
+    checkVulkanResult(result);
     m_swapchainInputImageHandle = m_swapchain.imageHandles[m_swapchainInputImageIndex];
     return m_swapchainInputImageHandle;
 }
@@ -1483,8 +1487,8 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
 }
 
 void RenderBackend::waitForRenderFinished() {
-    auto res = vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, INT64_MAX);
-    assert(res == VK_SUCCESS);
+    auto result = vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, INT64_MAX);
+    checkVulkanResult(result);
 }
 
 std::vector<const char*> RenderBackend::getRequiredExtensions() {
@@ -1926,9 +1930,9 @@ void RenderBackend::presentImage(const VkSemaphore waitSemaphore) {
     VkResult presentResult = VK_SUCCESS;
     present.pResults = &presentResult;
 
-    auto res = vkQueuePresentKHR(vkContext.presentQueue, &present);
-    assert(res == VK_SUCCESS);
-    assert(presentResult == VK_SUCCESS);
+    auto result = vkQueuePresentKHR(vkContext.presentQueue, &present);
+    checkVulkanResult(result);
+    checkVulkanResult(presentResult);
 }
 
 void RenderBackend::setupImgui(GLFWwindow* window) {
@@ -2188,7 +2192,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
     VkDeviceSize currentMipHeight = target.extent.height;
 
     VkDeviceSize bytesPerRow    = (size_t)(target.extent.width * bytePerPixel);
-    VkDeviceSize currentMipSize = currentMipWidth * currentMipHeight * bytePerPixel;
+    VkDeviceSize currentMipSize = (VkDeviceSize)(currentMipWidth * currentMipHeight * bytePerPixel);
 
     //memory offset per mip is tracked separately to check if a mip border is reached
     VkDeviceSize mipMemoryOffset = 0;
@@ -2217,8 +2221,11 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
 
             //BCn compressed textures store at least a 4x4 pixel block, resulting in at least a 4 pixel row
             if (isBCnCompressed) {
-                bytesPerRow = std::max(bytesPerRow, (VkDeviceSize)(4 * bytePerPixel));
-                currentMipSize = std::max(currentMipSize, (VkDeviceSize)((4 * 4) * bytePerPixel));
+                const VkDeviceSize minPixelPerRox = 4;
+                bytesPerRow = std::max(bytesPerRow, VkDeviceSize(minPixelPerRox * bytePerPixel));
+
+                const VkDeviceSize minPixelsPerMip = 16;
+                currentMipSize = std::max(currentMipSize, VkDeviceSize(minPixelsPerMip * bytePerPixel));
             }
         }
 
@@ -2252,11 +2259,11 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         region.imageSubresource = createSubresourceLayers(target, mipLevel);
         //entire rows are copied, so the starting row(offset.y) is the current mip offset divided by the row size
         region.imageOffset = { 0, int32_t(mipMemoryOffset / bytesPerRow), 0 };
-        region.bufferRowLength = currentMipWidth; 
-        region.bufferImageHeight = currentMipHeight;
+        region.bufferRowLength = (uint32_t)currentMipWidth;
+        region.bufferImageHeight = (uint32_t)currentMipHeight;
         //copy as many rows as fit into the copy size, without going over the mip height
-        region.imageExtent.height = std::min(copySize / bytesPerRow, currentMipHeight);
-        region.imageExtent.width = currentMipWidth;
+        region.imageExtent.height = (uint32_t)std::min(copySize / bytesPerRow, currentMipHeight);
+        region.imageExtent.width = (uint32_t)currentMipWidth;
         region.imageExtent.depth = 1;
 
         //BCn compressed textures are stored in 4x4 pixel blocks, so that is the minimum buffer size
@@ -2269,8 +2276,8 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         vkCmdCopyBufferToImage(copyBuffer, m_stagingBuffer.vulkanHandle, target.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         vkEndCommandBuffer(copyBuffer);
         VkFence fence = submitOneTimeUseCmdBuffer(copyBuffer, vkContext.transferQueue);
-        auto res = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        assert(res == VK_SUCCESS);
+        auto result = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        checkVulkanResult(result);
 
         //cleanup
         vkDestroyFence(vkContext.device, fence, nullptr);
@@ -2418,8 +2425,8 @@ void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSi
 
 void RenderBackend::fillHostVisibleCoherentBuffer(Buffer target, const void* data, const VkDeviceSize size) {
     void* mappedData;
-    auto res = vkMapMemory(vkContext.device, target.memory.vkMemory, target.memory.offset, size, 0, (void**)&mappedData);
-    assert(res == VK_SUCCESS);
+    auto result = vkMapMemory(vkContext.device, target.memory.vkMemory, target.memory.offset, size, 0, (void**)&mappedData);
+    checkVulkanResult(result);
     memcpy(mappedData, data, size);
     vkUnmapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory);
 }
@@ -2643,8 +2650,8 @@ VkDescriptorSet RenderBackend::allocateDescriptorSet(const VkDescriptorSetLayout
     }
 
     VkDescriptorSet descriptorSet;
-    auto res = vkAllocateDescriptorSets(vkContext.device, &setInfo, &descriptorSet);
-    assert(res == VK_SUCCESS);
+    auto result = vkAllocateDescriptorSets(vkContext.device, &setInfo, &descriptorSet);
+    checkVulkanResult(result);
 
     return descriptorSet;
 }
@@ -3096,8 +3103,8 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = 0;
 
-    auto res = vkCreateGraphicsPipelines(vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pass.pipeline);
-    assert(res == VK_SUCCESS);
+    auto result = vkCreateGraphicsPipelines(vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pass.pipeline);
+    checkVulkanResult(result);
 
     //shader modules aren't needed anymore
     vkDestroyShaderModule(vkContext.device, vertexModule, nullptr);
