@@ -41,6 +41,10 @@ struct Buffer {
     VulkanAllocation memory;
 };
 
+//disable warning caused by vulkan use
+#pragma warning( push )
+#pragma warning( disable : 26812) //use of unscoped enum
+
 struct Mesh {
     uint32_t        indexCount = 0;
     Buffer          indexBuffer;
@@ -48,6 +52,9 @@ struct Mesh {
     Buffer          vertexBuffer;
     VkDescriptorSet materialDescriptorSet = VK_NULL_HANDLE;
 };
+
+//reenable warning
+#pragma warning( pop )
 
 //can be updated, limited feature set
 struct DynamicMesh {
