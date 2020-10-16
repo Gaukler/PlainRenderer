@@ -150,12 +150,13 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugReportCallback(
     return VK_FALSE;
 }
 
-//reenable warnings
-#pragma warning( pop )
-
+//parameter result not used in release mode, keep warning disabled
 void checkVulkanResult(const VkResult result) {
     assert(result == VK_SUCCESS);
 }
+
+//reenable warnings
+#pragma warning( pop )
 
 void RenderBackend::setup(GLFWwindow* window) {
 
