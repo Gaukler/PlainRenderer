@@ -768,7 +768,7 @@ void RenderBackend::renderFrame(bool presentToScreen) {
         //manually get every query for now
         //FIXME: proper solution
         for (size_t i = 0; i < m_currentTimestampQueryCount; i++) {
-            auto result = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, i, 1,
+            auto result = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, (uint32_t)i, 1,
                 (uint32_t)timestamps.size() * sizeof(uint32_t), &timestamps[i], 0, VK_QUERY_RESULT_WAIT_BIT);
             checkVulkanResult(result);
         }
