@@ -127,7 +127,7 @@ struct GraphicPassDescription {
     RasterizationConfig     rasterization;
     BlendState              blending = BlendState::None;
     DepthTest               depthTest;
-    VertexFormat            vertexFormat;
+    VertexFormat            vertexFormat = VertexFormat::Full;
 
     std::string name; //used for debug labels
 };

@@ -509,7 +509,7 @@ void RenderBackend::newFrame() {
 
 void RenderBackend::startMeshCommandBufferRecording() {
 
-    for (int i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
+    for (size_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
         const auto& pass = m_renderPasses.getGraphicPassRefByIndex(i);
 
         const auto res = vkResetCommandBuffer(pass.meshCommandBuffer, 0);
@@ -762,7 +762,7 @@ void RenderBackend::renderFrame(bool presentToScreen) {
         //maybe it contains more info so needs more space per query?
         //manually get every query for now
         //FIXME: proper solution
-        for (int i = 0; i < m_currentTimestampQueryCount; i++) {
+        for (size_t i = 0; i < m_currentTimestampQueryCount; i++) {
             res = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, i, 1,
                 timestamps.size() * sizeof(uint32_t), &timestamps[i], 0, VK_QUERY_RESULT_WAIT_BIT);
             assert(res == VK_SUCCESS);
@@ -1962,9 +1962,7 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
         throw("ImGui inizialisation error");
     }
 
-    /*
-    build fonts texture
-    */
+    //build fonts texture    
     const auto currentCommandBuffer = m_commandBuffers[0];
 
     VkCommandBufferBeginInfo begin_info = {};
@@ -1988,9 +1986,7 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
     assert(res == VK_SUCCESS);
     ImGui_ImplVulkan_DestroyFontUploadObjects();
 
-    /*
-    create framebuffers
-    */
+    //create framebuffers    
     VkExtent2D extent;
     extent.width  = m_images[m_swapchain.imageHandles[0].index].extent.width;
     extent.height = m_images[m_swapchain.imageHandles[0].index].extent.height;
@@ -2004,9 +2000,7 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
         m_ui.framebuffers.push_back(framebuffer);
     }
 
-    /*
-    pass infos
-    */
+    //pass infos    
     for (const auto& framebuffer : m_ui.framebuffers) {
         VkRenderPassBeginInfo info = {};
         info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -2093,9 +2087,7 @@ Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::v
     bufferInfo.size = size;
     bufferInfo.usage = usage;
 
-    /*
-    find unique queue families
-    */
+    //find unique queue families    
     std::vector<uint32_t> uniqueQueueFamilies;
     for (const auto& index : queueFamilies) {
         if (!vectorContains(uniqueQueueFamilies, index)) {
@@ -2145,7 +2137,8 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
     bool isBCnCompressed = false;
 
     //bytePerPixel is a float because compressed formats can have less than one byte per pixel
-    float bytePerPixel = 0;
+    //use double to avoid 4 to 8 byte casting warnings after arithmetic
+    double bytePerPixel = 0;
     if (target.desc.format == ImageFormat::R8) {
         bytePerPixel = 1;
     }
@@ -2189,13 +2182,13 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         throw("Unsupported format");
     }
 
-    VkDeviceSize bytesPerRow = (size_t)(target.extent.width * bytePerPixel);
-
     //if size is bigger than mip level 0 automatically switch to next mip level
     uint32_t mipLevel = 0;
-    uint32_t currentMipWidth = target.extent.width;
-    uint32_t currentMipHeight = target.extent.height;
-    VkDeviceSize currentMipSize = (VkDeviceSize)(currentMipWidth * currentMipHeight * bytePerPixel);
+    VkDeviceSize currentMipWidth = target.extent.width;
+    VkDeviceSize currentMipHeight = target.extent.height;
+
+    VkDeviceSize bytesPerRow    = (size_t)(target.extent.width * bytePerPixel);
+    VkDeviceSize currentMipSize = currentMipWidth * currentMipHeight * bytePerPixel;
 
     //memory offset per mip is tracked separately to check if a mip border is reached
     VkDeviceSize mipMemoryOffset = 0;
@@ -2203,10 +2196,8 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
     //total offset is used to check if entire data has been copied
     VkDeviceSize totalMemoryOffset = 0;
 
-    /*
-    if the image data is bigger than the staging buffer multiple copies are needed
-    use a while loop because currentMemoryOffset is increased by copySize, which can vary at mip borders
-    */
+    //if the image data is bigger than the staging buffer multiple copies are needed
+    //use a while loop because currentMemoryOffset is increased by copySize, which can vary at mip borders    
     //TODO: creation of cmd buffer and fence in loop is somewhat inefficient
     while (totalMemoryOffset < size) {
 
@@ -2227,15 +2218,14 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
             //BCn compressed textures store at least a 4x4 pixel block, resulting in at least a 4 pixel row
             if (isBCnCompressed) {
                 bytesPerRow = std::max(bytesPerRow, (VkDeviceSize)(4 * bytePerPixel));
-                currentMipSize = std::max(currentMipSize, (VkDeviceSize)(4 * 4 * bytePerPixel));
+                currentMipSize = std::max(currentMipSize, (VkDeviceSize)((4 * 4) * bytePerPixel));
             }
         }
 
-        /*
-        the size to copy is limited either by
-        -the staging buffer size
-        -the size left to copy on the current mip level
-        */
+        
+        //the size to copy is limited either by
+        //-the staging buffer size
+        //-the size left to copy on the current mip level
         VkDeviceSize copySize = std::min(m_stagingBufferSize, currentMipSize - mipMemoryOffset);
 
         //always copy entire rows
@@ -2265,7 +2255,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         region.bufferRowLength = currentMipWidth; 
         region.bufferImageHeight = currentMipHeight;
         //copy as many rows as fit into the copy size, without going over the mip height
-        region.imageExtent.height = std::min(uint32_t(copySize / bytesPerRow), currentMipHeight);
+        region.imageExtent.height = std::min(copySize / bytesPerRow, currentMipHeight);
         region.imageExtent.width = currentMipWidth;
         region.imageExtent.depth = 1;
 

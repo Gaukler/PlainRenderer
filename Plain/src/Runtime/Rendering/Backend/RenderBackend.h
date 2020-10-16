@@ -197,7 +197,7 @@ public:
 
 private:
 
-    VkDescriptorSetLayout m_materialDescriporSetLayout;
+    VkDescriptorSetLayout m_materialDescriporSetLayout = VK_NULL_HANDLE;
     void initMaterialDescriptorSetLayout();
 
     MaterialSamplers m_materialSamplers;

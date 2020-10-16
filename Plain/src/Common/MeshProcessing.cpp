@@ -132,7 +132,7 @@ std::vector<MeshBinary> meshesToBinary(const std::vector<MeshData>& meshes) {
         meshBinary.boundingBox = axisAlignedBoundingBoxFromPositions(meshData.positions);
 
         //index buffer
-        meshBinary.indexCount = meshData.indices.size();
+        meshBinary.indexCount = (uint32_t)meshData.indices.size();
         if (meshBinary.indexCount < std::numeric_limits<uint16_t>::max()) {
             //half precision indices are enough
             //calculate lower precision indices
