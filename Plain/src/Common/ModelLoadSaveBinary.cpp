@@ -62,7 +62,7 @@ void saveBinaryMeshData(const std::filesystem::path& filename, const std::vector
         writePointer = copyToBuffer(&meshBinary.vertexCount, fileData, sizeof(meshBinary.vertexCount), writePointer);
         writePointer = copyToBuffer(&meshBinary.boundingBox, fileData, sizeof(meshBinary.boundingBox), writePointer);
 
-        const uint32_t albedoPathLength = meshBinary.texturePaths.albedoTexturePath.string().size();
+        const uint32_t albedoPathLength = (uint32_t)meshBinary.texturePaths.albedoTexturePath.string().size();
         writePointer = copyToBuffer(&albedoPathLength, fileData, sizeof(albedoPathLength), writePointer);
 
         writePointer = copyToBuffer(
@@ -71,7 +71,7 @@ void saveBinaryMeshData(const std::filesystem::path& filename, const std::vector
             meshBinary.texturePaths.albedoTexturePath.string().size() * sizeof(char), 
             writePointer);
 
-        const uint32_t normalPathLength = meshBinary.texturePaths.normalTexturePath.string().size();
+        const uint32_t normalPathLength = (uint32_t)meshBinary.texturePaths.normalTexturePath.string().size();
         writePointer = copyToBuffer(&normalPathLength, fileData, sizeof(normalPathLength), writePointer);
 
         writePointer = copyToBuffer(
@@ -80,7 +80,7 @@ void saveBinaryMeshData(const std::filesystem::path& filename, const std::vector
             meshBinary.texturePaths.normalTexturePath.string().size() * sizeof(char),
             writePointer);
 
-        const uint32_t specularPathLength = meshBinary.texturePaths.specularTexturePath.string().size();
+        const uint32_t specularPathLength = (uint32_t)meshBinary.texturePaths.specularTexturePath.string().size();
         writePointer = copyToBuffer(&specularPathLength, fileData, sizeof(specularPathLength), writePointer);
 
         writePointer = copyToBuffer(
@@ -174,7 +174,7 @@ bool loadBinaryMeshData(const std::filesystem::path& filename, std::vector<MeshB
         mesh.indexBuffer.resize(mesh.indexCount * halfPerIndex);
         file.read((char*)mesh.indexBuffer.data(), mesh.indexCount * bytePerIndex);
 
-        size_t vertexBufferSize = vertexFormatFullByteSize * mesh.vertexCount;
+        size_t vertexBufferSize = (size_t)vertexFormatFullByteSize * (size_t)mesh.vertexCount;
         mesh.vertexBuffer.resize(vertexBufferSize);
         file.read((char*)mesh.vertexBuffer.data(), vertexBufferSize);
 

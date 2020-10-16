@@ -23,8 +23,8 @@ struct MeshData {
 
 //formated to be consumed directly by render backend
 struct MeshBinary {
-    uint32_t                indexCount;
-    uint32_t                vertexCount;
+    uint32_t                indexCount = 0;
+    uint32_t                vertexCount = 0;
     AxisAlignedBoundingBox  boundingBox;
     TexturePaths            texturePaths;
     std::vector<uint16_t>   indexBuffer;    //stored as 16 or 32 bit unsigned int
