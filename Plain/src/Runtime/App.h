@@ -11,7 +11,7 @@
 class App {
 public:
 	App();
-    void setup();
+    void setup(const std::string& sceneFilePath);
 	void runUpdate();
 private:
     CameraController m_cameraController;
