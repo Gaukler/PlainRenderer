@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <sstream>
 
 //disable glm warnings
 #pragma warning( push )
