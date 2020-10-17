@@ -136,8 +136,5 @@ void layoutFromSpirv(const std::vector<uint32_t>& spirv, const VkShaderStageFlag
         }
     }
 
-    /*
-    cleanup
-    */
     spvc_context_destroy(spirvCrossContext);
 }
