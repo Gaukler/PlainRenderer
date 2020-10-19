@@ -97,9 +97,6 @@ private:
     void renderDebugGeometry() const;
     void copyColorToHistoryBuffer() const;
 
-    //issues mesh drawcalls for visible bounding boxes
-    void renderBoundingBoxDebugGeo();
-
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
     bool loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);
     std::map<std::filesystem::path, ImageHandle> m_textureMap;
