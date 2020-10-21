@@ -51,6 +51,17 @@ struct SkyOcclusionRenderData {
     float weight = 0.f;
 };
 
+//everything in km
+struct AtmosphereSettings {
+    glm::vec3 scatteringRayleighGround = glm::vec3(0.0058f, 0.0135f, 0.0331f);
+    float earthRadius = 6371;
+    glm::vec3 extinctionRayleighGround = scatteringRayleighGround;
+    float atmosphereHeight = 100;
+    glm::vec3 ozoneExtinction = glm::vec3(0.000650f, 0.001881f, 0.000085f);
+    float scatteringMieGround = 0.006f;
+    float extinctionMieGround = 1.11f * scatteringMieGround;
+};
+
 enum class ShaderResourceType { SampledImage, Sampler, StorageImage, StorageBuffer, UniformBuffer };
 
 struct DefaultTextures {
@@ -151,9 +162,12 @@ private:
 
     ShadingConfig   m_shadingConfig;
     TAASettings     m_taaSettings;
+    AtmosphereSettings m_atmosphereSettings;
 
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
+    RenderPassHandle m_skyTransmissionLutPass;
+    RenderPassHandle m_skyLutPass;
     RenderPassHandle m_skyPass;
     RenderPassHandle m_toCubemapPass;
     RenderPassHandle m_diffuseConvolutionPass;
@@ -183,6 +197,8 @@ private:
     ImageHandle m_skyTexture;
     ImageHandle m_diffuseProbe;
     ImageHandle m_specularProbe;
+    ImageHandle m_skyTransmissionLut;
+    ImageHandle m_skyLut;
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
     ImageHandle m_historyBuffer;
@@ -216,6 +232,7 @@ private:
     StorageBufferHandle m_depthPyramidSyncBuffer;
 
     UniformBufferHandle m_skyOcclusionDataBuffer;
+    UniformBufferHandle m_atmosphereSettingsBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
@@ -241,7 +258,7 @@ private:
     ShaderDescription createDepthPyramidShaderDescription(uint32_t* outThreadgroupCount);
     glm::ivec2 computeDepthPyramidDispatchCount() const;    
 
-    glm::vec2 m_sunDirection = glm::vec2(-120.f, 150.f);
+    glm::vec2 m_sunDirection = glm::vec2(0.f, 0.f);
    
     void drawUi();
 };

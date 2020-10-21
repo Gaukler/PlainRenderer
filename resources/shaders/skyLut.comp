@@ -1,0 +1,108 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "global.inc"
+#include "sky.inc"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set=1, binding = 0, r11f_g11f_b10f) uniform image2D skyLut;
+layout(set=1, binding = 1) uniform texture2D transmissionLut;
+layout(set=1, binding = 2) uniform sampler skySampler;
+
+layout(set=1, binding = 3, std140) uniform atmosphereSettings{
+    vec3 scatteringRayleighGround;
+    float earthRadius;
+    vec3 extinctionRayleighGround;
+    float atmosphereHeight;
+    vec3 ozoneExtinction;
+    float scatteringMieGround;
+    float extinctionMieGround;
+};
+
+layout(set=1, binding = 4, std430) buffer lightBuffer{
+    float previousFrameExposure;
+    float sunStrengthExposed;
+    float skyStrengthExposed;
+};
+
+float phaseGreenstein(float VoL, float g){
+    return (1.f - g * g) / (4.f * 3.1415f * pow(1.f + g * g - 2.f * g * VoL, 1.5f));
+}
+
+//approximates greenstein, has sign error
+float phaseSchlick(float VoL, float g){
+    float k = 1.55f * g - 0.55f * g * g * g;
+    return (1.f - k * k) / (4.f * 3.1415 * pow(1.f + k * VoL, 2.f));
+}
+
+float phaseRayleigh(float VoL){
+    return 3.f / (16.f * 3.1415f) * (1.f + VoL * VoL);
+}
+
+void main(){
+	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    
+    float x = uv.x / float(imageSize(skyLut).x);
+    float y = uv.y / float(imageSize(skyLut).y);
+    
+    vec3 V = fromSkyLut(vec2(x, y)); //from camera to sky
+    
+    vec3 earthCenter = vec3(0);
+    vec3 P = vec3(0, -earthRadius, 0);
+    vec3 atmoshpereIntersection = rayFromInsideSphereIntersection(P, V, earthCenter, earthRadius + atmosphereHeight);
+    float atmospherePathLength = distance(atmoshpereIntersection, P); 
+
+    const int sampleCount = 32;
+    float stepSize = atmospherePathLength / sampleCount;
+    
+    vec3 color = vec3(0.f);
+     
+    vec3 sun = vec3(sunStrengthExposed);
+    
+    vec3 L = g_sunDirection.xyz;
+    float VoL = dot(V, L);
+    float phaseRayleigh = phaseRayleigh(VoL);
+    
+    float g = 0.75f;
+    float phaseMie = phaseGreenstein(VoL, g);
+    //phaseMie = phaseSchlick(VoL, g);
+    
+    vec3 currentPosition = atmoshpereIntersection;
+    for(int i = 0; i < sampleCount; i++){
+        float currentHeight = max(distance(currentPosition, earthCenter) - earthRadius, 0);
+         
+        //light arriving at point
+        vec2 lutUV;
+        lutUV.x = currentHeight / atmosphereHeight;
+        vec3 up = normalize(currentPosition - earthCenter);
+        lutUV.y = dot(up, L) * 0.5 + 0.5;
+        vec3 transmission = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
+        vec3 incomingLight = sun * transmission;
+         
+        //inscattering from light at point
+        vec3 scatteringRayleigh = scatteringRayleighGround * rayleighHeightFactor(currentHeight);
+          
+        float mieFactor = mieHeightFactor(currentHeight);
+        float scatteringMie = scatteringMieGround * mieFactor;
+        
+        vec3 inscatteringRayleight = scatteringRayleigh * stepSize * incomingLight * phaseRayleigh;
+        vec3 inscatteringMie = scatteringMie * stepSize * incomingLight * phaseMie;
+        color += inscatteringRayleight + inscatteringMie;
+        
+        //absorption from segment
+        vec3 extinctionRayleigh = extinctionRayleighGround * rayleighHeightFactor(currentHeight);
+        float extinctionMie = extinctionMieGround * mieFactor; 
+        vec3 extinctionOzone = ozoneExtinction * ozoneHeightFactor(currentHeight);
+        vec3 opticalDepth = (extinctionMie + extinctionRayleigh + extinctionOzone) * stepSize;
+        vec3 absorption = exp(-opticalDepth); 
+        color *= absorption;
+         
+        currentPosition -= stepSize * V;
+    } 
+    if(isnan(color.x)){
+        color = vec3(1, 0, 0);
+    }
+    imageStore(skyLut, uv, vec4(color, 0.f));
+}

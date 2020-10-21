@@ -31,6 +31,9 @@ const uint32_t skyTextureMipCount = 8;
 const uint32_t brdfLutRes = 512;
 const uint32_t nHistogramBins = 128;
 const uint32_t shadowCascadeCount = 4;
+const uint32_t skyTransmissionLutResolution = 128;
+const uint32_t skyLutWidth = 1280;
+const uint32_t skyLutHeight = 720;
 
 const uint32_t histogramTileSizeX = 32;
 const uint32_t histogramTileSizeY = 32;
@@ -39,7 +42,6 @@ const uint32_t  skyShadowMapRes = 1024;
 const uint32_t  skyOcclusionVolumeMaxRes = 256;
 const float     skyOcclusionTargetDensity = 0.5f; //meter/texel
 const uint32_t  skyOcclusionSampleCount = 1024;
-
 
 void resizeCallback(GLFWwindow* window, int width, int height) {
     RenderFrontend* frontEnd = reinterpret_cast<RenderFrontend*>(glfwGetWindowUserPointer(window));
@@ -513,20 +515,60 @@ void RenderFrontend::computeColorBufferHistogram() const {
 }
    
 void RenderFrontend::renderSky(const bool drewDebugPasses) const {
-    const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
-    const auto skySamplerResource = SamplerResource(m_cubeSampler, 1);
-    const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 2);
+    gRenderBackend.setUniformBufferData(
+        m_atmosphereSettingsBuffer, 
+        &m_atmosphereSettings, 
+        sizeof(m_atmosphereSettings));
+    //compute transmission lut
+    {
+        ImageResource lutResource(m_skyTransmissionLut, 0, 0);
+        UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 1);
 
-    RenderPassExecution skyPassExecution;
-    skyPassExecution.handle = m_skyPass;
-    skyPassExecution.resources.storageBuffers = { lightBufferResource };
-    skyPassExecution.resources.sampledImages = { skyTextureResource };
-    skyPassExecution.resources.samplers = { skySamplerResource };
-    skyPassExecution.parents = { m_mainPass };
-    if (drewDebugPasses) {
-        skyPassExecution.parents.push_back(m_debugGeoPass);
+        RenderPassExecution skyTransmissionLutExecution;
+        skyTransmissionLutExecution.handle = m_skyTransmissionLutPass;
+        skyTransmissionLutExecution.resources.storageImages = { lutResource };
+        skyTransmissionLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
+        skyTransmissionLutExecution.dispatchCount[0] = skyTransmissionLutResolution / 8;
+        skyTransmissionLutExecution.dispatchCount[1] = skyTransmissionLutResolution / 8;
+        skyTransmissionLutExecution.dispatchCount[2] = 1;
+        gRenderBackend.setRenderPassExecution(skyTransmissionLutExecution);
     }
-    gRenderBackend.setRenderPassExecution(skyPassExecution);
+    //compute sky lut
+    {
+        ImageResource lutResource(m_skyLut, 0, 0);
+        ImageResource lutTransmissionResource(m_skyTransmissionLut, 0, 1);
+        SamplerResource lutSampler(m_lutSampler, 2);
+        UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 3);
+        StorageBufferResource lightBufferResource(m_lightBuffer, true, 4);
+
+        RenderPassExecution skyLutExecution;
+        skyLutExecution.handle = m_skyLutPass;
+        skyLutExecution.resources.storageImages = { lutResource };
+        skyLutExecution.resources.sampledImages = { lutTransmissionResource };
+        skyLutExecution.resources.samplers = { lutSampler };
+        skyLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
+        skyLutExecution.resources.storageBuffers = { lightBufferResource };
+        skyLutExecution.dispatchCount[0] = skyLutWidth / 8;
+        skyLutExecution.dispatchCount[1] = skyLutHeight / 8;
+        skyLutExecution.dispatchCount[2] = 1;
+        skyLutExecution.parents = { m_skyTransmissionLutPass };
+        gRenderBackend.setRenderPassExecution(skyLutExecution);
+    }
+    //render skybox
+    {
+        const ImageResource skyLutResource (m_skyLut, 0, 0);
+        const SamplerResource skySamplerResource (m_lutSampler, 1);
+
+        RenderPassExecution skyPassExecution;
+        skyPassExecution.handle = m_skyPass;
+        skyPassExecution.resources.sampledImages = { skyLutResource };
+        skyPassExecution.resources.samplers = { skySamplerResource };
+        skyPassExecution.parents = { m_mainPass,  m_skyLutPass };
+        if (drewDebugPasses) {
+            skyPassExecution.parents.push_back(m_debugGeoPass);
+        }
+        gRenderBackend.setRenderPassExecution(skyPassExecution);
+    }
 }
 
 void RenderFrontend::renderSunShadowCascades() const {
@@ -1260,6 +1302,36 @@ void RenderFrontend::initImages() {
 
         m_brdfLut = gRenderBackend.createImage(desc);
     }
+    //sky transmission lut
+    {
+        ImageDescription desc;
+        desc.width = skyTransmissionLutResolution;
+        desc.height = skyTransmissionLutResolution;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::R11G11B10_uFloat;
+        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
+
+        m_skyTransmissionLut = gRenderBackend.createImage(desc);
+    }
+    //sky lut
+    {
+        ImageDescription desc;
+        desc.width = skyLutWidth;
+        desc.height = skyLutHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::R11G11B10_uFloat;
+        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
+
+        m_skyLut = gRenderBackend.createImage(desc);
+    }
     //min/max depth pyramid
     {
         ImageDescription desc;
@@ -1454,6 +1526,12 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         UniformBufferDescription desc;
         desc.size = sizeof(SkyOcclusionRenderData);
         m_skyOcclusionDataBuffer = gRenderBackend.createUniformBuffer(desc);
+    }
+    //sky atmosphere settings
+    {
+        UniformBufferDescription desc;
+        desc.size = sizeof(AtmosphereSettings);
+        m_atmosphereSettingsBuffer = gRenderBackend.createUniformBuffer(desc);
     }
 }
 
@@ -1653,6 +1731,20 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         diffuseConvolutionDesc.name = "Diffuse probe convolution";
         diffuseConvolutionDesc.shaderDescription.srcPathRelative = "diffuseCubeConvolution.comp";
         m_diffuseConvolutionPass = gRenderBackend.createComputePass(diffuseConvolutionDesc);
+    }
+    //sky transmission lut creation pass
+    {
+        ComputePassDescription skyTransmissionLutPassDesc;
+        skyTransmissionLutPassDesc.name = "Sky transmission lut";
+        skyTransmissionLutPassDesc.shaderDescription.srcPathRelative = "skyTransmissionLut.comp";
+        m_skyTransmissionLutPass = gRenderBackend.createComputePass(skyTransmissionLutPassDesc);
+    }
+    //sky lut creation pass
+    {
+        ComputePassDescription skyLutPassDesc;
+        skyLutPassDesc.name = "Sky lut";
+        skyLutPassDesc.shaderDescription.srcPathRelative = "skyLut.comp";
+        m_skyLutPass = gRenderBackend.createComputePass(skyLutPassDesc);
     }
     //sky pass
     {
