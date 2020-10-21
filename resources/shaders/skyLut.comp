@@ -49,16 +49,16 @@ void main(){
     
     vec3 V = fromSkyLut(vec2(x, y)); //from camera to sky
     
-    vec3 earthCenter = vec3(0);
-    vec3 P = vec3(0, -earthRadius, 0);
-    vec3 atmoshpereIntersection = rayFromInsideSphereIntersection(P, V, earthCenter, earthRadius + atmosphereHeight);
-    float atmospherePathLength = distance(atmoshpereIntersection, P); 
-
+    vec3 earthCenter = vec3(0); 
+    vec3 P = vec3(0, -earthRadius - 1, 0); //need to offset to avoid self intersection with earth
+    vec3 intersection = rayEarthIntersection(P, V, earthCenter, earthRadius, atmosphereHeight);
+    float pathLength = distance(intersection, P); 
+    
     const int sampleCount = 32;
-    float stepSize = atmospherePathLength / sampleCount;
+    float stepSize = pathLength / sampleCount; 
     
     vec3 color = vec3(0.f);
-     
+      
     vec3 sun = vec3(sunStrengthExposed);
     
     vec3 L = g_sunDirection.xyz;
@@ -68,10 +68,10 @@ void main(){
     float g = 0.75f;
     float phaseMie = phaseGreenstein(VoL, g);
     //phaseMie = phaseSchlick(VoL, g);
-    
-    vec3 currentPosition = atmoshpereIntersection;
+     
+    vec3 currentPosition = intersection;
     for(int i = 0; i < sampleCount; i++){
-        float currentHeight = max(distance(currentPosition, earthCenter) - earthRadius, 0);
+        float currentHeight = distance(currentPosition, earthCenter) - earthRadius;
          
         //light arriving at point
         vec2 lutUV;
@@ -101,8 +101,5 @@ void main(){
          
         currentPosition -= stepSize * V;
     } 
-    if(isnan(color.x)){
-        color = vec3(1, 0, 0);
-    }
     imageStore(skyLut, uv, vec4(color, 0.f));
 }

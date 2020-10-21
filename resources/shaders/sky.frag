@@ -41,10 +41,7 @@ float phaseRayleigh(float VoL){
     return 3.f / (16.f * 3.1415f) * (1.f + VoL * VoL);
 }
 
-void main(){
-	//color = texture(samplerCube(skyTexture, skySampler), passPos).rgb;    
-    //color *= skyStrengthExposed;
-    
+void main(){    
     vec3 V = normalize(passPos); //from camera to sky
     vec2 uv = toSkyLut(V);
      
