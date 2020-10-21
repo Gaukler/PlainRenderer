@@ -3,13 +3,14 @@
 
 glm::vec3 directionToVector(const glm::vec2 direction) {
 
-    const float theta   = direction.y / 180.f * 3.1415f;
-    const float phi     = direction.x / 180.f * 3.1415f;
+    const float theta   = glm::radians(direction.y);
+    const float phi     = glm::radians(direction.x);
 
     glm::vec3 vec;
     vec.x = sin(theta) * cos(phi);
-    vec.y = sin(theta) * sin(phi);
-    vec.z = cos(theta);
+    vec.y = -cos(theta);
+    vec.z = sin(theta) * sin(phi);
+    
     return vec;
 }
 
