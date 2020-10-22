@@ -30,7 +30,7 @@ layout(location = 0) out vec3 color;
 float phaseGreenstein(float VoL, float g){
     return (1.f - g * g) / (4.f * 3.1415f * pow(1.f + g * g - 2.f * g * VoL, 1.5f));
 }
-
+    
 //approximates greenstein, has sign error
 float phaseSchlick(float VoL, float g){
     float k = 1.55f * g - 0.55f * g * g * g;
@@ -41,7 +41,7 @@ float phaseRayleigh(float VoL){
     return 3.f / (16.f * 3.1415f) * (1.f + VoL * VoL);
 }
 
-void main(){    
+void main(){     
     vec3 V = normalize(passPos); //from camera to sky
     vec2 uv = toSkyLut(V);
      

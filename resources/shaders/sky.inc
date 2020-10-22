@@ -41,13 +41,21 @@ vec3 rayEarthIntersection(vec3 P, vec3 D, vec3 C, float earthRadius, float atmos
 }
 
 vec2 toSkyLut(vec3 V){
-    float theta = acos(-V.y);
+    float theta = acos(-(V.y));     //[0, pi]
+    float y = theta / 3.1415f;      //[0, 1]
+    float y_lowRange = y * 2 - 1;   //[-1, 1]
+    float y_lowRangeScaled = sign(y_lowRange) * sqrt(abs(y_lowRange)); //[-1, 1]
+    y = y_lowRangeScaled * 0.5 + 0.5;
+    
 	float phi = -atan(V.z, V.x);
-	return vec2(phi / (2.f * 3.1415) + 0.5f, theta / 3.1415f);
+	return vec2(phi / (2.f * 3.1415) + 0.5f, y);
 }
 
 vec3 fromSkyLut(vec2 uv){
-    float theta = ((1-uv.y) - 0.5) * 3.1415 + 3.1415 * 0.5;
+    float theta = (1 - uv.y) - 0.5; //[-0.5, 0.5]
+    theta = sign(theta) * theta * theta * 2.f;
+    theta *= 3.1415;                //[-pi/2, pi/2]
+    theta += 3.1415 * 0.5;          //[0, pi]
     float phi = (-uv.x + 0.5) * 2 * 3.1415;
     return vec3(sin(theta) * cos(phi), cos(theta), sin(theta) * sin(phi));
 }
