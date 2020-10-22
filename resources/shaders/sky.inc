@@ -27,16 +27,15 @@ vec3 rayEarthIntersection(vec3 P, vec3 D, vec3 C, float earthRadius, float atmos
     
     //earth intersection
     float t_hc_earth = sqrt(earthRadius * earthRadius - d * d);
-    float t_earth = t_ca + t_hc_earth; //different sign than earth because its from outside
+    float t_earth = t_ca - t_hc_earth; //from outside, so uses different sign
     
     //atmosphere intersection
     float r = earthRadius + atmosphere;
     float t_hc_atmosphere = sqrt(r * r - d * d);
-    float t_atmosphere = t_ca - t_hc_atmosphere;
+    float t_atmosphere = t_ca + abs(t_hc_atmosphere);
     
     //if ray intersect with earth in front then view is blocked by earth
-    float t = t_earth < 0 ? t_earth : t_atmosphere; 
-
+    float t = t_earth > 0 ? t_earth : t_atmosphere; 
     return P + t * D;
 }
 

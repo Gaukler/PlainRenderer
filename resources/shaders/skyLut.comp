@@ -42,16 +42,15 @@ float phaseRayleigh(float VoL){
 }
 
 float shadowRay(vec3 P, vec3 D, vec3 C, float earthRadius){
-    P.y -= 0.01f;
     vec3 L = C - P;
     float t_ca = dot(L, D);
     float d = sqrt(dot(L, L) - t_ca * t_ca);
     
     //earth intersection
     float t_hc_earth = sqrt(earthRadius * earthRadius - d * d);
-    float t_earth = t_ca + t_hc_earth; 
+    float t_earth = t_ca - t_hc_earth; 
     
-    return t_earth < 0 ? 0 : 1; 
+    return t_earth > 0 ? 0 : 1; 
 }
 
 void main(){
@@ -59,11 +58,11 @@ void main(){
     
     float x = uv.x / float(imageSize(skyLut).x);
     float y = uv.y / float(imageSize(skyLut).y);
-     
+    
     vec3 V = fromSkyLut(vec2(x, y)); //from camera to sky
     
     vec3 earthCenter = vec3(0); 
-    vec3 P = vec3(0, -earthRadius - 0.1f, 0); //need to offset to avoid self intersection with earth
+    vec3 P = vec3(0, -earthRadius - 0.02f, 0); //need to offset to avoid self intersection with earth
     vec3 intersection = rayEarthIntersection(P, V, earthCenter, earthRadius, atmosphereHeight);
     float pathLength = distance(intersection, P); 
       
@@ -81,7 +80,7 @@ void main(){
     float g = 0.75f;
     float phaseMie = phaseGreenstein(VoL, g);
     //phaseMie = phaseSchlick(VoL, g);
-     
+      
     vec3 currentPosition = intersection;
     for(int i = 0; i < sampleCount; i++){
         float currentHeight = distance(currentPosition, earthCenter) - earthRadius;
@@ -100,10 +99,11 @@ void main(){
           
         float mieFactor = mieHeightFactor(currentHeight);
         float scatteringMie = scatteringMieGround * mieFactor;
-        
+          
         vec3 inscatteringRayleight = scatteringRayleigh * stepSize * incomingLight * phaseRayleigh;
         vec3 inscatteringMie = scatteringMie * stepSize * incomingLight * phaseMie;
         color += inscatteringRayleight + inscatteringMie;
+       
         
         //absorption from segment
         vec3 extinctionRayleigh = extinctionRayleighGround * rayleighHeightFactor(currentHeight);
@@ -114,6 +114,6 @@ void main(){
         color *= absorption;
          
         currentPosition -= stepSize * V;
-    } 
+    }   
     imageStore(skyLut, uv, vec4(color, 0.f));
 }
