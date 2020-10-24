@@ -9,9 +9,10 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 0, r11f_g11f_b10f) uniform image2D skyLut;
 layout(set=1, binding = 1) uniform texture2D transmissionLut;
-layout(set=1, binding = 2) uniform sampler skySampler;
+layout(set=1, binding = 2) uniform texture2D multiscatterLut;
+layout(set=1, binding = 3) uniform sampler skySampler;
 
-layout(set=1, binding = 3, std140) uniform atmosphereSettings{
+layout(set=1, binding = 4, std140) uniform atmosphereSettings{
     vec3 scatteringRayleighGround;
     float earthRadius;
     vec3 extinctionRayleighGround;
@@ -21,7 +22,7 @@ layout(set=1, binding = 3, std140) uniform atmosphereSettings{
     float extinctionMieGround;
 };
 
-layout(set=1, binding = 4, std430) buffer lightBuffer{
+layout(set=1, binding = 5, std430) buffer lightBuffer{
     float previousFrameExposure;
     float sunStrengthExposed;
     float skyStrengthExposed;
@@ -39,6 +40,12 @@ float phaseSchlick(float VoL, float g){
 
 float phaseRayleigh(float VoL){
     return 3.f / (16.f * 3.1415f) * (1.f + VoL * VoL);
+}
+
+float cornetteShanksPhase(float VoL, float g){
+    float nominator = 3.f / (8.f * 3.1415f) * (1 - g * g) * (1 + VoL * VoL);
+    float denominator = (2 + g * g) * pow(1 + g * g - 2 * g * VoL, 1.5f);
+    return nominator / denominator;
 }
 
 float shadowRay(vec3 P, vec3 D, vec3 C, float earthRadius){
@@ -63,25 +70,39 @@ void main(){
     
     vec3 earthCenter = vec3(0); 
     vec3 P = vec3(0, -earthRadius - 0.02f, 0); //need to offset to avoid self intersection with earth
-    vec3 intersection = rayEarthIntersection(P, V, earthCenter, earthRadius, atmosphereHeight);
-    float pathLength = distance(intersection, P); 
+    Intersection intersection = rayEarthIntersection(P, V, earthCenter, earthRadius, atmosphereHeight);
+    float pathLength = distance(intersection.pos, P); 
       
-    const int sampleCount = 32;
+    const int sampleCount = 30;
     float stepSize = pathLength / sampleCount; 
-     
-    vec3 color = vec3(0.f);
-      
-    vec3 sun = vec3(sunStrengthExposed);
     
+    vec3 sun = vec3(sunStrengthExposed);
     vec3 L = g_sunDirection.xyz;
+    
+    vec3 earthAlbedo = vec3(0.3);
+    vec3 earthHitNormal = normalize(intersection.pos - earthCenter);
+    float earthNoL = clamp(dot(earthHitNormal, L), 0, 1);
+    vec2 lutUV;
+    lutUV.x = 0;
+    vec3 up = normalize(intersection.pos - earthCenter);
+    lutUV.y = dot(up, L) * 0.5 + 0.5;
+    vec3 transmission = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
+    vec3 incomingLight = sun * transmission;
+    vec3 earthLit = earthAlbedo / 3.1415 * incomingLight * earthNoL;
+    vec3 color = intersection.hitEarth ? earthLit : vec3(0.f);
+    color = vec3(0);
+    
     float VoL = dot(V, L);
     float phaseRayleigh = phaseRayleigh(VoL);
     
     float g = 0.75f;
     float phaseMie = phaseGreenstein(VoL, g);
-    //phaseMie = phaseSchlick(VoL, g);
-      
-    vec3 currentPosition = intersection;
+    phaseMie = cornetteShanksPhase(VoL, g);
+    //phaseMie = phaseSchlick(-VoL, g);
+
+    vec3 currentPosition = P;
+    vec3 absorption = vec3(1.f);
+    
     for(int i = 0; i < sampleCount; i++){
         float currentHeight = distance(currentPosition, earthCenter) - earthRadius;
          
@@ -93,27 +114,32 @@ void main(){
         vec3 transmission = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
         vec3 incomingLight = sun * transmission;
         incomingLight *= shadowRay(currentPosition, L, earthCenter, earthRadius);
-         
-        //inscattering from light at point
-        vec3 scatteringRayleigh = scatteringRayleighGround * rayleighHeightFactor(currentHeight);
-          
-        float mieFactor = mieHeightFactor(currentHeight);
-        float scatteringMie = scatteringMieGround * mieFactor;
-          
-        vec3 inscatteringRayleight = scatteringRayleigh * stepSize * incomingLight * phaseRayleigh;
-        vec3 inscatteringMie = scatteringMie * stepSize * incomingLight * phaseMie;
-        color += inscatteringRayleight + inscatteringMie;
-       
         
         //absorption from segment
+        float mieFactor = mieHeightFactor(currentHeight);
+        float scatteringMieCo = scatteringMieGround * mieFactor;
+        
         vec3 extinctionRayleigh = extinctionRayleighGround * rayleighHeightFactor(currentHeight);
         float extinctionMie = extinctionMieGround * mieFactor; 
         vec3 extinctionOzone = ozoneExtinction * ozoneHeightFactor(currentHeight);
-        vec3 opticalDepth = (extinctionMie + extinctionRayleigh + extinctionOzone) * stepSize;
-        vec3 absorption = exp(-opticalDepth); 
-        color *= absorption;
-         
-        currentPosition -= stepSize * V;
+        vec3 extinctionCo = (extinctionMie + extinctionRayleigh + extinctionOzone);
+        
+        //inscattering from light at point
+        vec3 scatteringRayleighCo = scatteringRayleighGround * rayleighHeightFactor(currentHeight);
+        vec3 inscatteringRayleight = scatteringRayleighCo * incomingLight * phaseRayleigh;
+        
+        vec3 inscatteringMie = scatteringMieCo * incomingLight * phaseMie;
+        vec3 inscattering = inscatteringRayleight + inscatteringMie;
+        
+        vec3 scatterIntegral = (inscattering - inscattering * exp(-extinctionCo * stepSize)) / extinctionCo;
+        color += scatterIntegral * absorption; 
+        
+        absorption *= exp(-extinctionCo * stepSize); 
+        
+        vec3 multiscattering = texture(sampler2D(multiscatterLut, skySampler), lutUV).rgb;
+        color += multiscattering * incomingLight * (scatteringRayleighCo + scatteringMieCo) * stepSize * transmission;
+        
+        currentPosition += stepSize * V;
     }   
     imageStore(skyLut, uv, vec4(color, 0.f));
 }

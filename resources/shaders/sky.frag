@@ -50,7 +50,7 @@ void main(){
     vec3 L = g_sunDirection.xyz;
     float VoL = dot(V, L);
     float sunDisk = pow(max(VoL, 0), 1000);
-    if(sunDisk > 0.8){
+    if(sunDisk > 0.99){
         color += vec3(10);
     }
 }

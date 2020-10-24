@@ -20,7 +20,12 @@ vec3 rayFromInsideSphereIntersection(vec3 P, vec3 D, vec3 C, float r){
     return P + t * D;
 }
 
-vec3 rayEarthIntersection(vec3 P, vec3 D, vec3 C, float earthRadius, float atmosphere){
+struct Intersection{
+    vec3 pos;
+    bool hitEarth;
+};
+
+Intersection rayEarthIntersection(vec3 P, vec3 D, vec3 C, float earthRadius, float atmosphere){
     vec3 L = C - P;
     float t_ca = dot(L, D);
     float d = sqrt(dot(L, L) - t_ca * t_ca);
@@ -35,8 +40,11 @@ vec3 rayEarthIntersection(vec3 P, vec3 D, vec3 C, float earthRadius, float atmos
     float t_atmosphere = t_ca + abs(t_hc_atmosphere);
     
     //if ray intersect with earth in front then view is blocked by earth
-    float t = t_earth > 0 ? t_earth : t_atmosphere; 
-    return P + t * D;
+    Intersection result;
+    result.hitEarth = t_earth > 0;
+    float t = result.hitEarth ? t_earth : t_atmosphere; 
+    result.pos = P + t * D;
+    return result;
 }
 
 vec2 toSkyLut(vec3 V){

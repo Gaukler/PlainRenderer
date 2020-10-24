@@ -167,6 +167,7 @@ private:
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
     RenderPassHandle m_skyTransmissionLutPass;
+    RenderPassHandle m_skyMultiscatterLutPass;
     RenderPassHandle m_skyLutPass;
     RenderPassHandle m_skyPass;
     RenderPassHandle m_toCubemapPass;
@@ -198,6 +199,7 @@ private:
     ImageHandle m_diffuseProbe;
     ImageHandle m_specularProbe;
     ImageHandle m_skyTransmissionLut;
+    ImageHandle m_skyMultiscatterLut;
     ImageHandle m_skyLut;
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
