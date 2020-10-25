@@ -1,3 +1,13 @@
+struct AtmosphereSettings{
+    vec3 scatteringRayleighGround;
+    float earthRadius;
+    vec3 extinctionRayleighGround;
+    float atmosphereHeight;
+    vec3 ozoneExtinction;
+    float scatteringMieGround;
+    float extinctionMieGround;
+};
+
 float rayleighHeightFactor(float height){
     return exp(-height * (1.f / 8));
 }
@@ -8,6 +18,28 @@ float mieHeightFactor(float height){
 
 float ozoneHeightFactor(float height){
     return max(0, 1 - abs(height - 25.f) / 15.f);
+}
+
+struct AtmosphereCoefficients{
+    vec3 scatterRayleigh;
+    vec3 scatterMie;
+    vec3 extinction;
+};
+
+AtmosphereCoefficients calculateCoefficients(float height, AtmosphereSettings atmosphere){
+    float rayleighFactor = rayleighHeightFactor(height);
+    float mieFactor = mieHeightFactor(height);
+    float ozoneFactor = ozoneHeightFactor(height);
+    
+    AtmosphereCoefficients coefficients;
+    coefficients.scatterRayleigh    = rayleighFactor    * atmosphere.scatteringRayleighGround;
+    coefficients.scatterMie         = vec3(mieFactor)   * atmosphere.scatteringMieGround;
+    coefficients.extinction = 
+        rayleighFactor  * atmosphere.extinctionRayleighGround + 
+        mieFactor       * atmosphere.extinctionMieGround + 
+        ozoneFactor     * atmosphere.ozoneExtinction;
+    
+    return coefficients;
 }
 
 //see https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection
@@ -22,6 +54,7 @@ vec3 rayFromInsideSphereIntersection(vec3 P, vec3 D, vec3 C, float r){
 
 struct Intersection{
     vec3 pos;
+    float distance;
     bool hitEarth;
 };
 
@@ -43,6 +76,7 @@ Intersection rayEarthIntersection(vec3 P, vec3 D, vec3 C, float earthRadius, flo
     Intersection result;
     result.hitEarth = t_earth > 0;
     float t = result.hitEarth ? t_earth : t_atmosphere; 
+    result.distance = t;
     result.pos = P + t * D;
     return result;
 }
@@ -65,4 +99,17 @@ vec3 fromSkyLut(vec2 uv){
     theta += 3.1415 * 0.5;          //[0, pi]
     float phi = (-uv.x + 0.5) * 2 * 3.1415;
     return vec3(sin(theta) * cos(phi), cos(theta), sin(theta) * sin(phi));
+}
+
+//reference: "Physically Based and Unified Volumetric Rendering in Frostbite", page 29
+vec3 integrateInscattering(vec3 inscattering, vec3 extinctionCoefficients, float length){
+    return (inscattering - inscattering * exp(-extinctionCoefficients * length)) / extinctionCoefficients;
+}
+
+vec2 computeLutUV(float height, float atmoshphereHeight, vec3 position, vec3 earthCenter, vec3 direction){
+    vec2 lutUV;
+    lutUV.x = height / atmoshphereHeight;
+    vec3 up = normalize(position - earthCenter);
+    lutUV.y = dot(up, direction) * 0.5 + 0.5;
+    return lutUV;
 }

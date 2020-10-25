@@ -11,14 +11,8 @@ layout(set=1, binding = 0, r11f_g11f_b10f) uniform image2D multiscatterLut;
 layout(set=1, binding = 1) uniform texture2D transmissionLut;
 layout(set=1, binding = 2) uniform sampler skySampler;
 
-layout(set=1, binding = 3, std140) uniform atmosphereSettings{
-    vec3 scatteringRayleighGround;
-    float earthRadius;
-    vec3 extinctionRayleighGround;
-    float atmosphereHeight;
-    vec3 ozoneExtinction;
-    float scatteringMieGround;
-    float extinctionMieGround;
+layout(set=1, binding = 3, std140) uniform atmosphereSettingsBuffer{
+    AtmosphereSettings atmosphereSettings;
 };
 
 void main(){
@@ -27,8 +21,8 @@ void main(){
     float x = uv.x / float(imageSize(multiscatterLut).x);
     float y = uv.y / float(imageSize(multiscatterLut).y);
     
-    float height = mix(0, atmosphereHeight, x);
-    vec3 P = vec3(0, -height - earthRadius, 0);
+    float height = mix(0, atmosphereSettings.atmosphereHeight, x);
+    vec3 P = vec3(0, -height - atmosphereSettings.earthRadius, 0);
     vec3 earthCenter = vec3(0);
     
     float upDot = y * 2 - 1;
@@ -51,19 +45,17 @@ void main(){
             float innerSampleCount = 20;
             
             vec3 inscattered = vec3(0.f);
-            Intersection intersection = rayEarthIntersection(P, V, earthCenter, earthRadius, atmosphereHeight);
+            Intersection intersection = rayEarthIntersection(P, V, earthCenter, atmosphereSettings.earthRadius, atmosphereSettings.atmosphereHeight);
             vec3 currentPosition = P;
-            float stepSize = distance(intersection.pos, P) / innerSampleCount;
+            float stepSize = intersection.distance / innerSampleCount;
             
             vec3 L_f = vec3(0.f);
             
             vec3 earthAlbedo = vec3(0.3);
             vec3 earthHitNormal = normalize(intersection.pos - earthCenter);
             float earthNoL = clamp(dot(earthHitNormal, L), 0, 1);
-            vec2 lutUV;
-            lutUV.x = 0;
-            vec3 up = normalize(intersection.pos - earthCenter);
-            lutUV.y = dot(up, L) * 0.5 + 0.5;
+            
+            vec2 lutUV = computeLutUV(0, atmosphereSettings.atmosphereHeight, intersection.pos, earthCenter, L);
             vec3 transmissionToIntersection = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
             vec3 incomingLight = transmissionToIntersection;
             vec3 earthLit = earthAlbedo / 3.1415 * incomingLight * earthNoL;
@@ -73,37 +65,28 @@ void main(){
             
             for(int i = 0; i < innerSampleCount; i++){
                 
-                float currentHeight = max(distance(currentPosition, earthCenter) - earthRadius, 0);
+                currentPosition += stepSize * V;
                 
-                //extinction coefficients
-                vec3 rayleighExtinction = extinctionRayleighGround * rayleighHeightFactor(currentHeight);
-                float mieExtinction = extinctionMieGround * mieHeightFactor(currentHeight);
-                vec3 ozoneExtinctionCo = ozoneExtinction * ozoneHeightFactor(currentHeight);
-                vec3 extinctionCo = rayleighExtinction + mieExtinction + ozoneExtinctionCo;
+                float currentHeight = max(distance(currentPosition, earthCenter) - atmosphereSettings.earthRadius, 0);
                 
-                //scattering coefficients
-                vec3 rayleighScattering = scatteringRayleighGround * rayleighHeightFactor(currentHeight);
-                float mieScattering = scatteringMieGround * mieHeightFactor(currentHeight);
-                vec3 scatteringCo = rayleighScattering + mieScattering;
+                AtmosphereCoefficients coefficients = calculateCoefficients(height, atmosphereSettings);
+
+                vec3 scatteringCo = coefficients.scatterRayleigh + coefficients.scatterMie;
                  
                 //light arriving at point
-                vec2 lutUV;
-                lutUV.x = currentHeight / atmosphereHeight;
-                vec3 up = normalize(currentPosition - earthCenter);
-                lutUV.y = dot(up, L) * 0.5 + 0.5;
+                vec2 lutUV = computeLutUV(currentHeight, atmosphereSettings.atmosphereHeight, currentPosition, earthCenter, L);
                 vec3 transmissionSun = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
                 
                 vec3 inscatteredLight = scatteringCo * transmissionSun * isotropicPhase;
                 
                 //inscattering from light at point
-                vec3 scatterIntegral = (inscatteredLight - inscatteredLight * exp(-extinctionCo * stepSize)) / extinctionCo;
+                vec3 scatterIntegral = integrateInscattering(inscatteredLight, coefficients.extinction, stepSize);
                 inscattered += scatterIntegral * transmission;
                  
-                vec3 coefficientIntegral = (scatteringCo - scatteringCo * exp(-extinctionCo * stepSize)) / extinctionCo;
+                vec3 coefficientIntegral = integrateInscattering(scatteringCo, coefficients.extinction, stepSize);
                 L_f += coefficientIntegral * transmission;
                 
-                transmission *= exp(-extinctionCo * stepSize);
-                currentPosition += stepSize * V;
+                transmission *= exp(-coefficients.extinction * stepSize);
             }   
             direct *= transmission;
             
