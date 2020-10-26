@@ -1,8 +1,7 @@
 float D_GGX(const float NoH, const float r){
-	float PI = 3.1415;    
 	float a = NoH * r;
     float k = r / (1.0 - NoH * NoH + a * a);
-    return k * k * (1.0 / PI);
+    return k * k * (1.0 / pi);
 }
 
 /*
@@ -46,7 +45,7 @@ vec3 DisneyDiffuse(vec3 diffuseColor, float NoL, float VoH, float NoV, float r){
     float energyBias = mix(0.f, 0.5f, r);
     float energyFactor = mix(1.f, 1.f / 1.51f, r);
     float fresnelDiffuse90Biased = energyBias + 2.f * VoH * VoH * r;
-    return diffuseColor / 3.1415f * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90Biased), NoL) * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90Biased), NoV) * energyFactor;
+    return diffuseColor / pi * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90Biased), NoL) * F_Schlick(vec3(1.f), vec3(fresnelDiffuse90Biased), NoV) * energyFactor;
 }
 
 //conversion from roughness to gloss computed from papers gloss to roughness formula
@@ -58,7 +57,7 @@ vec3 CoDWWIIDiffuse(vec3 diffuseColor, float NoL, float VoH, float NoV, float No
     float t = clamp(2.2f * g - 0.5f, 0.f, 1.f);
     float fd = f0Diffuse + (f1 - f0Diffuse) * t;
     float fb = (34.5f * g * g - 59.f * g + 24.5f) * VoH * pow(2.f, -max(73.2f * g - 21.2f, 8.9f) * sqrt(NoH));
-    return diffuseColor / 3.1415f * (fd + fb);
+    return diffuseColor / pi * (fd + fb);
 }
 
 float Titanfall2DiffuseSingleComponent(float NoL, float LoV, float NoV, float NoH, float r){
@@ -66,7 +65,7 @@ float Titanfall2DiffuseSingleComponent(float NoL, float LoV, float NoV, float No
     float rough = facing * (0.9f - 0.4f * facing) * (0.5f + NoH) / max(NoH, 0.03f);
     float smoothDiffuse = 1.05f *   (1.f - pow(1.f - NoL, 5.f)) * 
                                     (1.f - pow(1.f - NoV, 5.f));
-    return 1.f / 3.1415f * mix(smoothDiffuse, rough, r);
+    return 1.f / pi * mix(smoothDiffuse, rough, r);
 }
 
 vec3 Titanfall2Diffuse(vec3 diffuseColor, float NoL, float LoV, float NoV, float NoH, float r){

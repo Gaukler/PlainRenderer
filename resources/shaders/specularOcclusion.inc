@@ -1,6 +1,6 @@
 //see: https://en.wikipedia.org/wiki/Spherical_cap#Volume_and_surface_area
 float computeSphericalCapArea(float radius){
-    return 2 * 3.1415 - 2 * 3.1415 * cos(radius);
+    return 2 * pi - 2 * pi * cos(radius);
 }
 
 //from: "Ambient Aperture Lighting"

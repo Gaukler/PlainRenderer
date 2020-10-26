@@ -42,7 +42,7 @@ void main(){
 			float pdf = max(D_GGX(NoH, r) * NoH / (VoH * 4.f), 0.001f);
 			float omega_s = 1.f / (pdf * samples);
 			float cubeRes = float(textureSize(samplerCube(cubeTexture, cubeSampler), 0).x);
-			float omega_p = 4.f * 3.1415f / (6.f * cubeRes * cubeRes);
+			float omega_p = 4.f * pi / (6.f * cubeRes * cubeRes);
 			
             //log_4(2) = 2, as log_2(x) / log_2(y) = log_y(x) we can use log2(x) * 0.5 = log4(x) 
 			float lod = log2(K * omega_s / omega_p) * 0.5f;

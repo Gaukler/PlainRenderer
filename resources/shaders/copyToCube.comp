@@ -2,6 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
 
+#include "global.inc"
 #include "cubemap.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
@@ -17,7 +18,7 @@ void main(){
 	
 	const float theta = acos(-N.y);
 	const float phi = -atan(N.z, N.x);
-	const vec2 samplePoint = vec2(phi / (2.f * 3.1415) + 0.5f, theta / 3.1415f);
+	const vec2 samplePoint = vec2(phi / (2.f * pi) + 0.5f, theta / pi);
 	
 	
 	vec3 color = texture(sampler2D(hdrTexture, hdrSampler), samplePoint).rgb;

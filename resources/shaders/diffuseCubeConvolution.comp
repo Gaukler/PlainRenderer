@@ -32,10 +32,10 @@ void main(){
 			compute load for pre-filtering
 			*/
 			float K = 4.f;
-			float pdf = NoL * (1.f / 3.1415);
+			float pdf = NoL * (1.f / pi);
 			float omega_s = 1.f / pdf;
 			float cubeRes = float(textureSize(samplerCube(cubeTexture, cubeSampler), 0).x);
-			float omega_p = 4.f * 3.1415f / (6.f * cubeRes * cubeRes);
+			float omega_p = 4.f * pi / (6.f * cubeRes * cubeRes);
 			
 			float lod = 0.5f * log2(K * omega_s / omega_p);
         
@@ -49,6 +49,6 @@ void main(){
     //the NoL from the PDF is compensated with the NoL of the light direction
     //what is left is division with 1 / pi which equals multiplication with pi and can be pulled out of the loop
     //lambert = albedo / pi compensates exactly that
-    color *= 3.1415;
+    color *= pi;
 	imageStore(cubeOut, storageCo, vec4(color, 1.f)); 
 }

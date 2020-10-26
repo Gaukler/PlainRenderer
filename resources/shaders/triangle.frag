@@ -2,9 +2,9 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
 
+#include "global.inc" 
 #include "colorConversion.inc"
 #include "brdf.inc"
-#include "global.inc" 
 #include "GeometricAA.inc"
 #include "shadowCascadeConstants.inc"
 #include "linearDepth.inc"
@@ -240,7 +240,7 @@ void main(){
     
     //lambert
     if(diffuseBRDF == 0){
-        diffuseDirect = diffuseColor / 3.1415f * directLighting;
+        diffuseDirect = diffuseColor / pi * directLighting;
         //even though lambert is constant the in/out fresnel terms need to be taken into account, these are integrated into the LUT
         diffuseBRDFIntegral = vec3(brdfLut.z);
     }
@@ -263,7 +263,7 @@ void main(){
         
         //"multi" part of the BRDF has non-linear dependence on albedo, so it can't be integrated into the LUT
         //however the expression is very simple and can be integrated analytically
-        float multiIntegral = 0.1159f * r * 3.1415 * 2.f;
+        float multiIntegral = 0.1159f * r * pi * 2.f;
         //in/out fresnel has to be taken into account for multi part as well
         //metals have no diffuse part, non-metals all use F0 of 0.04
         vec3 F0Diffuse = vec3(0.04f);
@@ -362,7 +362,7 @@ void main(){
     }
     //this is the above but approximating E_avg = E_o, simplifying the equation
     else if(directMultiscatterBRDF == 1){
-        multiScatteringLobe = vec3((1.f - energyOutgoing) / 3.1415f);
+        multiScatteringLobe = vec3((1.f - energyOutgoing) / pi);
         vec3 multiScatteringScaling = (fresnelAverage * fresnelAverage * energyOutgoing) / (1.f - fresnelAverage * (1.f - energyOutgoing));
         multiScatteringLobe *= multiScatteringScaling;
     }
