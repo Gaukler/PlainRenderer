@@ -60,6 +60,7 @@ struct AtmosphereSettings {
     glm::vec3 ozoneExtinction = glm::vec3(0.000650f, 0.001881f, 0.000085f);
     float scatteringMieGround = 0.006f;
     float extinctionMieGround = 1.11f * scatteringMieGround;
+    float mieScatteringExponent = 0.76f;
 };
 
 enum class ShaderResourceType { SampledImage, Sampler, StorageImage, StorageBuffer, UniformBuffer };

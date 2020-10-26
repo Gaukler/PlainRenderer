@@ -73,11 +73,10 @@ void main(){
     
     float VoL = dot(V, L);
     float phaseRayleigh = phaseRayleigh(VoL);
-    
-    float g = 0.75f;
-    float phaseMie = phaseGreenstein(VoL, g);
-    phaseMie = cornetteShanksPhase(VoL, g);
-    //phaseMie = phaseSchlick(-VoL, g);
+
+    //float phaseMie = phaseGreenstein(VoL, atmosphereSettings.mieScatteringExponent);
+    float phaseMie = cornetteShanksPhase(VoL, atmosphereSettings.mieScatteringExponent);
+    //float phaseMie = phaseSchlick(-VoL, atmosphereSettings.mieScatteringExponent);
 
     vec3 currentPosition = P;
     vec3 absorption = vec3(1.f);

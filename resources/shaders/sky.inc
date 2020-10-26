@@ -6,6 +6,7 @@ struct AtmosphereSettings{
     vec3 ozoneExtinction;
     float scatteringMieGround;
     float extinctionMieGround;
+    float mieScatteringExponent; //used in mie phase function
 };
 
 float rayleighHeightFactor(float height){
