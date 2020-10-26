@@ -32,9 +32,9 @@ const uint32_t brdfLutRes = 512;
 const uint32_t nHistogramBins = 128;
 const uint32_t shadowCascadeCount = 4;
 const uint32_t skyTransmissionLutResolution = 128;
-const uint32_t skyMultiscatterLutResolution = 128;
-const uint32_t skyLutWidth = 1280;
-const uint32_t skyLutHeight = 720;
+const uint32_t skyMultiscatterLutResolution = 32;
+const uint32_t skyLutWidth = 200;
+const uint32_t skyLutHeight = 100;
 
 const uint32_t histogramTileSizeX = 32;
 const uint32_t histogramTileSizeY = 32;
