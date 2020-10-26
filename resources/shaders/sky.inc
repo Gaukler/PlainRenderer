@@ -106,10 +106,9 @@ vec3 integrateInscattering(vec3 inscattering, vec3 extinctionCoefficients, float
     return (inscattering - inscattering * exp(-extinctionCoefficients * length)) / extinctionCoefficients;
 }
 
-vec2 computeLutUV(float height, float atmoshphereHeight, vec3 position, vec3 earthCenter, vec3 direction){
+vec2 computeLutUV(float height, float atmoshphereHeight, vec3 up, vec3 direction){
     vec2 lutUV;
     lutUV.x = height / atmoshphereHeight;
-    vec3 up = normalize(position - earthCenter);
     lutUV.y = dot(up, direction) * 0.5 + 0.5;
     return lutUV;
 }

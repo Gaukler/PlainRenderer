@@ -63,7 +63,7 @@ void main(){
     vec3 V = fromSkyLut(vec2(x, y)); //from camera to sky
     
     vec3 earthCenter = vec3(0); 
-    vec3 P = vec3(0, -atmosphereSettings.earthRadius - 0.02f, 0); //need to offset to avoid self intersection with earth
+    vec3 P = vec3(0, -atmosphereSettings.earthRadius - 0.01f, 0); //need to offset to avoid self intersection with earth
     Intersection intersection = rayEarthIntersection(P, V, earthCenter, atmosphereSettings.earthRadius, atmosphereSettings.atmosphereHeight);
       
     const int sampleCount = 30;
@@ -82,15 +82,19 @@ void main(){
     vec3 currentPosition = P;
     vec3 absorption = vec3(1.f);
     vec3 color = vec3(0);
+    vec3 step = V * stepSize;
     
     for(int i = 0; i < sampleCount; i++){
         
-        currentPosition += stepSize * V;
+        currentPosition += step;
         
-        float currentHeight = distance(currentPosition, earthCenter) - atmosphereSettings.earthRadius;
+        vec3 up = currentPosition - earthCenter;
+        float upLength = length(up);
+        float currentHeight = upLength - atmosphereSettings.earthRadius;
+        up /= upLength;
          
         //light arriving at point
-        vec2 lutUV = computeLutUV(currentHeight, atmosphereSettings.atmosphereHeight, currentPosition, earthCenter, L);
+        vec2 lutUV = computeLutUV(currentHeight, atmosphereSettings.atmosphereHeight, up, L);
         vec3 transmission = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
         vec3 incomingLight = sunStrengthExposed * transmission;
         incomingLight *= shadowRay(currentPosition, L, earthCenter, atmosphereSettings.earthRadius);
@@ -103,7 +107,7 @@ void main(){
         vec3 inscattering = inscatteringRayleight + inscatteringMie;
         
         vec3 scatterIntegral = integrateInscattering(inscattering, coefficients.extinction, stepSize);
-        color += scatterIntegral * absorption;
+        color = color + scatterIntegral * absorption;
          
         absorption *= exp(-coefficients.extinction * stepSize); 
         

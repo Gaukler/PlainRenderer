@@ -33,21 +33,25 @@ void main(){
     
     float isotropicPhase = 1.f / (4.f * 3.1415);
     
-    const float sampleCountSqrt = 8;
-    for(float i = 0; i < 8; i++){
-        for(float j = 0; j < 8; j++){
+    int sampleCountSqrt = 8;
+    float sampleCountSqrtRcp = 1.f / sampleCountSqrt;
+    for(int i = 0; i < sampleCountSqrt; i++){
+        for(int j = 0; j < sampleCountSqrt; j++){
             
-            float theta =     3.1415 * i / sampleCountSqrt;
-            float phi   = 2 * 3.1415 * j / sampleCountSqrt;
+            float theta =     3.1415 * i * sampleCountSqrtRcp;
+            float phi   = 2 * 3.1415 * j * sampleCountSqrtRcp;
             
-            vec3 V = vec3(sin(theta) * cos(theta), -cos(theta), sin(theta) * sin(theta));
+            float sinTheta = sin(theta);
+            float cosTheta = cos(theta);
+            vec3 V = vec3(sinTheta * cosTheta, -cosTheta, sinTheta * sinTheta);
             
-            float innerSampleCount = 20;
+            int innerSampleCount = 20;
             
             vec3 inscattered = vec3(0.f);
             Intersection intersection = rayEarthIntersection(P, V, earthCenter, atmosphereSettings.earthRadius, atmosphereSettings.atmosphereHeight);
             vec3 currentPosition = P;
             float stepSize = intersection.distance / innerSampleCount;
+            V *= stepSize;
             
             vec3 L_f = vec3(0.f);
             
@@ -55,7 +59,8 @@ void main(){
             vec3 earthHitNormal = normalize(intersection.pos - earthCenter);
             float earthNoL = clamp(dot(earthHitNormal, L), 0, 1);
             
-            vec2 lutUV = computeLutUV(0, atmosphereSettings.atmosphereHeight, intersection.pos, earthCenter, L);
+            vec3 up = normalize(currentPosition - earthCenter);
+            vec2 lutUV = computeLutUV(0, atmosphereSettings.atmosphereHeight, up, L);
             vec3 transmissionToIntersection = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
             vec3 incomingLight = transmissionToIntersection;
             vec3 earthLit = earthAlbedo / 3.1415 * incomingLight * earthNoL;
@@ -65,37 +70,39 @@ void main(){
             
             for(int i = 0; i < innerSampleCount; i++){
                 
-                currentPosition += stepSize * V;
+                currentPosition += V;
                 
-                float currentHeight = max(distance(currentPosition, earthCenter) - atmosphereSettings.earthRadius, 0);
+                vec3 up = currentPosition - earthCenter;
+                float upLength = length(up);
+                float currentHeight = upLength - atmosphereSettings.earthRadius;
+                up /= upLength;
                 
                 AtmosphereCoefficients coefficients = calculateCoefficients(height, atmosphereSettings);
-
                 vec3 scatteringCo = coefficients.scatterRayleigh + coefficients.scatterMie;
                  
                 //light arriving at point
-                vec2 lutUV = computeLutUV(currentHeight, atmosphereSettings.atmosphereHeight, currentPosition, earthCenter, L);
+                vec2 lutUV = computeLutUV(currentHeight, atmosphereSettings.atmosphereHeight, up, L);
                 vec3 transmissionSun = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
                 
-                vec3 inscatteredLight = scatteringCo * transmissionSun * isotropicPhase;
-                
                 //inscattering from light at point
-                vec3 scatterIntegral = integrateInscattering(inscatteredLight, coefficients.extinction, stepSize);
-                inscattered += scatterIntegral * transmission;
-                 
                 vec3 coefficientIntegral = integrateInscattering(scatteringCo, coefficients.extinction, stepSize);
-                L_f += coefficientIntegral * transmission;
+                L_f = L_f + coefficientIntegral * transmission;
+                
+                //reuse result integration as integration is linear in factor
+                vec3 scatterIntegral = coefficientIntegral * transmissionSun * isotropicPhase;
+                inscattered = inscattered + scatterIntegral * transmission;
                 
                 transmission *= exp(-coefficients.extinction * stepSize);
             }   
             direct *= transmission;
             
-            f_ms += L_f * sin(theta);  //isotropic phase function reduced with integral over sphere(factor 4 x pi)
-            L_2nd += (direct * transmission + inscattered) * sin(theta); //isotropic phase function reduced with integral over sphere(factor 4 x pi)
+            f_ms += L_f * sinTheta;  //isotropic phase function reduced with integral over sphere(factor 4 x pi)
+            L_2nd += (direct * transmission + inscattered) * sinTheta; //isotropic phase function reduced with integral over sphere(factor 4 x pi)
         }
     }  
-    f_ms /= sampleCountSqrt * sampleCountSqrt; 
-    L_2nd /= sampleCountSqrt * sampleCountSqrt;
+    float sampleCountInverse = 1.f / (sampleCountSqrt * sampleCountSqrt);
+    f_ms *= sampleCountInverse; 
+    L_2nd *= sampleCountInverse;
     
     vec3 F_ms = vec3(1.f) / (1.f - f_ms);
     vec3 multiscatter = L_2nd * F_ms;

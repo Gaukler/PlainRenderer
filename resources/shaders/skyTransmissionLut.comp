@@ -34,14 +34,12 @@ void main(){
     
     vec3 currentPos = intersection.pos;
     vec3 absorption = vec3(1);
+    vec3 step = V * stepLength;
+    
     for(int i = 0; i < sampleCount; i++){
-        
-        currentPos -= stepLength * V;
-        
+        currentPos -= step;
         float currentHeight = max(distance(earthCenter, currentPos) - atmosphereSettings.earthRadius, 0);
-        
         AtmosphereCoefficients coefficients = calculateCoefficients(currentHeight, atmosphereSettings);
-        
         absorption *= exp(-coefficients.extinction * stepLength);
     }    
     absorption = intersection.hitEarth ? vec3(0) : absorption; 
