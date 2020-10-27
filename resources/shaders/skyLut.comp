@@ -63,7 +63,8 @@ void main(){
     vec3 V = fromSkyLut(vec2(x, y)); //from camera to sky
     
     vec3 earthCenter = vec3(0); 
-    vec3 P = vec3(0, -atmosphereSettings.earthRadius - 0.01f, 0); //need to offset to avoid self intersection with earth
+    float bias = 0.002f;    //need to offset to avoid self intersection with earth
+    vec3 P = vec3(0, -atmosphereSettings.earthRadius - bias, 0);
     Intersection intersection = rayEarthIntersection(P, V, earthCenter, atmosphereSettings.earthRadius, atmosphereSettings.atmosphereHeight);
       
     const int sampleCount = 30;

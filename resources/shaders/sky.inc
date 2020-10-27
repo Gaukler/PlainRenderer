@@ -75,7 +75,7 @@ Intersection rayEarthIntersection(vec3 P, vec3 D, vec3 C, float earthRadius, flo
     
     //if ray intersect with earth in front then view is blocked by earth
     Intersection result;
-    result.hitEarth = t_earth > 0;
+    result.hitEarth = t_earth >= 0;
     float t = result.hitEarth ? t_earth : t_atmosphere; 
     result.distance = t;
     result.pos = P + t * D;

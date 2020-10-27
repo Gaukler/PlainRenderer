@@ -108,6 +108,7 @@ private:
     void computeTonemapping() const;
     void renderDebugGeometry() const;
     void copyColorToHistoryBuffer() const;
+    void issueSkyDrawcalls();
 
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
     bool loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);
@@ -171,6 +172,7 @@ private:
     RenderPassHandle m_skyMultiscatterLutPass;
     RenderPassHandle m_skyLutPass;
     RenderPassHandle m_skyPass;
+    RenderPassHandle m_sunSpritePass;
     RenderPassHandle m_toCubemapPass;
     RenderPassHandle m_diffuseConvolutionPass;
     RenderPassHandle m_brdfLutPass;
@@ -223,6 +225,7 @@ private:
     SamplerHandle m_skyOcclusionSampler;
 
     MeshHandle m_skyCube;
+    MeshHandle m_quad;
 
     DynamicMeshHandle m_cameraFrustumModel;
     DynamicMeshHandle m_shadowFrustumModel;

@@ -458,8 +458,7 @@ void RenderFrontend::renderFrame() {
     }
 
     drawUi();
-    const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
-    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, { defaultTransform }, m_skyPass);
+    issueSkyDrawcalls();
     gRenderBackend.renderFrame(true);
 }
 
@@ -579,7 +578,7 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
     //render skybox
     {
         const ImageResource skyLutResource (m_skyLut, 0, 0);
-        const SamplerResource skySamplerResource (m_lutSampler, 1);
+        const SamplerResource skySamplerResource (m_colorSampler, 1); //not lut sampler as we want wrapping to avoid artifacts
 
         RenderPassExecution skyPassExecution;
         skyPassExecution.handle = m_skyPass;
@@ -590,6 +589,20 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
             skyPassExecution.parents.push_back(m_debugGeoPass);
         }
         gRenderBackend.setRenderPassExecution(skyPassExecution);
+    }
+    //sun sprite
+    {
+        const StorageBufferResource lightBufferResource(m_lightBuffer, true, 0);
+        const ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
+        const SamplerResource skySamplerResource(m_lutSampler, 2);
+
+        RenderPassExecution sunSpritePassExecution;
+        sunSpritePassExecution.handle = m_sunSpritePass;
+        sunSpritePassExecution.parents = { m_skyPass };
+        sunSpritePassExecution.resources.storageBuffers = { lightBufferResource };
+        sunSpritePassExecution.resources.sampledImages = { transmissionLutResource };
+        sunSpritePassExecution.resources.samplers = { skySamplerResource };
+        gRenderBackend.setRenderPassExecution(sunSpritePassExecution);
     }
 }
 
@@ -731,7 +744,7 @@ void RenderFrontend::computeTAA() const {
     taaExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     taaExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
     taaExecution.dispatchCount[2] = 1;
-    taaExecution.parents = { m_skyPass };
+    taaExecution.parents = { m_sunSpritePass };
 
     gRenderBackend.setRenderPassExecution(taaExecution);
 }
@@ -778,6 +791,22 @@ void RenderFrontend::copyColorToHistoryBuffer() const {
     copyNextFrameExecution.parents = { m_taaPass };
 
     gRenderBackend.setRenderPassExecution(copyNextFrameExecution);
+}
+
+void RenderFrontend::issueSkyDrawcalls() {
+    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, { { m_viewProjectionMatrix } }, m_skyPass);
+
+    const float lattitudeOffsetAngle = 90;
+    const float longitudeOffsetAngle = -90;
+    const float sunAngularDiameter = 0.535f; //from "Physically Based Sky, Atmosphereand Cloud Rendering in Frostbite", page 25
+    const float spriteScale = glm::tan(glm::radians(sunAngularDiameter * 0.5f));
+    const glm::mat4 spriteScaleMatrix = glm::scale(glm::mat4(1.f), glm::vec3(spriteScale, spriteScale, 1.f));
+    const glm::mat4 spriteLattitudeRotation = glm::rotate(glm::mat4(1.f), glm::radians(m_sunDirection.y + lattitudeOffsetAngle), glm::vec3(-1, 0, 0));
+    const glm::mat4 spriteLongitudeRotation = glm::rotate(glm::mat4(1.f), glm::radians(m_sunDirection.x + longitudeOffsetAngle), glm::vec3(0, -1, 0));
+    const glm::mat4 spriteRotation = spriteLongitudeRotation * spriteLattitudeRotation * spriteScaleMatrix;
+
+    const glm::mat4 spriteMVP = m_viewProjectionMatrix * spriteRotation;
+    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, { { spriteMVP, spriteRotation } }, m_sunSpritePass);
 }
 
 bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
@@ -1651,6 +1680,52 @@ void RenderFrontend::initMeshs() {
 
         m_skyCube = gRenderBackend.createMeshes(cubeBinary, std::vector<Material> {cubeMaterial}).back();
     }
+    //quad 
+    {
+        MeshData quadData;
+        quadData.positions = {
+            glm::vec3(-1.f, -1.f, -1.f),
+            glm::vec3(1.f, 1.f, -1.f),
+            glm::vec3(1.f, -1.f, -1.f),
+            glm::vec3(-1.f, 1.f, -1.f)
+        };
+        quadData.uvs = {
+            glm::vec2(),
+            glm::vec2(),
+            glm::vec2(),
+            glm::vec2()
+        };
+        quadData.normals = {
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3()
+        };
+        quadData.tangents = {
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3()
+        };
+        quadData.bitangents = {
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3(),
+            glm::vec3()
+        };
+        quadData.indices = {
+            0, 1, 2, 
+            0, 1, 3
+        };
+        const std::vector<MeshBinary> quadBinary = meshesToBinary(std::vector<MeshData>{quadData});
+
+        Material cubeMaterial;
+        cubeMaterial.diffuseTexture = m_defaultTextures.diffuse;
+        cubeMaterial.normalTexture = m_defaultTextures.normal;
+        cubeMaterial.specularTexture = m_defaultTextures.specular;
+
+        m_quad = gRenderBackend.createMeshes(quadBinary, std::vector<Material> {cubeMaterial}).back();
+    }
 }
 
 void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings) {
@@ -1776,7 +1851,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         skyTransmissionLutPassDesc.shaderDescription.srcPathRelative = "skyTransmissionLut.comp";
         m_skyTransmissionLutPass = gRenderBackend.createComputePass(skyTransmissionLutPassDesc);
     }
-    //
+    //sky multiscatter lut
     {
         ComputePassDescription skyMultiscatterPassDesc;
         skyMultiscatterPassDesc.name = "Sky multiscatter lut";
@@ -1808,6 +1883,25 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         skyPassConfig.vertexFormat = VertexFormat::Full;
 
         m_skyPass = gRenderBackend.createGraphicPass(skyPassConfig);
+    }
+    //sun sprite
+    {
+        const auto colorAttachment = Attachment(m_colorBuffer, 0, 0, AttachmentLoadOp::Load);
+        const auto depthAttachment = Attachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Load);
+
+        GraphicPassDescription desc;
+        desc.name = "Sun sprite";
+        desc.attachments = { colorAttachment, depthAttachment };
+        desc.shaderDescriptions.vertex.srcPathRelative = "sunSprite.vert";
+        desc.shaderDescriptions.fragment.srcPathRelative = "sunSprite.frag";
+        desc.depthTest.function = DepthFunction::LessEqual;
+        desc.depthTest.write = false;
+        desc.rasterization.cullMode = CullMode::None;
+        desc.rasterization.mode = RasterizationeMode::Fill;
+        desc.blending = BlendState::Additive;
+        desc.vertexFormat = VertexFormat::Full;
+
+        m_sunSpritePass = gRenderBackend.createGraphicPass(desc);
     }
     //BRDF Lut creation pass
     {

@@ -2972,7 +2972,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         currentOffset += vertexInputBytePerLocation[(size_t)location];
     }
 
-    VkVertexInputBindingDescription vertexBinding;
+    VkVertexInputBindingDescription vertexBinding = {};
     vertexBinding.binding = 0;
     vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
     switch (desc.vertexFormat) {
@@ -2981,7 +2981,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         default: vertexBinding.stride = currentOffset; std::cout << "Warning: unknown vertex format\n"; break;
     }
     
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo;
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInputInfo.pNext = nullptr;
     vertexInputInfo.flags = 0;
@@ -2992,7 +2992,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
     pass.vulkanRenderPass = createVulkanRenderPass(desc.attachments);
 
-    VkExtent2D extent;
+    VkExtent2D extent = {};
     extent.width = width;
     extent.height = height;
 
@@ -3011,19 +3011,19 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     viewportState.pNext = nullptr;
     viewportState.flags = 0;
     viewportState.viewportCount = 1;
-    viewportState.pViewports = nullptr;
+    viewportState.pViewports = nullptr; //ignored as viewport is dynamic
     viewportState.scissorCount = 1;
-    viewportState.pScissors = nullptr;
+    viewportState.pScissors = nullptr;  //ignored as viewport is dynamic
 
     //only global blending state for all attachments
     //currently only no blending and additive supported    
     VkPipelineColorBlendAttachmentState blendingAttachment = {};
     blendingAttachment.blendEnable = desc.blending != BlendState::None ? VK_TRUE : VK_FALSE;
-    blendingAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-    blendingAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendingAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_COLOR;
+    blendingAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR;
     blendingAttachment.colorBlendOp = VK_BLEND_OP_ADD;
     blendingAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    blendingAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    blendingAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
     blendingAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
     blendingAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
@@ -3049,10 +3049,10 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     blending.blendConstants[3] = 0.f;
 
     const auto rasterizationState = createRasterizationState(desc.rasterization);
-    const auto multisamplingState = createDefaultMultisamplingInfo();
+    auto multisamplingState = createDefaultMultisamplingInfo();
     const auto depthStencilState = createDepthStencilState(desc.depthTest);
 
-    VkPipelineTessellationStateCreateInfo tesselationState;
+    VkPipelineTessellationStateCreateInfo tesselationState = {};
     VkPipelineTessellationStateCreateInfo* pTesselationState;
     if (desc.shaderDescriptions.tesselationControl.has_value()) {
         tesselationState = createTesselationState(desc.patchControlPoints);
@@ -3083,7 +3083,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     dynamicStateInfo.pDynamicStates = dynamicStates.data();
 
 
-    VkGraphicsPipelineCreateInfo pipelineInfo;
+    VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     pipelineInfo.pNext = nullptr;
     pipelineInfo.flags = 0;

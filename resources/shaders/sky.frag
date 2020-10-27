@@ -14,13 +14,5 @@ layout(location = 0) out vec3 color;
 void main(){     
     vec3 V = normalize(passPos); //from camera to sky
     vec2 uv = toSkyLut(V);
-     
     color = texture(sampler2D(skyLut, skySampler), uv).rgb;
-    
-    vec3 L = g_sunDirection.xyz;
-    float VoL = dot(V, L);
-    float sunDisk = pow(max(VoL, 0), 1000);
-    if(sunDisk > 0.99){
-        color += vec3(10);
-    }
 }
