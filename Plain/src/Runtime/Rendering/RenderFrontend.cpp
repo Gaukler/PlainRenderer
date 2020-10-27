@@ -571,7 +571,7 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
         skyLutExecution.dispatchCount[0] = skyLutWidth / 8;
         skyLutExecution.dispatchCount[1] = skyLutHeight / 8;
         skyLutExecution.dispatchCount[2] = 1;
-        skyLutExecution.parents = { m_skyTransmissionLutPass, m_skyMultiscatterLutPass };
+        skyLutExecution.parents = { m_skyTransmissionLutPass, m_skyMultiscatterLutPass, m_preExposeLightsPass };
         gRenderBackend.setRenderPassExecution(skyLutExecution);
     }
     //render skybox
@@ -621,11 +621,15 @@ void RenderFrontend::renderSunShadowCascades() const {
 void RenderFrontend::computeExposure() const {
     StorageBufferResource lightBufferResource(m_lightBuffer, false, 0);
     StorageBufferResource histogramResource(m_histogramBuffer, false, 1);
+    ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 2);
+    SamplerResource lutSamplerResource(m_lutSampler, 3);
 
     RenderPassExecution preExposeLightsExecution;
     preExposeLightsExecution.handle = m_preExposeLightsPass;
     preExposeLightsExecution.resources.storageBuffers = { histogramResource, lightBufferResource };
-    preExposeLightsExecution.parents = { m_histogramCombinePass };
+    preExposeLightsExecution.resources.sampledImages = { transmissionLutResource };
+    preExposeLightsExecution.resources.samplers = { lutSamplerResource };
+    preExposeLightsExecution.parents = { m_histogramCombinePass, m_skyTransmissionLutPass };
     preExposeLightsExecution.dispatchCount[0] = 1;
     preExposeLightsExecution.dispatchCount[1] = 1;
     preExposeLightsExecution.dispatchCount[2] = 1;
@@ -1559,10 +1563,17 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
     }
     //light buffer 
     {
-        float initialLightBufferData[3] = { 0.f, 0.f, 0.f };
+        struct LightBuffer {
+            glm::vec3 sunColor;
+            float previousFrameExposure;
+            float sunStrengthExposed;
+            float skyStrengthExposed;
+        };
+
+        LightBuffer initialData = {};
         StorageBufferDescription lightBufferDesc;
-        lightBufferDesc.size = 3 * sizeof(uint32_t);
-        lightBufferDesc.initialData = initialLightBufferData;
+        lightBufferDesc.size = sizeof(LightBuffer);
+        lightBufferDesc.initialData = &initialData;
         m_lightBuffer = gRenderBackend.createStorageBuffer(lightBufferDesc);
     }
     //per tile histogram
@@ -2011,7 +2022,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
             //bin count
             constants.push_back({
-                0,                                                                  //location
+                0,                                                              //location
                 dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) //value
                 });
             //min luminance constant
@@ -2237,7 +2248,6 @@ void RenderFrontend::drawUi() {
     //lighting settings
     if(ImGui::CollapsingHeader("Lighting settings")){
         ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
-        ImGui::ColorEdit4("Sun color", &m_globalShaderInfo.sunColor.x);
         ImGui::DragFloat("Exposure offset EV", &m_globalShaderInfo.exposureOffset, 0.1f);
         ImGui::DragFloat("Adaption speed EV/s", &m_globalShaderInfo.exposureAdaptionSpeedEvPerSec, 0.1f, 0.f);
         ImGui::InputFloat("Sun Illuminance Lux", &m_globalShaderInfo.sunIlluminanceLux);

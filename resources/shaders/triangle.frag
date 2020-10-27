@@ -227,7 +227,7 @@ void main(){
     else if(cascadeIndex == 3){
         sunShadow = calcShadow(passPos, LoV, shadowMapCascade3, lightMatrices[cascadeIndex]);
     }
-	vec3 directLighting = max(dot(N, L), 0.f) * sunShadow * g_sunColor.rgb;
+	vec3 directLighting = max(dot(N, L), 0.f) * sunShadow * lightBuffer.sunColor;
 
     //direct diffuse
     vec3 diffuseColor = (1.f - metalic) * albedo;

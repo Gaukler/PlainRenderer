@@ -1,5 +1,4 @@
 layout(set=0, binding = 0, std140) uniform global{
-	vec4 g_sunColor;
 	vec4 g_sunDirection;
 	vec4 g_cameraPosition;
     vec4 g_cameraRight;

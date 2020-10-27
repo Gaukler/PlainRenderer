@@ -19,6 +19,9 @@ layout(set=1, binding = 1, std430) buffer histogramBuffer{
     uint histogram[constNBins];
 };
 
+layout(set=1, binding = 2) uniform texture2D transmissionLut;
+layout(set=1, binding = 3) uniform sampler lutSampler;
+
 void main(){
     
     const float minLuminanceLog = log(constMinLuminance);
@@ -47,4 +50,7 @@ void main(){
     lightBuffer.sunStrengthExposed = g_sunStrength * exposure;
     lightBuffer.skyStrengthExposed = g_skyStrength * exposure;
     lightBuffer.previousFrameExposure = exposure;
+    
+    vec2 lutUV = vec2(0, -g_sunDirection.y * 0.5 + 0.5);
+    lightBuffer.sunColor = texture(sampler2D(transmissionLut, lutSampler), lutUV).rgb;
 }
