@@ -9,6 +9,7 @@
 #include "shadowCascadeConstants.inc"
 #include "linearDepth.inc"
 #include "specularOcclusion.inc"
+#include "lightBuffer.inc"
 
 /*
 specialisation constants
@@ -47,10 +48,8 @@ layout(set=1, binding = 4) 	uniform textureCube	specularProbe;
 layout(set=1, binding = 5) 	uniform sampler 	specularProbeSampler;
 layout(set=1, binding = 6) 	uniform sampler 	lutSampler;
 
-layout(set=1, binding = 7, std430) buffer lightBuffer{
-    float previousFrameExposure;
-    float sunStrengthExposed;
-    float skyStrengthExposed;
+layout(set=1, binding = 7, std430) buffer lightStorageBuffer{
+    LightBuffer lightBuffer;
 };
 
 layout(set=1, binding = 8, std430) buffer sunShadowInfo{
@@ -378,7 +377,7 @@ void main(){
     }
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
-    color = (diffuseDirect + specularDirect) * sunStrengthExposed + lightingIndirect * skyStrengthExposed;
+    color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect * lightBuffer.skyStrengthExposed;
     
     vec3 cascadeTestColor[4] = { 
     vec3(1, 0, 0), 

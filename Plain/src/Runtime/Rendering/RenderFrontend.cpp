@@ -539,7 +539,6 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
         ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
         SamplerResource lutSampler(m_lutSampler, 2);
         UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 3);
-        StorageBufferResource lightBufferResource(m_lightBuffer, true, 4);
 
         RenderPassExecution skyMultiscatterLutExecution;
         skyMultiscatterLutExecution.handle = m_skyMultiscatterLutPass;

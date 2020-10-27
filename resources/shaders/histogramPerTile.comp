@@ -3,6 +3,7 @@
 #extension GL_GOOGLE_include_directive : enable
 
 #include "global.inc"
+#include "lightBuffer.inc"
 
 layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
@@ -18,10 +19,8 @@ layout(set=1, binding = 0, std430) buffer histogramPerTileBuffer{
 layout(set=1, binding = 2) uniform texture2D srcTexture;
 layout(set=1, binding = 4) uniform sampler texelSampler;
 
-layout(set=1, binding = 3, std430) buffer lightBuffer{
-    float previousFrameExposure;
-    float sunStrengthExposed;
-    float skyStrengthExposed;
+layout(set=1, binding = 3, std430) buffer lightStorageBuffer{
+    LightBuffer lightBuffer;
 };
 
 shared uint localHistogram[constNBins];
@@ -52,7 +51,7 @@ void main(){
     const float maxLuminanceLog = log(constMaxLuminance);
 
     vec3 color = texelFetch(sampler2D(srcTexture, texelSampler), uv, 0).rgb;    
-    float luminance = colorToLuminance(color) / previousFrameExposure;
+    float luminance = colorToLuminance(color) / lightBuffer.previousFrameExposure;
     float luminanceLog = log(luminance);
     const uint maxIndex = constNBins - 1;
     uint bin = uint(maxIndex * clamp((luminanceLog - minLuminanceLog) / (maxLuminanceLog - minLuminanceLog), 0.f, 1.f));

@@ -3,6 +3,7 @@
 #extension GL_GOOGLE_include_directive : enable
 
 #include "global.inc"
+#include "lightBuffer.inc"
 
 layout(constant_id = 0) const int constNBins = 64;
 layout(constant_id = 1) const float constMinLuminance = 1.f;
@@ -10,10 +11,8 @@ layout(constant_id = 2) const float constMaxLuminance = 100.f;
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-layout(set=1, binding = 0, std430) buffer lightBuffer{
-    float previousFrameExposure;
-    float sunStrengthExposed;
-    float skyStrengthExposed;
+layout(set=1, binding = 0, std430) buffer lightStorageBuffer{
+    LightBuffer lightBuffer;
 };
 
 layout(set=1, binding = 1, std430) buffer histogramBuffer{
@@ -36,7 +35,7 @@ void main(){
     mean /= total;
     
     float targetEV100 = log2(mean * 100.f / 12.5f) - g_exposureOffset;
-    float previousEV100 = log2(1.f / (max(previousFrameExposure, 0.000001f) * 1.2f));
+    float previousEV100 = log2(1.f / (max(lightBuffer.previousFrameExposure, 0.000001f) * 1.2f));
     
     float evDelta = targetEV100 - previousEV100;
     float evMaxChange = g_exposureAdaptionSpeedEvPerSec * g_deltaTime;
@@ -45,7 +44,7 @@ void main(){
     float currentEV100 = previousEV100 + evChange;
 
     float exposure =  1.f / (pow(2.f, currentEV100) * 1.2f);
-    sunStrengthExposed = g_sunStrength * exposure;
-    skyStrengthExposed = g_skyStrength * exposure;
-    previousFrameExposure = exposure;
+    lightBuffer.sunStrengthExposed = g_sunStrength * exposure;
+    lightBuffer.skyStrengthExposed = g_skyStrength * exposure;
+    lightBuffer.previousFrameExposure = exposure;
 }

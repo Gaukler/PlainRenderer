@@ -4,11 +4,10 @@
 
 #include "global.inc"
 #include "sky.inc"
+#include "lightBuffer.inc"
 
-layout(set=1, binding = 0, std430) buffer lightBuffer{
-    float previousFrameExposure;
-    float sunStrengthExposed;
-    float skyStrengthExposed;
+layout(set=1, binding = 0, std430) buffer lightStorageBuffer{
+    LightBuffer lightBuffer;
 }; 
 
 layout(set=1, binding = 1) uniform texture2D transmissionLut;
@@ -38,5 +37,5 @@ void main(){
     vec3 V = normalize(passWorldPos + vec3(0, bias, 0));
     vec2 lutUV = computeLutUV(0, 100, vec3(0, -1, 0), V);
     vec3 transmission = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
-    color = sunStrengthExposed * transmission * limbDarkening(distanceFromCenter);
+    color = lightBuffer.sunStrengthExposed * transmission * limbDarkening(distanceFromCenter);
 }

@@ -4,6 +4,7 @@
 
 #include "global.inc"
 #include "sky.inc"
+#include "lightBuffer.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -16,10 +17,8 @@ layout(set=1, binding = 4, std140) uniform atmosphereSettingsBuffer{
     AtmosphereSettings atmosphereSettings;
 };
 
-layout(set=1, binding = 5, std430) buffer lightBuffer{
-    float previousFrameExposure;
-    float sunStrengthExposed;
-    float skyStrengthExposed;
+layout(set=1, binding = 5, std430) buffer lightStorageBuffer{
+    LightBuffer lightBuffer;
 }; 
 
 float phaseGreenstein(float VoL, float g){
@@ -96,7 +95,7 @@ void main(){
         //light arriving at point
         vec2 lutUV = computeLutUV(currentHeight, atmosphereSettings.atmosphereHeight, up, L);
         vec3 transmission = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
-        vec3 incomingLight = sunStrengthExposed * transmission;
+        vec3 incomingLight = lightBuffer.sunStrengthExposed * transmission;
         incomingLight *= shadowRay(currentPosition, L, earthCenter, atmosphereSettings.earthRadius);
                 
         AtmosphereCoefficients coefficients = calculateCoefficients(currentHeight, atmosphereSettings);
