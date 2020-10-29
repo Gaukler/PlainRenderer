@@ -186,7 +186,7 @@ void main(){
     r = max(r * r, 0.0045f);
     vec3 albedo = sRGBToLinear(albedoTexel);
 
-	vec3 N = normalize(passTBN * normalTexelReconstructed);   
+	vec3 N = normalize(passTBN * normalTexelReconstructed); 
 	vec3 L = normalize(g_sunDirection.xyz);
     
 	vec3 V = g_cameraPosition.xyz - passPos;
@@ -297,7 +297,6 @@ void main(){
     vec3 irradiance;
     if(useSkyOcclusionDirection){
         irradiance = texture(samplerCube(diffuseProbe, cubeSampler), skyOcclusion.unoccludedDirection).rgb;
-        //irradiance = texture(samplerCube(diffuseProbe, cubeSampler), N).rgb;
     }
     else{
         irradiance = texture(samplerCube(diffuseProbe, cubeSampler), N).rgb;
@@ -344,9 +343,7 @@ void main(){
     
     float energyOutgoing = brdfLut.x + brdfLut.y;
     
-    /*
-    multiscattering formulation from "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
-    */     
+    //multiscattering formulation from "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
     vec3 multiScatteringLobe;
     if(directMultiscatterBRDF == 0){
         float energyAverage = EnergyAverage(r);
@@ -377,7 +374,7 @@ void main(){
     }
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
-    color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect * lightBuffer.skyStrengthExposed;
+    color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
     
     vec3 cascadeTestColor[4] = { 
     vec3(1, 0, 0), 

@@ -115,10 +115,9 @@ private:
     std::map<std::filesystem::path, ImageHandle> m_textureMap;
 
     void computeBRDFLut();
-    //copies 2D sky texture from m_environmentMapSrc into cubemap and creates mips
-    void skyCubemapFromTexture();
-    //diffuse and specular convolution of sky cubemap for image based lighting
-    void skyCubemapIBLPreProcessing(const std::vector<RenderPassHandle>& dependencies);
+
+    //diffuse and specular convolution of sky lut for image based lighting
+    void skyIBLConvolution();
 
     uint32_t m_screenWidth = 800;
     uint32_t m_screenHeight = 600;
@@ -174,10 +173,10 @@ private:
     RenderPassHandle m_skyPass;
     RenderPassHandle m_sunSpritePass;
     RenderPassHandle m_toCubemapPass;
-    RenderPassHandle m_diffuseConvolutionPass;
+    RenderPassHandle m_skyDiffuseConvolutionPass;
     RenderPassHandle m_brdfLutPass;
     std::vector<RenderPassHandle> m_cubemapMipPasses;
-    std::vector<RenderPassHandle> m_specularConvolutionPerMipPasses;
+    std::vector<RenderPassHandle> m_skySpecularConvolutionPerMipPasses;
     RenderPassHandle m_histogramPerTilePass;
     RenderPassHandle m_histogramCombinePass;
     RenderPassHandle m_histogramResetPass;
@@ -192,15 +191,14 @@ private:
     RenderPassHandle m_skyShadowPass;
     RenderPassHandle m_skyOcclusionGatherPass;  //gathers visibility from sky shadow map
 
-    uint32_t m_specularProbeMipCount = 0;
+    uint32_t m_specularSkyProbeMipCount = 0;
 
     ImageHandle m_colorBuffer;
     ImageHandle m_depthBuffer;
     ImageHandle m_motionVectorBuffer;
-    ImageHandle m_environmentMapSrc;
     ImageHandle m_skyTexture;
-    ImageHandle m_diffuseProbe;
-    ImageHandle m_specularProbe;
+    ImageHandle m_diffuseSkyProbe;
+    ImageHandle m_specularSkyProbe;
     ImageHandle m_skyTransmissionLut;
     ImageHandle m_skyMultiscatterLut;
     ImageHandle m_skyLut;
@@ -262,7 +260,8 @@ private:
 
     //threadgroup count is needed as a pointer in a specialisation constant, so it must be from outer scope to stay valid
     ShaderDescription createDepthPyramidShaderDescription(uint32_t* outThreadgroupCount);
-    glm::ivec2 computeDepthPyramidDispatchCount() const;    
+    ShaderDescription createSkyLutMipShaderDescription(uint32_t* outThreadgroupCount);
+    glm::ivec2 computeSinglePassMipChainDispatchCount(const uint32_t width, const uint32_t height, const uint32_t mipCount, const uint32_t maxMipCount) const;
 
     glm::vec2 m_sunDirection = glm::vec2(0.f, 0.f);
    

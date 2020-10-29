@@ -202,11 +202,11 @@ struct GlobalShaderInfo {
     float cameraAspectRatio = 1.f;
     float nearPlane = 0.1f;
     float farPlane = 100.f;
-    float sunIlluminanceLux = 80000.f;
-    float skyIlluminanceLux = 30000.f;
+    float sunIlluminanceLux = 128000.f; //from: https://en.wikipedia.org/wiki/Sunlight
     float exposureOffset = 1.f;
     float exposureAdaptionSpeedEvPerSec = 2.f;
     float deltaTime = 0.016f;
+    float time = 0.f;
 };
 
 struct Material {

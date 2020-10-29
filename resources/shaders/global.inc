@@ -11,10 +11,10 @@ layout(set=0, binding = 0, std140) uniform global{
     float g_nearPlane;
     float g_farPlane;
     float g_sunStrength;
-    float g_skyStrength;
     float g_exposureOffset;
     float g_exposureAdaptionSpeedEvPerSec;
     float g_deltaTime;
+    float g_time;
 };
 
 float pi = 3.1415926535f;

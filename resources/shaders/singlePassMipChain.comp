@@ -1,0 +1,257 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+//specialisation constants provide resolution and mip count
+//control flow caused by resolution and mip count should be compiled out because of this
+layout(constant_id = 0) const int mipCount = 0;
+layout(constant_id = 1) const int inputResX = 0;
+layout(constant_id = 2) const int inputResY = 0;
+layout(constant_id = 3) const int threadGroupCount = 0;
+
+//maximum of 12 mip levels supported, meaning maximum resolution of 4096*4096
+//mips must be bound so mip11 matches the lowest mip level to write to, first mips may be unused and bound with a placeholder
+//this makes the compile time control flow easier
+layout(set=1, binding = 1,  r11f_g11f_b10f) uniform image2D mip1;
+layout(set=1, binding = 2,  r11f_g11f_b10f) uniform image2D mip2;
+layout(set=1, binding = 3,  r11f_g11f_b10f) uniform image2D mip3;
+layout(set=1, binding = 4,  r11f_g11f_b10f) uniform image2D mip4;
+layout(set=1, binding = 5,  r11f_g11f_b10f) uniform image2D mip5;
+layout(set=1, binding = 6,  r11f_g11f_b10f) uniform image2D mip6;
+layout(set=1, binding = 7,  r11f_g11f_b10f) uniform image2D mip7;
+layout(set=1, binding = 8,  r11f_g11f_b10f) uniform image2D mip8;
+layout(set=1, binding = 9,  r11f_g11f_b10f) uniform image2D mip9;
+layout(set=1, binding = 10, r11f_g11f_b10f) uniform image2D mip10;
+layout(set=1, binding = 11, r11f_g11f_b10f) uniform image2D mip11;
+
+layout(set=1, binding = 12) uniform sampler colorSampler;
+
+//texture access for sampling
+layout(set=1, binding = 13) uniform texture2D colorTexture;
+
+layout(set=1, binding = 14, std430) buffer syncBuffer{
+    uint syncCounter;
+};
+
+shared uint threadCounter;
+
+bool isOdd(int i){
+    return (i % 2) == 1;
+}
+
+vec3 computeColor(ivec2 upperLeft, int srcMipLevel, ivec2 srcRes, bool extraRow, bool extraColumn){
+    ivec2 offsets[4] = { ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1) };
+    
+    vec2 texelSize = vec2(1.f) / vec2(srcRes);
+    vec2 upperLeftUV = upperLeft * texelSize;
+    upperLeftUV += texelSize * 0.5f; //shift to texel center
+    vec3 color = vec3(0);
+    int texelCount = 0;
+    
+    for(int texel = 0; texel < 4; texel++){
+        vec2 uv = upperLeftUV + offsets[texel] * texelSize;
+        color += textureLod(sampler2D(colorTexture, colorSampler), uv, srcMipLevel).rgb;
+        texelCount++;
+    }
+
+    if(extraRow){
+        vec2 extraRowOffsets[2] = { vec2(0, 2), vec2(1, 2) };
+        for(int texel = 0; texel < 2; texel++){
+            vec2 uv = upperLeftUV + extraRowOffsets[texel] * texelSize;
+            color += textureLod(sampler2D(colorTexture, colorSampler), uv, srcMipLevel).rgb;
+            texelCount++;
+        }
+    }
+    
+    if(extraColumn){
+        vec2 extraColumnOffsets[2] = { vec2(2, 0), vec2(2, 1) };
+        for(int texel = 0; texel < 2; texel++){
+            vec2 uv = upperLeftUV + extraColumnOffsets[texel] * texelSize;
+            color += textureLod(sampler2D(colorTexture, colorSampler), uv, srcMipLevel).rgb;
+            texelCount++;
+        }
+    }
+    
+    if(extraRow && extraColumn){
+        vec2 uv = upperLeftUV + ivec2(2, 2) * texelSize;
+        color += textureLod(sampler2D(colorTexture, colorSampler), uv, srcMipLevel).rgb;     
+        texelCount++;
+    }
+    color /= texelCount;
+    return color;
+} 
+
+//single pass downscaling reference: https://github.com/GPUOpen-Effects/FidelityFX-SPD/tree/master/docs
+void main(){
+    
+    int srcMipLevel = 0;
+    
+    ivec2 srcMipRes = ivec2(inputResX, inputResY);
+    ivec2 currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+    
+    //mip 1
+    if((mipCount >= 12)){
+        ivec2 offsets[4] = { ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1) };
+        
+        for(int i = 0; i < 4; i++){
+            ivec2 dstUV = ivec2(gl_GlobalInvocationID.xy) * 2 + offsets[i];
+            if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
+                vec3 color = computeColor(dstUV * 2, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x));
+                imageStore(mip1, dstUV, vec4(color, 0));            
+            }
+        }
+        srcMipLevel++;
+        srcMipRes = currentMipRes;
+        currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+    }   
+    //mip 2
+    if(mipCount >= 11){
+        ivec2 dstUV = ivec2(gl_GlobalInvocationID.xy);
+        if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
+            vec3 color = computeColor(dstUV * 2, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x));
+            imageStore(mip2, dstUV, vec4(color, 0));            
+        }
+        srcMipLevel++;
+        srcMipRes = currentMipRes;
+        currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+    }
+    //mip 3
+    if(mipCount >= 10){
+        if(gl_LocalInvocationID.x < 8 && gl_LocalInvocationID.y < 8){
+            ivec2 dstUV = ivec2(gl_LocalInvocationID.xy) + ivec2(gl_WorkGroupID.xy) * ivec2(8, 8);
+            if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
+                vec3 color = computeColor(dstUV * 2, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x));
+                imageStore(mip3, dstUV, vec4(color, 0));            
+            }
+        }
+        srcMipLevel++;
+        srcMipRes = currentMipRes;
+        currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+    }
+    //mip 4
+    if(mipCount >= 9){
+        if(gl_LocalInvocationID.x < 4 && gl_LocalInvocationID.y < 4){
+            ivec2 dstUV = ivec2(gl_LocalInvocationID.xy) + ivec2(gl_WorkGroupID.xy) * ivec2(4, 4);
+            if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
+                vec3 color = computeColor(dstUV * 2, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x));
+                imageStore(mip4, dstUV, vec4(color, 0));            
+            }
+        }
+        srcMipLevel++;
+        srcMipRes = currentMipRes;
+        currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+    }
+    //mip 5
+    if(mipCount >= 8){
+        if(gl_LocalInvocationID.x < 2 && gl_LocalInvocationID.y < 2){
+            ivec2 dstUV = ivec2(gl_LocalInvocationID.xy) + ivec2(gl_WorkGroupID.xy) * ivec2(2, 2);
+            if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
+                vec3 color = computeColor(dstUV * 2, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x));
+                imageStore(mip5, dstUV, vec4(color, 0));            
+            }
+        }
+        srcMipLevel++;
+        srcMipRes = currentMipRes;
+        currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+    }
+    
+    //mip 6
+    if(mipCount >= 7){
+        if(gl_LocalInvocationID.x < 1 && gl_LocalInvocationID.y < 1){
+            ivec2 dstUV = ivec2(gl_LocalInvocationID.xy) + ivec2(gl_WorkGroupID.xy);
+            if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
+                vec3 color = computeColor(dstUV * 2, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x));
+                imageStore(mip6, dstUV, vec4(color, 0));            
+            }
+        }
+        srcMipLevel++;
+        srcMipRes = currentMipRes;
+        currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+    }
+    
+    //increment counter once per threadgroup, write previous value to shared memory
+    if(gl_LocalInvocationIndex == 0){
+        threadCounter = atomicAdd(syncCounter, 1); 
+    }
+    
+    //wait until threadCounter has been updated
+    barrier();
+    
+    //only last group computes last mip levels
+    if(threadCounter != threadGroupCount-1){
+        return;
+    }
+    //reset counter for next frame
+    syncCounter = 0;
+    
+    //from here gl_LocalInvocationID must be used to compute uvs
+    
+    //mip 7
+    if(mipCount >= 6){
+        ivec2 offsets[4] = { ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1) };
+        
+        for(int i = 0; i < 4; i++){
+            ivec2 dstUV = ivec2(gl_LocalInvocationID.xy) * 2 + offsets[i];
+            if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
+                vec3 color = computeColor(dstUV * 2, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x));
+                imageStore(mip7, dstUV, vec4(color, 0));            
+            }
+        }
+        srcMipLevel++;
+        srcMipRes = currentMipRes;
+        currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+    }
+    //mip 8
+    if(mipCount >= 5){
+        ivec2 dstUV = ivec2(gl_LocalInvocationID.xy);
+        if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
+            vec3 color = computeColor(dstUV * 2, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x));
+            imageStore(mip8, dstUV, vec4(color, 0));            
+        }
+        srcMipLevel++;
+        srcMipRes = currentMipRes;
+        currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+    }
+    //mip 9
+    if(mipCount >= 4){
+        if(gl_LocalInvocationID.x < 8 && gl_LocalInvocationID.y < 8){
+            ivec2 dstUV = ivec2(gl_LocalInvocationID.xy);
+            if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
+                vec3 color = computeColor(dstUV * 2, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x));
+                imageStore(mip9, dstUV, vec4(color, 0));            
+            }
+        }
+        srcMipLevel++;
+        srcMipRes = currentMipRes;
+        currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+    }
+    //mip 10
+    if(mipCount >= 3){
+        if(gl_LocalInvocationID.x < 4 && gl_LocalInvocationID.y < 4){
+            ivec2 dstUV = ivec2(gl_LocalInvocationID.xy);
+            if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
+                vec3 color = computeColor(dstUV * 2, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x));
+                imageStore(mip10, dstUV, vec4(color, 0));            
+            }
+        }
+        srcMipLevel++;
+        srcMipRes = currentMipRes;
+        currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+    }
+    
+    //mip 11
+    if(mipCount >= 2){
+        
+        if(gl_LocalInvocationID.x < 2 && gl_LocalInvocationID.y < 2){
+            ivec2 dstUV = ivec2(gl_LocalInvocationID.xy);
+            if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
+                vec3 color = computeColor(dstUV * 2, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x));
+                imageStore(mip11, dstUV, vec4(color, 0));            
+            }
+        }
+        srcMipLevel++;
+        srcMipRes = currentMipRes;
+        currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+    }
+}

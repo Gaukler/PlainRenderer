@@ -25,8 +25,8 @@ RenderFrontend gRenderFrontend;
 
 const uint32_t shadowMapRes = 2048;
 const uint32_t skyTextureRes = 1024;
-const uint32_t specularProbeRes = 512;
-const uint32_t diffuseProbeRes = 256;
+const uint32_t specularSkyProbeRes = 128;
+const uint32_t diffuseSkyProbeRes = 4;
 const uint32_t skyTextureMipCount = 8;
 const uint32_t brdfLutRes = 512;
 const uint32_t nHistogramBins = 128;
@@ -162,11 +162,8 @@ void RenderFrontend::setup(GLFWwindow* window) {
 
     initMeshs();
     
-    //IBL preprocessing
     gRenderBackend.newFrame();
     computeBRDFLut();
-    skyCubemapFromTexture();
-    skyCubemapIBLPreProcessing(m_cubemapMipPasses);
     gRenderBackend.renderFrame(false);
 }
 
@@ -254,6 +251,7 @@ void RenderFrontend::prepareRenderpasses(){
         renderDebugGeometry();
     }
     renderSky(drawDebugPass);
+    skyIBLConvolution();
     computeTAA();
     copyColorToHistoryBuffer();
     computeTonemapping();
@@ -647,7 +645,17 @@ void RenderFrontend::computeDepthPyramid() const {
     RenderPassExecution exe;
     exe.handle = m_depthPyramidPass;
     exe.parents = { m_depthPrePass };
-    const glm::ivec2 dispatchCount = computeDepthPyramidDispatchCount();
+
+    const uint32_t width = m_screenWidth / 2;
+    const uint32_t height = m_screenHeight / 2;
+    const uint32_t maxMipCount = 11;
+
+    const uint32_t mipCount = mipCountFromResolution(width, height, 1);
+    if (mipCount > maxMipCount) {
+        std::cout << "Warning: depth pyramid mip count exceeds calculation shader max\n";
+    }
+
+    const glm::ivec2 dispatchCount = computeSinglePassMipChainDispatchCount(width, height, mipCount, maxMipCount);
     exe.dispatchCount[0] = dispatchCount.x;
     exe.dispatchCount[1] = dispatchCount.y;
     exe.dispatchCount[2] = 1;
@@ -663,11 +671,6 @@ void RenderFrontend::computeDepthPyramid() const {
     StorageBufferResource syncBuffer(m_depthPyramidSyncBuffer, false, 16);
     exe.resources.storageBuffers = { syncBuffer };
 
-    const uint32_t mipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
-    const uint32_t maxMipCount = 11; //see shader for details
-    if (mipCount > maxMipCount) {
-        std::cout << "Warning: depth pyramid mip count exceeds calculation shader max\n";
-    }
     exe.resources.storageImages.reserve(maxMipCount);
     const uint32_t unusedMipCount = maxMipCount - mipCount;
     for (uint32_t i = 0; i < maxMipCount; i++) {
@@ -698,10 +701,10 @@ void RenderFrontend::computeSunLightMatrices() const{
 
 void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const {
     const auto shadowSamplerResource = SamplerResource(m_shadowSampler, 0);
-    const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 1);
+    const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 1);
     const auto cubeSamplerResource = SamplerResource(m_cubeSampler, 2);
     const auto brdfLutResource = ImageResource(m_brdfLut, 0, 3);
-    const auto specularProbeResource = ImageResource(m_specularProbe, 0, 4);
+    const auto specularProbeResource = ImageResource(m_specularSkyProbe, 0, 4);
     const auto cubeSamplerMipsResource = SamplerResource(m_skySamplerWithMips, 5);
     const auto lustSamplerResource = SamplerResource(m_lutSampler, 6);
     const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
@@ -725,8 +728,9 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
         mainPassExecution.resources.sampledImages.push_back(shadowMapResource);
     }
 
-    mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
+    mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass, m_skyDiffuseConvolutionPass };
     mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
+    mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_skySpecularConvolutionPerMipPasses.begin(), m_skySpecularConvolutionPerMipPasses.end());
     mainPassExecution.parents.insert(mainPassExecution.parents.begin(), externalDependencies.begin(), externalDependencies.end());
 
     gRenderBackend.setRenderPassExecution(mainPassExecution);
@@ -835,78 +839,39 @@ bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* 
     }
 }
 
-void RenderFrontend::skyCubemapFromTexture() {
-    //write to sky texture
-    {
-        const auto skyTextureResource = ImageResource(m_skyTexture, 0, 0);
-        const auto hdrCaptureResource = ImageResource(m_environmentMapSrc, 0, 1);
-        const auto hdrSamplerResource = SamplerResource(m_cubeSampler, 2);
-
-        RenderPassExecution cubeWriteExecution;
-        cubeWriteExecution.handle = m_toCubemapPass;
-        cubeWriteExecution.resources.storageImages = { skyTextureResource };
-        cubeWriteExecution.resources.sampledImages = { hdrCaptureResource };
-        cubeWriteExecution.resources.samplers = { hdrSamplerResource };
-        cubeWriteExecution.dispatchCount[0] = skyTextureRes / 8;
-        cubeWriteExecution.dispatchCount[1] = skyTextureRes / 8;
-        cubeWriteExecution.dispatchCount[2] = 6;
-        gRenderBackend.setRenderPassExecution(cubeWriteExecution);
-    }
-    //mips
-    for (uint32_t i = 1; i < skyTextureMipCount; i++) {
-        const uint32_t srcMip = i - 1;
-        const auto skyMipSrcResource = ImageResource(m_skyTexture, srcMip, 0);
-        const auto skyMipDstResource = ImageResource(m_skyTexture, i, 1);
-
-        RenderPassExecution skyMipExecution;
-        skyMipExecution.handle = m_cubemapMipPasses[srcMip];
-        skyMipExecution.resources.storageImages = { skyMipSrcResource, skyMipDstResource };
-        if (srcMip == 0) {
-            skyMipExecution.parents = { m_toCubemapPass };
-        }
-        else {
-            skyMipExecution.parents = { m_cubemapMipPasses[srcMip - 1] };
-        }
-        skyMipExecution.dispatchCount[0] = skyTextureRes / 8 / (uint32_t)glm::pow(2, i);
-        skyMipExecution.dispatchCount[1] = skyTextureRes / 8 / (uint32_t)glm::pow(2, i);
-        skyMipExecution.dispatchCount[2] = 6;
-        gRenderBackend.setRenderPassExecution(skyMipExecution);
-    }
-}
-
-void RenderFrontend::skyCubemapIBLPreProcessing(const std::vector<RenderPassHandle>& dependencies) {
+void RenderFrontend::skyIBLConvolution() {
     //diffuse convolution
     {
-        const auto diffuseProbeResource = ImageResource(m_diffuseProbe, 0, 0);
-        const auto diffuseConvolutionSrcResource = ImageResource(m_skyTexture, 0, 1);
-        const auto cubeSamplerResource = SamplerResource(m_skySamplerWithMips, 2);
+        const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 0);
+        const auto skyLutResource = ImageResource(m_skyLut, 0, 1);
+        const auto skySamplerResource = SamplerResource(m_colorSampler, 2);
 
         RenderPassExecution diffuseConvolutionExecution;
-        diffuseConvolutionExecution.handle = m_diffuseConvolutionPass;
-        diffuseConvolutionExecution.parents = dependencies;
+        diffuseConvolutionExecution.handle = m_skyDiffuseConvolutionPass;
+        diffuseConvolutionExecution.parents = { m_skyLutPass };
         diffuseConvolutionExecution.resources.storageImages = { diffuseProbeResource };
-        diffuseConvolutionExecution.resources.sampledImages = { diffuseConvolutionSrcResource };
-        diffuseConvolutionExecution.resources.samplers = { cubeSamplerResource };
-        diffuseConvolutionExecution.dispatchCount[0] = diffuseProbeRes / 8;
-        diffuseConvolutionExecution.dispatchCount[1] = diffuseProbeRes / 8;
+        diffuseConvolutionExecution.resources.sampledImages = { skyLutResource };
+        diffuseConvolutionExecution.resources.samplers = { skySamplerResource };
+        diffuseConvolutionExecution.dispatchCount[0] = uint32_t(std::ceil(diffuseSkyProbeRes / 8.f));
+        diffuseConvolutionExecution.dispatchCount[1] = uint32_t(std::ceil(diffuseSkyProbeRes / 8.f));
         diffuseConvolutionExecution.dispatchCount[2] = 6;
         gRenderBackend.setRenderPassExecution(diffuseConvolutionExecution);
     }
     //specular probe convolution
-    for (uint32_t mipLevel = 0; mipLevel < m_specularProbeMipCount; mipLevel++) {
+    for (uint32_t mipLevel = 0; mipLevel < m_specularSkyProbeMipCount; mipLevel++) {
 
-        const auto specularProbeResource = ImageResource(m_specularProbe, mipLevel, 0);
-        const auto specularConvolutionSrcResource = ImageResource(m_skyTexture, 0, 1);
-        const auto specCubeSamplerResource = SamplerResource(m_skySamplerWithMips, 2);
+        const auto specularProbeResource = ImageResource(m_specularSkyProbe, mipLevel, 0);
+        const auto skyLutResource = ImageResource(m_skyLut, 0, 1);
+        const auto skySamplerResource = SamplerResource(m_colorSampler, 2);
 
         RenderPassExecution specularConvolutionExecution;
-        specularConvolutionExecution.handle = m_specularConvolutionPerMipPasses[mipLevel];
-        specularConvolutionExecution.parents = dependencies;
+        specularConvolutionExecution.handle = m_skySpecularConvolutionPerMipPasses[mipLevel];
+        specularConvolutionExecution.parents = { m_skyLutPass };
         specularConvolutionExecution.resources.storageImages = { specularProbeResource };
-        specularConvolutionExecution.resources.sampledImages = { specularConvolutionSrcResource };
-        specularConvolutionExecution.resources.samplers = { specCubeSamplerResource };
-        specularConvolutionExecution.dispatchCount[0] = specularProbeRes / uint32_t(pow(2, mipLevel)) / 8;
-        specularConvolutionExecution.dispatchCount[1] = specularProbeRes / uint32_t(pow(2, mipLevel)) / 8;
+        specularConvolutionExecution.resources.sampledImages = { skyLutResource };
+        specularConvolutionExecution.resources.samplers = { skySamplerResource };
+        specularConvolutionExecution.dispatchCount[0] = specularSkyProbeRes / uint32_t(pow(2, mipLevel)) / 8;
+        specularConvolutionExecution.dispatchCount[1] = specularSkyProbeRes / uint32_t(pow(2, mipLevel)) / 8;
         specularConvolutionExecution.dispatchCount[2] = 6;
         gRenderBackend.setRenderPassExecution(specularConvolutionExecution);
     }
@@ -1118,7 +1083,7 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
         //specular probe mip count
         constants.push_back({
             4,                                                                                  //location
-            dataToCharArray((void*)&m_specularProbeMipCount, sizeof(m_specularProbeMipCount))   //value
+            dataToCharArray((void*)&m_specularSkyProbeMipCount, sizeof(m_specularSkyProbeMipCount))   //value
             });
         //texture LoD bias
         constants.push_back({
@@ -1190,6 +1155,7 @@ void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.cameraPos = glm::vec4(m_camera.extrinsic.position, 1.f); 
 
     m_globalShaderInfo.deltaTime = Timer::getDeltaTimeFloat();
+    m_globalShaderInfo.time = Timer::getTimeFloat();
     m_globalShaderInfo.nearPlane = m_camera.intrinsic.near;
     m_globalShaderInfo.farPlane = m_camera.intrinsic.far;
 
@@ -1203,16 +1169,6 @@ void RenderFrontend::updateGlobalShaderInfo() {
 }
 
 void RenderFrontend::initImages() {
-    //load skybox
-    {
-        ImageDescription hdrCapture;
-        if (loadImage("textures\\sunset_in_the_chalk_quarry_2k.hdr", false, &hdrCapture)) {
-            m_environmentMapSrc = gRenderBackend.createImage(hdrCapture);
-        }
-        else {
-            m_environmentMapSrc = m_defaultTextures.sky;
-        }
-    }
     //main color buffer
     {
         ImageDescription desc;
@@ -1294,28 +1250,33 @@ void RenderFrontend::initImages() {
             m_shadowMaps.push_back(shadowMap);
         }
     }
-    //specular probe
+    //specular sky probe
     {
-        m_specularProbeMipCount = mipCountFromResolution(specularProbeRes, specularProbeRes, 1);
+        m_specularSkyProbeMipCount = mipCountFromResolution(specularSkyProbeRes, specularSkyProbeRes, 1);
+        //don't use the last few mips as they are too small
+        const uint32_t mipsTooSmallCount = 4;
+        if (m_specularSkyProbeMipCount > mipsTooSmallCount) {
+            m_specularSkyProbeMipCount -= mipsTooSmallCount;
+        }
 
         ImageDescription desc;
-        desc.width = specularProbeRes;
-        desc.height = specularProbeRes;
+        desc.width = specularSkyProbeRes;
+        desc.height = specularSkyProbeRes;
         desc.depth = 1;
         desc.type = ImageType::TypeCube;
         desc.format = ImageFormat::R11G11B10_uFloat;
         desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
         desc.mipCount = MipCount::Manual;
-        desc.manualMipCount = m_specularProbeMipCount;
+        desc.manualMipCount = m_specularSkyProbeMipCount;
         desc.autoCreateMips = false;
 
-        m_specularProbe = gRenderBackend.createImage(desc);
+        m_specularSkyProbe = gRenderBackend.createImage(desc);
     }
-    //diffuse probe
+    //diffuse sky probe
     {
         ImageDescription desc;
-        desc.width = diffuseProbeRes;
-        desc.height = diffuseProbeRes;
+        desc.width = diffuseSkyProbeRes;
+        desc.height = diffuseSkyProbeRes;
         desc.depth = 1;
         desc.type = ImageType::TypeCube;
         desc.format = ImageFormat::R11G11B10_uFloat;
@@ -1324,7 +1285,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 0;
         desc.autoCreateMips = false;
 
-        m_diffuseProbe = gRenderBackend.createImage(desc);
+        m_diffuseSkyProbe = gRenderBackend.createImage(desc);
     }
     //sky cubemap
     {
@@ -1475,7 +1436,7 @@ void RenderFrontend::initSamplers(){
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Linear;
-        desc.wrapping = SamplerWrapping::Clamp;
+        desc.wrapping = SamplerWrapping::Repeat;
         desc.useAnisotropy = false;
         desc.maxAnisotropy = 0;
         desc.borderColor = SamplerBorderColor::White;
@@ -1567,7 +1528,6 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
             glm::vec3 sunColor;
             float previousFrameExposure;
             float sunStrengthExposed;
-            float skyStrengthExposed;
         };
 
         LightBuffer initialData = {};
@@ -1818,16 +1778,10 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     }
     //specular convolution pass
     {
-        //don't use the last few mips as they are too small
-        const uint32_t mipsTooSmallCount = 4;
-        if (m_specularProbeMipCount > mipsTooSmallCount) {
-            m_specularProbeMipCount -= mipsTooSmallCount;
-        }
-
-        for (uint32_t i = 0; i < m_specularProbeMipCount; i++) {
+        for (uint32_t i = 0; i < m_specularSkyProbeMipCount; i++) {
             ComputePassDescription specularConvolutionDesc;
-            specularConvolutionDesc.name = "Specular probe convolution";
-            specularConvolutionDesc.shaderDescription.srcPathRelative = "specularCubeConvolution.comp";
+            specularConvolutionDesc.name = "Specular sky probe convolution";
+            specularConvolutionDesc.shaderDescription.srcPathRelative = "specularSkyConvolution.comp";
 
             //specialisation constants
             {
@@ -1836,7 +1790,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
                 //mip count specialisation constant
                 constants.push_back({
                     0,                                                                                  //location
-                    dataToCharArray((void*)&m_specularProbeMipCount, sizeof(m_specularProbeMipCount))   //value
+                    dataToCharArray((void*)&m_specularSkyProbeMipCount, sizeof(m_specularSkyProbeMipCount))   //value
                     });
                 //mip level
                 constants.push_back({
@@ -1844,15 +1798,15 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
                     dataToCharArray((void*)&i, sizeof(i))   //value
                     });
             }
-            m_specularConvolutionPerMipPasses.push_back(gRenderBackend.createComputePass(specularConvolutionDesc));
+            m_skySpecularConvolutionPerMipPasses.push_back(gRenderBackend.createComputePass(specularConvolutionDesc));
         }
     }
     //diffuse convolution pass
     {
         ComputePassDescription diffuseConvolutionDesc;
-        diffuseConvolutionDesc.name = "Diffuse probe convolution";
-        diffuseConvolutionDesc.shaderDescription.srcPathRelative = "diffuseCubeConvolution.comp";
-        m_diffuseConvolutionPass = gRenderBackend.createComputePass(diffuseConvolutionDesc);
+        diffuseConvolutionDesc.name = "Diffuse sky probe convolution";
+        diffuseConvolutionDesc.shaderDescription.srcPathRelative = "diffuseSkyConvolution.comp";
+        m_skyDiffuseConvolutionPass = gRenderBackend.createComputePass(diffuseConvolutionDesc);
     }
     //sky transmission lut creation pass
     {
@@ -2134,8 +2088,12 @@ ShaderDescription RenderFrontend::createDepthPyramidShaderDescription(uint32_t* 
     ShaderDescription desc;
     desc.srcPathRelative = "depthHiZPyramid.comp";
 
-    const uint32_t depthMipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
-    const auto dispatchCount = computeDepthPyramidDispatchCount();
+    const uint32_t width = m_screenWidth / 2;
+    const uint32_t height = m_screenHeight / 2;
+    const uint32_t depthMipCount = mipCountFromResolution(width, height, 1);
+
+    const uint32_t maxMipCount = 11; //see shader for details
+    const auto dispatchCount = computeSinglePassMipChainDispatchCount(width, height, depthMipCount, maxMipCount);
 
     //mip count
     desc.specialisationConstants.push_back({ 
@@ -2162,13 +2120,45 @@ ShaderDescription RenderFrontend::createDepthPyramidShaderDescription(uint32_t* 
     return desc;
 }
 
-glm::ivec2 RenderFrontend::computeDepthPyramidDispatchCount() const{
-    glm::ivec2 count;
+ShaderDescription RenderFrontend::createSkyLutMipShaderDescription(uint32_t* outThreadgroupCount) {
 
-    //shader can process up to 11 mip levels
+    ShaderDescription desc;
+    desc.srcPathRelative = "singlePassMipChain.comp";
+
+    const uint32_t mipCount = mipCountFromResolution(skyLutWidth, skyLutHeight, 1);
+
+    const uint32_t maxMipCount = 12; //see shader for details
+    const auto dispatchCount = computeSinglePassMipChainDispatchCount(skyLutWidth, skyLutHeight, mipCount, maxMipCount);
+
+    //mip count
+    desc.specialisationConstants.push_back({
+        0,                                                              //location
+        dataToCharArray((void*)&mipCount, sizeof(mipCount))   //value
+        });
+    //depth buffer width
+    desc.specialisationConstants.push_back({
+        1,                                                              //location
+        dataToCharArray((void*)&skyLutWidth, sizeof(skyLutWidth))   //value
+        });
+    //depth buffer height
+    desc.specialisationConstants.push_back({
+        2,                                                              //location
+        dataToCharArray((void*)&skyLutHeight, sizeof(skyLutHeight)) //value
+        });
+    //threadgroup count
+    *outThreadgroupCount = dispatchCount.x * dispatchCount.y;
+    desc.specialisationConstants.push_back({
+        3,                                                                          //location
+        dataToCharArray((void*)outThreadgroupCount, sizeof(*outThreadgroupCount))   //value
+        });
+
+    return desc;
+}
+
+glm::ivec2 RenderFrontend::computeSinglePassMipChainDispatchCount(const uint32_t width, const uint32_t height, const uint32_t mipCount, const uint32_t maxMipCount) const {
+
+    //shader can process up to 12 mip levels
     //thread group extent ranges from 16 to 1 depending on how many mips are used
-    const uint32_t mipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
-    const uint32_t maxMipCount = 11;
     const uint32_t unusedMips = maxMipCount - mipCount;
 
     //last 6 mips are processed by single thread group
@@ -2179,9 +2169,9 @@ glm::ivec2 RenderFrontend::computeDepthPyramidDispatchCount() const{
         //group size of 16x16 can compute up to a 32x32 area in mip0
         const uint32_t localThreadGroupExtent = 32 / (uint32_t)pow((uint32_t)2, unusedMips);
 
-        //pyramid mip0 is half screen resolution
-        count.x = (uint32_t)std::ceil(m_screenWidth  * 0.5f / localThreadGroupExtent);
-        count.y = (uint32_t)std::ceil(m_screenHeight * 0.5f / localThreadGroupExtent);
+        glm::ivec2 count;
+        count.x = (uint32_t)std::ceil(width / localThreadGroupExtent);
+        count.y = (uint32_t)std::ceil(height / localThreadGroupExtent);
 
         return count;
     }
@@ -2251,7 +2241,6 @@ void RenderFrontend::drawUi() {
         ImGui::DragFloat("Exposure offset EV", &m_globalShaderInfo.exposureOffset, 0.1f);
         ImGui::DragFloat("Adaption speed EV/s", &m_globalShaderInfo.exposureAdaptionSpeedEvPerSec, 0.1f, 0.f);
         ImGui::InputFloat("Sun Illuminance Lux", &m_globalShaderInfo.sunIlluminanceLux);
-        ImGui::InputFloat("Sky Illuminance Lux", &m_globalShaderInfo.skyIlluminanceLux);
     }
     
     //shading settings

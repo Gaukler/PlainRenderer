@@ -48,7 +48,6 @@ void main(){
 
     float exposure =  1.f / (pow(2.f, currentEV100) * 1.2f);
     lightBuffer.sunStrengthExposed = g_sunStrength * exposure;
-    lightBuffer.skyStrengthExposed = g_skyStrength * exposure;
     lightBuffer.previousFrameExposure = exposure;
     
     vec2 lutUV = vec2(0, -g_sunDirection.y * 0.5 + 0.5);
