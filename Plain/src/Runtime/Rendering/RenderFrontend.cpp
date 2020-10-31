@@ -1164,6 +1164,7 @@ void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.cameraForward    = glm::vec4(m_camera.extrinsic.forward, 0);
     m_globalShaderInfo.cameraTanFovHalf = glm::tan(glm::radians(m_camera.intrinsic.fov) * 0.5f);
     m_globalShaderInfo.cameraAspectRatio = m_camera.intrinsic.aspectRatio;
+    m_globalShaderInfo.screenResolution = glm::ivec2(m_screenWidth, m_screenHeight);
 
     gRenderBackend.setGlobalShaderInfo(m_globalShaderInfo);
 }

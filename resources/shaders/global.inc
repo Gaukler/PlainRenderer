@@ -6,6 +6,7 @@ layout(set=0, binding = 0, std140) uniform global{
     vec4 g_cameraForward;   
     vec2 g_currentFrameCameraJitter;
     vec2 g_previousFrameCameraJitter;
+    ivec2 g_screenResolution;
     float g_cameraTanFovHalf;
     float g_cameraAspectRatio;
     float g_nearPlane;

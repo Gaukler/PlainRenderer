@@ -198,6 +198,7 @@ struct GlobalShaderInfo {
     glm::vec4 cameraForward = glm::vec4(0.f, 0.f, -1.f, 0.f);
     glm::vec2 currentFrameCameraJitter  = glm::vec2(0.f);
     glm::vec2 previousFrameCameraJitter = glm::vec2(0.f);
+    glm::ivec2 screenResolution = glm::ivec2(0);
     float cameraTanFovHalf = 1.f;
     float cameraAspectRatio = 1.f;
     float nearPlane = 0.1f;
