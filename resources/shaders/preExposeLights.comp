@@ -22,22 +22,54 @@ layout(set=1, binding = 1, std430) buffer histogramBuffer{
 layout(set=1, binding = 2) uniform texture2D transmissionLut;
 layout(set=1, binding = 3) uniform sampler lutSampler;
 
+//maps scene brightness to an ev offset
+//this causes brighter scenes to appear brighter and darker scenes to appear darker
+//without this changing the light level of a scene would be completely compensated by the auto exposure
+//reference: "Real-World Measurements forCall of Duty: Advanced Warfare", page 9
+float offsetFromSceneEV(float sceneEV100){
+    float darkExp = 2.84f;
+    float lightExp = 12.81f;
+    
+    float lightOffset = 1.47;
+    float darkOffset = -3.17;
+    
+    float t = clamp((sceneEV100 - darkExp) / (lightExp - darkOffset), 0, 1);
+    
+    return mix(darkOffset, lightOffset, t);
+}
+
 void main(){
     
     const float minLuminanceLog = log(constMinLuminance);
     const float maxLuminanceLog = log(constMaxLuminance);
     
-    float mean = 0.f;
-    float total = 0.f;
-    for(int i = 0; i < constNBins; i++){
-        float binValueLog = minLuminanceLog + (maxLuminanceLog - minLuminanceLog) * i / float(constNBins - 1.f);
-        float binValueLinear = exp(binValueLog);
-        mean += histogram[i] * binValueLinear;
-        total += histogram[i];
-    }
-    mean /= total;
+    uint pixelCount = g_screenResolution.x * g_screenResolution.y;
+    float mean = 0;
+    uint countedPixels = 0;
     
-    float targetEV100 = log2(mean * 100.f / 12.5f) - g_exposureOffset;
+    uint currentPixelCount = 0;
+    for(int i = 0; i < constNBins; i++){
+        currentPixelCount += histogram[i];
+        float percentage = float(currentPixelCount) / float(pixelCount);
+        //thresholding for improved robustness
+        //ignore brightest 5% and pixels below median (50%)
+        //reference: "Post Processing in the Orange Box"
+        if(percentage < 0.95f && percentage >= 0.5f){
+            float binValueLog = minLuminanceLog + (maxLuminanceLog - minLuminanceLog) * i / float(constNBins - 1.f);
+            float binValueLinear = exp(binValueLog);
+        
+            mean += histogram[i] * binValueLinear;
+            countedPixels += histogram[i];
+        }
+    }
+    mean /= countedPixels;
+    
+    float sceneEV100 = log2(mean * 100.f / 12.5f);
+    
+    float exposureOffset = offsetFromSceneEV(sceneEV100);
+    exposureOffset += g_exposureOffset;
+    
+    float targetEV100 = sceneEV100 - exposureOffset;
     float previousEV100 = log2(1.f / (max(lightBuffer.previousFrameExposure, 0.000001f) * 1.2f));
     
     float evDelta = targetEV100 - previousEV100;
