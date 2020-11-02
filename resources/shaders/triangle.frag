@@ -102,6 +102,10 @@ float shadowTest(texture2D shadowMap, vec2 uv, float actualDepth){
     vec2 coordinatesFloored = floor(sampleImageCoordinates);
     vec2 interpolation = sampleImageCoordinates - coordinatesFloored;
     
+    //fixes rare NaNs on transparent geo
+    //TODO: proper fix
+    interpolation = clamp(interpolation, 0, 1);
+    
 	float interpolationLeft = mix(tests.b, tests.g, interpolation.y);
     float interpolationRight  = mix(tests.a, tests.r, interpolation.y);
     
