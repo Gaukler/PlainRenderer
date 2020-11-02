@@ -202,10 +202,14 @@ void main(){
     
 	const float NoH = max(dot(N, H), 0);
 	const float NoL = max(dot(N, L), 0);
-	const float NoV = abs(dot(N, V));
 	const float VoH = abs(dot(V, H));
     const float LoV = max(dot(L, V), 0.f);
-	
+    
+    float NoV = abs(dot(N, V));
+    //0 is physically impossible and breaks several math formulas
+    //can occur because of normal mapping, must be avoided
+	NoV = max(NoV, 0.0001f);
+    
 	const vec3 f0 = mix(vec3(0.04f), albedo, metalic);
     
     //sun light
@@ -375,7 +379,7 @@ void main(){
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
     color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
-    
+
     vec3 cascadeTestColor[4] = { 
     vec3(1, 0, 0), 
     vec3(0, 1, 0), 
