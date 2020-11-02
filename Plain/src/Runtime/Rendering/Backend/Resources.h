@@ -39,6 +39,7 @@ struct Buffer {
     VkBuffer vulkanHandle = VK_NULL_HANDLE;
     VkDeviceSize size = 0;
     VulkanAllocation memory;
+    bool isBeingWritten = false;
 };
 
 //disable warning caused by vulkan use
