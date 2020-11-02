@@ -1309,24 +1309,19 @@ void RenderBackend::prepareRenderPasses() {
     }
     assert(renderPassesToAdd.size() == 0); //all passes must have been added
 
-    /*
-    create image barriers
-    */
+    
+    //create barriers
     for (uint32_t i = 0; i < m_renderPassExecutions.size(); i++) {
 
         auto& execution = m_renderPassExecutions[i];
         std::vector<VkImageMemoryBarrier> barriers;
         const auto& resources = execution.resources;
 
-        /*
-        storage images
-        */
+        //storage images        
         for (auto& storageImage : resources.storageImages) {
             Image& image = m_images[storageImage.image.index];
 
-            /*
-            check if any mip levels need a layout transition
-            */
+            //check if any mip levels need a layout transition            
             const VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_GENERAL;
             bool needsLayoutTransition = false;
             for (const auto& layout : image.layoutPerMip) {
@@ -1335,10 +1330,8 @@ void RenderBackend::prepareRenderPasses() {
                 }
             }
 
-            /*
-            check if image already has a barrier
-            can happen if same image is used as two storage image when accessing different mips
-            */
+            //check if image already has a barrier
+            //can happen if same image is used as two storage image when accessing different mips            
             bool hasBarrierAlready = false;
             for (const auto& barrier : barriers) {
                 if (barrier.image == image.vulkanHandle) {
@@ -1355,9 +1348,7 @@ void RenderBackend::prepareRenderPasses() {
             }
         }
 
-        /*
-        sampled images
-        */
+        //sampled images        
         for (auto& sampledImage : resources.sampledImages) {
 
             //use general layout if image is used as a storage image too
@@ -1376,9 +1367,7 @@ void RenderBackend::prepareRenderPasses() {
 
             Image& image = m_images[sampledImage.image.index];
 
-            /*
-            check if any mip levels need a layout transition
-            */
+            //check if any mip levels need a layout transition            
             VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
             bool needsLayoutTransition = false;
@@ -1395,17 +1384,13 @@ void RenderBackend::prepareRenderPasses() {
             }
         }
 
-        /*
-        attachments
-        */
+        //attachments        
         if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
             const auto& pass = m_renderPasses.getGraphicPassRefByHandle(execution.handle);
             for (const auto imageHandle : pass.attachments) {
                 Image& image = m_images[imageHandle.index];
 
-                /*
-                check if any mip levels need a layout transition
-                */
+                //check if any mip levels need a layout transition                
                 const VkImageLayout requiredLayout = isDepthFormat(image.format) ?
                     VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
@@ -1429,6 +1414,20 @@ void RenderBackend::prepareRenderPasses() {
         }
         
         m_renderPassInternalExecutions[i].imageBarriers = barriers;
+
+        //storage buffer barriers
+        for (const auto& bufferResource : resources.storageBuffers) {
+            StorageBufferHandle handle = bufferResource.buffer;
+            Buffer& buffer = m_storageBuffers[handle.index];
+            const bool needsBarrier = buffer.isBeingWritten;
+            if (needsBarrier) {
+                VkBufferMemoryBarrier barrier = createBufferBarrier(buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+                m_renderPassInternalExecutions[i].memoryBarriers.push_back(barrier);
+            }
+
+            //update writing state
+            buffer.isBeingWritten = !bufferResource.readOnly;
+        }
     }
 
     /*
@@ -1441,8 +1440,6 @@ void RenderBackend::prepareRenderPasses() {
 
 void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& execution, const VkCommandBuffer commandBuffer) {
 
-    barriersCommand(commandBuffer, execution.imageBarriers, execution.memoryBarriers);
-
     TimestampQuery timeQuery;
 
     if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
@@ -1452,6 +1449,8 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
 
         timeQuery.name = pass.graphicPassDesc.name;
         timeQuery.startQuery = issueTimestampQuery(commandBuffer);
+
+        barriersCommand(commandBuffer, execution.imageBarriers, execution.memoryBarriers);
 
         //update pointer: might become invalid if pass vector was changed        
         pass.beginInfo.pClearValues = pass.clearValues.data();
@@ -1475,6 +1474,8 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
 
         timeQuery.name = pass.computePassDesc.name;
         timeQuery.startQuery = issueTimestampQuery(commandBuffer);
+
+        barriersCommand(commandBuffer, execution.imageBarriers, execution.memoryBarriers);
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
         VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet };
@@ -1628,7 +1629,7 @@ bool RenderBackend::hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDev
         features.imageCubeArray &&
         features.fragmentStoresAndAtomics &&
         features.fillModeNonSolid &&
-        features.depthClamp && 
+        features.depthClamp &&
         features12.hostQueryReset;
 }
 
@@ -3465,13 +3466,6 @@ void RenderBackend::barriersCommand(const VkCommandBuffer commandBuffer,
 
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 
         (uint32_t)memoryBarriers.size(), memoryBarriers.data(), (uint32_t)imageBarriers.size(), imageBarriers.data());
-}
-
-void RenderBackend::createBufferBarriers() {
-    /*
-    FIXME memory barriers not implemented yet for buffers
-    */
-    throw std::runtime_error("Buffer barriers not yet implemented");
 }
 
 std::vector<VkImageMemoryBarrier> RenderBackend::createImageBarriers(Image& image, const VkImageLayout newLayout,

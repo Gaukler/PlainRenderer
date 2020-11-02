@@ -443,8 +443,6 @@ private:
     
     void barriersCommand(const VkCommandBuffer commandBuffer, const std::vector<VkImageMemoryBarrier>& imageBarriers, const std::vector<VkBufferMemoryBarrier>& memoryBarriers);
 
-    void createBufferBarriers();
-
     /*
     create necessary image barriers
     multiple barriers may be needed, as mip levels may have differing layouts
