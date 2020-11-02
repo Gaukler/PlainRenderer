@@ -24,14 +24,8 @@ void main(){
     vec2 ndcCurrent  = passPos.xy           / passPos.w;
     vec2 ndcPrevious = passPosPrevious.xy   / passPosPrevious.w;
     
-    ndcCurrent  -= g_currentFrameCameraJitter;
-    ndcPrevious -= g_previousFrameCameraJitter;
+    ndcCurrent  += g_currentFrameCameraJitter;
+    ndcPrevious += g_previousFrameCameraJitter;
     
     motion = (ndcPrevious - ndcCurrent) * vec2(0.5f, 0.5f);
-    
-    //FIXME: this is hacky, motion vectors should be zero without movement
-    //problem with jitter
-    if(abs(motion.x) + abs(motion.y) < 0.0007){
-        motion = vec2(0);
-    }
 }
