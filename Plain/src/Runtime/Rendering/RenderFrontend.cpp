@@ -120,7 +120,7 @@ DefaultTextures createDefaultTextures() {
 
 glm::vec2 computeProjectionMatrixJitter(const float pixelSizeX, const float pixelSizeY) {
     static uint32_t jitterIndex;
-    glm::vec2 offset = hammersley2D(jitterIndex) - glm::vec2(0.5f);
+    glm::vec2 offset = 2.f * hammersley2D(jitterIndex) - glm::vec2(1.f);
     offset.x *= pixelSizeX;
     offset.y *= pixelSizeY;
 
