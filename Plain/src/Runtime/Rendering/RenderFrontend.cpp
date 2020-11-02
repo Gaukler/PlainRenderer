@@ -209,7 +209,6 @@ void RenderFrontend::prepareNewFrame() {
     gRenderBackend.newFrame();
 
     prepareRenderpasses();
-    updateGlobalShaderInfo();
 }
 
 void RenderFrontend::prepareRenderpasses(){
@@ -454,7 +453,7 @@ void RenderFrontend::renderFrame() {
     if (m_minimized) {
         return;
     }
-
+    updateGlobalShaderInfo();
     drawUi();
     issueSkyDrawcalls();
     gRenderBackend.renderFrame(true);
