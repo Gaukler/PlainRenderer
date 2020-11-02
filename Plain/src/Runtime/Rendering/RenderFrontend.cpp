@@ -574,7 +574,7 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
     //render skybox
     {
         const ImageResource skyLutResource (m_skyLut, 0, 0);
-        const SamplerResource skySamplerResource (m_colorSampler, 1); //not lut sampler as we want wrapping to avoid artifacts
+        const SamplerResource skySamplerResource (m_colorSamplerWrap, 1); //not lut sampler as we want wrapping to avoid artifacts
 
         RenderPassExecution skyPassExecution;
         skyPassExecution.handle = m_skyPass;
@@ -740,7 +740,7 @@ void RenderFrontend::computeTAA() const {
     ImageResource previousFrameResource(m_historyBuffer, 0, 1);
     ImageResource motionBufferResource(m_motionVectorBuffer, 0, 2);
     ImageResource depthBufferResource(m_depthBuffer, 0, 3);
-    SamplerResource samplerResource(m_colorSampler, 4);
+    SamplerResource samplerResource(m_colorSamplerClamp, 4);
 
     RenderPassExecution taaExecution;
     taaExecution.handle = m_taaPass;
@@ -843,7 +843,7 @@ void RenderFrontend::skyIBLConvolution() {
     {
         const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 0);
         const auto skyLutResource = ImageResource(m_skyLut, 0, 1);
-        const auto skySamplerResource = SamplerResource(m_colorSampler, 2);
+        const auto skySamplerResource = SamplerResource(m_colorSamplerWrap, 2);
 
         RenderPassExecution diffuseConvolutionExecution;
         diffuseConvolutionExecution.handle = m_skyDiffuseConvolutionPass;
@@ -861,7 +861,7 @@ void RenderFrontend::skyIBLConvolution() {
 
         const auto specularProbeResource = ImageResource(m_specularSkyProbe, mipLevel, 0);
         const auto skyLutResource = ImageResource(m_skyLut, 0, 1);
-        const auto skySamplerResource = SamplerResource(m_colorSampler, 2);
+        const auto skySamplerResource = SamplerResource(m_colorSamplerWrap, 2);
 
         RenderPassExecution specularConvolutionExecution;
         specularConvolutionExecution.handle = m_skySpecularConvolutionPerMipPasses[mipLevel];
@@ -1432,7 +1432,7 @@ void RenderFrontend::initSamplers(){
 
         m_lutSampler = gRenderBackend.createSampler(desc);
     }
-    //color sampler
+    //color sampler wrap
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Linear;
@@ -1442,7 +1442,19 @@ void RenderFrontend::initSamplers(){
         desc.borderColor = SamplerBorderColor::White;
         desc.maxMip = 0;
 
-        m_colorSampler = gRenderBackend.createSampler(desc);
+        m_colorSamplerWrap = gRenderBackend.createSampler(desc);
+    }
+    //color sampler clamp
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Linear;
+        desc.wrapping = SamplerWrapping::Clamp;
+        desc.useAnisotropy = false;
+        desc.maxAnisotropy = 0;
+        desc.borderColor = SamplerBorderColor::White;
+        desc.maxMip = 0;
+
+        m_colorSamplerClamp = gRenderBackend.createSampler(desc);
     }
     //hdri sampler
     {

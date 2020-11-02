@@ -219,7 +219,8 @@ private:
     SamplerHandle m_lutSampler;
     SamplerHandle m_defaultTexelSampler;
     SamplerHandle m_clampedDepthSampler;
-    SamplerHandle m_colorSampler;
+    SamplerHandle m_colorSamplerWrap;
+    SamplerHandle m_colorSamplerClamp;
     SamplerHandle m_skyOcclusionSampler;
 
     MeshHandle m_skyCube;
