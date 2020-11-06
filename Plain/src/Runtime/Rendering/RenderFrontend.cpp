@@ -1156,6 +1156,16 @@ ShaderDescription RenderFrontend::createTAAShaderDescription() {
             3,                                                                                                      //location
             dataToCharArray(&m_taaSettings.useMotionVectorDilation, sizeof(m_taaSettings.useMotionVectorDilation))  //value
             });
+        //use dynamic blend factor
+        desc.specialisationConstants.push_back({
+            4,                                                                                                  //location
+            dataToCharArray(&m_taaSettings.useDynamicBlendFactor, sizeof(m_taaSettings.useDynamicBlendFactor))  //value
+            });
+        //use tonemapping
+        desc.specialisationConstants.push_back({
+            5,                                                                                      //location
+            dataToCharArray(&m_taaSettings.useTonemapping, sizeof(m_taaSettings.useTonemapping))    //value
+            });
     }
 
     return desc;
@@ -2295,6 +2305,8 @@ void RenderFrontend::drawUi() {
         m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Variance clipping", &m_taaSettings.useVarianceClipping);
         m_isTAAShaderDescriptionStale |= ImGui::Checkbox("YCoCg color space clipping", &m_taaSettings.useYCoCg);
         m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Dilate motion vector", &m_taaSettings.useMotionVectorDilation);
+        m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Use dynamic blend factor", &m_taaSettings.useDynamicBlendFactor);
+        m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Use tonemapping", &m_taaSettings.useTonemapping);
 
         m_isMainPassShaderDescriptionStale |= ImGui::InputFloat("Texture LoD bias", &m_taaSettings.textureLoDBias);
     }

@@ -40,6 +40,8 @@ struct TAASettings {
     bool useVarianceClipping = true;
     bool useYCoCg = true;
     bool useMotionVectorDilation = true;
+    bool useDynamicBlendFactor = true;
+    bool useTonemapping = true;
     float textureLoDBias = -0.75f;
 };
 
