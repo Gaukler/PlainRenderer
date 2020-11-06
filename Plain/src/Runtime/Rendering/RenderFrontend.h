@@ -108,9 +108,9 @@ private:
     void computeSunLightMatrices() const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const;
     void computeTAA() const;
-    void computeTonemapping(const RenderPassHandle parent) const;
+    void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry() const;
-    void copyColorToHistoryBuffer() const;
+    void copyColorToHistoryBuffer(const ImageHandle& src) const;
     void issueSkyDrawcalls();
 
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
@@ -197,6 +197,7 @@ private:
     uint32_t m_specularSkyProbeMipCount = 0;
 
     ImageHandle m_colorBuffer;
+    ImageHandle m_postProcessBuffer;
     ImageHandle m_depthBuffer;
     ImageHandle m_motionVectorBuffer;
     ImageHandle m_skyTexture;

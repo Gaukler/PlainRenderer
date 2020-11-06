@@ -175,7 +175,7 @@ void RenderFrontend::shutdown() {
 void RenderFrontend::prepareNewFrame() {
     if (m_didResolutionChange) {
         gRenderBackend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
-        gRenderBackend.resizeImages( { m_colorBuffer, m_depthBuffer, m_motionVectorBuffer, 
+        gRenderBackend.resizeImages( { m_colorBuffer, m_postProcessBuffer, m_depthBuffer, m_motionVectorBuffer, 
             m_historyBuffer }, m_screenWidth, m_screenHeight);
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
@@ -256,14 +256,14 @@ void RenderFrontend::prepareRenderpasses(){
     if (m_taaSettings.enabled) {
         computeTAA();
     }
-    copyColorToHistoryBuffer();
     if (m_taaSettings.enabled) {
-        computeTonemapping(m_taaPass);
+        copyColorToHistoryBuffer(m_postProcessBuffer);
+        computeTonemapping(m_taaPass, m_postProcessBuffer);
     }
     else {
-        computeTonemapping(m_sunSpritePass);
+        copyColorToHistoryBuffer(m_colorBuffer);
+        computeTonemapping(m_sunSpritePass, m_colorBuffer);
     }
-    
 }
 
 void RenderFrontend::setResolution(const uint32_t width, const uint32_t height) {
@@ -791,16 +791,17 @@ void RenderFrontend::computeTAA() const {
     std::array<float, 9> sampleWeights = computeTAAWeights(cameraJitterInPixels);
     gRenderBackend.setUniformBufferData(m_taaWeightBuffer, &sampleWeights, sizeof(sampleWeights));
 
-    ImageResource colorBufferResource(m_colorBuffer, 0, 0);
-    ImageResource previousFrameResource(m_historyBuffer, 0, 1);
-    ImageResource motionBufferResource(m_motionVectorBuffer, 0, 2);
-    ImageResource depthBufferResource(m_depthBuffer, 0, 3);
-    SamplerResource samplerResource(m_colorSamplerClamp, 4);
-    UniformBufferResource sampleWeightResource(m_taaWeightBuffer, 5);
+    ImageResource inputImageResource(m_colorBuffer, 0, 0);
+    ImageResource outputImageResource(m_postProcessBuffer, 0, 1);
+    ImageResource previousFrameResource(m_historyBuffer, 0, 2);
+    ImageResource motionBufferResource(m_motionVectorBuffer, 0, 3);
+    ImageResource depthBufferResource(m_depthBuffer, 0, 4);
+    SamplerResource samplerResource(m_colorSamplerClamp, 5);
+    UniformBufferResource sampleWeightResource(m_taaWeightBuffer, 6);
 
     RenderPassExecution taaExecution;
     taaExecution.handle = m_taaPass;
-    taaExecution.resources.storageImages = { colorBufferResource };
+    taaExecution.resources.storageImages = { inputImageResource, outputImageResource };
     taaExecution.resources.sampledImages = { previousFrameResource, motionBufferResource, depthBufferResource };
     taaExecution.resources.samplers = { samplerResource };
     taaExecution.resources.uniformBuffers = { sampleWeightResource };
@@ -812,10 +813,10 @@ void RenderFrontend::computeTAA() const {
     gRenderBackend.setRenderPassExecution(taaExecution);
 }
 
-void RenderFrontend::computeTonemapping(const RenderPassHandle parent) const {
+void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const {
     const auto swapchainInput = gRenderBackend.getSwapchainInputImage();
     ImageResource targetResource(swapchainInput, 0, 0);
-    ImageResource colorBufferResource(m_colorBuffer, 0, 1);
+    ImageResource colorBufferResource(src, 0, 1);
     SamplerResource samplerResource(m_defaultTexelSampler, 2);
 
     RenderPassExecution tonemappingExecution;
@@ -839,9 +840,9 @@ void RenderFrontend::renderDebugGeometry() const {
     gRenderBackend.setRenderPassExecution(debugPassExecution);
 }
 
-void RenderFrontend::copyColorToHistoryBuffer() const {
+void RenderFrontend::copyColorToHistoryBuffer(const ImageHandle& src) const {
     ImageResource lastFrameResource(m_historyBuffer, 0, 0);
-    ImageResource colorBufferResource(m_colorBuffer, 0, 1);
+    ImageResource colorBufferResource(src, 0, 1);
     SamplerResource samplerResource(m_defaultTexelSampler, 2);
 
     RenderPassExecution copyNextFrameExecution;
@@ -1256,6 +1257,22 @@ void RenderFrontend::initImages() {
         desc.autoCreateMips = false;
 
         m_colorBuffer = gRenderBackend.createImage(desc);
+    }
+    //post process buffer
+    {
+        ImageDescription desc;
+        desc.initialData = std::vector<uint8_t>{};
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::R11G11B10_uFloat;
+        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 0;
+        desc.autoCreateMips = false;
+
+        m_postProcessBuffer = gRenderBackend.createImage(desc);
     }
     //depth buffer
     {

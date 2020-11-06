@@ -14,12 +14,13 @@ layout(constant_id = 5) const bool useTonemapping = false;
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set=1, binding = 0, r11f_g11f_b10f) 	uniform image2D framebuffer;
-layout(set=1, binding = 1) 	                uniform texture2D previousFramebuffer;
-layout(set=1, binding = 2) 	                uniform texture2D motionBuffer;
-layout(set=1, binding = 3) 	                uniform texture2D depthBuffer;
-layout(set=1, binding = 4)                  uniform sampler colorSampler;
-layout(set=1, binding = 5)                  uniform weightBuffer{
+layout(set=1, binding = 0, r11f_g11f_b10f) 	uniform image2D inputImage;
+layout(set=1, binding = 1, r11f_g11f_b10f) 	uniform image2D outputImage;
+layout(set=1, binding = 2) 	                uniform texture2D previousFramebuffer;
+layout(set=1, binding = 3) 	                uniform texture2D motionBuffer;
+layout(set=1, binding = 4) 	                uniform texture2D depthBuffer;
+layout(set=1, binding = 5)                  uniform sampler colorSampler;
+layout(set=1, binding = 6)                  uniform weightBuffer{
     float w0;
     float w1;
     float w2;
@@ -84,7 +85,7 @@ vec3 tonemapReverse(vec3 color){
 }
 
 vec3 sampleNeighbourhood(ivec2 uv){
-    vec3 c = imageLoad(framebuffer, uv).rgb;
+    vec3 c = imageLoad(inputImage, uv).rgb;
     if(useTonemapping){
         c = tonemap(c);
     }
@@ -98,7 +99,7 @@ vec3 sampleNeighbourhood(ivec2 uv){
 }
 
 vec3 computeFilteredInput(ivec2 uv){
-    //return imageLoad(framebuffer, uv).rgb;
+    //return imageLoad(inputImage, uv).rgb;
     
     ivec2 offsets[9] = {
         ivec2(-1, 1), //top row
@@ -113,7 +114,7 @@ vec3 computeFilteredInput(ivec2 uv){
     };
     vec3 color = vec3(0.f);
     for(int i = 0; i < 9; i++){
-        vec3 colorSample = imageLoad(framebuffer, uv + offsets[i]).rgb;
+        vec3 colorSample = imageLoad(inputImage, uv + offsets[i]).rgb;
         if(useTonemapping){
             colorSample = tonemap(colorSample);
         }
@@ -198,7 +199,7 @@ void main(){
     
     //last frame must be sampled linearly and motion vector requires sub-pixel precision
     //careful not to destroy motion vector precision by casting to ivec
-    vec2 uvReprojected = (uv + vec2(0.5f)) / vec2(imageSize(framebuffer)) + motion;
+    vec2 uvReprojected = (uv + vec2(0.5f)) / vec2(imageSize(inputImage)) + motion;
     vec3 historySample = texture(sampler2D(previousFramebuffer, colorSampler), uvReprojected).rgb;
     
     if(useTonemapping){
@@ -249,7 +250,7 @@ void main(){
     distanceToClamp = clamp(distanceToClamp * 1, 0, 1);
     float blendFactor = mix(blendFactorMin, blendFactorMax, distanceToClamp);
     
-    vec2 motionInPixels = motion * imageSize(framebuffer);
+    vec2 motionInPixels = motion * imageSize(inputImage);
     float speed = length(motionInPixels);
     speed = clamp(speed, 0, 1);
     blendFactor += mix(0.f, 0.05f, speed);
@@ -264,5 +265,5 @@ void main(){
         color = tonemapReverse(color);
     }
     
-	imageStore(framebuffer, uv, vec4(color, 1.f));
+	imageStore(outputImage, uv, vec4(color, 1.f));
 }
