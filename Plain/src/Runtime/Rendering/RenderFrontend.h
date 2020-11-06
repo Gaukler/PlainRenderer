@@ -36,6 +36,7 @@ struct ShadingConfig {
 };
 
 struct TAASettings {
+    bool enabled = true;
     bool useClipping = true;
     bool useVarianceClipping = true;
     bool useYCoCg = true;
@@ -107,7 +108,7 @@ private:
     void computeSunLightMatrices() const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const;
     void computeTAA() const;
-    void computeTonemapping() const;
+    void computeTonemapping(const RenderPassHandle parent) const;
     void renderDebugGeometry() const;
     void copyColorToHistoryBuffer() const;
     void issueSkyDrawcalls();

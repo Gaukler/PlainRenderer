@@ -253,9 +253,17 @@ void RenderFrontend::prepareRenderpasses(){
     }
     renderSky(drawDebugPass);
     skyIBLConvolution();
-    computeTAA();
+    if (m_taaSettings.enabled) {
+        computeTAA();
+    }
     copyColorToHistoryBuffer();
-    computeTonemapping();
+    if (m_taaSettings.enabled) {
+        computeTonemapping(m_taaPass);
+    }
+    else {
+        computeTonemapping(m_sunSpritePass);
+    }
+    
 }
 
 void RenderFrontend::setResolution(const uint32_t width, const uint32_t height) {
@@ -282,7 +290,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     const glm::mat4 projectionMatrix = projectionMatrixFromCameraIntrinsic(m_camera.intrinsic);
 
     //jitter matrix for TAA
-    {
+    if(m_taaSettings.enabled){
         const float pixelSizeX = 1.f / m_screenWidth;
         const float pixelSizeY = 1.f / m_screenHeight;
 
@@ -291,6 +299,10 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
 
         m_viewProjectionMatrix = jitteredProjection * viewMatrix;
     }    
+    else {
+        m_globalShaderInfo.currentFrameCameraJitter = glm::vec2(0.f);
+        m_viewProjectionMatrix = projectionMatrix * viewMatrix;
+    }
 
     if (!m_freezeAndDrawCameraFrustum) {
         updateCameraFrustum();
@@ -800,7 +812,7 @@ void RenderFrontend::computeTAA() const {
     gRenderBackend.setRenderPassExecution(taaExecution);
 }
 
-void RenderFrontend::computeTonemapping() const {
+void RenderFrontend::computeTonemapping(const RenderPassHandle parent) const {
     const auto swapchainInput = gRenderBackend.getSwapchainInputImage();
     ImageResource targetResource(swapchainInput, 0, 0);
     ImageResource colorBufferResource(m_colorBuffer, 0, 1);
@@ -814,7 +826,7 @@ void RenderFrontend::computeTonemapping() const {
     tonemappingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     tonemappingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
     tonemappingExecution.dispatchCount[2] = 1;
-    tonemappingExecution.parents = { m_taaPass };
+    tonemappingExecution.parents = { parent };
 
     gRenderBackend.setRenderPassExecution(tonemappingExecution);
 }
@@ -2344,7 +2356,8 @@ void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
     //TAA Settings
     if(ImGui::CollapsingHeader("TAA settings")){
-        
+
+        ImGui::Checkbox("Enabled", &m_taaSettings.enabled);
         m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Clipping", &m_taaSettings.useClipping);
         m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Variance clipping", &m_taaSettings.useVarianceClipping);
         m_isTAAShaderDescriptionStale |= ImGui::Checkbox("YCoCg color space clipping", &m_taaSettings.useYCoCg);
