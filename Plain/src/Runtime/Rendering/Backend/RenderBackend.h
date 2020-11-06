@@ -418,6 +418,8 @@ private:
     ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
     GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
+    bool validateAttachments(const std::vector<Attachment>& attachments);
+
     VkRenderPass    createVulkanRenderPass(const std::vector<Attachment>& attachments);
     VkFramebuffer   createFramebuffer(const VkRenderPass renderPass, const VkExtent2D extent, const std::vector<Attachment>& attachments);
     VkShaderModule  createShaderModule(const std::vector<uint32_t>& code);

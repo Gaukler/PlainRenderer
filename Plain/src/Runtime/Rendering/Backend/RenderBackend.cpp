@@ -12,6 +12,7 @@
 #include "Utilities/GeneralUtils.h"
 #include "Utilities/MathUtils.h"
 #include "VertexInputVulkan.h"
+#include "VulkanImageFormats.h"
 
 //disable ImGui warnings
 #pragma warning( push )
@@ -958,25 +959,8 @@ void RenderBackend::updateDynamicMeshes(const std::vector<DynamicMeshHandle>& ha
 
 ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
 
-    VkFormat format;
-    VkImageAspectFlagBits aspectFlag;
-    switch (desc.format) {
-    case ImageFormat::R8:               format = VK_FORMAT_R8_UNORM;                aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
-    case ImageFormat::RG8:              format = VK_FORMAT_R8G8_UNORM;              aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
-    case ImageFormat::RGBA8:            format = VK_FORMAT_R8G8B8A8_UNORM;          aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
-    case ImageFormat::RG16_sFloat:      format = VK_FORMAT_R16G16_SFLOAT;           aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
-    case ImageFormat::RG32_sFloat:      format = VK_FORMAT_R32G32_SFLOAT;           aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
-    case ImageFormat::RGBA16_sFloat:    format = VK_FORMAT_R16G16B16A16_SFLOAT;     aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
-    case ImageFormat::RGBA16_sNorm:     format = VK_FORMAT_R16G16B16A16_SNORM;      aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
-    case ImageFormat::R11G11B10_uFloat: format = VK_FORMAT_B10G11R11_UFLOAT_PACK32; aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
-    case ImageFormat::RGBA32_sFloat:    format = VK_FORMAT_R32G32B32A32_SFLOAT;     aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
-    case ImageFormat::Depth16:          format = VK_FORMAT_D16_UNORM;               aspectFlag = VK_IMAGE_ASPECT_DEPTH_BIT; break;
-    case ImageFormat::Depth32:          format = VK_FORMAT_D32_SFLOAT;              aspectFlag = VK_IMAGE_ASPECT_DEPTH_BIT; break;
-    case ImageFormat::BC1:              format = VK_FORMAT_BC1_RGB_UNORM_BLOCK;     aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
-    case ImageFormat::BC3:              format = VK_FORMAT_BC3_UNORM_BLOCK;         aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
-    case ImageFormat::BC5:              format = VK_FORMAT_BC5_UNORM_BLOCK;         aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT; break;
-    default: throw std::runtime_error("missing format defintion");
-    }
+    const VkFormat format = imageFormatToVulkanFormat(desc.format);
+    const VkImageAspectFlagBits aspectFlag = imageFormatToVkAspectFlagBits(desc.format);
 
     VkImageType type;
     VkImageViewType viewType;
@@ -2940,22 +2924,12 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
     pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, true);
     
-    assert(desc.attachments.size() >= 1); //need at least a single attachment to write to
+    if (!validateAttachments(desc.attachments)) {
+        throw("Initial attachments are invalid");
+    }
+
     const uint32_t width = m_images[desc.attachments[0].image.index].extent.width;
     const uint32_t height = m_images[desc.attachments[0].image.index].extent.height;
-
-    //validate attachments    
-    for (const auto attachmentDefinition : desc.attachments) {
-
-        const Image attachment = m_images[attachmentDefinition.image.index];
-
-        //all attachments need same resolution
-        assert(attachment.extent.width == width);
-        assert(attachment.extent.height == height);
-
-        //attachment must be 2D
-        assert(attachment.extent.depth == 1);
-    }
 
     std::vector<VkVertexInputAttributeDescription> attributes;
     uint32_t currentOffset = 0;
@@ -3150,6 +3124,43 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pass.descriptorSet = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
 
     return pass;
+}
+
+bool validateImageFitForFramebuffer(const Image& image) {
+    const bool hasRequiredUsage = bool(image.desc.usageFlags | ImageUsageFlags::Attachment);
+    return hasRequiredUsage;
+}
+
+bool validateAttachmentFormatsAreCompatible(const ImageFormat a, const ImageFormat b) {
+    return imageFormatToVkAspectFlagBits(a) == imageFormatToVkAspectFlagBits(b);
+}
+
+bool RenderBackend::validateAttachments(const std::vector<Attachment>& attachments) {
+
+    bool isValid = attachments.size() >= 1; //need at least a single attachment to write to
+
+    //must return now as width/height validation requires a single attachment
+    if (!isValid) {
+        return isValid;
+    }
+
+    const uint32_t firstAttachmentWidth = m_images[attachments[0].image.index].desc.width;
+    const uint32_t firstAttachmentHeight = m_images[attachments[0].image.index].desc.height;
+
+    for (const auto attachmentDefinition : attachments) {
+
+        const Image attachment = m_images[attachmentDefinition.image.index];
+
+        isValid &= validateImageFitForFramebuffer(attachment);
+
+        //all attachments need same resolution
+        isValid &= attachment.extent.width == firstAttachmentWidth;
+        isValid &= attachment.extent.height == firstAttachmentHeight;
+
+        //attachment must be 2D
+        isValid &= attachment.extent.depth == 1;
+    }
+    return isValid;
 }
 
 VkRenderPass RenderBackend::createVulkanRenderPass(const std::vector<Attachment>& attachments) {
