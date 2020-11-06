@@ -5,3 +5,5 @@
 
 VkFormat imageFormatToVulkanFormat(const ImageFormat format);
 VkImageAspectFlagBits imageFormatToVkAspectFlagBits(const ImageFormat format);
+
+ImageFormat vulkanImageFormatToImageFormat(const VkFormat format);

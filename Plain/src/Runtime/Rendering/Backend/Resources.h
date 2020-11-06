@@ -83,19 +83,12 @@ struct GraphicPass {
     VkPipelineLayout        pipelineLayout      = VK_NULL_HANDLE;
     VkDescriptorSet         descriptorSet       = VK_NULL_HANDLE;
     VkDescriptorSetLayout   descriptorSetLayout = VK_NULL_HANDLE;
-    VkRenderPassBeginInfo   beginInfo = {};
 
-    VkViewport                      viewport;
-    VkRect2D                        scissor;
     VertexInputFlags                vertexInputFlags = VertexInputFlags(0);
 
     VkCommandBuffer meshCommandBuffer;
 
-    std::vector<VkClearValue>       clearValues;
-    std::vector<ImageHandle>        attachments;
-
-    //stored in case of a resize    
-    std::vector<Attachment>         attachmentDescriptions;
+    std::vector<VkClearValue> clearValues;
 
     //shader path cache to speed up out of date check    
     std::string shaderCachePathAbsolute;
@@ -125,7 +118,13 @@ struct ComputePass {
 //the external version is used to order, update and create barriers
 struct RenderPassExecutionInternal {
     RenderPassHandle                    handle;
+    FramebufferHandle                   framebuffer;
     uint32_t                            dispatches[3] = {1, 1, 1}; //for compute only
     std::vector<VkBufferMemoryBarrier>  memoryBarriers;
     std::vector<VkImageMemoryBarrier>   imageBarriers;
+};
+
+struct Framebuffer {
+    FramebufferDescription desc; //stored for recreation after image resize
+    VkFramebuffer vkHandle;
 };

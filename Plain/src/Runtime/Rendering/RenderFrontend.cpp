@@ -159,6 +159,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     const auto histogramSettings = createHistogramSettings();
     initBuffers(histogramSettings);
     initRenderpasses(histogramSettings);
+    initFramebuffers();
 
     initMeshs();
     
@@ -209,6 +210,7 @@ void RenderFrontend::prepareNewFrame() {
     gRenderBackend.newFrame();
 
     prepareRenderpasses();
+    gRenderBackend.startDrawcallRecording();
 }
 
 void RenderFrontend::prepareRenderpasses(){
@@ -578,6 +580,7 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
 
         RenderPassExecution skyPassExecution;
         skyPassExecution.handle = m_skyPass;
+        skyPassExecution.framebuffer = m_colorFramebuffer;
         skyPassExecution.resources.sampledImages = { skyLutResource };
         skyPassExecution.resources.samplers = { skySamplerResource };
         skyPassExecution.parents = { m_mainPass,  m_skyLutPass };
@@ -594,6 +597,7 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
 
         RenderPassExecution sunSpritePassExecution;
         sunSpritePassExecution.handle = m_sunSpritePass;
+        sunSpritePassExecution.framebuffer = m_colorFramebuffer;
         sunSpritePassExecution.parents = { m_skyPass };
         sunSpritePassExecution.resources.storageBuffers = { lightBufferResource };
         sunSpritePassExecution.resources.sampledImages = { transmissionLutResource };
@@ -607,6 +611,7 @@ void RenderFrontend::renderSunShadowCascades() const {
         RenderPassExecution shadowPassExecution;
         shadowPassExecution.handle = m_shadowPasses[i];
         shadowPassExecution.parents = { m_lightMatrixPass };
+        shadowPassExecution.framebuffer = m_shadowCascadeFramebuffers[i];
 
         StorageBufferResource lightMatrixBufferResource(m_sunShadowInfoBuffer, true, 0);
         shadowPassExecution.resources.storageBuffers = { lightMatrixBufferResource };
@@ -637,6 +642,7 @@ void RenderFrontend::computeExposure() const {
 void RenderFrontend::renderDepthPrepass() const {
     RenderPassExecution prepassExe;
     prepassExe.handle = m_depthPrePass;
+    prepassExe.framebuffer = m_depthPrepassFramebuffer;
     gRenderBackend.setRenderPassExecution(prepassExe);
 }
 
@@ -715,6 +721,7 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
 
     RenderPassExecution mainPassExecution;
     mainPassExecution.handle = m_mainPass;
+    mainPassExecution.framebuffer = m_colorFramebuffer;
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
     mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource };
     mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
@@ -777,6 +784,7 @@ void RenderFrontend::computeTonemapping() const {
 void RenderFrontend::renderDebugGeometry() const {
     RenderPassExecution debugPassExecution;
     debugPassExecution.handle = m_debugGeoPass;
+    debugPassExecution.framebuffer = m_colorFramebuffer;
     debugPassExecution.parents = { m_mainPass };
     gRenderBackend.setRenderPassExecution(debugPassExecution);
 }
@@ -947,6 +955,7 @@ void RenderFrontend::bakeSkyOcclusion() {
     //configure shadow pass
     {
         skyShadowExecution.handle = m_skyShadowPass;
+        skyShadowExecution.framebuffer = m_skyShadowFramebuffer;
     }
 
     RenderPassExecution gatherExecution;
@@ -991,6 +1000,12 @@ void RenderFrontend::bakeSkyOcclusion() {
         occlusionData.shadowMatrix = viewProjectionMatrixAroundBB(sceneBB, glm::vec3(occlusionData.sampleDirection));
 
         gRenderBackend.newFrame();
+        
+        gRenderBackend.setUniformBufferData(m_skyOcclusionDataBuffer, &occlusionData, sizeof(SkyOcclusionRenderData));
+        gRenderBackend.setRenderPassExecution(skyShadowExecution);
+        gRenderBackend.setRenderPassExecution(gatherExecution);
+
+        gRenderBackend.startDrawcallRecording();
 
         //sky shadow pass mesh commands
         {
@@ -1009,9 +1024,6 @@ void RenderFrontend::bakeSkyOcclusion() {
             gRenderBackend.drawMeshes(meshHandles, transforms, m_skyShadowPass);
         }
 
-        gRenderBackend.setUniformBufferData(m_skyOcclusionDataBuffer, &occlusionData, sizeof(SkyOcclusionRenderData));
-        gRenderBackend.setRenderPassExecution(skyShadowExecution);
-        gRenderBackend.setRenderPassExecution(gatherExecution);
         gRenderBackend.renderFrame(false);
     }
 }
@@ -1527,6 +1539,63 @@ void RenderFrontend::initSamplers(){
     }
 }
 
+void RenderFrontend::initFramebuffers() {
+    //color framebuffer
+    {
+        FramebufferTarget colorTarget;
+        colorTarget.image = m_colorBuffer;
+        colorTarget.mipLevel = 0;
+
+        FramebufferTarget depthTarget;
+        depthTarget.image = m_depthBuffer;
+        depthTarget.mipLevel = 0;
+
+        FramebufferDescription desc;
+        desc.compatibleRenderpass = m_mainPass;
+        desc.targets = { colorTarget, depthTarget };
+        m_colorFramebuffer = gRenderBackend.createFramebuffer(desc);
+    }
+    //shadow map framebuffers
+    for (int i = 0; i < 4; i++) {
+        FramebufferTarget depthTarget;
+        depthTarget.image = m_shadowMaps[i];
+        depthTarget.mipLevel = 0;
+
+        FramebufferDescription desc;
+        desc.compatibleRenderpass = m_shadowPasses[i];
+        desc.targets = { depthTarget };
+        m_shadowCascadeFramebuffers[i] = gRenderBackend.createFramebuffer(desc);
+    }
+    //depth prepass framebuffer
+    {
+        FramebufferTarget depthTarget;
+        depthTarget.image = m_depthBuffer;
+        depthTarget.mipLevel = 0;
+
+        FramebufferTarget velocityTarget;
+        velocityTarget.image = m_motionVectorBuffer;
+        velocityTarget.mipLevel = 0;
+
+        FramebufferDescription desc;
+        desc.compatibleRenderpass = m_depthPrePass;
+        desc.targets = { velocityTarget, depthTarget };
+
+        m_depthPrepassFramebuffer = gRenderBackend.createFramebuffer(desc);
+    }
+    //sky shadow framebuffer
+    {
+        FramebufferTarget depthTarget;
+        depthTarget.image = m_skyShadowMap;
+        depthTarget.mipLevel = 0;
+
+        FramebufferDescription desc;
+        desc.compatibleRenderpass = m_skyShadowPass;
+        desc.targets = { depthTarget };
+
+        m_skyShadowFramebuffer = gRenderBackend.createFramebuffer(desc);
+    }
+}
+
 void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
     //histogram buffer
     {
@@ -1713,17 +1782,8 @@ void RenderFrontend::initMeshs() {
 void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings) {
     //main shading pass
     {
-        const auto colorAttachment = Attachment(
-            m_colorBuffer,
-            0,
-            0,
-            AttachmentLoadOp::Clear);
-
-        const auto depthAttachment = Attachment(
-            m_depthBuffer,
-            0,
-            0,
-            AttachmentLoadOp::Load);
+        const Attachment colorAttachment(ImageFormat::R11G11B10_uFloat, AttachmentLoadOp::Clear);
+        const Attachment depthAttachment(ImageFormat::Depth32, AttachmentLoadOp::Load);
 
         GraphicPassDescription mainPassDesc;
         mainPassDesc.name = "Forward shading";
@@ -1741,11 +1801,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     //shadow cascade passes
     for (uint32_t cascade = 0; cascade < shadowCascadeCount; cascade++) {
 
-        const auto shadowMapAttachment = Attachment(
-            m_shadowMaps[cascade],
-            0,
-            0,
-            AttachmentLoadOp::Clear);
+        const Attachment shadowMapAttachment(ImageFormat::Depth16, AttachmentLoadOp::Clear);
 
         GraphicPassDescription shadowPassConfig;
         shadowPassConfig.name = "Shadow map cascade " + std::to_string(cascade);
@@ -1843,8 +1899,8 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     }
     //sky pass
     {
-        const auto colorAttachment = Attachment(m_colorBuffer, 0, 0, AttachmentLoadOp::Load);
-        const auto depthAttachment = Attachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Load);
+        const Attachment colorAttachment(ImageFormat::R11G11B10_uFloat, AttachmentLoadOp::Load);
+        const Attachment depthAttachment(ImageFormat::Depth32, AttachmentLoadOp::Load);
 
         GraphicPassDescription skyPassConfig;
         skyPassConfig.name = "Skybox render";
@@ -1862,8 +1918,8 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     }
     //sun sprite
     {
-        const auto colorAttachment = Attachment(m_colorBuffer, 0, 0, AttachmentLoadOp::Load);
-        const auto depthAttachment = Attachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Load);
+        const auto colorAttachment = Attachment(ImageFormat::R11G11B10_uFloat, AttachmentLoadOp::Load);
+        const auto depthAttachment = Attachment(ImageFormat::Depth32, AttachmentLoadOp::Load);
 
         GraphicPassDescription desc;
         desc.name = "Sun sprite";
@@ -1888,8 +1944,8 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     }
     //geometry debug pass
     {
-        const auto colorAttachment = Attachment(m_colorBuffer, 0, 0, AttachmentLoadOp::Load);
-        const auto depthAttachment = Attachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Load);
+        const auto colorAttachment = Attachment(ImageFormat::R11G11B10_uFloat, AttachmentLoadOp::Load);
+        const auto depthAttachment = Attachment(ImageFormat::Depth32, AttachmentLoadOp::Load);
 
         GraphicPassDescription debugPassConfig;
         debugPassConfig.name = "Debug geometry";
@@ -2006,11 +2062,11 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     }
     //depth prepass
     {
-        Attachment depthAttachment(m_depthBuffer, 0, 0, AttachmentLoadOp::Clear);
-        Attachment velocityAttachment(m_motionVectorBuffer, 0, 1, AttachmentLoadOp::Clear);
+        Attachment depthAttachment(ImageFormat::Depth32, AttachmentLoadOp::Clear);
+        Attachment velocityAttachment(ImageFormat::RG16_sFloat, AttachmentLoadOp::Clear);
 
         GraphicPassDescription desc;
-        desc.attachments = { depthAttachment, velocityAttachment };
+        desc.attachments = { velocityAttachment, depthAttachment };
         desc.blending = BlendState::None;
         desc.depthTest.function = DepthFunction::LessEqual;
         desc.depthTest.write = true;
@@ -2065,11 +2121,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     }
     //sky shadow pass
     {
-        const auto shadowMapAttachment = Attachment(
-            m_skyShadowMap,
-            0,
-            0,
-            AttachmentLoadOp::Clear);
+        const Attachment shadowMapAttachment(ImageFormat::Depth16, AttachmentLoadOp::Clear);
 
         GraphicPassDescription config;
         config.name = "Sky shadow map";

@@ -105,12 +105,6 @@ public:
     GraphicPass& getGraphicPassRefByIndex(const uint32_t index);
     ComputePass& getComputePassRefByIndex(const uint32_t index);
 
-    void updateGraphicPassByHandle(const GraphicPass pass, const RenderPassHandle handle);
-    void updateComputePassByHandle(const ComputePass pass, const RenderPassHandle handle);
-
-    void updateGraphicPassByIndex(const GraphicPass pass, const uint32_t index);
-    void updateComputePassByIndex(const ComputePass pass, const uint32_t index);
-
 private:
     std::vector<GraphicPass> m_graphicPasses;
     std::vector<ComputePass> m_computePasses;
@@ -135,22 +129,23 @@ public:
     //checks if any shaders are out of date, if so reloads them and reconstructs the corresponding pipeline
     void updateShaderCode();
 
-    /*
-    multiple images must be resizable at once, as framebuffers may only be updated once all images have been resized
-    */
+    //multiple images must be resizable at once, as framebuffers may only be updated once all images have been resized    
     void resizeImages(const std::vector<ImageHandle>& images, const uint32_t width, const uint32_t height);
 
+    //old frame cleanup and new frame preparations, must be called before render pass executions can be set
     void newFrame();
-    void startMeshCommandBufferRecording();
-    void setRenderPassExecution(const RenderPassExecution& execution);
 
-    /*
-    actual draw command is deferred until renderFrame is called
-    meshHandle must be obtained from createMesh function
-    */
+    //must be called after newFrame and before startDrawcallRecording
+    void setRenderPassExecution(const RenderPassExecution& execution);
+    
+    //prepares for mesh drawcalls, must be called after all render pass executions have been set
+    void startDrawcallRecording();
+  
+    //must be called after startDrawcallRecording
     void drawMeshes(const std::vector<MeshHandle> meshHandles, 
         const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle);
 
+    //must be called after startDrawcallRecording
     void drawDynamicMeshes(const std::vector<DynamicMeshHandle> meshHandles, 
         const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle);
 
@@ -161,10 +156,7 @@ public:
     void updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc);
     void updateComputePassShaderDescription(const RenderPassHandle passHandle, const ShaderDescription& desc);
 
-    /*
-    actual rendering of frame using commands generated from drawMesh calls
-    commands are reset after frame rendering so backend is ready to record next frame
-    */
+    //actual rendering of frame using commands generated from drawMesh calls
     void renderFrame(bool presentToScreen);    
 
     //the public create pass functions save the descriptions and create the handle, then call 
@@ -188,6 +180,7 @@ public:
     UniformBufferHandle     createUniformBuffer(const UniformBufferDescription& desc);
     StorageBufferHandle     createStorageBuffer(const StorageBufferDescription& desc);
     SamplerHandle           createSampler(const SamplerDescription& description);
+    FramebufferHandle       createFramebuffer(const FramebufferDescription& desc);
 
     ImageHandle getSwapchainInputImage();
 
@@ -203,9 +196,7 @@ private:
     MaterialSamplers m_materialSamplers;
     MaterialSamplers createMaterialSamplers();
 
-    /*
-    calculates pass order, updates descritor sets, creates barriers
-    */
+    //calculates pass order, updates descritor sets, creates barriers    
     void prepareRenderPasses();
 
     std::vector<RenderPassExecution>            m_renderPassExecutions;
@@ -218,6 +209,9 @@ private:
     void submitRenderPass(const RenderPassExecutionInternal& execution, const VkCommandBuffer commandBuffer);
 
     void waitForRenderFinished();
+
+    bool validateFramebufferTargetGraphicPassCombination(const std::vector<FramebufferTarget>& targets, 
+        const RenderPassHandle graphicPassHandle);
 
     /*
     =========
@@ -287,6 +281,7 @@ private:
     VkMemoryAllocator m_vkAllocator;
 
     RenderPasses            m_renderPasses;
+    std::vector<Framebuffer>m_framebuffers;
     std::vector<Image>      m_images;
     std::vector<Mesh>       m_meshes;
     std::vector<DynamicMesh>m_dynamicMeshes;
@@ -398,10 +393,8 @@ private:
     void                    updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources);
     VkDescriptorSetLayout   createDescriptorSetLayout(const ShaderLayout& shaderLayout);
 
-    /*
-    materialSetLayout may be VK_NULL_HANDLE, this is the case for compute passes
-    isGraphicsPass controls if the push constant range is setup for the MVP matrix
-    */
+    //materialSetLayout may be VK_NULL_HANDLE, this is the case for compute passes
+    //isGraphicsPass controls if the push constant range is setup for the MVP matrix    
     VkPipelineLayout        createPipelineLayout(const VkDescriptorSetLayout setLayout, const bool isGraphicPass);
 
 
@@ -418,10 +411,12 @@ private:
     ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
     GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
-    bool validateAttachments(const std::vector<Attachment>& attachments);
+    bool validateAttachments(const std::vector<FramebufferTarget>& attachments);
+    glm::ivec2 resolutionFromFramebufferTargets(const std::vector<FramebufferTarget>& attachments);
 
     VkRenderPass    createVulkanRenderPass(const std::vector<Attachment>& attachments);
-    VkFramebuffer   createFramebuffer(const VkRenderPass renderPass, const VkExtent2D extent, const std::vector<Attachment>& attachments);
+    VkFramebuffer   createVulkanFramebuffer(const std::vector<FramebufferTarget>& targets, 
+        const VkRenderPass compatibleRenderpass);
     VkShaderModule  createShaderModule(const std::vector<uint32_t>& code);
 
     //outAdditionalInfo has to be from parent scope to keep pointers to info structs valid
@@ -433,23 +428,16 @@ private:
     VkPipelineMultisampleStateCreateInfo    createDefaultMultisamplingInfo();
     VkPipelineDepthStencilStateCreateInfo   createDepthStencilState(const DepthTest& depthTest);
 
-    /*
-    renderpass creation utilities
-    */
+    //renderpass creation utilities    
     bool isDepthFormat(VkFormat format);
     bool isDepthFormat(ImageFormat format);
 
-    /*
-    renderpass barriers
-    */
-    
+    //renderpass barriers    
     void barriersCommand(const VkCommandBuffer commandBuffer, const std::vector<VkImageMemoryBarrier>& imageBarriers, const std::vector<VkBufferMemoryBarrier>& memoryBarriers);
 
-    /*
-    create necessary image barriers
-    multiple barriers may be needed, as mip levels may have differing layouts
-    sets image.layout to newLayout, image.currentAccess to dstAccess and image.currentlyWriting to false
-    */
+    //create necessary image barriers
+    //multiple barriers may be needed, as mip levels may have differing layouts
+    //sets image.layout to newLayout, image.currentAccess to dstAccess and image.currentlyWriting to false
     std::vector<VkImageMemoryBarrier> createImageBarriers(Image& image, const VkImageLayout newLayout,
         const VkAccessFlags dstAccess, const uint32_t baseMip, const uint32_t mipLevels);
 
@@ -499,6 +487,7 @@ private:
     void destroyDynamicMesh(const DynamicMesh& mesh);
     void destroyGraphicPass(const GraphicPass& pass);
     void destroyComputePass(const ComputePass& pass);
+    void destroyFramebuffer(const Framebuffer& framebuffer);
 };
 
 extern RenderBackend gRenderBackend;

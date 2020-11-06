@@ -32,3 +32,7 @@ struct UniformBufferHandle {
 struct StorageBufferHandle {
     uint32_t index = invalidIndex;
 };
+
+struct FramebufferHandle {
+    uint32_t index = invalidIndex;
+};

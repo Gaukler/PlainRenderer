@@ -84,24 +84,6 @@ ComputePass& RenderPasses::getComputePassRefByIndex(const uint32_t index) {
     return m_computePasses[index];
 }
 
-void RenderPasses::updateGraphicPassByHandle(const GraphicPass pass, const RenderPassHandle handle) {
-    const uint32_t index = graphicPassHandleToIndex(handle);
-    updateGraphicPassByIndex(pass, index);
-}
-
-void RenderPasses::updateComputePassByHandle(const ComputePass pass, const RenderPassHandle handle) {
-    const uint32_t index = computePassHandleToIndex(handle);
-    updateComputePassByIndex(pass, index);
-}
-
-void RenderPasses::updateGraphicPassByIndex(const GraphicPass pass, const uint32_t index) {
-    m_graphicPasses[index] = pass;
-}
-
-void RenderPasses::updateComputePassByIndex(const ComputePass pass, const uint32_t index) {
-    m_computePasses[index] = pass;
-}
-
 uint32_t RenderPasses::graphicPassHandleToIndex(const RenderPassHandle handle) {
     //set first bit to 0
     const uint32_t noUpperBit = ~(1 << 31);
@@ -281,6 +263,9 @@ void RenderBackend::shutdown() {
     for (const auto& sampler : m_samplers) {
         vkDestroySampler(vkContext.device, sampler, nullptr);
     }
+    for (const auto& framebuffer : m_framebuffers) {
+        destroyFramebuffer(framebuffer);
+    }
     vkDestroyDescriptorSetLayout(vkContext.device, m_materialDescriporSetLayout, nullptr);
 
     //destroy swapchain
@@ -360,13 +345,10 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
         VkFramebuffer oldBuffer = m_ui.framebuffers[i];
         vkDestroyFramebuffer(vkContext.device, oldBuffer, nullptr);
 
-        const auto attachment = Attachment(
-            m_swapchain.imageHandles[i], 
-            0, 
-            0, 
-            AttachmentLoadOp::Load);
-
-        VkFramebuffer newBuffer = createFramebuffer(m_ui.renderPass, extent, std::vector<Attachment> { attachment });
+        FramebufferTarget uiTarget;
+        uiTarget.image = m_swapchain.imageHandles[i];
+        uiTarget.mipLevel = 0;
+        VkFramebuffer newBuffer = createVulkanFramebuffer({ uiTarget }, m_ui.renderPass);
         m_ui.framebuffers[i] = newBuffer;
         m_ui.passBeginInfos[i].framebuffer = newBuffer;
         m_ui.passBeginInfos[i].renderArea.extent = extent;
@@ -460,9 +442,7 @@ void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const u
         assert(newHandle.index == image.index);
     }
 
-    /*
-    recreate framebuffer that use image
-    */
+    //recreate framebuffer that use image    
     VkExtent2D extent;
     extent.width = width;
     extent.height = height;
@@ -471,26 +451,27 @@ void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const u
     rect.extent = extent;
     rect.offset = { 0, 0 };
 
-    for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
+    for (Framebuffer& framebuffer : m_framebuffers) {
         bool mustBeResized = false;
-        auto pass = m_renderPasses.getGraphicPassRefByIndex(i);
-        for (const auto& image : images) {
-            //search for image
-            for (const auto handle : pass.attachments) {
-                if (handle.index == image.index) {
+        
+        //check if one of the images from framebuffer uses resized image
+        for (const FramebufferTarget target : framebuffer.desc.targets) {
+            const ImageHandle targetImage = target.image;
+            for (const ImageHandle resizedImage : images) {
+                if (targetImage.index == resizedImage.index) {
                     mustBeResized = true;
                     break;
                 }
             }
+            if (mustBeResized) {
+                break;
+            }
         }
+
         if (mustBeResized) {
-            vkDestroyFramebuffer(vkContext.device, pass.beginInfo.framebuffer, nullptr);
-            pass.beginInfo.framebuffer = createFramebuffer(pass.vulkanRenderPass, extent, pass.attachmentDescriptions);
-            pass.beginInfo.renderArea = rect;
-            pass.viewport.width  = (float)width;
-            pass.viewport.height = (float)height;
-            pass.scissor.extent = extent;
-            m_renderPasses.updateGraphicPassByIndex(pass, i);
+            destroyFramebuffer(framebuffer);
+            const GraphicPass graphicPass = m_renderPasses.getGraphicPassRefByHandle(framebuffer.desc.compatibleRenderpass);
+            framebuffer.vkHandle = createVulkanFramebuffer(framebuffer.desc.targets, graphicPass.vulkanRenderPass);
         }
     }
 }
@@ -506,27 +487,34 @@ void RenderBackend::newFrame() {
     m_renderPassExecutions.clear();
     m_swapchainInputImageHandle.index = VK_NULL_HANDLE;
 
-    startMeshCommandBufferRecording();
-
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 }
 
-void RenderBackend::startMeshCommandBufferRecording() {
+void RenderBackend::startDrawcallRecording() {
+    //iterate over graphic passes that will be executed
+    for (const RenderPassExecution execution : m_renderPassExecutions) {
+        const RenderPassHandle passHandle = execution.handle;
 
-    for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
-        const auto& pass = m_renderPasses.getGraphicPassRefByIndex(i);
+        //only need graphic passes
+        if (!m_renderPasses.isGraphicPassHandle(passHandle)) {
+            continue;
+        }
+
+        const GraphicPass pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
 
         const auto res = vkResetCommandBuffer(pass.meshCommandBuffer, 0);
         assert(res == VK_SUCCESS);
+
+        const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
 
         VkCommandBufferInheritanceInfo inheritanceInfo;
         inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
         inheritanceInfo.pNext = nullptr;
         inheritanceInfo.renderPass = pass.vulkanRenderPass;
         inheritanceInfo.subpass = 0;
-        inheritanceInfo.framebuffer = pass.beginInfo.framebuffer;
+        inheritanceInfo.framebuffer = framebuffer.vkHandle;
         inheritanceInfo.occlusionQueryEnable = false;
         inheritanceInfo.queryFlags = 0;
         inheritanceInfo.pipelineStatistics = 0;
@@ -539,20 +527,51 @@ void RenderBackend::startMeshCommandBufferRecording() {
 
         vkBeginCommandBuffer(pass.meshCommandBuffer, &cmdBeginInfo);
         vkCmdBindPipeline(pass.meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipeline);
-        vkCmdSetViewport(pass.meshCommandBuffer, 0, 1, &pass.viewport);
-        vkCmdSetScissor(pass.meshCommandBuffer, 0, 1, &pass.scissor);
+
+        const glm::ivec2 resolution = resolutionFromFramebufferTargets(framebuffer.desc.targets);
+
+        //set viewport
+        {
+            VkViewport viewport;
+            viewport.x = 0;
+            viewport.y = 0;
+            viewport.width = (float)resolution.x;
+            viewport.height = (float)resolution.y;
+            viewport.minDepth = 0.f;
+            viewport.maxDepth = 1.f;
+
+            vkCmdSetViewport(pass.meshCommandBuffer, 0, 1, &viewport);
+        }
+        //set scissor
+        {
+            VkRect2D scissor;
+            scissor.offset = { 0, 0 };
+            scissor.extent.width = resolution.x;
+            scissor.extent.height = resolution.y;
+
+            vkCmdSetScissor(pass.meshCommandBuffer, 0, 1, &scissor);
+        }
     }
 }
 
 void RenderBackend::setRenderPassExecution(const RenderPassExecution& execution) {
 
     if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
+        if (execution.framebuffer.index == invalidIndex) {
+            std::cout << "Renderpass execution is missing framebuffer, skipping execution\n";
+            return;
+        }
+        const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
+        if (!validateFramebufferTargetGraphicPassCombination(framebuffer.desc.targets, execution.handle)) {
+            std::cout << "Framebuffer and renderpass are incompatible, skipping execution\n";
+            return;
+        }
         updateDescriptorSet(m_renderPasses.getGraphicPassRefByHandle(execution.handle).descriptorSet, execution.resources);
     }
     else {
         updateDescriptorSet(m_renderPasses.getComputePassRefByHandle(execution.handle).descriptorSet, execution.resources);
     }
-
+    
     m_renderPassExecutions.push_back(execution);
 }
 
@@ -1201,6 +1220,25 @@ SamplerHandle RenderBackend::createSampler(const SamplerDescription& desc) {
     return handle;
 }
 
+FramebufferHandle RenderBackend::createFramebuffer(const FramebufferDescription& desc) {
+    FramebufferHandle handle;
+    handle.index = m_framebuffers.size();
+
+    const auto& pass = m_renderPasses.getGraphicPassRefByHandle(desc.compatibleRenderpass);
+
+    if (!validateFramebufferTargetGraphicPassCombination(desc.targets, desc.compatibleRenderpass)) {
+        throw("framebuffer and renderpass are not compatible");
+    }
+
+    Framebuffer framebuffer;
+    framebuffer.desc = desc;
+    framebuffer.vkHandle = createVulkanFramebuffer(desc.targets, pass.vulkanRenderPass);
+
+    m_framebuffers.push_back(framebuffer);
+
+    return handle;
+}
+
 ImageHandle RenderBackend::getSwapchainInputImage() {
     auto result = vkAcquireNextImageKHR(vkContext.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvaible, VK_NULL_HANDLE, &m_swapchainInputImageIndex);
     checkVulkanResult(result);
@@ -1280,6 +1318,7 @@ void RenderBackend::prepareRenderPasses() {
             m_renderPassExecutions.push_back(pass);
             RenderPassExecutionInternal internalExec;
             internalExec.handle = pass.handle;
+            internalExec.framebuffer = pass.framebuffer;
             internalExec.dispatches[0] = pass.dispatchCount[0];
             internalExec.dispatches[1] = pass.dispatchCount[1];
             internalExec.dispatches[2] = pass.dispatchCount[2];
@@ -1370,9 +1409,9 @@ void RenderBackend::prepareRenderPasses() {
 
         //attachments        
         if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
-            const auto& pass = m_renderPasses.getGraphicPassRefByHandle(execution.handle);
-            for (const auto imageHandle : pass.attachments) {
-                Image& image = m_images[imageHandle.index];
+            const auto& framebuffer = m_framebuffers[execution.framebuffer.index];
+            for (const auto target : framebuffer.desc.targets) {
+                Image& image = m_images[target.image.index];
 
                 //check if any mip levels need a layout transition                
                 const VkImageLayout requiredLayout = isDepthFormat(image.format) ?
@@ -1422,6 +1461,29 @@ void RenderBackend::prepareRenderPasses() {
         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
 }
 
+VkRenderPassBeginInfo createBeginInfo(const uint32_t width, const uint32_t height, const VkRenderPass pass, 
+    const VkFramebuffer framebuffer, const std::vector<VkClearValue>& clearValues) {
+
+    VkExtent2D extent = {};
+    extent.width = width;
+    extent.height = height;
+
+    VkRect2D rect = {};
+    rect.extent = extent;
+    rect.offset = { 0, 0 };
+
+    VkRenderPassBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    beginInfo.pNext = nullptr;
+    beginInfo.renderPass = pass;
+    beginInfo.framebuffer = framebuffer;
+    beginInfo.clearValueCount = clearValues.size();
+    beginInfo.pClearValues = clearValues.data();
+    beginInfo.renderArea = rect;
+
+    return beginInfo;
+}
+
 void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& execution, const VkCommandBuffer commandBuffer) {
 
     TimestampQuery timeQuery;
@@ -1436,13 +1498,13 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
 
         barriersCommand(commandBuffer, execution.imageBarriers, execution.memoryBarriers);
 
-        //update pointer: might become invalid if pass vector was changed        
-        pass.beginInfo.pClearValues = pass.clearValues.data();
+        const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
+        const glm::ivec2 resolution = resolutionFromFramebufferTargets(framebuffer.desc.targets);
+        const auto beginInfo = createBeginInfo(resolution.x, resolution.y, pass.vulkanRenderPass, 
+            framebuffer.vkHandle, pass.clearValues);
 
         //prepare pass
-        vkCmdBeginRenderPass(commandBuffer, &pass.beginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-        
-        
+        vkCmdBeginRenderPass(commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
         //stop recording mesh commands
         vkEndCommandBuffer(pass.meshCommandBuffer);
@@ -1475,6 +1537,34 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
 void RenderBackend::waitForRenderFinished() {
     auto result = vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, INT64_MAX);
     checkVulkanResult(result);
+}
+
+bool RenderBackend::validateFramebufferTargetGraphicPassCombination(const std::vector<FramebufferTarget>& targets,
+    const RenderPassHandle graphicPassHandle) {
+
+    const std::string failureMessagePrologue = "Validation failed of framebuffertarget/renderpass combination: ";
+    if (!m_renderPasses.isGraphicPassHandle(graphicPassHandle)) {
+        std::cout << failureMessagePrologue << "renderpass is not a graphic pass\n";
+        return false;
+    }
+    const GraphicPass pass = m_renderPasses.getGraphicPassRefByHandle(graphicPassHandle);
+
+    const auto& renderpassAttachments = pass.graphicPassDesc.attachments;
+
+    if (targets.size() != renderpassAttachments.size()) {
+        std::cout << failureMessagePrologue << "attachment and target count mismatch\n";
+        return false;
+    }
+    for (int i = 0; i < targets.size(); i++) {
+        const FramebufferTarget& target = targets[i];
+        const Attachment& attachment = renderpassAttachments[i];
+        const Image& targetImage = m_images[target.image.index];
+        if (imageFormatToVulkanFormat(attachment.format) != targetImage.format) {
+            std::cout << failureMessagePrologue << "attachment and target image format mismatch\n";
+            return false;
+        }
+    }
+    return true;
 }
 
 std::vector<const char*> RenderBackend::getRequiredExtensions() {
@@ -1927,13 +2017,10 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForVulkan(window, true);
 
-    const auto colorBuffer = Attachment(
-        m_swapchain.imageHandles[0],
-        0,
-        0,
-        AttachmentLoadOp::Load);
+    const ImageFormat swapchainFormat = vulkanImageFormatToImageFormat(m_swapchain.surfaceFormat.format);
+    const auto colorAttachment = Attachment(swapchainFormat, AttachmentLoadOp::Load);
 
-    m_ui.renderPass = createVulkanRenderPass(std::vector<Attachment> {colorBuffer});
+    m_ui.renderPass = createVulkanRenderPass(std::vector<Attachment> {colorAttachment});
     createImguiDescriptorPool();
 
     ImGui_ImplVulkan_InitInfo init_info = {};
@@ -1981,12 +2068,10 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
     extent.width  = m_images[m_swapchain.imageHandles[0].index].extent.width;
     extent.height = m_images[m_swapchain.imageHandles[0].index].extent.height;
     for (const auto& imageHandle : m_swapchain.imageHandles) {
-        const auto attachment = Attachment(
-            imageHandle,
-            0,
-            0,
-            AttachmentLoadOp::Load);
-        VkFramebuffer framebuffer = createFramebuffer(m_ui.renderPass, extent, std::vector<Attachment> { attachment });
+        FramebufferTarget uiTarget;
+        uiTarget.image = imageHandle;
+        uiTarget.mipLevel = 0;
+        const VkFramebuffer framebuffer = createVulkanFramebuffer({ uiTarget }, m_ui.renderPass);
         m_ui.framebuffers.push_back(framebuffer);
     }
 
@@ -2877,11 +2962,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
     GraphicPass pass;
     pass.graphicPassDesc = desc;
-    pass.attachmentDescriptions = desc.attachments;
-    for (const auto attachment : desc.attachments) {
-        pass.attachments.push_back(attachment.image);
-    }
-
     pass.meshCommandBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 
     VkShaderModule vertexModule   = createShaderModule(spirV.vertex);
@@ -2923,13 +3003,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     ShaderReflection reflection = performShaderReflection(spirV);
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
     pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, true);
-    
-    if (!validateAttachments(desc.attachments)) {
-        throw("Initial attachments are invalid");
-    }
-
-    const uint32_t width = m_images[desc.attachments[0].image.index].extent.width;
-    const uint32_t height = m_images[desc.attachments[0].image.index].extent.height;
 
     std::vector<VkVertexInputAttributeDescription> attributes;
     uint32_t currentOffset = 0;
@@ -2967,20 +3040,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
     pass.vulkanRenderPass = createVulkanRenderPass(desc.attachments);
 
-    VkExtent2D extent = {};
-    extent.width = width;
-    extent.height = height;
-
-    pass.scissor.offset = { 0, 0 };
-    pass.scissor.extent = extent;
-
-    pass.viewport.x = 0;
-    pass.viewport.y = 0;
-    pass.viewport.width  = (float)width;
-    pass.viewport.height = (float)height;
-    pass.viewport.minDepth = 0.f;
-    pass.viewport.maxDepth = 1.f;
-
     VkPipelineViewportStateCreateInfo viewportState = {};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewportState.pNext = nullptr;
@@ -3004,8 +3063,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
     std::vector<VkPipelineColorBlendAttachmentState> blendingAttachments;
     for (const auto& attachment : desc.attachments) {
-        const auto image = m_images[attachment.image.index];
-        if (!isDepthFormat(image.format)) {
+        if (!isDepthFormat(attachment.format)) {
             blendingAttachments.push_back(blendingAttachment);
         }
     }
@@ -3095,8 +3153,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
     //clear values    
     for (const auto& attachment : desc.attachments) {
-        const auto image = m_images[attachment.image.index];
-        if (!isDepthFormat(image.format)) {
+        if (!isDepthFormat(attachment.format)) {
             VkClearValue colorClear = {};
             colorClear.color = { 0, 0, 0, 0 };
             pass.clearValues.push_back(colorClear);
@@ -3107,18 +3164,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
             pass.clearValues.push_back(depthClear);
         }
     }
-
-    VkRect2D rect = {};
-    rect.extent = extent;
-    rect.offset = { 0, 0 };
-
-    pass.beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    pass.beginInfo.pNext = nullptr;
-    pass.beginInfo.renderPass = pass.vulkanRenderPass;
-    pass.beginInfo.framebuffer = createFramebuffer(pass.vulkanRenderPass, extent, desc.attachments);
-    pass.beginInfo.clearValueCount = (uint32_t)pass.clearValues.size();
-    pass.beginInfo.pClearValues = pass.clearValues.data();
-    pass.beginInfo.renderArea = rect;
 
     const auto setSizes = descriptorSetAllocationSizeFromShaderReflection(reflection);
     pass.descriptorSet = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
@@ -3135,32 +3180,39 @@ bool validateAttachmentFormatsAreCompatible(const ImageFormat a, const ImageForm
     return imageFormatToVkAspectFlagBits(a) == imageFormatToVkAspectFlagBits(b);
 }
 
-bool RenderBackend::validateAttachments(const std::vector<Attachment>& attachments) {
+bool RenderBackend::validateAttachments(const std::vector<FramebufferTarget>& targets) {
 
-    bool isValid = attachments.size() >= 1; //need at least a single attachment to write to
+    bool isValid = targets.size() >= 1; //need at least a single attachment to write to
 
     //must return now as width/height validation requires a single attachment
     if (!isValid) {
         return isValid;
     }
 
-    const uint32_t firstAttachmentWidth = m_images[attachments[0].image.index].desc.width;
-    const uint32_t firstAttachmentHeight = m_images[attachments[0].image.index].desc.height;
+    glm::ivec2 resolution = resolutionFromFramebufferTargets(targets);
 
-    for (const auto attachmentDefinition : attachments) {
+    for (const auto attachmentDefinition : targets) {
 
         const Image attachment = m_images[attachmentDefinition.image.index];
 
         isValid &= validateImageFitForFramebuffer(attachment);
 
         //all attachments need same resolution
-        isValid &= attachment.extent.width == firstAttachmentWidth;
-        isValid &= attachment.extent.height == firstAttachmentHeight;
+        isValid &= attachment.extent.width == resolution.x;
+        isValid &= attachment.extent.height == resolution.y;
 
         //attachment must be 2D
         isValid &= attachment.extent.depth == 1;
     }
     return isValid;
+}
+
+glm::ivec2 RenderBackend::resolutionFromFramebufferTargets(const std::vector<FramebufferTarget>& targets) {
+    if (targets.size() == 0) {
+        return glm::ivec2(0);
+    }
+    const Image firstImage = m_images[targets[0].image.index];
+    return glm::ivec2(firstImage.extent.width, firstImage.extent.height);
 }
 
 VkRenderPass RenderBackend::createVulkanRenderPass(const std::vector<Attachment>& attachments) {
@@ -3189,11 +3241,10 @@ VkRenderPass RenderBackend::createVulkanRenderPass(const std::vector<Attachment>
         default: throw std::runtime_error("Unknown attachment load op");
         }
 
-        const auto image = m_images[attachment.image.index];
-        VkImageLayout layout = isDepthFormat(image.format) ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        VkImageLayout layout = isDepthFormat(attachment.format) ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
         desc.flags = 0;
-        desc.format = m_images[attachment.image.index].format;
+        desc.format = imageFormatToVulkanFormat(attachment.format);
         desc.samples = VK_SAMPLE_COUNT_1_BIT;
         desc.loadOp = loadOp;
         desc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -3246,12 +3297,18 @@ VkRenderPass RenderBackend::createVulkanRenderPass(const std::vector<Attachment>
     return pass;
 }
 
-VkFramebuffer RenderBackend::createFramebuffer(const VkRenderPass renderPass, const VkExtent2D extent, const std::vector<Attachment>& attachments) {
+VkFramebuffer RenderBackend::createVulkanFramebuffer(const std::vector<FramebufferTarget>& targets, 
+    const VkRenderPass compatibleRenderpass) {
+
+    if (!validateAttachments(targets)) {
+        std::cout << "createVulkanFramebuffer: invalid attachments\n";
+        return VK_NULL_HANDLE;
+    }
 
     std::vector<VkImageView> views;
-    for (const auto& attachment : attachments) {
-        const auto image = m_images[attachment.image.index];
-        const auto view = image.viewPerMip[attachment.mipLevel];
+    for (const auto& target : targets) {
+        const auto image = m_images[target.image.index];
+        const auto view = image.viewPerMip[target.mipLevel];
         views.push_back(view);
     }
 
@@ -3259,13 +3316,13 @@ VkFramebuffer RenderBackend::createFramebuffer(const VkRenderPass renderPass, co
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     framebufferInfo.pNext = nullptr;
     framebufferInfo.flags = 0;
-    framebufferInfo.renderPass = renderPass;
-
+    framebufferInfo.renderPass = compatibleRenderpass;
     framebufferInfo.attachmentCount = (uint32_t)views.size();
     framebufferInfo.pAttachments = views.data();
 
-    framebufferInfo.width = extent.width;
-    framebufferInfo.height = extent.height;
+    const glm::ivec2 resolution = resolutionFromFramebufferTargets(targets);
+    framebufferInfo.width = resolution.x;
+    framebufferInfo.height = resolution.y;
     framebufferInfo.layers = 1;
 
     VkFramebuffer framebuffer;
@@ -3689,7 +3746,6 @@ void RenderBackend::destroyDynamicMesh(const DynamicMesh& mesh) {
 
 void RenderBackend::destroyGraphicPass(const GraphicPass& pass) {
     vkDestroyRenderPass(vkContext.device, pass.vulkanRenderPass, nullptr);
-    vkDestroyFramebuffer(vkContext.device, pass.beginInfo.framebuffer, nullptr);
     vkDestroyPipelineLayout(vkContext.device, pass.pipelineLayout, nullptr);
     vkDestroyPipeline(vkContext.device, pass.pipeline, nullptr);
     vkDestroyDescriptorSetLayout(vkContext.device, pass.descriptorSetLayout, nullptr);
@@ -3699,4 +3755,8 @@ void RenderBackend::destroyComputePass(const ComputePass& pass) {
     vkDestroyPipelineLayout(vkContext.device, pass.pipelineLayout, nullptr);
     vkDestroyPipeline(vkContext.device, pass.pipeline, nullptr);
     vkDestroyDescriptorSetLayout(vkContext.device, pass.descriptorSetLayout, nullptr);
+}
+
+void RenderBackend::destroyFramebuffer(const Framebuffer& framebuffer) {
+    vkDestroyFramebuffer(vkContext.device, framebuffer.vkHandle, nullptr);
 }

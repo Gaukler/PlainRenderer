@@ -223,6 +223,11 @@ private:
     SamplerHandle m_colorSamplerClamp;
     SamplerHandle m_skyOcclusionSampler;
 
+    FramebufferHandle m_colorFramebuffer;
+    FramebufferHandle m_shadowCascadeFramebuffers[4];
+    FramebufferHandle m_depthPrepassFramebuffer;
+    FramebufferHandle m_skyShadowFramebuffer;
+
     MeshHandle m_skyCube;
     MeshHandle m_quad;
 
@@ -251,6 +256,9 @@ private:
 
     void initImages();
     void initSamplers();
+
+    //must be called after initImages and initRenderpasses
+    void initFramebuffers();
 
     void initBuffers(const HistogramSettings& histogramSettings);
 

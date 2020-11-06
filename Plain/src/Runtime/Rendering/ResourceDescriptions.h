@@ -2,7 +2,6 @@
 #include "pch.h"
 #include "RenderHandles.h"
 
-
 //resources are used to comunicate to a renderpass what and how a resource is used
 //the shader dictates what type of resource must be bound where
 //resources may be changed from frame to frame
@@ -58,6 +57,7 @@ struct RenderPassExecution {
     RenderPassHandle                handle;
     RenderPassResources             resources;
     std::vector<RenderPassHandle>   parents;
+    FramebufferHandle               framebuffer;
     uint32_t                        dispatchCount[3] = { 1, 1, 1}; //compute pass only
 };
 
@@ -82,19 +82,16 @@ struct DepthTest {
 
 enum class BlendState { None, Additive };
 enum class AttachmentLoadOp { Load, Clear, DontCare };
+enum class ImageFormat { R8, RG8, RGBA8, RG16_sFloat, RG32_sFloat, RGBA16_sFloat, RGBA16_sNorm, RGBA32_sFloat, R11G11B10_uFloat, Depth16, Depth32, BC1, BC3, BC5, BGRA8_uNorm };
 
 struct Attachment {
     Attachment(
-        const ImageHandle         image,
-        const uint32_t            mipLevel,
-        const uint32_t            binding,
-        const AttachmentLoadOp    loadOp
-    ) : image(image), mipLevel(mipLevel), binding(binding), loadOp(loadOp){};
+        const ImageFormat       format,
+        const AttachmentLoadOp  loadOp
+    ) : format(format), loadOp(loadOp){};
 
-    ImageHandle         image;
-    uint32_t            mipLevel    = 0;
-    uint32_t            binding     = 0;
-    AttachmentLoadOp    loadOp      = AttachmentLoadOp::DontCare;
+    ImageFormat         format  = ImageFormat::R8;
+    AttachmentLoadOp    loadOp  = AttachmentLoadOp::DontCare;
 };
 
 //data will be interpreted according to shader
@@ -120,9 +117,9 @@ enum class VertexFormat { Full, PositionOnly };
 
 struct GraphicPassDescription {
     GraphicPassShaderDescriptions   shaderDescriptions;
-    std::vector<Attachment>         attachments;
 
     //configuration
+    std::vector<Attachment> attachments;
     uint32_t                patchControlPoints = 0; //ignored if no tesselation shader
     RasterizationConfig     rasterization;
     BlendState              blending = BlendState::None;
@@ -138,7 +135,6 @@ struct ComputePassDescription {
 };
 
 enum class ImageType { Type1D, Type2D, Type3D, TypeCube };
-enum class ImageFormat { R8, RG8, RGBA8, RG16_sFloat, RG32_sFloat, RGBA16_sFloat, RGBA16_sNorm, RGBA32_sFloat, R11G11B10_uFloat, Depth16, Depth32, BC1, BC3, BC5 };
 enum class MipCount { One, FullChain, Manual, FullChainAlreadyInData };
 
 enum class ImageUsageFlags : uint32_t {
@@ -214,4 +210,14 @@ struct Material {
     ImageHandle diffuseTexture;
     ImageHandle normalTexture;
     ImageHandle specularTexture;
+};
+
+struct FramebufferTarget {
+    ImageHandle image;
+    uint32_t mipLevel;
+};
+
+struct FramebufferDescription {
+    std::vector<FramebufferTarget> targets;
+    RenderPassHandle compatibleRenderpass; //framebuffer can be used with this pass or compatible ones
 };
