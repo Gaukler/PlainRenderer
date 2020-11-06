@@ -245,6 +245,7 @@ private:
 
     UniformBufferHandle m_skyOcclusionDataBuffer;
     UniformBufferHandle m_atmosphereSettingsBuffer;
+    UniformBufferHandle m_taaWeightBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);

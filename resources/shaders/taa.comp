@@ -19,6 +19,29 @@ layout(set=1, binding = 1) 	                uniform texture2D previousFramebuffe
 layout(set=1, binding = 2) 	                uniform texture2D motionBuffer;
 layout(set=1, binding = 3) 	                uniform texture2D depthBuffer;
 layout(set=1, binding = 4)                  uniform sampler colorSampler;
+layout(set=1, binding = 5)                  uniform weightBuffer{
+    float w0;
+    float w1;
+    float w2;
+    float w3;
+    float w4;
+    float w5;
+    float w6;
+    float w7;
+    float w8;
+};
+
+float inputWeights[9] = {
+    w0,
+    w1,
+    w2,
+    w3,
+    w4,
+    w5,
+    w6,
+    w7,
+    w8
+};
 
 //from: "Temporal ReprojectionAnti-Aliasing in INSIDE"
 //clips a point towards a target in a axis aligned bounding box
@@ -74,11 +97,43 @@ vec3 sampleNeighbourhood(ivec2 uv){
     return c;
 }
 
+vec3 computeFilteredInput(ivec2 uv){
+    //return imageLoad(framebuffer, uv).rgb;
+    
+    ivec2 offsets[9] = {
+        ivec2(-1, 1), //top row
+        ivec2(0,  1),
+        ivec2(1,  1),
+        ivec2(-1, 0), //middle row
+        ivec2(0,  0),
+        ivec2(1,  0),
+        ivec2(-1,-1), //bottom row
+        ivec2(0, -1),
+        ivec2(1, -1)
+    };
+    vec3 color = vec3(0.f);
+    for(int i = 0; i < 9; i++){
+        vec3 colorSample = imageLoad(framebuffer, uv + offsets[i]).rgb;
+        if(useTonemapping){
+            colorSample = tonemap(colorSample);
+        }
+        color += inputWeights[i] * colorSample;
+    }
+    
+    if(useTonemapping){
+        color = tonemapReverse(color);
+    }
+    
+    return color;
+}
+
+
+
 void main(){
 
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
      
-    vec3 currentColor = imageLoad(framebuffer, uv).rgb;
+    vec3 currentColor = computeFilteredInput(uv);
     if(useTonemapping){
         currentColor = tonemap(currentColor);
     }

@@ -742,18 +742,56 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     gRenderBackend.setRenderPassExecution(mainPassExecution);
 }
 
+//using gauﬂ fit to blackman harris as proposed in "High Quality Temporal Supersampling"
+std::array<float, 9> computeTAAWeights(const glm::vec2& jitterInPixels) {
+    std::array<float, 9> weights;
+    glm::vec2 offsets[9] = {
+        glm::vec2(-1.f,  1.f), //top row
+        glm::vec2(0.f,  1.f),
+        glm::vec2(1.f,  1.f),
+        glm::vec2(-1.f,  0.f), //middle row
+        glm::vec2(0.f,  0.f),
+        glm::vec2(1.f,  0.f),
+        glm::vec2(-1.f, -1.f), //bottom row
+        glm::vec2(0.f, -1.f),
+        glm::vec2(1.f, -1.f)
+    };
+
+    float totalWeight = 0.f;
+
+    for (int i = 0; i < 9; i++) {
+        float sampleDistance = glm::length(offsets[i] + jitterInPixels);
+        weights[i] = glm::exp(-2.29f * sampleDistance * sampleDistance);
+        totalWeight += weights[i];
+    }
+
+    //normalize
+    for (int i = 0; i < 9; i++) {
+        weights[i] /= totalWeight;
+    }
+
+    return weights;
+}
+
 void RenderFrontend::computeTAA() const {
+    
+    const glm::vec2 cameraJitterInPixels = m_globalShaderInfo.currentFrameCameraJitter * glm::vec2(m_screenWidth, m_screenHeight);
+    std::array<float, 9> sampleWeights = computeTAAWeights(cameraJitterInPixels);
+    gRenderBackend.setUniformBufferData(m_taaWeightBuffer, &sampleWeights, sizeof(sampleWeights));
+
     ImageResource colorBufferResource(m_colorBuffer, 0, 0);
     ImageResource previousFrameResource(m_historyBuffer, 0, 1);
     ImageResource motionBufferResource(m_motionVectorBuffer, 0, 2);
     ImageResource depthBufferResource(m_depthBuffer, 0, 3);
     SamplerResource samplerResource(m_colorSamplerClamp, 4);
+    UniformBufferResource sampleWeightResource(m_taaWeightBuffer, 5);
 
     RenderPassExecution taaExecution;
     taaExecution.handle = m_taaPass;
     taaExecution.resources.storageImages = { colorBufferResource };
     taaExecution.resources.sampledImages = { previousFrameResource, motionBufferResource, depthBufferResource };
     taaExecution.resources.samplers = { samplerResource };
+    taaExecution.resources.uniformBuffers = { sampleWeightResource };
     taaExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     taaExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
     taaExecution.dispatchCount[2] = 1;
@@ -1659,6 +1697,12 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         UniformBufferDescription desc;
         desc.size = sizeof(AtmosphereSettings);
         m_atmosphereSettingsBuffer = gRenderBackend.createUniformBuffer(desc);
+    }
+    //taa weight buffer
+    {
+        UniformBufferDescription desc;
+        desc.size = sizeof(float) * 9;
+        m_taaWeightBuffer = gRenderBackend.createUniformBuffer(desc);
     }
 }
 
