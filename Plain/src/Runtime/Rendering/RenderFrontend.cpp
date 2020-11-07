@@ -2303,41 +2303,6 @@ ShaderDescription RenderFrontend::createDepthPyramidShaderDescription(uint32_t* 
     return desc;
 }
 
-ShaderDescription RenderFrontend::createSkyLutMipShaderDescription(uint32_t* outThreadgroupCount) {
-
-    ShaderDescription desc;
-    desc.srcPathRelative = "singlePassMipChain.comp";
-
-    const uint32_t mipCount = mipCountFromResolution(skyLutWidth, skyLutHeight, 1);
-
-    const uint32_t maxMipCount = 12; //see shader for details
-    const auto dispatchCount = computeSinglePassMipChainDispatchCount(skyLutWidth, skyLutHeight, mipCount, maxMipCount);
-
-    //mip count
-    desc.specialisationConstants.push_back({
-        0,                                                              //location
-        dataToCharArray((void*)&mipCount, sizeof(mipCount))   //value
-        });
-    //depth buffer width
-    desc.specialisationConstants.push_back({
-        1,                                                              //location
-        dataToCharArray((void*)&skyLutWidth, sizeof(skyLutWidth))   //value
-        });
-    //depth buffer height
-    desc.specialisationConstants.push_back({
-        2,                                                              //location
-        dataToCharArray((void*)&skyLutHeight, sizeof(skyLutHeight)) //value
-        });
-    //threadgroup count
-    *outThreadgroupCount = dispatchCount.x * dispatchCount.y;
-    desc.specialisationConstants.push_back({
-        3,                                                                          //location
-        dataToCharArray((void*)outThreadgroupCount, sizeof(*outThreadgroupCount))   //value
-        });
-
-    return desc;
-}
-
 glm::ivec2 RenderFrontend::computeSinglePassMipChainDispatchCount(const uint32_t width, const uint32_t height, const uint32_t mipCount, const uint32_t maxMipCount) const {
 
     //shader can process up to 12 mip levels

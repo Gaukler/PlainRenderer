@@ -313,7 +313,6 @@ private:
 
     //threadgroup count is needed as a pointer in a specialisation constant, so it must be from outer scope to stay valid
     ShaderDescription createDepthPyramidShaderDescription(uint32_t* outThreadgroupCount);
-    ShaderDescription createSkyLutMipShaderDescription(uint32_t* outThreadgroupCount);
     glm::ivec2 computeSinglePassMipChainDispatchCount(const uint32_t width, const uint32_t height, const uint32_t mipCount, const uint32_t maxMipCount) const;
 
     glm::vec2 m_sunDirection = glm::vec2(0.f, 0.f);
