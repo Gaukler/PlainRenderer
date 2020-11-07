@@ -1367,8 +1367,8 @@ void RenderBackend::prepareRenderPasses() {
                 const auto& layoutBarriers = createImageBarriers(image, requiredLayout,
                     VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, 0, (uint32_t)image.layoutPerMip.size());
                 barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
-                image.currentlyWriting = true;
             }
+            image.currentlyWriting = true;
         }
 
         //sampled images        
@@ -1431,8 +1431,8 @@ void RenderBackend::prepareRenderPasses() {
                     const auto& layoutBarriers = createImageBarriers(image, requiredLayout, access, 0, 
                         (uint32_t)image.viewPerMip.size());
                     barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
-                    image.currentlyWriting = true;
                 }
+                image.currentlyWriting = true;
             }
         }
         
