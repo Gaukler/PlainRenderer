@@ -821,7 +821,7 @@ void RenderFrontend::computeTemporalSuperSampling(const ColorBuffers& frames, co
     const ImageResource secondToLastFrameResource(frames.secondToLast.image, 0, 3);
     const ImageResource targetResource(target, 0, 4);
     const ImageResource velocityBufferResource(m_motionVectorBuffer, 0, 5);
-    const ImageResource depthBufferResource(m_motionVectorBuffer, 0, 6);
+    const ImageResource depthBufferResource(m_depthBuffer, 0, 6);
 
     RenderPassExecution temporalSupersamplingExecution;
     temporalSupersamplingExecution.handle = m_temporalSupersamplingPass;
