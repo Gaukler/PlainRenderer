@@ -35,7 +35,7 @@ struct ShadingConfig {
     bool useSkyOcclusionDirection = true;
 };
 
-struct TAASettings {
+struct TemporalFilterSettings {
     bool enabled = true;
     bool useClipping = true;
     bool useVarianceClipping = true;
@@ -121,7 +121,7 @@ private:
     void computeDepthPyramid() const;
     void computeSunLightMatrices() const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const;
-    void computeTAA() const;
+    void computeTemporalFilter() const;
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry() const;
     void issueSkyDrawcalls();
@@ -177,8 +177,8 @@ private:
 
     HistogramSettings createHistogramSettings();
 
-    ShadingConfig   m_shadingConfig;
-    TAASettings     m_taaSettings;
+    ShadingConfig m_shadingConfig;
+    TemporalFilterSettings m_temporalFilterSettings;
     AtmosphereSettings m_atmosphereSettings;
 
     RenderPassHandle m_mainPass;
@@ -202,7 +202,7 @@ private:
     RenderPassHandle m_depthPyramidPass;
     RenderPassHandle m_lightMatrixPass;
     RenderPassHandle m_tonemappingPass;
-    RenderPassHandle m_taaPass;
+    RenderPassHandle m_temporalFilterPass;
     RenderPassHandle m_skyShadowPass;
     RenderPassHandle m_skyOcclusionGatherPass;  //gathers visibility from sky shadow map
 
@@ -264,11 +264,11 @@ private:
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
-    ShaderDescription createTAAShaderDescription();
+    ShaderDescription createTemporalFilterShaderDescription();
 
     bool m_isMainPassShaderDescriptionStale = false;
     bool m_isBRDFLutShaderDescriptionStale = false;
-    bool m_isTAAShaderDescriptionStale = false;
+    bool m_isTemporalFilterShaderDescriptionStale = false;
 
     void updateGlobalShaderInfo();
 

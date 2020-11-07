@@ -217,9 +217,9 @@ void RenderFrontend::prepareNewFrame() {
         //don't reset m_isMainPassShaderDescriptionStale, this is done when rendering as it's used to trigger lut recreation
     }
 
-    if (m_isTAAShaderDescriptionStale) {
-        gRenderBackend.updateComputePassShaderDescription(m_taaPass, createTAAShaderDescription());
-        m_isTAAShaderDescriptionStale = false;
+    if (m_isTemporalFilterShaderDescriptionStale) {
+        gRenderBackend.updateComputePassShaderDescription(m_temporalFilterPass, createTemporalFilterShaderDescription());
+        m_isTemporalFilterShaderDescriptionStale = false;
     }
 
     gRenderBackend.updateShaderCode();
@@ -269,10 +269,10 @@ void RenderFrontend::prepareRenderpasses(){
     }
     renderSky(drawDebugPass);
     skyIBLConvolution();
-    if (m_taaSettings.enabled) {
-        computeTAA();
+    if (m_temporalFilterSettings.enabled) {
+        computeTemporalFilter();
         m_historyBuffers.switchImages();
-        computeTonemapping(m_taaPass, m_postProcessBuffer);
+        computeTonemapping(m_temporalFilterPass, m_postProcessBuffer);
     }
     else {
         computeTonemapping(m_sunSpritePass, m_colorBuffer);
@@ -303,7 +303,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     const glm::mat4 projectionMatrix = projectionMatrixFromCameraIntrinsic(m_camera.intrinsic);
 
     //jitter matrix for TAA
-    if(m_taaSettings.enabled){
+    if(m_temporalFilterSettings.enabled){
         const float pixelSizeX = 1.f / m_screenWidth;
         const float pixelSizeY = 1.f / m_screenHeight;
 
@@ -798,7 +798,7 @@ std::array<float, 9> computeTAAWeights(const glm::vec2& jitterInPixels) {
     return weights;
 }
 
-void RenderFrontend::computeTAA() const {
+void RenderFrontend::computeTemporalFilter() const {
     
     const glm::vec2 cameraJitterInPixels = m_globalShaderInfo.currentFrameCameraJitter * glm::vec2(m_screenWidth, m_screenHeight);
     std::array<float, 9> sampleWeights = computeTAAWeights(cameraJitterInPixels);
@@ -816,7 +816,7 @@ void RenderFrontend::computeTAA() const {
     UniformBufferResource sampleWeightResource(m_taaWeightBuffer, 7);
 
     RenderPassExecution taaExecution;
-    taaExecution.handle = m_taaPass;
+    taaExecution.handle = m_temporalFilterPass;
     taaExecution.resources.storageImages = { inputImageResource, outputImageResource, historyDstResource };
     taaExecution.resources.sampledImages = { historySrcResource, motionBufferResource, depthBufferResource };
     taaExecution.resources.samplers = { samplerResource };
@@ -1148,7 +1148,7 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
         //texture LoD bias
         constants.push_back({
             5,                                                                                          //location
-            dataToCharArray((void*)&m_taaSettings.textureLoDBias, sizeof(m_taaSettings.textureLoDBias)) //value
+            dataToCharArray((void*)&m_temporalFilterSettings.textureLoDBias, sizeof(m_temporalFilterSettings.textureLoDBias)) //value
             });
         //sky occlusion
         constants.push_back({
@@ -1179,41 +1179,41 @@ ShaderDescription RenderFrontend::createBRDFLutShaderDescription(const ShadingCo
     return desc;
 }
 
-ShaderDescription RenderFrontend::createTAAShaderDescription() {
+ShaderDescription RenderFrontend::createTemporalFilterShaderDescription() {
     ShaderDescription desc;
-    desc.srcPathRelative = "taa.comp";
+    desc.srcPathRelative = "TemporalFilter.comp";
     
     //specialisation constants
     {
         //use clipping
         desc.specialisationConstants.push_back({
-            0,                                                                              //location
-            dataToCharArray(&m_taaSettings.useClipping, sizeof(m_taaSettings.useClipping))  //value
+            0,                                                                                                      //location
+            dataToCharArray(&m_temporalFilterSettings.useClipping, sizeof(m_temporalFilterSettings.useClipping))    //value
             });
         //use variance clipping
         desc.specialisationConstants.push_back({
-            1,                                                                                              //location
-            dataToCharArray(&m_taaSettings.useVarianceClipping, sizeof(m_taaSettings.useVarianceClipping))  //value
+            1,                                                                                                                  //location
+            dataToCharArray(&m_temporalFilterSettings.useVarianceClipping, sizeof(m_temporalFilterSettings.useVarianceClipping))//value
             });
         //use YCoCg color space
         desc.specialisationConstants.push_back({
-            2,                                                                          //location
-            dataToCharArray(&m_taaSettings.useYCoCg, sizeof(m_taaSettings.useYCoCg))    //value
+            2,                                                                                              //location
+            dataToCharArray(&m_temporalFilterSettings.useYCoCg, sizeof(m_temporalFilterSettings.useYCoCg))  //value
             });
         //use use motion vector dilation
         desc.specialisationConstants.push_back({
-            3,                                                                                                      //location
-            dataToCharArray(&m_taaSettings.useMotionVectorDilation, sizeof(m_taaSettings.useMotionVectorDilation))  //value
+            3,                                                                                                                          //location
+            dataToCharArray(&m_temporalFilterSettings.useMotionVectorDilation, sizeof(m_temporalFilterSettings.useMotionVectorDilation))//value
             });
         //use dynamic blend factor
         desc.specialisationConstants.push_back({
-            4,                                                                                                  //location
-            dataToCharArray(&m_taaSettings.useDynamicBlendFactor, sizeof(m_taaSettings.useDynamicBlendFactor))  //value
+            4,                                                                                                                      //location
+            dataToCharArray(&m_temporalFilterSettings.useDynamicBlendFactor, sizeof(m_temporalFilterSettings.useDynamicBlendFactor))//value
             });
         //use tonemapping
         desc.specialisationConstants.push_back({
-            5,                                                                                      //location
-            dataToCharArray(&m_taaSettings.useTonemapping, sizeof(m_taaSettings.useTonemapping))    //value
+            5,                                                                                                          //location
+            dataToCharArray(&m_temporalFilterSettings.useTonemapping, sizeof(m_temporalFilterSettings.useTonemapping))  //value
             });
     }
 
@@ -2185,12 +2185,12 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         m_tonemappingPass = gRenderBackend.createComputePass(desc);
     }
-    //TAA pass
+    //temporal filter pass
     {
         ComputePassDescription desc;
         desc.name = "TAA";
-        desc.shaderDescription = createTAAShaderDescription();
-        m_taaPass = gRenderBackend.createComputePass(desc);
+        desc.shaderDescription = createTemporalFilterShaderDescription();
+        m_temporalFilterPass = gRenderBackend.createComputePass(desc);
     }
     //sky shadow pass
     {
@@ -2361,18 +2361,18 @@ void RenderFrontend::drawUi() {
     ImGui::End();
 
     ImGui::Begin("Rendering");
-    //TAA Settings
-    if(ImGui::CollapsingHeader("TAA settings")){
+    //Temporal filter Settings
+    if(ImGui::CollapsingHeader("Temporal filter settings")){
 
-        ImGui::Checkbox("Enabled", &m_taaSettings.enabled);
-        m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Clipping", &m_taaSettings.useClipping);
-        m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Variance clipping", &m_taaSettings.useVarianceClipping);
-        m_isTAAShaderDescriptionStale |= ImGui::Checkbox("YCoCg color space clipping", &m_taaSettings.useYCoCg);
-        m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Dilate motion vector", &m_taaSettings.useMotionVectorDilation);
-        m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Use dynamic blend factor", &m_taaSettings.useDynamicBlendFactor);
-        m_isTAAShaderDescriptionStale |= ImGui::Checkbox("Use tonemapping", &m_taaSettings.useTonemapping);
+        ImGui::Checkbox("Enabled", &m_temporalFilterSettings.enabled);
+        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Clipping", &m_temporalFilterSettings.useClipping);
+        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Variance clipping", &m_temporalFilterSettings.useVarianceClipping);
+        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("YCoCg color space clipping", &m_temporalFilterSettings.useYCoCg);
+        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Dilate motion vector", &m_temporalFilterSettings.useMotionVectorDilation);
+        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Use dynamic blend factor", &m_temporalFilterSettings.useDynamicBlendFactor);
+        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Use tonemapping", &m_temporalFilterSettings.useTonemapping);
 
-        m_isMainPassShaderDescriptionStale |= ImGui::InputFloat("Texture LoD bias", &m_taaSettings.textureLoDBias);
+        m_isMainPassShaderDescriptionStale |= ImGui::InputFloat("Texture LoD bias", &m_temporalFilterSettings.textureLoDBias);
     }
 
     //lighting settings
