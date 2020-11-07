@@ -89,6 +89,28 @@ private:
     PingPongImages m_pingPongImages;
 };
 
+struct FramebufferImageCombo {
+    ImageHandle image;
+    FramebufferHandle framebuffer;
+};
+
+struct ColorBuffers {
+    FramebufferImageCombo current;
+    FramebufferImageCombo last;
+    FramebufferImageCombo secondToLast;
+};
+
+class ColorBufferWrapper {
+public:
+    //depth buffer and compatible renderpass are used for framebuffer creation
+    void init(const ImageHandle images[3], const FramebufferHandle framebuffers[3]);
+    void advance(); //advance internal rotation of frame N, N-1, N-2
+    ColorBuffers getImages() const;
+private:
+    FramebufferImageCombo m_images[3];
+    uint32_t m_index = 0;
+};
+
 class RenderFrontend {
 public:
     RenderFrontend() {};
@@ -113,17 +135,17 @@ private:
     void prepareRenderpasses();
 
     //computes image histogram using compute shaders
-    void computeColorBufferHistogram() const;
-    void renderSky(const bool drewDebugPasses) const;
+    void computeColorBufferHistogram(const ImageHandle lastFrameColor) const;
+    void renderSky(const FramebufferHandle colorFramebuffer, const bool drewDebugPasses) const;
     void renderSunShadowCascades() const;
     void computeExposure() const;
     void renderDepthPrepass() const;
     void computeDepthPyramid() const;
     void computeSunLightMatrices() const;
-    void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const;
-    void computeTemporalFilter() const;
+    void renderForwardShading(const FramebufferHandle colorFramebuffer, const std::vector<RenderPassHandle>& externalDependencies) const;
+    void computeTemporalFilter(const ImageHandle currentFrameColor) const;
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
-    void renderDebugGeometry() const;
+    void renderDebugGeometry(const FramebufferHandle colorFramebuffer) const;
     void issueSkyDrawcalls();
 
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
@@ -208,7 +230,6 @@ private:
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
-    ImageHandle m_colorBuffer;
     ImageHandle m_postProcessBuffer;
     ImageHandle m_depthBuffer;
     ImageHandle m_motionVectorBuffer;
@@ -224,6 +245,7 @@ private:
     ImageHandle m_skyOcclusionVolume;
 
     PingPongImageWrapper m_historyBuffers;
+    ColorBufferWrapper m_colorBuffers;
 
     DefaultTextures m_defaultTextures;
 
@@ -240,7 +262,6 @@ private:
     SamplerHandle m_colorSamplerClamp;
     SamplerHandle m_skyOcclusionSampler;
 
-    FramebufferHandle m_colorFramebuffer;
     FramebufferHandle m_shadowCascadeFramebuffers[4];
     FramebufferHandle m_depthPrepassFramebuffer;
     FramebufferHandle m_skyShadowFramebuffer;
@@ -279,6 +300,9 @@ private:
     void initFramebuffers();
 
     void initBuffers(const HistogramSettings& histogramSettings);
+
+    //must be called after initRenderpasses
+    void initColorBuffers();
 
     //must be called after initImages as images have to be created to be used as attachments
     void initRenderpasses(const HistogramSettings& histogramSettings);

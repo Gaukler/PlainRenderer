@@ -59,6 +59,28 @@ PingPongImages PingPongImageWrapper::getImages() const{
     return m_pingPongImages;
 }
 
+void ColorBufferWrapper::init(const ImageHandle images[3], const FramebufferHandle framebuffers[3]) {
+    for (int i = 0; i < 3; i++) {
+        FramebufferImageCombo combo;
+        combo.image = images[i];
+        combo.framebuffer = framebuffers[i];
+        m_images[i] = combo;
+    }
+}
+
+void ColorBufferWrapper::advance() {
+    m_index++;
+    m_index %= 3;
+}
+
+ColorBuffers ColorBufferWrapper::getImages() const {
+    ColorBuffers buffers;
+    buffers.current = m_images[m_index];
+    buffers.current = m_images[(m_index - 1) % 3];
+    buffers.current = m_images[(m_index - 2) % 3];
+    return buffers;
+}
+
 void resizeCallback(GLFWwindow* window, int width, int height) {
     RenderFrontend* frontEnd = reinterpret_cast<RenderFrontend*>(glfwGetWindowUserPointer(window));
     frontEnd->setResolution(width, height);
@@ -175,7 +197,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     initBuffers(histogramSettings);
     initRenderpasses(histogramSettings);
     initFramebuffers();
-
+    initColorBuffers();
     initMeshs();
     
     gRenderBackend.newFrame();
@@ -190,9 +212,19 @@ void RenderFrontend::shutdown() {
 void RenderFrontend::prepareNewFrame() {
     if (m_didResolutionChange) {
         const PingPongImages historyBuffers = m_historyBuffers.getImages();
+        const ColorBuffers colorBuffers = m_colorBuffers.getImages();
+
         gRenderBackend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
-        gRenderBackend.resizeImages( { m_colorBuffer, m_postProcessBuffer, m_depthBuffer, m_motionVectorBuffer, 
-            historyBuffers.dst, historyBuffers.src }, m_screenWidth, m_screenHeight);
+        gRenderBackend.resizeImages( { 
+            colorBuffers.current.image, 
+            colorBuffers.last.image, 
+            colorBuffers.secondToLast.image, 
+            m_postProcessBuffer, 
+            m_depthBuffer, 
+            m_motionVectorBuffer,
+            historyBuffers.dst, 
+            historyBuffers.src }, 
+            m_screenWidth, m_screenHeight);
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
 
@@ -231,6 +263,9 @@ void RenderFrontend::prepareNewFrame() {
 
 void RenderFrontend::prepareRenderpasses(){
 
+    m_colorBuffers.advance();
+    const ColorBuffers colorBuffers = m_colorBuffers.getImages();
+
     std::vector<RenderPassHandle> preparationPasses;
 
     if (m_isBRDFLutShaderDescriptionStale) {
@@ -240,12 +275,12 @@ void RenderFrontend::prepareRenderpasses(){
     }
 
     renderSunShadowCascades();
-    computeColorBufferHistogram();
+    computeColorBufferHistogram(colorBuffers.current.image);
     computeExposure();
     renderDepthPrepass();
     computeDepthPyramid();
     computeSunLightMatrices();
-    renderForwardShading(preparationPasses);
+    renderForwardShading(colorBuffers.current.framebuffer, preparationPasses);
 
     //for sky and debug models, first matrix is mvp with identity model matrix, secondary is unused
     const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
@@ -265,17 +300,17 @@ void RenderFrontend::prepareRenderpasses(){
 
     //debug pass
     if (drawDebugPass) {
-        renderDebugGeometry();
+        renderDebugGeometry(colorBuffers.current.framebuffer);
     }
-    renderSky(drawDebugPass);
+    renderSky(colorBuffers.current.framebuffer, drawDebugPass);
     skyIBLConvolution();
     if (m_temporalFilterSettings.enabled) {
-        computeTemporalFilter();
+        computeTemporalFilter(colorBuffers.current.image);
         m_historyBuffers.switchImages();
         computeTonemapping(m_temporalFilterPass, m_postProcessBuffer);
     }
     else {
-        computeTonemapping(m_sunSpritePass, m_colorBuffer);
+        computeTonemapping(m_sunSpritePass, colorBuffers.current.image);
     }
 }
 
@@ -486,14 +521,14 @@ void RenderFrontend::renderFrame() {
     gRenderBackend.renderFrame(true);
 }
 
-void RenderFrontend::computeColorBufferHistogram() const {
+void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColor) const {
 
     StorageBufferResource histogramPerTileResource(m_histogramPerTileBuffer, false, 0);
     StorageBufferResource histogramResource(m_histogramBuffer, false, 1);
 
     //histogram per tile
     {
-        ImageResource colorTextureResource(m_colorBuffer, 0, 2);
+        ImageResource colorTextureResource(lastFrameColor, 0, 2);
         SamplerResource texelSamplerResource(m_defaultTexelSampler, 4);
         StorageBufferResource lightBufferResource(m_lightBuffer, true, 3);
 
@@ -538,7 +573,7 @@ void RenderFrontend::computeColorBufferHistogram() const {
     }
 }
    
-void RenderFrontend::renderSky(const bool drewDebugPasses) const {
+void RenderFrontend::renderSky(const FramebufferHandle colorFramebuffer, const bool drewDebugPasses) const {
     gRenderBackend.setUniformBufferData(
         m_atmosphereSettingsBuffer, 
         &m_atmosphereSettings, 
@@ -605,7 +640,7 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
 
         RenderPassExecution skyPassExecution;
         skyPassExecution.handle = m_skyPass;
-        skyPassExecution.framebuffer = m_colorFramebuffer;
+        skyPassExecution.framebuffer = colorFramebuffer;
         skyPassExecution.resources.sampledImages = { skyLutResource };
         skyPassExecution.resources.samplers = { skySamplerResource };
         skyPassExecution.parents = { m_mainPass,  m_skyLutPass };
@@ -622,7 +657,7 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
 
         RenderPassExecution sunSpritePassExecution;
         sunSpritePassExecution.handle = m_sunSpritePass;
-        sunSpritePassExecution.framebuffer = m_colorFramebuffer;
+        sunSpritePassExecution.framebuffer = colorFramebuffer;
         sunSpritePassExecution.parents = { m_skyPass };
         sunSpritePassExecution.resources.storageBuffers = { lightBufferResource };
         sunSpritePassExecution.resources.sampledImages = { transmissionLutResource };
@@ -729,7 +764,7 @@ void RenderFrontend::computeSunLightMatrices() const{
     gRenderBackend.setRenderPassExecution(exe);
 }
 
-void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const {
+void RenderFrontend::renderForwardShading(const FramebufferHandle colorFramebuffer, const std::vector<RenderPassHandle>& externalDependencies) const {
     const auto shadowSamplerResource = SamplerResource(m_shadowSampler, 0);
     const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 1);
     const auto cubeSamplerResource = SamplerResource(m_cubeSampler, 2);
@@ -746,7 +781,7 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
 
     RenderPassExecution mainPassExecution;
     mainPassExecution.handle = m_mainPass;
-    mainPassExecution.framebuffer = m_colorFramebuffer;
+    mainPassExecution.framebuffer = colorFramebuffer;
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
     mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource };
     mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
@@ -798,7 +833,7 @@ std::array<float, 9> computeTAAWeights(const glm::vec2& jitterInPixels) {
     return weights;
 }
 
-void RenderFrontend::computeTemporalFilter() const {
+void RenderFrontend::computeTemporalFilter(const ImageHandle currentFrameColor) const {
     
     const glm::vec2 cameraJitterInPixels = m_globalShaderInfo.currentFrameCameraJitter * glm::vec2(m_screenWidth, m_screenHeight);
     std::array<float, 9> sampleWeights = computeTAAWeights(cameraJitterInPixels);
@@ -806,7 +841,7 @@ void RenderFrontend::computeTemporalFilter() const {
 
     const PingPongImages historyBuffers = m_historyBuffers.getImages();
 
-    ImageResource inputImageResource(m_colorBuffer, 0, 0);
+    ImageResource inputImageResource(currentFrameColor, 0, 0);
     ImageResource outputImageResource(m_postProcessBuffer, 0, 1);
     ImageResource historyDstResource(historyBuffers.dst, 0, 2);
     ImageResource historySrcResource(historyBuffers.src, 0, 3);
@@ -848,10 +883,10 @@ void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const Ima
     gRenderBackend.setRenderPassExecution(tonemappingExecution);
 }
 
-void RenderFrontend::renderDebugGeometry() const {
+void RenderFrontend::renderDebugGeometry(const FramebufferHandle colorFramebuffer) const {
     RenderPassExecution debugPassExecution;
     debugPassExecution.handle = m_debugGeoPass;
-    debugPassExecution.framebuffer = m_colorFramebuffer;
+    debugPassExecution.framebuffer = colorFramebuffer;
     debugPassExecution.parents = { m_mainPass };
     gRenderBackend.setRenderPassExecution(debugPassExecution);
 }
@@ -1240,7 +1275,7 @@ void RenderFrontend::updateGlobalShaderInfo() {
 }
 
 void RenderFrontend::initImages() {
-    //main color buffer
+    //depth buffer
     {
         ImageDescription desc;
         desc.initialData = std::vector<uint8_t>{};
@@ -1248,13 +1283,13 @@ void RenderFrontend::initImages() {
         desc.height = m_screenHeight;
         desc.depth = 1;
         desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
+        desc.format = ImageFormat::Depth32;
+        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
         desc.mipCount = MipCount::One;
         desc.manualMipCount = 0;
         desc.autoCreateMips = false;
 
-        m_colorBuffer = gRenderBackend.createImage(desc);
+        m_depthBuffer = gRenderBackend.createImage(desc);
     }
     //post process buffer
     {
@@ -1271,22 +1306,6 @@ void RenderFrontend::initImages() {
         desc.autoCreateMips = false;
 
         m_postProcessBuffer = gRenderBackend.createImage(desc);
-    }
-    //depth buffer
-    {
-        ImageDescription desc;
-        desc.initialData = std::vector<uint8_t>{};
-        desc.width = m_screenWidth;
-        desc.height = m_screenHeight;
-        desc.depth = 1;
-        desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::Depth32;
-        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 0;
-        desc.autoCreateMips = false;
-
-        m_depthBuffer = gRenderBackend.createImage(desc);
     }
     //motion vector buffer
     {
@@ -1615,21 +1634,6 @@ void RenderFrontend::initSamplers(){
 }
 
 void RenderFrontend::initFramebuffers() {
-    //color framebuffer
-    {
-        FramebufferTarget colorTarget;
-        colorTarget.image = m_colorBuffer;
-        colorTarget.mipLevel = 0;
-
-        FramebufferTarget depthTarget;
-        depthTarget.image = m_depthBuffer;
-        depthTarget.mipLevel = 0;
-
-        FramebufferDescription desc;
-        desc.compatibleRenderpass = m_mainPass;
-        desc.targets = { colorTarget, depthTarget };
-        m_colorFramebuffer = gRenderBackend.createFramebuffer(desc);
-    }
     //shadow map framebuffers
     for (int i = 0; i < 4; i++) {
         FramebufferTarget depthTarget;
@@ -1731,6 +1735,43 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         desc.size = sizeof(float) * 9;
         m_taaWeightBuffer = gRenderBackend.createUniformBuffer(desc);
     }
+}
+
+void RenderFrontend::initColorBuffers() {
+    ImageDescription imageDesc;
+    imageDesc.initialData = std::vector<uint8_t>{};
+    imageDesc.width = m_screenWidth;
+    imageDesc.height = m_screenHeight;
+    imageDesc.depth = 1;
+    imageDesc.type = ImageType::Type2D;
+    imageDesc.format = ImageFormat::R11G11B10_uFloat;
+    imageDesc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
+    imageDesc.mipCount = MipCount::One;
+    imageDesc.manualMipCount = 0;
+    imageDesc.autoCreateMips = false;
+
+    ImageHandle images[3];
+    FramebufferHandle framebuffers[3];
+
+    for (int i = 0; i < 3; i++) {
+        images[i] = gRenderBackend.createImage(imageDesc);
+
+        FramebufferTarget colorTarget;
+        colorTarget.image = images[i];
+        colorTarget.mipLevel = 0;
+
+        FramebufferTarget depthTarget;
+        depthTarget.image = m_depthBuffer;
+        depthTarget.mipLevel = 0;
+
+        FramebufferDescription framebufferDesc;
+        framebufferDesc.compatibleRenderpass = m_mainPass;
+        framebufferDesc.targets = { colorTarget, depthTarget };
+
+        framebuffers[i] = gRenderBackend.createFramebuffer(framebufferDesc);
+    }
+
+    m_colorBuffers.init(images, framebuffers);
 }
 
 void RenderFrontend::initMeshs() {
