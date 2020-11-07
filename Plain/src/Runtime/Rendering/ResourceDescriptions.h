@@ -214,7 +214,7 @@ struct Material {
 
 struct FramebufferTarget {
     ImageHandle image;
-    uint32_t mipLevel;
+    uint32_t mipLevel = 0;
 };
 
 struct FramebufferDescription {
