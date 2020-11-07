@@ -4,6 +4,7 @@
 
 #include "global.inc"
 #include "colorConversion.inc"
+#include "temporalReprojection.inc"
 
 layout(constant_id = 0) const bool useClipping = false;
 layout(constant_id = 1) const bool useVarianceClipping = false;
@@ -21,29 +22,6 @@ layout(set=1, binding = 3) 	                uniform texture2D historyBufferSrc;
 layout(set=1, binding = 4) 	                uniform texture2D motionBuffer;
 layout(set=1, binding = 5) 	                uniform texture2D depthBuffer;
 layout(set=1, binding = 6)                  uniform sampler colorSampler;
-layout(set=1, binding = 7)                  uniform weightBuffer{
-    float w0;
-    float w1;
-    float w2;
-    float w3;
-    float w4;
-    float w5;
-    float w6;
-    float w7;
-    float w8;
-};
-
-float inputWeights[9] = {
-    w0,
-    w1,
-    w2,
-    w3,
-    w4,
-    w5,
-    w6,
-    w7,
-    w8
-};
 
 //from: "Temporal ReprojectionAnti-Aliasing in INSIDE"
 //clips a point towards a target in a axis aligned bounding box
@@ -99,43 +77,11 @@ vec3 sampleNeighbourhood(ivec2 uv){
     return c;
 }
 
-vec3 computeFilteredInput(ivec2 uv){
-    //return imageLoad(inputImage, uv).rgb;
-    
-    ivec2 offsets[9] = {
-        ivec2(-1, 1), //top row
-        ivec2(0,  1),
-        ivec2(1,  1),
-        ivec2(-1, 0), //middle row
-        ivec2(0,  0),
-        ivec2(1,  0),
-        ivec2(-1,-1), //bottom row
-        ivec2(0, -1),
-        ivec2(1, -1)
-    };
-    vec3 color = vec3(0.f);
-    for(int i = 0; i < 9; i++){
-        vec3 colorSample = imageLoad(inputImage, uv + offsets[i]).rgb;
-        if(useTonemapping){
-            colorSample = tonemap(colorSample);
-        }
-        color += inputWeights[i] * colorSample;
-    }
-    
-    if(useTonemapping){
-        color = tonemapReverse(color);
-    }
-    
-    return color;
-}
-
-
-
 void main(){
 
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
      
-    vec3 currentColor = computeFilteredInput(uv);
+    vec3 currentColor = imageLoad(inputImage, uv).rgb;
     if(useTonemapping){
         currentColor = tonemap(currentColor);
     }
@@ -176,23 +122,8 @@ void main(){
     
     
     vec2 motion;
-    if(useMotionVectorDilation){
-        float closestDepth = 1;
-        ivec2 closestDepthOffset = ivec2(0);
-        
-        //3x3 neighbourhood from Inside paper
-        for(int x = -1; x <= 1; x++){
-            for(int y = -1; y <= 1; y++){
-                ivec2 offset = ivec2(x, y);
-                float depth = texelFetch(sampler2D(depthBuffer, colorSampler), uv + offset, 0).r;
-                if(depth < closestDepth){
-                    closestDepth = depth;
-                    closestDepthOffset = offset;
-                }
-            }
-        }
-        
-        motion = texelFetch(sampler2D(motionBuffer, colorSampler), uv + closestDepthOffset, 0).rg;
+    if(useMotionVectorDilation){ 
+        motion = getClosestFragmentMotion(uv, depthBuffer, motionBuffer, colorSampler); 
     }
     else{
         motion = texelFetch(sampler2D(motionBuffer, colorSampler), uv, 0).rg;

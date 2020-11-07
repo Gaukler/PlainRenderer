@@ -143,7 +143,8 @@ private:
     void computeDepthPyramid() const;
     void computeSunLightMatrices() const;
     void renderForwardShading(const FramebufferHandle colorFramebuffer, const std::vector<RenderPassHandle>& externalDependencies) const;
-    void computeTemporalFilter(const ImageHandle currentFrameColor) const;
+    void computeTemporalSuperSampling(const ColorBuffers& frames, const ImageHandle target, const RenderPassHandle parent) const;
+    void computeTemporalFilter(const ImageHandle currentFrameColor, const ImageHandle target, const RenderPassHandle parent) const;
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry(const FramebufferHandle colorFramebuffer) const;
     void issueSkyDrawcalls();
@@ -182,6 +183,7 @@ private:
     //stored for resizing
     GLFWwindow* m_window = nullptr;
     GlobalShaderInfo m_globalShaderInfo;
+    bool m_useTemporalSupersampling = true;
 
     Camera m_camera;    
     glm::mat4 m_viewProjectionMatrix = glm::mat4(1.f);
@@ -224,13 +226,14 @@ private:
     RenderPassHandle m_depthPyramidPass;
     RenderPassHandle m_lightMatrixPass;
     RenderPassHandle m_tonemappingPass;
+    RenderPassHandle m_temporalSupersamplingPass;
     RenderPassHandle m_temporalFilterPass;
     RenderPassHandle m_skyShadowPass;
     RenderPassHandle m_skyOcclusionGatherPass;  //gathers visibility from sky shadow map
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
-    ImageHandle m_postProcessBuffer;
+    ImageHandle m_postProcessBuffers[2];
     ImageHandle m_depthBuffer;
     ImageHandle m_motionVectorBuffer;
     ImageHandle m_skyTexture;
@@ -281,7 +284,6 @@ private:
 
     UniformBufferHandle m_skyOcclusionDataBuffer;
     UniformBufferHandle m_atmosphereSettingsBuffer;
-    UniformBufferHandle m_taaWeightBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);

@@ -3182,11 +3182,10 @@ bool validateAttachmentFormatsAreCompatible(const ImageFormat a, const ImageForm
 
 bool RenderBackend::validateAttachments(const std::vector<FramebufferTarget>& targets) {
 
-    bool isValid = targets.size() >= 1; //need at least a single attachment to write to
-
-    //must return now as width/height validation requires a single attachment
-    if (!isValid) {
-        return isValid;
+    const std::string failureMessagePrologue = "Attachment validation failed: ";
+    if (targets.size() == 0) {
+        std::cout << failureMessagePrologue << "no attachments\n";
+        return false;
     }
 
     glm::uvec2 resolution = resolutionFromFramebufferTargets(targets);
@@ -3195,16 +3194,24 @@ bool RenderBackend::validateAttachments(const std::vector<FramebufferTarget>& ta
 
         const Image attachment = m_images[attachmentDefinition.image.index];
 
-        isValid &= validateImageFitForFramebuffer(attachment);
+        if (!validateImageFitForFramebuffer(attachment)) {
+            std::cout << failureMessagePrologue << "attachment image not fit for framebuffer\n";
+            return false;
+        }
 
         //all attachments need same resolution
-        isValid &= attachment.extent.width == resolution.x;
-        isValid &= attachment.extent.height == resolution.y;
+        if (attachment.extent.width != resolution.x || attachment.extent.height != resolution.y) {
+            std::cout << failureMessagePrologue << "image resolutions not matching\n";
+            return false;
+        }
 
         //attachment must be 2D
-        isValid &= attachment.extent.depth == 1;
+        if (attachment.extent.depth != 1) {
+            std::cout << failureMessagePrologue << "image depth not 1, 2D image required for framebuffer\n";
+            return false;
+        }
     }
-    return isValid;
+    return true;
 }
 
 glm::uvec2 RenderBackend::resolutionFromFramebufferTargets(const std::vector<FramebufferTarget>& targets) {

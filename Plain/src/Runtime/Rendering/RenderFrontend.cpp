@@ -76,8 +76,9 @@ void ColorBufferWrapper::advance() {
 ColorBuffers ColorBufferWrapper::getImages() const {
     ColorBuffers buffers;
     buffers.current = m_images[m_index];
-    buffers.current = m_images[(m_index - 1) % 3];
-    buffers.current = m_images[(m_index - 2) % 3];
+    //+3 on index so that index does not become negative, which messes with modulo
+    buffers.last         = m_images[(3 + m_index - 1) % 3];
+    buffers.secondToLast = m_images[(3 + m_index - 2) % 3];
     return buffers;
 }
 
@@ -156,14 +157,13 @@ DefaultTextures createDefaultTextures() {
 }
 
 glm::vec2 computeProjectionMatrixJitter(const float pixelSizeX, const float pixelSizeY) {
-    static uint32_t jitterIndex;
-    glm::vec2 offset = 2.f * hammersley2D(jitterIndex) - glm::vec2(1.f);
+    static bool even;
+
+    glm::vec2 offset = even ? glm::vec2(0.f) : glm::vec2(0.5f);
+    even = !even;
+
     offset.x *= pixelSizeX;
     offset.y *= pixelSizeY;
-
-    jitterIndex++;
-    const uint32_t sampleCount = 16;
-    jitterIndex %= sampleCount;
 
     return offset;
 }
@@ -219,7 +219,8 @@ void RenderFrontend::prepareNewFrame() {
             colorBuffers.current.image, 
             colorBuffers.last.image, 
             colorBuffers.secondToLast.image, 
-            m_postProcessBuffer, 
+            m_postProcessBuffers[0], 
+            m_postProcessBuffers[1],
             m_depthBuffer, 
             m_motionVectorBuffer,
             historyBuffers.dst, 
@@ -275,7 +276,7 @@ void RenderFrontend::prepareRenderpasses(){
     }
 
     renderSunShadowCascades();
-    computeColorBufferHistogram(colorBuffers.current.image);
+    computeColorBufferHistogram(colorBuffers.last.image);
     computeExposure();
     renderDepthPrepass();
     computeDepthPyramid();
@@ -304,14 +305,25 @@ void RenderFrontend::prepareRenderpasses(){
     }
     renderSky(colorBuffers.current.framebuffer, drawDebugPass);
     skyIBLConvolution();
+
+    RenderPassHandle currentPass = m_sunSpritePass;
+    ImageHandle currentSrc = colorBuffers.current.image;
+    if (m_useTemporalSupersampling) {
+        computeTemporalSuperSampling(colorBuffers, m_postProcessBuffers[0], currentPass);
+        currentPass = m_temporalSupersamplingPass;
+        currentSrc = m_postProcessBuffers[0];
+    }
+    
+
     if (m_temporalFilterSettings.enabled) {
-        computeTemporalFilter(colorBuffers.current.image);
+        computeTemporalFilter(currentSrc, m_postProcessBuffers[1], currentPass);
+        currentPass = m_temporalFilterPass;
+        currentSrc = m_postProcessBuffers[1];
+
         m_historyBuffers.switchImages();
-        computeTonemapping(m_temporalFilterPass, m_postProcessBuffer);
+        
     }
-    else {
-        computeTonemapping(m_sunSpritePass, colorBuffers.current.image);
-    }
+    computeTonemapping(currentPass, currentSrc);
 }
 
 void RenderFrontend::setResolution(const uint32_t width, const uint32_t height) {
@@ -337,8 +349,8 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     const glm::mat4 viewMatrix = viewMatrixFromCameraExtrinsic(extrinsic);
     const glm::mat4 projectionMatrix = projectionMatrixFromCameraIntrinsic(m_camera.intrinsic);
 
-    //jitter matrix for TAA
-    if(m_temporalFilterSettings.enabled){
+    //jitter matrix for temporal supersampling
+    if(m_useTemporalSupersampling){
         const float pixelSizeX = 1.f / m_screenWidth;
         const float pixelSizeY = 1.f / m_screenHeight;
 
@@ -802,66 +814,57 @@ void RenderFrontend::renderForwardShading(const FramebufferHandle colorFramebuff
     gRenderBackend.setRenderPassExecution(mainPassExecution);
 }
 
-//using gauﬂ fit to blackman harris as proposed in "High Quality Temporal Supersampling"
-std::array<float, 9> computeTAAWeights(const glm::vec2& jitterInPixels) {
-    std::array<float, 9> weights;
-    glm::vec2 offsets[9] = {
-        glm::vec2(-1.f,  1.f), //top row
-        glm::vec2(0.f,  1.f),
-        glm::vec2(1.f,  1.f),
-        glm::vec2(-1.f,  0.f), //middle row
-        glm::vec2(0.f,  0.f),
-        glm::vec2(1.f,  0.f),
-        glm::vec2(-1.f, -1.f), //bottom row
-        glm::vec2(0.f, -1.f),
-        glm::vec2(1.f, -1.f)
-    };
+void RenderFrontend::computeTemporalSuperSampling(const ColorBuffers& frames, const ImageHandle target, const RenderPassHandle parent) const {
+    const SamplerResource colorSampler(m_colorSamplerClamp, 0);
+    const ImageResource currentFrameResource(frames.current.image, 0, 1);
+    const ImageResource lastFrameResource(frames.last.image, 0, 2);
+    const ImageResource secondToLastFrameResource(frames.secondToLast.image, 0, 3);
+    const ImageResource targetResource(target, 0, 4);
+    const ImageResource velocityBufferResource(m_motionVectorBuffer, 0, 5);
+    const ImageResource depthBufferResource(m_motionVectorBuffer, 0, 6);
 
-    float totalWeight = 0.f;
+    RenderPassExecution temporalSupersamplingExecution;
+    temporalSupersamplingExecution.handle = m_temporalSupersamplingPass;
+    temporalSupersamplingExecution.resources.storageImages = { targetResource };
+    temporalSupersamplingExecution.resources.sampledImages = {
+        currentFrameResource,
+        lastFrameResource,
+        secondToLastFrameResource,
+        velocityBufferResource,
+        depthBufferResource };
+    temporalSupersamplingExecution.resources.samplers = {colorSampler};
 
-    for (int i = 0; i < 9; i++) {
-        float sampleDistance = glm::length(offsets[i] + jitterInPixels);
-        weights[i] = glm::exp(-2.29f * sampleDistance * sampleDistance);
-        totalWeight += weights[i];
-    }
+    temporalSupersamplingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+    temporalSupersamplingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+    temporalSupersamplingExecution.dispatchCount[2] = 1;
+    temporalSupersamplingExecution.parents = { parent };
 
-    //normalize
-    for (int i = 0; i < 9; i++) {
-        weights[i] /= totalWeight;
-    }
-
-    return weights;
+    gRenderBackend.setRenderPassExecution(temporalSupersamplingExecution);
 }
 
-void RenderFrontend::computeTemporalFilter(const ImageHandle currentFrameColor) const {
+void RenderFrontend::computeTemporalFilter(const ImageHandle currentFrameColor, const ImageHandle target, const RenderPassHandle parent) const {
     
-    const glm::vec2 cameraJitterInPixels = m_globalShaderInfo.currentFrameCameraJitter * glm::vec2(m_screenWidth, m_screenHeight);
-    std::array<float, 9> sampleWeights = computeTAAWeights(cameraJitterInPixels);
-    gRenderBackend.setUniformBufferData(m_taaWeightBuffer, &sampleWeights, sizeof(sampleWeights));
-
     const PingPongImages historyBuffers = m_historyBuffers.getImages();
 
-    ImageResource inputImageResource(currentFrameColor, 0, 0);
-    ImageResource outputImageResource(m_postProcessBuffer, 0, 1);
-    ImageResource historyDstResource(historyBuffers.dst, 0, 2);
-    ImageResource historySrcResource(historyBuffers.src, 0, 3);
-    ImageResource motionBufferResource(m_motionVectorBuffer, 0, 4);
-    ImageResource depthBufferResource(m_depthBuffer, 0, 5);
-    SamplerResource samplerResource(m_colorSamplerClamp, 6);
-    UniformBufferResource sampleWeightResource(m_taaWeightBuffer, 7);
+    const ImageResource inputImageResource(currentFrameColor, 0, 0);
+    const ImageResource outputImageResource(target, 0, 1);
+    const ImageResource historyDstResource(historyBuffers.dst, 0, 2);
+    const ImageResource historySrcResource(historyBuffers.src, 0, 3);
+    const ImageResource motionBufferResource(m_motionVectorBuffer, 0, 4);
+    const ImageResource depthBufferResource(m_depthBuffer, 0, 5);
+    const SamplerResource samplerResource(m_colorSamplerClamp, 6);
 
-    RenderPassExecution taaExecution;
-    taaExecution.handle = m_temporalFilterPass;
-    taaExecution.resources.storageImages = { inputImageResource, outputImageResource, historyDstResource };
-    taaExecution.resources.sampledImages = { historySrcResource, motionBufferResource, depthBufferResource };
-    taaExecution.resources.samplers = { samplerResource };
-    taaExecution.resources.uniformBuffers = { sampleWeightResource };
-    taaExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-    taaExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-    taaExecution.dispatchCount[2] = 1;
-    taaExecution.parents = { m_sunSpritePass };
+    RenderPassExecution temporalFilterExecution;
+    temporalFilterExecution.handle = m_temporalFilterPass;
+    temporalFilterExecution.resources.storageImages = { inputImageResource, outputImageResource, historyDstResource };
+    temporalFilterExecution.resources.sampledImages = { historySrcResource, motionBufferResource, depthBufferResource };
+    temporalFilterExecution.resources.samplers = { samplerResource };
+    temporalFilterExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+    temporalFilterExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+    temporalFilterExecution.dispatchCount[2] = 1;
+    temporalFilterExecution.parents = { parent };
 
-    gRenderBackend.setRenderPassExecution(taaExecution);
+    gRenderBackend.setRenderPassExecution(temporalFilterExecution);
 }
 
 void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const {
@@ -1305,7 +1308,8 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 0;
         desc.autoCreateMips = false;
 
-        m_postProcessBuffer = gRenderBackend.createImage(desc);
+        m_postProcessBuffers[0] = gRenderBackend.createImage(desc);
+        m_postProcessBuffers[1] = gRenderBackend.createImage(desc);
     }
     //motion vector buffer
     {
@@ -1728,12 +1732,6 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         UniformBufferDescription desc;
         desc.size = sizeof(AtmosphereSettings);
         m_atmosphereSettingsBuffer = gRenderBackend.createUniformBuffer(desc);
-    }
-    //taa weight buffer
-    {
-        UniformBufferDescription desc;
-        desc.size = sizeof(float) * 9;
-        m_taaWeightBuffer = gRenderBackend.createUniformBuffer(desc);
     }
 }
 
@@ -2229,9 +2227,16 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     //temporal filter pass
     {
         ComputePassDescription desc;
-        desc.name = "TAA";
+        desc.name = "Temporal filtering";
         desc.shaderDescription = createTemporalFilterShaderDescription();
         m_temporalFilterPass = gRenderBackend.createComputePass(desc);
+    }
+    //temporal supersampling pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Temporal supersampling";
+        desc.shaderDescription.srcPathRelative = "temporalSupersampling.comp";
+        m_temporalSupersamplingPass = gRenderBackend.createComputePass(desc);
     }
     //sky shadow pass
     {
@@ -2402,6 +2407,9 @@ void RenderFrontend::drawUi() {
     ImGui::End();
 
     ImGui::Begin("Rendering");
+
+    ImGui::Checkbox("Temporal supersampling", &m_useTemporalSupersampling);
+
     //Temporal filter Settings
     if(ImGui::CollapsingHeader("Temporal filter settings")){
 
