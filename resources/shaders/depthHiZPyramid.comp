@@ -321,7 +321,6 @@ void main(){
             
             ivec2 dstUV = ivec2(gl_LocalInvocationID.xy);
             if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
-                imageStore(pyramidMip10, ivec2(0), vec4(1, 0, 0, 0));
                 vec2 minMax = computeMinMax(dstUV * 2, fromDepthBuffer, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x)); 
                 imageStore(pyramidMip10, dstUV, vec4(minMax, 0, 0));
             }
