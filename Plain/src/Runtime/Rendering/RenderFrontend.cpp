@@ -44,6 +44,21 @@ const uint32_t  skyOcclusionVolumeMaxRes = 256;
 const float     skyOcclusionTargetDensity = 0.5f; //meter/texel
 const uint32_t  skyOcclusionSampleCount = 1024;
 
+void PingPongImageWrapper::init(const ImageDescription& desc) {
+    m_pingPongImages.src = gRenderBackend.createImage(desc);
+    m_pingPongImages.dst = gRenderBackend.createImage(desc);
+}
+
+void PingPongImageWrapper::switchImages() {
+    const ImageHandle temp = m_pingPongImages.src;
+    m_pingPongImages.src = m_pingPongImages.dst;
+    m_pingPongImages.dst = m_pingPongImages.src;
+}
+
+PingPongImages PingPongImageWrapper::getImages() const{
+    return m_pingPongImages;
+}
+
 void resizeCallback(GLFWwindow* window, int width, int height) {
     RenderFrontend* frontEnd = reinterpret_cast<RenderFrontend*>(glfwGetWindowUserPointer(window));
     frontEnd->setResolution(width, height);
@@ -174,9 +189,10 @@ void RenderFrontend::shutdown() {
 
 void RenderFrontend::prepareNewFrame() {
     if (m_didResolutionChange) {
+        const PingPongImages historyBuffers = m_historyBuffers.getImages();
         gRenderBackend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
         gRenderBackend.resizeImages( { m_colorBuffer, m_postProcessBuffer, m_depthBuffer, m_motionVectorBuffer, 
-            m_historyBuffer }, m_screenWidth, m_screenHeight);
+            historyBuffers.dst, historyBuffers.src }, m_screenWidth, m_screenHeight);
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
 
@@ -255,13 +271,10 @@ void RenderFrontend::prepareRenderpasses(){
     skyIBLConvolution();
     if (m_taaSettings.enabled) {
         computeTAA();
-    }
-    if (m_taaSettings.enabled) {
-        copyColorToHistoryBuffer(m_postProcessBuffer);
+        m_historyBuffers.switchImages();
         computeTonemapping(m_taaPass, m_postProcessBuffer);
     }
     else {
-        copyColorToHistoryBuffer(m_colorBuffer);
         computeTonemapping(m_sunSpritePass, m_colorBuffer);
     }
 }
@@ -791,18 +804,21 @@ void RenderFrontend::computeTAA() const {
     std::array<float, 9> sampleWeights = computeTAAWeights(cameraJitterInPixels);
     gRenderBackend.setUniformBufferData(m_taaWeightBuffer, &sampleWeights, sizeof(sampleWeights));
 
+    const PingPongImages historyBuffers = m_historyBuffers.getImages();
+
     ImageResource inputImageResource(m_colorBuffer, 0, 0);
     ImageResource outputImageResource(m_postProcessBuffer, 0, 1);
-    ImageResource previousFrameResource(m_historyBuffer, 0, 2);
-    ImageResource motionBufferResource(m_motionVectorBuffer, 0, 3);
-    ImageResource depthBufferResource(m_depthBuffer, 0, 4);
-    SamplerResource samplerResource(m_colorSamplerClamp, 5);
-    UniformBufferResource sampleWeightResource(m_taaWeightBuffer, 6);
+    ImageResource historyDstResource(historyBuffers.dst, 0, 2);
+    ImageResource historySrcResource(historyBuffers.src, 0, 3);
+    ImageResource motionBufferResource(m_motionVectorBuffer, 0, 4);
+    ImageResource depthBufferResource(m_depthBuffer, 0, 5);
+    SamplerResource samplerResource(m_colorSamplerClamp, 6);
+    UniformBufferResource sampleWeightResource(m_taaWeightBuffer, 7);
 
     RenderPassExecution taaExecution;
     taaExecution.handle = m_taaPass;
-    taaExecution.resources.storageImages = { inputImageResource, outputImageResource };
-    taaExecution.resources.sampledImages = { previousFrameResource, motionBufferResource, depthBufferResource };
+    taaExecution.resources.storageImages = { inputImageResource, outputImageResource, historyDstResource };
+    taaExecution.resources.sampledImages = { historySrcResource, motionBufferResource, depthBufferResource };
     taaExecution.resources.samplers = { samplerResource };
     taaExecution.resources.uniformBuffers = { sampleWeightResource };
     taaExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
@@ -838,24 +854,6 @@ void RenderFrontend::renderDebugGeometry() const {
     debugPassExecution.framebuffer = m_colorFramebuffer;
     debugPassExecution.parents = { m_mainPass };
     gRenderBackend.setRenderPassExecution(debugPassExecution);
-}
-
-void RenderFrontend::copyColorToHistoryBuffer(const ImageHandle& src) const {
-    ImageResource lastFrameResource(m_historyBuffer, 0, 0);
-    ImageResource colorBufferResource(src, 0, 1);
-    SamplerResource samplerResource(m_defaultTexelSampler, 2);
-
-    RenderPassExecution copyNextFrameExecution;
-    copyNextFrameExecution.handle = m_imageCopyHDRPass;
-    copyNextFrameExecution.resources.storageImages = { lastFrameResource };
-    copyNextFrameExecution.resources.sampledImages = { colorBufferResource };
-    copyNextFrameExecution.resources.samplers = { samplerResource };
-    copyNextFrameExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-    copyNextFrameExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-    copyNextFrameExecution.dispatchCount[2] = 1;
-    copyNextFrameExecution.parents = { m_taaPass };
-
-    gRenderBackend.setRenderPassExecution(copyNextFrameExecution);
 }
 
 void RenderFrontend::issueSkyDrawcalls() {
@@ -1318,7 +1316,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_historyBuffer = gRenderBackend.createImage(desc);
+        m_historyBuffers.init(desc);
     }
     //shadow map cascades
     {
@@ -2186,14 +2184,6 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.shaderDescription.srcPathRelative = "tonemapping.comp";
 
         m_tonemappingPass = gRenderBackend.createComputePass(desc);
-    }
-    //image copy pass
-    {
-        ComputePassDescription desc;
-        desc.name = "Image copy";
-        desc.shaderDescription.srcPathRelative = "imageCopyHDR.comp";
-
-        m_imageCopyHDRPass = gRenderBackend.createComputePass(desc);
     }
     //TAA pass
     {

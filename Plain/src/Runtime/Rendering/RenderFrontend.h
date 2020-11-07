@@ -75,6 +75,20 @@ struct DefaultTextures {
     ImageHandle sky;
 };
 
+struct PingPongImages{
+    ImageHandle src;
+    ImageHandle dst;
+};
+
+class PingPongImageWrapper {
+public:
+    void init(const ImageDescription& desc);
+    void switchImages(); //internal switch between src and dst
+    PingPongImages getImages() const;
+private:
+    PingPongImages m_pingPongImages;
+};
+
 class RenderFrontend {
 public:
     RenderFrontend() {};
@@ -188,7 +202,6 @@ private:
     RenderPassHandle m_depthPrePass;
     RenderPassHandle m_depthPyramidPass;
     RenderPassHandle m_lightMatrixPass;
-    RenderPassHandle m_imageCopyHDRPass;
     RenderPassHandle m_tonemappingPass;
     RenderPassHandle m_taaPass;
     RenderPassHandle m_skyShadowPass;
@@ -208,9 +221,10 @@ private:
     ImageHandle m_skyLut;
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
-    ImageHandle m_historyBuffer;
     ImageHandle m_skyShadowMap;
     ImageHandle m_skyOcclusionVolume;
+
+    PingPongImageWrapper m_historyBuffers;
 
     DefaultTextures m_defaultTextures;
 

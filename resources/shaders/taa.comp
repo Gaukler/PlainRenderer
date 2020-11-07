@@ -16,11 +16,12 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 0, r11f_g11f_b10f) 	uniform image2D inputImage;
 layout(set=1, binding = 1, r11f_g11f_b10f) 	uniform image2D outputImage;
-layout(set=1, binding = 2) 	                uniform texture2D previousFramebuffer;
-layout(set=1, binding = 3) 	                uniform texture2D motionBuffer;
-layout(set=1, binding = 4) 	                uniform texture2D depthBuffer;
-layout(set=1, binding = 5)                  uniform sampler colorSampler;
-layout(set=1, binding = 6)                  uniform weightBuffer{
+layout(set=1, binding = 2, r11f_g11f_b10f) 	uniform image2D historyBufferDst;
+layout(set=1, binding = 3) 	                uniform texture2D historyBufferSrc;
+layout(set=1, binding = 4) 	                uniform texture2D motionBuffer;
+layout(set=1, binding = 5) 	                uniform texture2D depthBuffer;
+layout(set=1, binding = 6)                  uniform sampler colorSampler;
+layout(set=1, binding = 7)                  uniform weightBuffer{
     float w0;
     float w1;
     float w2;
@@ -200,7 +201,7 @@ void main(){
     //last frame must be sampled linearly and motion vector requires sub-pixel precision
     //careful not to destroy motion vector precision by casting to ivec
     vec2 uvReprojected = (uv + vec2(0.5f)) / vec2(imageSize(inputImage)) + motion;
-    vec3 historySample = texture(sampler2D(previousFramebuffer, colorSampler), uvReprojected).rgb;
+    vec3 historySample = texture(sampler2D(historyBufferSrc, colorSampler), uvReprojected).rgb;
     
     if(useTonemapping){
         historySample = tonemap(historySample);
@@ -247,7 +248,7 @@ void main(){
     float lumaMax = luminance(maxC);
     
     float distanceToClamp = min(abs(lumaMin - lumaHistory), abs(lumaMax - lumaHistory));
-    distanceToClamp = clamp(distanceToClamp * 1, 0, 1);
+    distanceToClamp = clamp(distanceToClamp * 2, 0, 1);
     float blendFactor = mix(blendFactorMin, blendFactorMax, distanceToClamp);
     
     vec2 motionInPixels = motion * imageSize(inputImage);
@@ -265,5 +266,7 @@ void main(){
         color = tonemapReverse(color);
     }
     
+    imageStore(historyBufferDst, uv, vec4(color, 1.f));    
 	imageStore(outputImage, uv, vec4(color, 1.f));
+    
 }
