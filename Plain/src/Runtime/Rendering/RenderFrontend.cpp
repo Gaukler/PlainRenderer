@@ -472,10 +472,6 @@ void RenderFrontend::renderStaticMeshes() {
                 const glm::mat4 previousMVP = m_previousViewProjectionMatrix * mesh.modelMatrix;
                 const std::array<glm::mat4, 2> prePassTransforms = { mvp, previousMVP };
                 culledTransformsPrepass.push_back(prePassTransforms);
-
-                if (m_drawStaticMeshesBBs) {
-                    m_staticMeshesBBDebugMeshes.push_back(m_staticMeshesBBDebugMeshes[i]);
-                }
             }
         }
         gRenderBackend.drawMeshes(culledMeshes, culledTransformsMainPass, m_mainPass);
