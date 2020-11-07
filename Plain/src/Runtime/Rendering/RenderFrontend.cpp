@@ -283,17 +283,6 @@ void RenderFrontend::prepareRenderpasses(){
     computeSunLightMatrices();
     renderForwardShading(colorBuffers.current.framebuffer, preparationPasses);
 
-    //for sky and debug models, first matrix is mvp with identity model matrix, secondary is unused
-    const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
-
-    //update debug geo
-    if (m_freezeAndDrawCameraFrustum) {
-        gRenderBackend.drawDynamicMeshes({ m_cameraFrustumModel }, { defaultTransform }, m_debugGeoPass);
-    }
-    if (m_drawShadowFrustum) {
-        gRenderBackend.drawDynamicMeshes({ m_shadowFrustumModel }, { defaultTransform }, m_debugGeoPass);
-    }
-
     const bool drawDebugPass =
         m_freezeAndDrawCameraFrustum ||
         m_drawShadowFrustum ||
@@ -516,7 +505,18 @@ void RenderFrontend::renderStaticMeshes() {
         for (uint32_t shadowPass = 0; shadowPass < m_shadowPasses.size(); shadowPass++) {
             gRenderBackend.drawMeshes(culledMeshes, culledTransforms, m_shadowPasses[shadowPass]);
         }
-    }  
+    }
+
+    //for sky and debug models, first matrix is mvp with identity model matrix, secondary is unused
+    const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
+
+    //update debug geo
+    if (m_freezeAndDrawCameraFrustum) {
+        gRenderBackend.drawDynamicMeshes({ m_cameraFrustumModel }, { defaultTransform }, m_debugGeoPass);
+    }
+    if (m_drawShadowFrustum) {
+        gRenderBackend.drawDynamicMeshes({ m_shadowFrustumModel }, { defaultTransform }, m_debugGeoPass);
+    }
 }
 
 void RenderFrontend::renderFrame() {
