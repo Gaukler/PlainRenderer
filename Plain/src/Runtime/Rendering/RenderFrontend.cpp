@@ -329,7 +329,8 @@ void RenderFrontend::prepareRenderpasses(){
 void RenderFrontend::setResolution(const uint32_t width, const uint32_t height) {
     m_screenWidth = width;
     m_screenHeight = height;
-    m_camera.intrinsic.aspectRatio = (float)width / (float)height;
+    //avoid zeros when minimzed
+    m_camera.intrinsic.aspectRatio = glm::max((float)width / glm::max((float)height, 0.001f), 0.001f);
     if (width == 0 || height == 0) {
         m_minimized = true;
         return;
