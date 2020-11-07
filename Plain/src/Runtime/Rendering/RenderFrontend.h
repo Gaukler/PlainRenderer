@@ -124,7 +124,6 @@ private:
     void computeTAA() const;
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry() const;
-    void copyColorToHistoryBuffer(const ImageHandle& src) const;
     void issueSkyDrawcalls();
 
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
