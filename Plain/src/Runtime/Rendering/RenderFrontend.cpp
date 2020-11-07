@@ -2353,8 +2353,8 @@ glm::ivec2 RenderFrontend::computeSinglePassMipChainDispatchCount(const uint32_t
         const uint32_t localThreadGroupExtent = 32 / (uint32_t)pow((uint32_t)2, unusedMips);
 
         glm::ivec2 count;
-        count.x = (uint32_t)std::ceil(width / localThreadGroupExtent);
-        count.y = (uint32_t)std::ceil(height / localThreadGroupExtent);
+        count.x = (uint32_t)std::ceil(float(width) / localThreadGroupExtent);
+        count.y = (uint32_t)std::ceil(float(height) / localThreadGroupExtent);
 
         return count;
     }
