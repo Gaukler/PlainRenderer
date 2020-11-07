@@ -1222,7 +1222,7 @@ SamplerHandle RenderBackend::createSampler(const SamplerDescription& desc) {
 
 FramebufferHandle RenderBackend::createFramebuffer(const FramebufferDescription& desc) {
     FramebufferHandle handle;
-    handle.index = m_framebuffers.size();
+    handle.index = (uint32_t)m_framebuffers.size();
 
     const auto& pass = m_renderPasses.getGraphicPassRefByHandle(desc.compatibleRenderpass);
 
@@ -1477,7 +1477,7 @@ VkRenderPassBeginInfo createBeginInfo(const uint32_t width, const uint32_t heigh
     beginInfo.pNext = nullptr;
     beginInfo.renderPass = pass;
     beginInfo.framebuffer = framebuffer;
-    beginInfo.clearValueCount = clearValues.size();
+    beginInfo.clearValueCount = (uint32_t)clearValues.size();
     beginInfo.pClearValues = clearValues.data();
     beginInfo.renderArea = rect;
 
@@ -3189,7 +3189,7 @@ bool RenderBackend::validateAttachments(const std::vector<FramebufferTarget>& ta
         return isValid;
     }
 
-    glm::ivec2 resolution = resolutionFromFramebufferTargets(targets);
+    glm::uvec2 resolution = resolutionFromFramebufferTargets(targets);
 
     for (const auto attachmentDefinition : targets) {
 
@@ -3207,12 +3207,12 @@ bool RenderBackend::validateAttachments(const std::vector<FramebufferTarget>& ta
     return isValid;
 }
 
-glm::ivec2 RenderBackend::resolutionFromFramebufferTargets(const std::vector<FramebufferTarget>& targets) {
+glm::uvec2 RenderBackend::resolutionFromFramebufferTargets(const std::vector<FramebufferTarget>& targets) {
     if (targets.size() == 0) {
-        return glm::ivec2(0);
+        return glm::uvec2(0);
     }
     const Image firstImage = m_images[targets[0].image.index];
-    return glm::ivec2(firstImage.extent.width, firstImage.extent.height);
+    return glm::uvec2(firstImage.extent.width, firstImage.extent.height);
 }
 
 VkRenderPass RenderBackend::createVulkanRenderPass(const std::vector<Attachment>& attachments) {

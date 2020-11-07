@@ -412,7 +412,7 @@ private:
     GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
     bool validateAttachments(const std::vector<FramebufferTarget>& attachments);
-    glm::ivec2 resolutionFromFramebufferTargets(const std::vector<FramebufferTarget>& attachments);
+    glm::uvec2 resolutionFromFramebufferTargets(const std::vector<FramebufferTarget>& attachments);
 
     VkRenderPass    createVulkanRenderPass(const std::vector<Attachment>& attachments);
     VkFramebuffer   createVulkanFramebuffer(const std::vector<FramebufferTarget>& targets, 
