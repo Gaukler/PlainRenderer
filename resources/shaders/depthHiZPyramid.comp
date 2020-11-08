@@ -1,5 +1,8 @@
 #version 460
 #extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "global.inc"
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
@@ -127,7 +130,6 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
 //takes depth buffer in and writes min/max to image mip levels
 //one compute shader to compute all levels
 void main(){
-    
     bool fromDepthBuffer = true;
     int srcMipLevel = 0;
     
@@ -142,7 +144,7 @@ void main(){
             ivec2 dstUV = ivec2(gl_GlobalInvocationID.xy) * 2 + offsets[i];
             if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
                 vec2 minMax = computeMinMax(dstUV * 2, fromDepthBuffer, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x));
-                imageStore(pyramidMip0, dstUV, vec4(minMax, 0, 0));            
+                imageStore(pyramidMip0, dstUV, vec4(minMax, 0, 0)); 
             }
         }
         if(!fromDepthBuffer){
@@ -151,6 +153,8 @@ void main(){
         fromDepthBuffer = false;
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+        barrier();
+        memoryBarrier();
     }   
     //mip 1
     if(mipCount >= 10){
@@ -165,6 +169,8 @@ void main(){
         fromDepthBuffer = false;
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+        barrier();
+        memoryBarrier();
     }
     //mip 2
     if(mipCount >= 9){
@@ -181,6 +187,8 @@ void main(){
         fromDepthBuffer = false;
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+        barrier();
+        memoryBarrier();
     }
     //mip 3
     if(mipCount >= 8){
@@ -197,6 +205,8 @@ void main(){
         fromDepthBuffer = false;
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+        barrier();
+        memoryBarrier();
     }
     //mip 4
     if(mipCount >= 7){
@@ -213,6 +223,8 @@ void main(){
         fromDepthBuffer = false;
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+        barrier();
+        memoryBarrier();
     }
     
     //mip 5
@@ -230,6 +242,8 @@ void main(){
         fromDepthBuffer = false;
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+        barrier();
+        memoryBarrier();
     }
     
     //increment counter once per threadgroup, write previous value to shared memory
@@ -239,6 +253,7 @@ void main(){
     
     //wait until threadCounter has been updated
     barrier();
+    memoryBarrier();
     
     //only last group computes last mip levels
     if(threadCounter != threadGroupCount-1){
@@ -266,6 +281,8 @@ void main(){
         fromDepthBuffer = false;
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+        barrier();
+        memoryBarrier();
     }
     //mip 7
     if(mipCount >= 4){
@@ -280,6 +297,8 @@ void main(){
         fromDepthBuffer = false;
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+        barrier();
+        memoryBarrier();
     }
     //mip 8
     if(mipCount >= 3){
@@ -296,6 +315,8 @@ void main(){
         fromDepthBuffer = false;
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+        barrier();
+        memoryBarrier();
     }
     //mip 9
     if(mipCount >= 2){
@@ -312,6 +333,8 @@ void main(){
         fromDepthBuffer = false;
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
+        barrier();
+        memoryBarrier();
     }
     
     //mip 10
