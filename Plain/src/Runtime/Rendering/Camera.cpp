@@ -18,7 +18,7 @@ glm::mat4 projectionMatrixFromCameraIntrinsic(const CameraIntrinsic& intrinsic) 
     const glm::mat4 coordinateSystemCorrection = glm::mat4(
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, -1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.5f, 0.0f,
+        0.0f, 0.0f, -0.5f, 0.0f,
         0.0f, 0.0f, 0.5f, 1.0f);
 
     return coordinateSystemCorrection * projectionMatrix;

@@ -92,10 +92,10 @@ float shadowTest(texture2D shadowMap, vec2 uv, float actualDepth){
     vec4 depthTexels = textureGather(sampler2D(shadowMap, depthSampler), uv, 0);
     
     vec4 tests;
-    tests.r = float(actualDepth <= depthTexels.r);
-    tests.g = float(actualDepth <= depthTexels.g);
-    tests.b = float(actualDepth <= depthTexels.b);
-    tests.a = float(actualDepth <= depthTexels.a);
+    tests.r = float(actualDepth >= depthTexels.r);
+    tests.g = float(actualDepth >= depthTexels.g);
+    tests.b = float(actualDepth >= depthTexels.b);
+    tests.a = float(actualDepth >= depthTexels.a);
     
     ivec2 shadowMapRes = textureSize(sampler2D(shadowMap, depthSampler), 0);
     vec2 sampleImageCoordinates = vec2(shadowMapRes) * uv + 0.502f;
@@ -222,7 +222,6 @@ void main(){
     for(int cascade = 0; cascade < cascadeCount - 1; cascade++){
         cascadeIndex += int(pixelDistance >= cascadeSplits[cascade]);
     }
-
     if(cascadeIndex == 0){
         sunShadow = calcShadow(passPos, LoV, shadowMapCascade0, lightMatrices[cascadeIndex]);
     }
@@ -383,11 +382,10 @@ void main(){
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
     color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
-
     vec3 cascadeTestColor[4] = { 
     vec3(1, 0, 0), 
     vec3(0, 1, 0), 
     vec3(0, 0, 1), 
     vec3(1, 1, 0)};
-    //color *= cascadeTestColor[cascadeIndex];
+    //color = cascadeTestColor[cascadeIndex];
 }

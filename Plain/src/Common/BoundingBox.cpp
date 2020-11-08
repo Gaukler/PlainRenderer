@@ -117,7 +117,7 @@ glm::mat4 viewProjectionMatrixAroundBB(const AxisAlignedBoundingBox& bb, const g
     glm::mat4 coordinateSystemCorrection = {
         {1.0f, 0.0f, 0.0f, 0.0f},
         {0.0f, 1.0f, 0.0f, 0.0f},
-        {0.0f, 0.0f, 0.5f, 0.f},
+        {0.0f, 0.0f, -0.5f, 0.f},
         {0.0f, 0.0f, 0.5f, 1.0f} };
 
     glm::mat4 V(1.f);

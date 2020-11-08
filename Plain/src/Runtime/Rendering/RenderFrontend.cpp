@@ -1510,7 +1510,7 @@ void RenderFrontend::initSamplers(){
         desc.wrapping = SamplerWrapping::Color;
         desc.useAnisotropy = false;
         desc.maxAnisotropy = 0;
-        desc.borderColor = SamplerBorderColor::White;
+        desc.borderColor = SamplerBorderColor::Black;
         desc.maxMip = 0;
 
         m_shadowSampler = gRenderBackend.createSampler(desc);
@@ -1925,7 +1925,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         shadowPassConfig.attachments = { shadowMapAttachment };
         shadowPassConfig.shaderDescriptions.vertex.srcPathRelative = "sunShadow.vert";
         shadowPassConfig.shaderDescriptions.fragment.srcPathRelative = "sunShadow.frag";
-        shadowPassConfig.depthTest.function = DepthFunction::LessEqual;
+        shadowPassConfig.depthTest.function = DepthFunction::GreaterEqual;
         shadowPassConfig.depthTest.write = true;
         shadowPassConfig.rasterization.cullMode = CullMode::Front;
         shadowPassConfig.rasterization.mode = RasterizationeMode::Fill;
@@ -2024,7 +2024,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         skyPassConfig.attachments = { colorAttachment, depthAttachment };
         skyPassConfig.shaderDescriptions.vertex.srcPathRelative = "sky.vert";
         skyPassConfig.shaderDescriptions.fragment.srcPathRelative = "sky.frag";
-        skyPassConfig.depthTest.function = DepthFunction::LessEqual;
+        skyPassConfig.depthTest.function = DepthFunction::GreaterEqual;
         skyPassConfig.depthTest.write = false;
         skyPassConfig.rasterization.cullMode = CullMode::None;
         skyPassConfig.rasterization.mode = RasterizationeMode::Fill;
@@ -2043,7 +2043,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.attachments = { colorAttachment, depthAttachment };
         desc.shaderDescriptions.vertex.srcPathRelative = "sunSprite.vert";
         desc.shaderDescriptions.fragment.srcPathRelative = "sunSprite.frag";
-        desc.depthTest.function = DepthFunction::LessEqual;
+        desc.depthTest.function = DepthFunction::GreaterEqual;
         desc.depthTest.write = false;
         desc.rasterization.cullMode = CullMode::None;
         desc.rasterization.mode = RasterizationeMode::Fill;
@@ -2069,7 +2069,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         debugPassConfig.attachments = { colorAttachment, depthAttachment };
         debugPassConfig.shaderDescriptions.vertex.srcPathRelative = "debug.vert";
         debugPassConfig.shaderDescriptions.fragment.srcPathRelative = "debug.frag";
-        debugPassConfig.depthTest.function = DepthFunction::LessEqual;
+        debugPassConfig.depthTest.function = DepthFunction::GreaterEqual;
         debugPassConfig.depthTest.write = true;
         debugPassConfig.rasterization.cullMode = CullMode::None;
         debugPassConfig.rasterization.mode = RasterizationeMode::Line;
@@ -2185,7 +2185,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         GraphicPassDescription desc;
         desc.attachments = { velocityAttachment, depthAttachment };
         desc.blending = BlendState::None;
-        desc.depthTest.function = DepthFunction::LessEqual;
+        desc.depthTest.function = DepthFunction::GreaterEqual;
         desc.depthTest.write = true;
         desc.name = "Depth prepass";
         desc.rasterization.cullMode = CullMode::Back;
@@ -2244,7 +2244,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         config.attachments = { shadowMapAttachment };
         config.shaderDescriptions.vertex.srcPathRelative = "depthOnlySimple.vert";
         config.shaderDescriptions.fragment.srcPathRelative = "depthOnlySimple.frag";
-        config.depthTest.function = DepthFunction::LessEqual;
+        config.depthTest.function = DepthFunction::GreaterEqual;
         config.depthTest.write = true;
         config.rasterization.cullMode = CullMode::Back;
         config.rasterization.mode = RasterizationeMode::Fill;

@@ -61,13 +61,13 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
         vec2 uv = upperLeftUV + offsets[texel] * texelSize;
         if(fromDepthBuffer){
             float depthTexel = textureLod(sampler2D(depthBuffer, depthSampler), uv, srcMipLevel).r;
-            depthMin = min(depthMin, depthTexel);
-            depthMax = max(depthMax, depthTexel * float(depthTexel != 1.f));
+            depthMin = min(depthMin, depthTexel + float(depthTexel == 0.f));
+            depthMax = max(depthMax, depthTexel);
         }
         else{
             vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, depthSampler), uv, srcMipLevel).rg;
-            depthMin = min(depthMin, previousMinMax.r);
-            depthMax = max(depthMax, previousMinMax.g * float(previousMinMax.g != 1.f));
+            depthMin = min(depthMin, previousMinMax.r + float(previousMinMax.g == 0.f));
+            depthMax = max(depthMax, previousMinMax.g);
         }
     }
 
@@ -77,13 +77,13 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
             vec2 uv = upperLeftUV + extraRowOffsets[texel] * texelSize;
             if(fromDepthBuffer){
                 float depthTexel = textureLod(sampler2D(depthBuffer, depthSampler), uv, srcMipLevel).r;
-                depthMin = min(depthMin, depthTexel);
-                depthMax = max(depthMax, depthTexel * float(depthTexel != 1.f));
+                depthMin = min(depthMin, depthTexel + float(depthTexel == 0.f));
+                depthMax = max(depthMax, depthTexel);
             }
             else{
                 vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, depthSampler), uv, srcMipLevel).rg;
-                depthMin = min(depthMin, previousMinMax.r);
-                depthMax = max(depthMax, previousMinMax.g * float(previousMinMax.g != 1.f));
+                depthMin = min(depthMin, previousMinMax.r + float(previousMinMax.g == 0.f));
+                depthMax = max(depthMax, previousMinMax.g);
             }
         }
     }
@@ -94,13 +94,13 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
             vec2 uv = upperLeftUV + extraColumnOffsets[texel] * texelSize;
             if(fromDepthBuffer){
                 float depthTexel = textureLod(sampler2D(depthBuffer, depthSampler), uv, srcMipLevel).r;
-                depthMin = min(depthMin, depthTexel);
-                depthMax = max(depthMax, depthTexel * float(depthTexel != 1.f));
+                depthMin = min(depthMin, depthTexel + float(depthTexel == 0.f));
+                depthMax = max(depthMax, depthTexel);
             }
             else{
                 vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, depthSampler), uv, srcMipLevel).rg;
-                depthMin = min(depthMin, previousMinMax.r);
-                depthMax = max(depthMax, previousMinMax.g * float(previousMinMax.g != 1.f));
+                depthMin = min(depthMin, previousMinMax.r + float(previousMinMax.g == 0.f));
+                depthMax = max(depthMax, previousMinMax.g);
             }
         }
     }
@@ -109,13 +109,13 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
         vec2 uv = upperLeftUV + ivec2(2, 2) * texelSize;
         if(fromDepthBuffer){
             float depthTexel = textureLod(sampler2D(depthBuffer, depthSampler), uv, srcMipLevel).r;
-            depthMin = min(depthMin, depthTexel);
-            depthMax = max(depthMax, depthTexel * float(depthTexel != 1.f));
+            depthMin = min(depthMin, depthTexel * float(depthTexel == 0.f));
+            depthMax = max(depthMax, depthTexel);
         }
         else{
             vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, depthSampler), uv, srcMipLevel).rg;
-            depthMin = min(depthMin, previousMinMax.r);
-            depthMax = max(depthMax, previousMinMax.g * float(previousMinMax.g != 1.f));
+            depthMin = min(depthMin, previousMinMax.r + float(previousMinMax.g == 0.f));
+            depthMax = max(depthMax, previousMinMax.g);
         }
         
     }

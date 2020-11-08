@@ -3160,7 +3160,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         }
         else {
             VkClearValue depthClear = {};
-            depthClear.depthStencil.depth = 1.f;
+            depthClear.depthStencil.depth = 0.f;
             pass.clearValues.push_back(depthClear);
         }
     }

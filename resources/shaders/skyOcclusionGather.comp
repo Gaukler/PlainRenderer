@@ -37,8 +37,8 @@ void main(){
         shadowUV = shadowUV * 0.5f + 0.5f;
         //shadowUV.x = clamp(shadowUV.x, 0, 1);
         float shadowMapDepth = texture(sampler2D(skyShadowMap, shadowSampler), shadowUV).r;
-        occlusion = posLight.z < shadowMapDepth ? 1 : 0;
-        unoccludedDirection = posLight.z < shadowMapDepth ? -sampleDirection.xyz : vec3(0);
+        occlusion = posLight.z > shadowMapDepth ? 1 : 0;
+        unoccludedDirection = posLight.z > shadowMapDepth ? -sampleDirection.xyz : vec3(0);
     }
     float pdfWithoutNoL = 1.f / (3.1415); //NoL reduced by ao NoL
     occlusion *= weight / pdfWithoutNoL;

@@ -11,6 +11,6 @@ layout(push_constant) uniform MatrixBlock {
 
 void main(){
 	gl_Position = translation.mvp * vec4(inPos, 0.f);
-	gl_Position.z = gl_Position.w;
+	gl_Position.z = 0.f;
 	passPos = inPos.xyz;
 }

@@ -14,7 +14,7 @@ layout(set=1, binding = 0, std430) buffer sunShadowInfo{
 };
 
 layout(set=1, binding = 1, rg32f) uniform image2D depthMinMaxLowestMip;
-
+ 
 #define FLOAT_MAX 3.402823466e+38
 #define FLOAT_MIN 1.175494351e-38
 
@@ -53,8 +53,8 @@ void main(){
     mat4 coordinateSystemCorrection = {
         {1.0f, 0.0f, 0.0f, 0.0f},
         {0.0f, 1.0f, 0.0f, 0.0f},
-        {0.0f, 0.0f, 0.5f, 0.f},
-        {0.0f, 0.0f, 0.5f, 1.0f}};
+        {0.0f, 0.0f, -0.5f, 0.f},
+        {0.0f, 0.0f,  0.5f, 1.0f}};
     
     mat4 V = mat4(1.f);
     vec3 forward = -g_sunDirection.xyz;
@@ -68,8 +68,8 @@ void main(){
     V = transpose(V);
     
     vec2 depthMinMax = imageLoad(depthMinMaxLowestMip, ivec2(0)).rg;
-    float depthMinLinear = linearizeDepth(depthMinMax.x, g_nearPlane, g_farPlane);
-    float depthMaxLinear = linearizeDepth(depthMinMax.y, g_nearPlane, g_farPlane);
+    float depthMaxLinear = linearizeDepth(depthMinMax.x, g_nearPlane, g_farPlane);
+    float depthMinLinear = linearizeDepth(depthMinMax.y, g_nearPlane, g_farPlane);
     
     for(int i = 0; i < cascadeCount - 1; i++){
         cascadeSplits[i] = computeCascadeSplit(depthMinLinear, depthMaxLinear, i);
