@@ -13,7 +13,11 @@ file(GLOB_RECURSE RUNTIME_FILES
 	${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.c
 	${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.cpp
     ${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.h
-	${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.hpp)
+	${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.hpp
+	${CMAKE_SOURCE_DIR}/resources/shaders/*.inc
+	${CMAKE_SOURCE_DIR}/resources/shaders/*.comp
+	${CMAKE_SOURCE_DIR}/resources/shaders/*.vert
+	${CMAKE_SOURCE_DIR}/resources/shaders/*.frag)
 
 file(GLOB_RECURSE ASSET_PIPELINE_FILES
 	${CMAKE_SOURCE_DIR}/Plain/src/AssetPipeline/*.c
