@@ -49,23 +49,38 @@ float luminance(vec3 c){
     return dot(c, vec3(0.21f, 0.71f, 0.08f));
 }
 
+vec3[3][3] sampleNeighbourhood(ivec2 uv){
+	vec3[3][3] neighbourhood;
+	for(int x = -1; x <= 1; x++){
+        for(int y = -1; y <= 1; y++){
+			vec3 color = imageLoad(inputImage, uv + ivec2(x, y)).rgb;
+			neighbourhood[x+1][y+1] = color;
+		}
+	}
+	return neighbourhood;
+}
+
+vec3[2] minMaxFromNeighbourhood(vec3[3][3] neighbourhood){
+	vec3[2] minMax;
+	minMax[0] = neighbourhood[0][0];
+	minMax[1] = neighbourhood[0][0];
+	for(int i = 0; i < 3; i++){
+        for(int j = 0; j < 3; j++){
+			minMax[0] = min(minMax[0], neighbourhood[i][j]);
+			minMax[1] = max(minMax[1], neighbourhood[i][j]);
+		}
+	}
+	return minMax;
+}
+
 void main(){
 
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
      
     vec3 currentColor = imageLoad(inputImage, uv).rgb;
     
-    //collect neighbourhood min/max to build AABB color box
-    vec3 minC = currentColor;
-    vec3 maxC = currentColor;
-    
-    for(int x = -1; x <= 1; x++){
-        for(int y = -1; y <= 1; y++){
-            vec3 c = imageLoad(inputImage, uv + ivec2(x, y)).rgb;            
-            minC = min(minC, c);
-            maxC = max(maxC, c);
-        }
-    }    
+    vec3[3][3] neighbourhood = sampleNeighbourhood(uv);
+	vec3[2] minMax = minMaxFromNeighbourhood(neighbourhood);
     
     vec2 motion;
     if(useMotionVectorDilation){ 
@@ -81,10 +96,10 @@ void main(){
     vec3 historySample = texture(sampler2D(historyBufferSrc, colorSampler), uvReprojected).rgb;
     
     if(useClipping){
-        historySample = clipAABB(historySample, minC, maxC);
+        historySample = clipAABB(historySample, minMax[0], minMax[1]);
     }
     else{
-        historySample = clamp(historySample, minC, maxC);
+        historySample = clamp(historySample, minMax[0], minMax[1]);
     }
     
     //nan test, mainly a problem when resizing the buffers
