@@ -38,12 +38,7 @@ struct ShadingConfig {
 struct TemporalFilterSettings {
     bool enabled = true;
     bool useClipping = true;
-    bool useVarianceClipping = true;
-    bool useYCoCg = true;
     bool useMotionVectorDilation = true;
-    bool useDynamicBlendFactor = true;
-    bool useTonemapping = true;
-    float textureLoDBias = -0.75f;
 };
 
 struct SkyOcclusionRenderData {

@@ -1180,19 +1180,14 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
             4,                                                                                  //location
             dataToCharArray((void*)&m_specularSkyProbeMipCount, sizeof(m_specularSkyProbeMipCount))   //value
             });
-        //texture LoD bias
-        constants.push_back({
-            5,                                                                                          //location
-            dataToCharArray((void*)&m_temporalFilterSettings.textureLoDBias, sizeof(m_temporalFilterSettings.textureLoDBias)) //value
-            });
         //sky occlusion
         constants.push_back({
-            6,                                                                              //location
+            5,                                                                              //location
             dataToCharArray((void*)&config.useSkyOcclusion, sizeof(config.useSkyOcclusion)) //value
             });
         //sky occlusion direction
         constants.push_back({
-            7,                                                                                                  //location
+            6,                                                                                                  //location
             dataToCharArray((void*)&config.useSkyOcclusionDirection, sizeof(config.useSkyOcclusionDirection))   //value
             });
     }
@@ -1225,30 +1220,10 @@ ShaderDescription RenderFrontend::createTemporalFilterShaderDescription() {
             0,                                                                                                      //location
             dataToCharArray(&m_temporalFilterSettings.useClipping, sizeof(m_temporalFilterSettings.useClipping))    //value
             });
-        //use variance clipping
-        desc.specialisationConstants.push_back({
-            1,                                                                                                                  //location
-            dataToCharArray(&m_temporalFilterSettings.useVarianceClipping, sizeof(m_temporalFilterSettings.useVarianceClipping))//value
-            });
-        //use YCoCg color space
-        desc.specialisationConstants.push_back({
-            2,                                                                                              //location
-            dataToCharArray(&m_temporalFilterSettings.useYCoCg, sizeof(m_temporalFilterSettings.useYCoCg))  //value
-            });
         //use use motion vector dilation
         desc.specialisationConstants.push_back({
-            3,                                                                                                                          //location
+            1,                                                                                                                          //location
             dataToCharArray(&m_temporalFilterSettings.useMotionVectorDilation, sizeof(m_temporalFilterSettings.useMotionVectorDilation))//value
-            });
-        //use dynamic blend factor
-        desc.specialisationConstants.push_back({
-            4,                                                                                                                      //location
-            dataToCharArray(&m_temporalFilterSettings.useDynamicBlendFactor, sizeof(m_temporalFilterSettings.useDynamicBlendFactor))//value
-            });
-        //use tonemapping
-        desc.specialisationConstants.push_back({
-            5,                                                                                                          //location
-            dataToCharArray(&m_temporalFilterSettings.useTonemapping, sizeof(m_temporalFilterSettings.useTonemapping))  //value
             });
     }
 
@@ -2377,13 +2352,7 @@ void RenderFrontend::drawUi() {
 
         ImGui::Checkbox("Enabled", &m_temporalFilterSettings.enabled);
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Clipping", &m_temporalFilterSettings.useClipping);
-        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Variance clipping", &m_temporalFilterSettings.useVarianceClipping);
-        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("YCoCg color space clipping", &m_temporalFilterSettings.useYCoCg);
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Dilate motion vector", &m_temporalFilterSettings.useMotionVectorDilation);
-        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Use dynamic blend factor", &m_temporalFilterSettings.useDynamicBlendFactor);
-        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Use tonemapping", &m_temporalFilterSettings.useTonemapping);
-
-        m_isMainPassShaderDescriptionStale |= ImGui::InputFloat("Texture LoD bias", &m_temporalFilterSettings.textureLoDBias);
     }
 
     //lighting settings

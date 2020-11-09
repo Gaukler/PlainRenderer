@@ -7,11 +7,7 @@
 #include "temporalReprojection.inc"
 
 layout(constant_id = 0) const bool useClipping = false;
-layout(constant_id = 1) const bool useVarianceClipping = false;
-layout(constant_id = 2) const bool useYCoCg = false;
-layout(constant_id = 3) const bool useMotionVectorDilation = false;
-layout(constant_id = 4) const bool useDynamicBlendFactor = false;
-layout(constant_id = 5) const bool useTonemapping = false;
+layout(constant_id = 1) const bool useMotionVectorDilation = false;
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -53,73 +49,23 @@ float luminance(vec3 c){
     return dot(c, vec3(0.21f, 0.71f, 0.08f));
 }
 
-vec3 tonemap(vec3 color){
-    float luma = luminance(color);
-    return color / (luma + 1);
-}
-
-vec3 tonemapReverse(vec3 color){
-    float luma = luminance(color);
-    return color / (1 - luma);
-}
-
-vec3 sampleNeighbourhood(ivec2 uv){
-    vec3 c = imageLoad(inputImage, uv).rgb;
-    if(useTonemapping){
-        c = tonemap(c);
-    }
-    if(useYCoCg){
-        c = linearToYCoCg(c);
-    }
-    else{
-        c = c;
-    }
-    return c;
-}
-
 void main(){
 
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
      
     vec3 currentColor = imageLoad(inputImage, uv).rgb;
-    if(useTonemapping){
-        currentColor = tonemap(currentColor);
-    }
     
     //collect neighbourhood min/max to build AABB color box
     vec3 minC = currentColor;
     vec3 maxC = currentColor;
     
-    if(useYCoCg){
-        minC = linearToYCoCg(minC);
-        maxC = linearToYCoCg(maxC);
-    }
-    
-    
-    vec3 mean = vec3(0.f);
-    vec3 variance = vec3(0.f);
-    
     for(int x = -1; x <= 1; x++){
         for(int y = -1; y <= 1; y++){
-            vec3 c = sampleNeighbourhood(uv + ivec2(x, y));
-            mean += c;
-            
+            vec3 c = imageLoad(inputImage, uv + ivec2(x, y)).rgb;            
             minC = min(minC, c);
             maxC = max(maxC, c);
         }
-    }
-    mean *= 1.f / 9.f;
-    
-    for(int x = -1; x <= 1; x++){
-        for(int y = -1; y <= 1; y++){
-            vec3 c = sampleNeighbourhood(uv + ivec2(x, y));
-            vec3 diff = mean - c;
-            variance += diff * diff;
-        }
-    }
-    variance *= 1.f / 9;
-    variance = sqrt(variance);
-    
+    }    
     
     vec2 motion;
     if(useMotionVectorDilation){ 
@@ -134,26 +80,6 @@ void main(){
     vec2 uvReprojected = (uv + vec2(0.5f)) / vec2(imageSize(inputImage)) + motion;
     vec3 historySample = texture(sampler2D(historyBufferSrc, colorSampler), uvReprojected).rgb;
     
-    if(useTonemapping){
-        historySample = tonemap(historySample);
-    }
-    
-    if(useYCoCg){
-        historySample = linearToYCoCg(historySample);
-    }
-    
-    vec3 historyUnprocessed = historySample;
-    
-    if(useVarianceClipping){
-        float scale = 1.f;
-        
-        vec3 varianceMin = mean - variance * scale;
-        vec3 varianceMax = mean + variance * scale;
-        
-        minC = max(varianceMin, minC);
-        maxC = min(varianceMax, maxC);
-    }
-
     if(useClipping){
         historySample = clipAABB(historySample, minC, maxC);
     }
@@ -161,41 +87,13 @@ void main(){
         historySample = clamp(historySample, minC, maxC);
     }
     
-    if(useYCoCg){
-        historySample = YCoCgToLinear(historySample);
-    }
-    
     //nan test, mainly a problem when resizing the buffers
     //clear previous frame buffer on resize instead of checking here
     if(isnan(historySample.x) || isnan(historySample.y) || isnan(historySample.z)){
         historySample = currentColor;
     }
-
-    float blendFactorMin = 0.01f;
-    float blendFactorMax = 0.1f;
-
-    float lumaHistory = luminance(historyUnprocessed);
-    float lumaMin = luminance(minC);
-    float lumaMax = luminance(maxC);
     
-    float distanceToClamp = min(abs(lumaMin - lumaHistory), abs(lumaMax - lumaHistory));
-    distanceToClamp = clamp(distanceToClamp * 2, 0, 1);
-    float blendFactor = mix(blendFactorMin, blendFactorMax, distanceToClamp);
-    
-    vec2 motionInPixels = motion * imageSize(inputImage);
-    float speed = length(motionInPixels);
-    speed = clamp(speed, 0, 1);
-    blendFactor += mix(0.f, 0.05f, speed);
-    
-    if(!useDynamicBlendFactor){
-        blendFactor = 0.1;
-    }
-    
-    vec3 color = mix(historySample, currentColor, blendFactor);
-    
-    if(useTonemapping){
-        color = tonemapReverse(color);
-    }
+    vec3 color = mix(historySample, currentColor, 0.1f);
     
     imageStore(historyBufferDst, uv, vec4(color, 1.f));    
 	imageStore(outputImage, uv, vec4(color, 1.f));
