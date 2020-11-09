@@ -1232,6 +1232,11 @@ ShaderDescription RenderFrontend::createTemporalFilterShaderDescription() {
             1,                                                                                                                          //location
             dataToCharArray(&m_temporalFilterSettings.useMotionVectorDilation, sizeof(m_temporalFilterSettings.useMotionVectorDilation))//value
             });
+        //use bicubic history sample
+        desc.specialisationConstants.push_back({
+            2,                                                                                                                          //location
+            dataToCharArray(&m_temporalFilterSettings.useBicubicHistorySample, sizeof(m_temporalFilterSettings.useBicubicHistorySample))//value
+            });
     }
 
     return desc;
@@ -2362,6 +2367,7 @@ void RenderFrontend::drawUi() {
         }
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Clipping", &m_temporalFilterSettings.useClipping);
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Dilate motion vector", &m_temporalFilterSettings.useMotionVectorDilation);
+        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Bicubic history sample", &m_temporalFilterSettings.useBicubicHistorySample);
     }
 
     //lighting settings

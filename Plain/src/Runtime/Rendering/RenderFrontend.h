@@ -39,6 +39,7 @@ struct TemporalFilterSettings {
     bool enabled = true;
     bool useClipping = true;
     bool useMotionVectorDilation = true;
+    bool useBicubicHistorySample = true;
 };
 
 struct SkyOcclusionRenderData {

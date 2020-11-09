@@ -5,9 +5,11 @@
 #include "global.inc"
 #include "colorConversion.inc"
 #include "temporalReprojection.inc"
+#include "bicubicSampling.inc"
 
 layout(constant_id = 0) const bool useClipping = false;
 layout(constant_id = 1) const bool useMotionVectorDilation = false;
+layout(constant_id = 2) const bool useBicubicHistorySample = false;
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -92,9 +94,17 @@ void main(){
         motion = texelFetch(sampler2D(motionBuffer, colorSampler), iUV, 0).rg;
     }
     
-    vec2 uvReprojected = uv + motion;
-    vec3 historySample = texture(sampler2D(historyBufferSrc, colorSampler), uvReprojected).rgb;
-    
+	vec3 historySample; 
+	if(useBicubicHistorySample){ 
+		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
+		historySample = bicubicSample(historyBufferSrc, colorSampler, uvReprojected, texelSize);
+	} 
+	else{
+		vec2 uvReprojected = uv + motion;
+		historySample = texture(sampler2D(historyBufferSrc, colorSampler), uvReprojected).rgb;
+		historySample = texelFetch(sampler2D(historyBufferSrc, colorSampler), iUV, 0).rgb;
+	}	
+
     if(useClipping){
         historySample = clipAABB(historySample, minMax[0], minMax[1]);
     }
