@@ -77,15 +77,15 @@ set(IMGUI_FILES
 	Plain/vendor/imgui/imstb_rectpack.h
 	Plain/vendor/imgui/imstb_textedit.h
 	Plain/vendor/imgui/imstb_truetype.h
-	Plain/vendor/imgui/examples/imgui_impl_vulkan.h
-	Plain/vendor/imgui/examples/imgui_impl_glfw.h
+	Plain/vendor/imgui/backends/imgui_impl_vulkan.h
+	Plain/vendor/imgui/backends/imgui_impl_glfw.h
 
 	Plain/vendor/imgui/imgui.cpp
 	Plain/vendor/imgui/imgui_demo.cpp
 	Plain/vendor/imgui/imgui_draw.cpp
 	Plain/vendor/imgui/imgui_widgets.cpp
-	Plain/vendor/imgui/examples/imgui_impl_vulkan.cpp
-	Plain/vendor/imgui/examples/imgui_impl_glfw.cpp)
+	Plain/vendor/imgui/backends/imgui_impl_vulkan.cpp
+	Plain/vendor/imgui/backends/imgui_impl_glfw.cpp)
 target_sources(PlainRuntime PRIVATE ${IMGUI_FILES})
 source_group("ImGui" FILES ${IMGUI_FILES})
 

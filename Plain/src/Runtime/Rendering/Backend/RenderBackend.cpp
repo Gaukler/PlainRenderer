@@ -19,8 +19,8 @@
 #pragma warning( disable : 26495 26812)
 
 #include <imgui/imgui.h>
-#include <imgui/examples/imgui_impl_glfw.h>
-#include <imgui/examples/imgui_impl_vulkan.h>
+#include <imgui/backends/imgui_impl_glfw.h>
+#include <imgui/backends/imgui_impl_vulkan.h>
 
 //definition of extern variable from header
 RenderBackend gRenderBackend;
