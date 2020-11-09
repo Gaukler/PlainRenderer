@@ -204,6 +204,7 @@ struct GlobalShaderInfo {
     float exposureAdaptionSpeedEvPerSec = 2.f;
     float deltaTime = 0.016f;
     float time = 0.f;
+    bool cameraCut = false;
 };
 
 struct Material {

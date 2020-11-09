@@ -231,6 +231,8 @@ void RenderFrontend::prepareNewFrame() {
 
         uint32_t threadgroupCount = 0;
         gRenderBackend.updateComputePassShaderDescription(m_depthPyramidPass, createDepthPyramidShaderDescription(&threadgroupCount));
+
+        m_globalShaderInfo.cameraCut = true;
     }
     if (m_minimized) {
         return;
@@ -257,6 +259,9 @@ void RenderFrontend::prepareNewFrame() {
 
     gRenderBackend.updateShaderCode();
     gRenderBackend.newFrame();
+
+    //make sure that UI changes of render config can be incorporated into this frame
+    drawUi();
 
     prepareRenderpasses();
     gRenderBackend.startDrawcallRecording();
@@ -525,9 +530,11 @@ void RenderFrontend::renderFrame() {
         return;
     }
     updateGlobalShaderInfo();
-    drawUi();
     issueSkyDrawcalls();
     gRenderBackend.renderFrame(true);
+
+    //set after frame finished so logic before rendering can decide if cut should happen
+    m_globalShaderInfo.cameraCut = false;
 }
 
 void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColor) const {
@@ -2350,7 +2357,9 @@ void RenderFrontend::drawUi() {
     //Temporal filter Settings
     if(ImGui::CollapsingHeader("Temporal filter settings")){
 
-        ImGui::Checkbox("Enabled", &m_temporalFilterSettings.enabled);
+        if (ImGui::Checkbox("Enabled", &m_temporalFilterSettings.enabled)) {
+            m_globalShaderInfo.cameraCut = true;
+        }
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Clipping", &m_temporalFilterSettings.useClipping);
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Dilate motion vector", &m_temporalFilterSettings.useMotionVectorDilation);
     }

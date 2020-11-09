@@ -93,7 +93,11 @@ void main(){
         historySample = currentColor;
     }
     
-    vec3 color = mix(historySample, currentColor, 0.1f);
+	float blendFactor = 0.1f;
+	if(g_cameraCut){
+		blendFactor = 1.f;
+	}
+    vec3 color = mix(historySample, currentColor, blendFactor);
     
     imageStore(historyBufferDst, uv, vec4(color, 1.f));    
 	imageStore(outputImage, uv, vec4(color, 1.f));

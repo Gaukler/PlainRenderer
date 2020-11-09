@@ -16,6 +16,7 @@ layout(set=0, binding = 0, std140) uniform global{
     float g_exposureAdaptionSpeedEvPerSec;
     float g_deltaTime;
     float g_time;
+	bool g_cameraCut;
 };
 
 float pi = 3.1415926535f;
