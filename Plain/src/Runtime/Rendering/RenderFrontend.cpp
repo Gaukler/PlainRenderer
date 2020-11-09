@@ -860,8 +860,8 @@ void RenderFrontend::computeTemporalFilter(const ImageHandle currentFrameColor, 
 
     RenderPassExecution temporalFilterExecution;
     temporalFilterExecution.handle = m_temporalFilterPass;
-    temporalFilterExecution.resources.storageImages = { inputImageResource, outputImageResource, historyDstResource };
-    temporalFilterExecution.resources.sampledImages = { historySrcResource, motionBufferResource, depthBufferResource };
+    temporalFilterExecution.resources.storageImages = { outputImageResource, historyDstResource };
+    temporalFilterExecution.resources.sampledImages = { inputImageResource, historySrcResource, motionBufferResource, depthBufferResource };
     temporalFilterExecution.resources.samplers = { samplerResource };
     temporalFilterExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     temporalFilterExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
