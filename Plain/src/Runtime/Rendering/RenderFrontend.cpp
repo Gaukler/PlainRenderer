@@ -1314,7 +1314,7 @@ void RenderFrontend::initImages() {
         desc.width = m_screenWidth;
         desc.height = m_screenHeight;
         desc.depth = 1;
-        desc.format = ImageFormat::RG16_sFloat;
+        desc.format = ImageFormat::RG16_sNorm;
         desc.autoCreateMips = false;
         desc.manualMipCount = 1;
         desc.mipCount = MipCount::One;
@@ -2180,7 +2180,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     //depth prepass
     {
         Attachment depthAttachment(ImageFormat::Depth32, AttachmentLoadOp::Clear);
-        Attachment velocityAttachment(ImageFormat::RG16_sFloat, AttachmentLoadOp::Clear);
+        Attachment velocityAttachment(ImageFormat::RG16_sNorm, AttachmentLoadOp::Clear);
 
         GraphicPassDescription desc;
         desc.attachments = { velocityAttachment, depthAttachment };
