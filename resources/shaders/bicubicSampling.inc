@@ -31,26 +31,7 @@ vec3 bicubicSample(texture2D srcTexture, sampler srcSampler, vec2 iUV, vec2 texe
 	vec2 w2 = catmullRomWeight2D(d + 1);
 	vec2 w3 = catmullRomWeight2D(d + 2);
 
-	float weightTotal = 
-		 w0.x * w0.y +
-		 w1.x * w0.y +
-		 w2.x * w0.y +
-		 w3.x * w0.y +
-		
-		 w0.x * w1.y +
-		 w1.x * w1.y +
-		 w2.x * w1.y +
-		 w3.x * w1.y +
-		
-		 w0.x * w2.y +
-		 w1.x * w2.y +
-		 w2.x * w2.y +
-		 w3.x * w2.y +
-		
-		 w0.x * w3.y +
-		 w1.x * w3.y +
-		 w2.x * w3.y +
-		 w3.x * w3.y;
+	float weightTotal = (w0.x + w1.x + w2.x + w3.x) * (w0.y + w1.y + w2.y + w3.y);
 
 	vec2 uv0 = uvTrunc - 1;
 	vec2 uv1 = uvTrunc;
