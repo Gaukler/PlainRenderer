@@ -102,7 +102,6 @@ void main(){
 	else{
 		vec2 uvReprojected = uv + motion;
 		historySample = texture(sampler2D(historyBufferSrc, colorSampler), uvReprojected).rgb;
-		historySample = texelFetch(sampler2D(historyBufferSrc, colorSampler), iUV, 0).rgb;
 	}	
 
     if(useClipping){
