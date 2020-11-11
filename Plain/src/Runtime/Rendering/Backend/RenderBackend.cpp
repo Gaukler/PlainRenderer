@@ -356,14 +356,22 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
 }
 
 void RenderBackend::updateShaderCode() {
-
     //helper comparing last change dates of cache and source and updating date to prevent constant reloading if shader is not compiling
     auto isShaderOutOfDate = [](std::filesystem::path relativePath) {
         const auto absolutePath = absoluteShaderPathFromRelative(relativePath);
         const auto cachePath = shaderCachePathFromRelative(relativePath);
-        assert(std::filesystem::exists(absolutePath));
-        assert(std::filesystem::exists(cachePath));
-        return std::filesystem::last_write_time(absolutePath) > std::filesystem::last_write_time(cachePath);
+        //when accessing file while its being saved an error occurs
+        //in this case just return false, shader will be updated next frame
+        std::error_code exception;
+        const auto lastWriteTimeSrc = std::filesystem::last_write_time(absolutePath, exception);
+        if (exception.value() != 0) {
+            return false;
+        }
+        const auto lastWriteTimeCache = std::filesystem::last_write_time(cachePath, exception);
+        if (exception.value() != 0) {
+            return false;
+        }
+        return lastWriteTimeSrc > lastWriteTimeCache;
     };
 
     //iterate over all render passes and check for every shader if it's out of date
