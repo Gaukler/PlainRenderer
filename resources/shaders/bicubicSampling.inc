@@ -23,13 +23,13 @@ vec2 catmullRomWeight2D(vec2 d){
 //naive full 16-tap bicubic sampling using catmull rom weights
 //should only be used as reference to compare faster versions
 vec3 bicubicSample(texture2D srcTexture, sampler srcSampler, vec2 iUV, vec2 texelSize){
-	vec2 uvTrunc = ceil(iUV - 0.5) + 0.5;
-	vec2 d = uvTrunc - iUV; 
+	vec2 uvTrunc = floor(iUV - 0.5) + 0.5f;
+	vec2 d = iUV - uvTrunc;
 
-	vec2 w0 = catmullRomWeight2D(d - 1);
-	vec2 w1 = catmullRomWeight2D(d);
-	vec2 w2 = catmullRomWeight2D(d + 1);
-	vec2 w3 = catmullRomWeight2D(d + 2);
+	vec2 w0 = catmullRomWeight2D(abs(d) + 1);
+	vec2 w1 = catmullRomWeight2D(abs(d));
+	vec2 w2 = catmullRomWeight2D(1 - abs(d));
+	vec2 w3 = catmullRomWeight2D(2 - abs(d));
 
 	float weightTotal = (w0.x + w1.x + w2.x + w3.x) * (w0.y + w1.y + w2.y + w3.y);
 
