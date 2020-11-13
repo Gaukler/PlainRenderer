@@ -9,7 +9,13 @@
 
 layout(constant_id = 0) const bool useClipping = false;
 layout(constant_id = 1) const bool useMotionVectorDilation = false;
-layout(constant_id = 2) const bool useBicubicHistorySample = false;
+layout(constant_id = 2) const int historySampleTech = 0;
+
+#define HISTORY_SAMPLING_BILINEAR 0
+#define HISTORY_SAMPLING_BICUBIC_16_TAP 1
+#define HISTORY_SAMPLING_BICUBIC_9_TAP 2
+#define HISTORY_SAMPLING_BICUBIC_5_TAP 3
+#define HISTORY_SAMPLING_BICUBIC_1_TAP 4
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -95,14 +101,29 @@ void main(){
     }
     
 	vec3 historySample; 
-	if(useBicubicHistorySample){ 
-		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
-		historySample = bicubicSample5Tap(historyBufferSrc, colorSampler, uvReprojected, texelSize);
-	} 
-	else{
+	if(historySampleTech == HISTORY_SAMPLING_BILINEAR){ 
 		vec2 uvReprojected = uv + motion;
 		historySample = texture(sampler2D(historyBufferSrc, colorSampler), uvReprojected).rgb;
+	} 
+	else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_16_TAP){
+		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
+		historySample = bicubicSample16Tap(historyBufferSrc, colorSampler, uvReprojected, texelSize);
+	}
+	else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_9_TAP){
+		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
+		historySample = bicubicSample9Tap(historyBufferSrc, colorSampler, uvReprojected, texelSize);
 	}  
+	else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_5_TAP){
+		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
+		historySample = bicubicSample5Tap(historyBufferSrc, colorSampler, uvReprojected, texelSize);
+	}  
+	else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_1_TAP){
+		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
+		historySample = bicubicSample1Tap(historyBufferSrc, colorSampler, uvReprojected, texelSize, neighbourhood);
+	}
+	else{
+		historySample = vec3(1, 0, 0);
+	}
 
     if(useClipping){
         historySample = clipAABB(historySample, minMax[0], minMax[1]);
@@ -122,8 +143,7 @@ void main(){
 		blendFactor = 1.f;
 	}
     vec3 color = mix(historySample, currentColor, blendFactor);
-    
+
     imageStore(historyBufferDst, iUV, vec4(color, 1.f));    
 	imageStore(outputImage, iUV, vec4(color, 1.f));
-    
 }

@@ -22,7 +22,7 @@ vec2 catmullRomWeight2D(vec2 d){
 //reference: https://vec3.ca/bicubic-filtering-in-fewer-taps/
 //naive full 16-tap bicubic sampling using catmull rom weights
 //should only be used as reference to compare faster versions
-vec3 bicubicSample(texture2D srcTexture, sampler srcSampler, vec2 iUV, vec2 texelSize){
+vec3 bicubicSample16Tap(texture2D srcTexture, sampler srcSampler, vec2 iUV, vec2 texelSize){
 	vec2 uvTrunc = floor(iUV - 0.5) + 0.5f;
 	vec2 d = iUV - uvTrunc;
 
@@ -135,6 +135,42 @@ vec3 bicubicSample5Tap(texture2D srcTexture, sampler srcSampler, vec2 iUV, vec2 
 		vec4(texture(sampler2D(srcTexture, srcSampler), vec2(uvT.x, uvT.y)).rgb, 1.f) * wB.x * wB.y +  
 		vec4(texture(sampler2D(srcTexture, srcSampler), vec2(uvT.x, uv3.y)).rgb, 1.f) * wB.x * w3.y + 
 		vec4(texture(sampler2D(srcTexture, srcSampler), vec2(uv3.x, uvT.y)).rgb, 1.f) * w3.x * wB.y;
+
+	//normalize by dividing trough total weight
+	//total weight is stored in alpha
+	return result.rgb / result.a;
+}
+
+//reference: "Dynamic Temporal Antialiasing and Upsampling in Call of Duty" Siggraph presentation, page 111
+//like 5-tap variant but uses neighbourhood of current pixel to estimate history taps, so only 1 additional tap needed
+//fast but slightly less accurate
+vec3 bicubicSample1Tap(texture2D srcTexture, sampler srcSampler, vec2 iUV, vec2 texelSize, vec3[3][3] neighbourhood){
+
+	vec2 uvTrunc = floor(iUV - 0.5) + 0.5f;
+	vec2 f = iUV - uvTrunc;
+	vec2 f2 = f*f;
+	vec2 f3 = f2*f;
+	
+	vec2 w0 = -0.5*f3 +     f2 - 0.5*f;
+	vec2 w1 =  1.5*f3 - 2.5*f2 + 1.f;
+	vec2 w2 = -1.5*f3 + 2.f*f2 + 0.5*f;
+	vec2 w3 =  0.5*f3 - 0.5*f2;
+	
+	vec2 wB = w1 + w2;
+	vec2 t = w2 / wB;
+
+	vec2 uvT = uvTrunc + t;
+	
+	uvT *= texelSize;
+
+	vec3 historySample = texture(sampler2D(srcTexture, srcSampler), uvT).rgb;
+
+	vec4 result =  
+		vec4(historySample + neighbourhood[0][1] - neighbourhood[1][1], 1.f) * w0.x * wB.y +
+		vec4(historySample + neighbourhood[1][0] - neighbourhood[1][1], 1.f) * wB.x * w0.y +
+		vec4(historySample, 1.f) * wB.x * wB.y +  
+		vec4(historySample + neighbourhood[1][2] - neighbourhood[1][1], 1.f) * wB.x * w3.y +
+		vec4(historySample + neighbourhood[2][1] - neighbourhood[1][1], 1.f) * w3.x * wB.y;
 
 	//normalize by dividing trough total weight
 	//total weight is stored in alpha

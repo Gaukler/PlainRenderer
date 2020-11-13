@@ -35,11 +35,13 @@ struct ShadingConfig {
     bool useSkyOcclusionDirection = true;
 };
 
+enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2, Bicubic5Tap=3, Bicubic1Tap=4 };
+
 struct TemporalFilterSettings {
     bool enabled = true;
     bool useClipping = true;
     bool useMotionVectorDilation = true;
-    bool useBicubicHistorySample = true;
+    HistorySamplingTech historySamplingTech = HistorySamplingTech::Bicubic1Tap;
 };
 
 struct SkyOcclusionRenderData {

@@ -1232,10 +1232,10 @@ ShaderDescription RenderFrontend::createTemporalFilterShaderDescription() {
             1,                                                                                                                          //location
             dataToCharArray(&m_temporalFilterSettings.useMotionVectorDilation, sizeof(m_temporalFilterSettings.useMotionVectorDilation))//value
             });
-        //use bicubic history sample
+        //history sampling tech
         desc.specialisationConstants.push_back({
-            2,                                                                                                                          //location
-            dataToCharArray(&m_temporalFilterSettings.useBicubicHistorySample, sizeof(m_temporalFilterSettings.useBicubicHistorySample))//value
+            2,                                                                                                                  //location
+            dataToCharArray(&m_temporalFilterSettings.historySamplingTech, sizeof(m_temporalFilterSettings.historySamplingTech))//value
             });
     }
 
@@ -2367,7 +2367,10 @@ void RenderFrontend::drawUi() {
         }
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Clipping", &m_temporalFilterSettings.useClipping);
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Dilate motion vector", &m_temporalFilterSettings.useMotionVectorDilation);
-        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Bicubic history sample", &m_temporalFilterSettings.useBicubicHistorySample);
+
+        const char* historySamplingOptions[] = { "Bilinear", "Bicubic16Tap", "Bicubic9Tap", "Bicubic5Tap", "Bicubic1Tap" };
+        m_isTemporalFilterShaderDescriptionStale |= ImGui::Combo("Bicubic history sample", 
+            (int*)&m_temporalFilterSettings.historySamplingTech, historySamplingOptions, 5);
     }
 
     //lighting settings
