@@ -97,8 +97,8 @@ void main(){
 	vec3 historySample; 
 	if(useBicubicHistorySample){ 
 		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
-		historySample = bicubicSample9Tap(historyBufferSrc, colorSampler, uvReprojected, texelSize);
-	}
+		historySample = bicubicSample5Tap(historyBufferSrc, colorSampler, uvReprojected, texelSize);
+	} 
 	else{
 		vec2 uvReprojected = uv + motion;
 		historySample = texture(sampler2D(historyBufferSrc, colorSampler), uvReprojected).rgb;
