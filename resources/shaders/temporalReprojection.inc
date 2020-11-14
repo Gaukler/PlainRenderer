@@ -24,6 +24,17 @@ vec3 clipAABB(
     }
 }
 
+vec3[3][3] sampleNeighbourhood(texture2D inputTexture, sampler inputSampler, vec2 uv, vec2 texelSize){
+	vec3[3][3] neighbourhood;
+	for(int x = -1; x <= 1; x++){
+        for(int y = -1; y <= 1; y++){
+			vec3 color = texture(sampler2D(inputTexture, inputSampler), uv + texelSize * vec2(x, y)).rgb;
+			neighbourhood[x+1][y+1] = color;
+		}
+	}
+	return neighbourhood;
+}
+
 vec3[2] minMaxFromNeighbourhood(vec3[3][3] neighbourhood){
 	vec3[2] minMax;
 	minMax[0] = neighbourhood[0][0];
