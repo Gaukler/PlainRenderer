@@ -10,24 +10,28 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(set=1, binding = 0) uniform sampler colorSampler;
 layout(set=1, binding = 1) uniform texture2D currentFrame;
 layout(set=1, binding = 2) uniform texture2D lastFrame;
-layout(set=1, binding = 3) uniform texture2D secondToLastFrame;
+layout(set=1, binding = 3) uniform texture2D secondToLastFrame; //unused for now
 layout(set=1, binding = 4, r11f_g11f_b10f) 	uniform image2D targetImage;
 layout(set=1, binding = 5) uniform texture2D velocityBuffer;
 layout(set=1, binding = 6) uniform texture2D depthBuffer;
 
+//no clamping or history sample rejection as no problems occured yet
+//will probably have to revisit this after particle effects volumetric etc. are added that might cause artifacts
 void main(){
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
     
     vec2 uvSample = (uv + vec2(0.5f)) / vec2(imageSize(targetImage));
-    
+
+	vec2 motion = getClosestFragmentMotion(uv, depthBuffer, velocityBuffer, colorSampler);
+
+	//jitter is set up as quincunx pattern
+	//it's alternating between (0, 0) and (0.5, 0.5)
+	//for the (0.5, 0.5) offset we want a bilinear sample, see "Filmic SMAA in Call of Duty" page 113
     vec2 uvSampleCurrent = uvSample - g_currentFrameCameraJitter;
-    vec3 currentSample = texture(sampler2D(currentFrame, colorSampler), uvSampleCurrent).rgb;
-    vec3 secondToLastSample = texture(sampler2D(secondToLastFrame, colorSampler), uvSample).rgb;
-    
-    vec2 motion = getClosestFragmentMotion(uv, depthBuffer, velocityBuffer, colorSampler);
-    
-    vec2 uvSampleLast = uvSample + motion - g_previousFrameCameraJitter;
-    vec3 lastSample = texture(sampler2D(lastFrame, colorSampler), uvSampleLast).rgb;
+	vec2 uvSampleLast = uvSample + motion - g_previousFrameCameraJitter;
+
+    vec3 currentSample	= texture(sampler2D(currentFrame, colorSampler), uvSampleCurrent).rgb;
+    vec3 lastSample		= texture(sampler2D(lastFrame, colorSampler), uvSampleLast).rgb;
     
     vec3 color = mix(currentSample, lastSample, 0.5f);    
 	imageStore(targetImage, uv, vec4(color, 1.f));
