@@ -12,7 +12,7 @@ struct CameraIntrinsic {
     float fov = 35.f;
     float aspectRatio = 1.f;
     float near = 0.1f;
-    float far = 50.f;
+    float far = 300.f;
 };
 
 
