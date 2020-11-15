@@ -4,9 +4,9 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set=1, binding = 0, r11f_g11f_b10f) 	uniform image2D imageOut;
+layout(set=1, binding = 0)                  uniform sampler colorSampler;
 layout(set=1, binding = 1) 	                uniform texture2D imageIn;
-layout(set=1, binding = 2)                  uniform sampler colorSampler;
+layout(set=1, binding = 2, r11f_g11f_b10f) 	uniform image2D imageOut;
 
 void main(){
 

@@ -44,6 +44,7 @@ const uint32_t  skyOcclusionVolumeMaxRes = 256;
 const float     skyOcclusionTargetDensity = 0.5f; //meter/texel
 const uint32_t  skyOcclusionSampleCount = 1024;
 
+
 void PingPongImageWrapper::init(const ImageDescription& desc) {
     m_pingPongImages.src = gRenderBackend.createImage(desc);
     m_pingPongImages.dst = gRenderBackend.createImage(desc);
@@ -59,12 +60,9 @@ PingPongImages PingPongImageWrapper::getImages() const{
     return m_pingPongImages;
 }
 
-void ColorBufferWrapper::init(const ImageHandle images[3], const FramebufferHandle framebuffers[3]) {
+void ColorBufferWrapper::init(const ImageDescription& desc) {
     for (int i = 0; i < 3; i++) {
-        FramebufferImageCombo combo;
-        combo.image = images[i];
-        combo.framebuffer = framebuffers[i];
-        m_images[i] = combo;
+        m_images[i] = gRenderBackend.createImage(desc);
     }
 }
 
@@ -73,13 +71,13 @@ void ColorBufferWrapper::advance() {
     m_index %= 3;
 }
 
-ColorBuffers ColorBufferWrapper::getImages() const {
-    ColorBuffers buffers;
-    buffers.current = m_images[m_index];
+ColorFrames ColorBufferWrapper::getImages() const {
+    ColorFrames frames;
+    frames.current = m_images[m_index];
     //+3 on index so that index does not become negative, which messes with modulo
-    buffers.last         = m_images[(3 + m_index - 1) % 3];
-    buffers.secondToLast = m_images[(3 + m_index - 2) % 3];
-    return buffers;
+    frames.last         = m_images[(3 + m_index - 1) % 3];
+    frames.secondToLast = m_images[(3 + m_index - 2) % 3];
+    return frames;
 }
 
 void resizeCallback(GLFWwindow* window, int width, int height) {
@@ -197,7 +195,6 @@ void RenderFrontend::setup(GLFWwindow* window) {
     initBuffers(histogramSettings);
     initRenderpasses(histogramSettings);
     initFramebuffers();
-    initColorBuffers();
     initMeshs();
     
     gRenderBackend.newFrame();
@@ -212,13 +209,14 @@ void RenderFrontend::shutdown() {
 void RenderFrontend::prepareNewFrame() {
     if (m_didResolutionChange) {
         const PingPongImages historyBuffers = m_historyBuffers.getImages();
-        const ColorBuffers colorBuffers = m_colorBuffers.getImages();
+        const ColorFrames frames = m_colorBuffers.getImages();
 
         gRenderBackend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
         gRenderBackend.resizeImages( { 
-            colorBuffers.current.image, 
-            colorBuffers.last.image, 
-            colorBuffers.secondToLast.image, 
+            m_sceneImage,
+            frames.current,
+            frames.last,
+            frames.secondToLast,
             m_postProcessBuffers[0], 
             m_postProcessBuffers[1],
             m_depthBuffer, 
@@ -269,9 +267,6 @@ void RenderFrontend::prepareNewFrame() {
 
 void RenderFrontend::prepareRenderpasses(){
 
-    m_colorBuffers.advance();
-    const ColorBuffers colorBuffers = m_colorBuffers.getImages();
-
     std::vector<RenderPassHandle> preparationPasses;
 
     if (m_isBRDFLutShaderDescriptionStale) {
@@ -280,13 +275,16 @@ void RenderFrontend::prepareRenderpasses(){
         m_isBRDFLutShaderDescriptionStale = false;
     }
 
+    m_colorBuffers.advance();
+    const ColorFrames frames = m_colorBuffers.getImages();
+
     renderSunShadowCascades();
-    computeColorBufferHistogram(colorBuffers.last.image);
+    computeColorBufferHistogram(frames.last);
     computeExposure();
     renderDepthPrepass();
     computeDepthPyramid();
     computeSunLightMatrices();
-    renderForwardShading(colorBuffers.current.framebuffer, preparationPasses);
+    renderForwardShading(preparationPasses);
 
     const bool drawDebugPass =
         m_freezeAndDrawCameraFrustum ||
@@ -295,20 +293,31 @@ void RenderFrontend::prepareRenderpasses(){
 
     //debug pass
     if (drawDebugPass) {
-        renderDebugGeometry(colorBuffers.current.framebuffer);
+        renderDebugGeometry();
     }
-    renderSky(colorBuffers.current.framebuffer, drawDebugPass);
+    renderSky(drawDebugPass);
     skyIBLConvolution();
 
+    
     RenderPassHandle currentPass = m_sunSpritePass;
-    ImageHandle currentSrc = colorBuffers.current.image;
+
+    if (m_useFXAA) {
+        computeFXAA(m_sceneImage, frames.current, currentPass);
+        currentPass = m_fxaaPass;
+    }
+    else {
+        //unecessary copy, but keeps logic simple
+        //assumed to be used for comparison only anyways
+        copyHDRImage(m_sceneImage, frames.current, currentPass);
+        currentPass = m_hdrImageCopyPass;
+    }
+    ImageHandle currentSrc = frames.current;
+    
     if (m_useTemporalSupersampling) {
-        computeTemporalSuperSampling(colorBuffers, m_postProcessBuffers[0], currentPass);
+        computeTemporalSuperSampling(frames, m_postProcessBuffers[0], currentPass);
         currentPass = m_temporalSupersamplingPass;
         currentSrc = m_postProcessBuffers[0];
     }
-    
-
     if (m_temporalFilterSettings.enabled) {
         computeTemporalFilter(currentSrc, m_postProcessBuffers[1], currentPass);
         currentPass = m_temporalFilterPass;
@@ -589,7 +598,7 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
     }
 }
    
-void RenderFrontend::renderSky(const FramebufferHandle colorFramebuffer, const bool drewDebugPasses) const {
+void RenderFrontend::renderSky(const bool drewDebugPasses) const {
     gRenderBackend.setUniformBufferData(
         m_atmosphereSettingsBuffer, 
         &m_atmosphereSettings, 
@@ -656,7 +665,7 @@ void RenderFrontend::renderSky(const FramebufferHandle colorFramebuffer, const b
 
         RenderPassExecution skyPassExecution;
         skyPassExecution.handle = m_skyPass;
-        skyPassExecution.framebuffer = colorFramebuffer;
+        skyPassExecution.framebuffer = m_sceneFramebuffer;
         skyPassExecution.resources.sampledImages = { skyLutResource };
         skyPassExecution.resources.samplers = { skySamplerResource };
         skyPassExecution.parents = { m_mainPass,  m_skyLutPass };
@@ -673,7 +682,7 @@ void RenderFrontend::renderSky(const FramebufferHandle colorFramebuffer, const b
 
         RenderPassExecution sunSpritePassExecution;
         sunSpritePassExecution.handle = m_sunSpritePass;
-        sunSpritePassExecution.framebuffer = colorFramebuffer;
+        sunSpritePassExecution.framebuffer = m_sceneFramebuffer;
         sunSpritePassExecution.parents = { m_skyPass };
         sunSpritePassExecution.resources.storageBuffers = { lightBufferResource };
         sunSpritePassExecution.resources.sampledImages = { transmissionLutResource };
@@ -780,7 +789,7 @@ void RenderFrontend::computeSunLightMatrices() const{
     gRenderBackend.setRenderPassExecution(exe);
 }
 
-void RenderFrontend::renderForwardShading(const FramebufferHandle colorFramebuffer, const std::vector<RenderPassHandle>& externalDependencies) const {
+void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const {
     const auto shadowSamplerResource = SamplerResource(m_shadowSampler, 0);
     const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 1);
     const auto cubeSamplerResource = SamplerResource(m_cubeSampler, 2);
@@ -797,7 +806,7 @@ void RenderFrontend::renderForwardShading(const FramebufferHandle colorFramebuff
 
     RenderPassExecution mainPassExecution;
     mainPassExecution.handle = m_mainPass;
-    mainPassExecution.framebuffer = colorFramebuffer;
+    mainPassExecution.framebuffer = m_sceneFramebuffer;
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
     mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource };
     mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
@@ -818,11 +827,47 @@ void RenderFrontend::renderForwardShading(const FramebufferHandle colorFramebuff
     gRenderBackend.setRenderPassExecution(mainPassExecution);
 }
 
-void RenderFrontend::computeTemporalSuperSampling(const ColorBuffers& frames, const ImageHandle target, const RenderPassHandle parent) const {
+void RenderFrontend::computeFXAA(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const{
     const SamplerResource colorSampler(m_colorSamplerClamp, 0);
-    const ImageResource currentFrameResource(frames.current.image, 0, 1);
-    const ImageResource lastFrameResource(frames.last.image, 0, 2);
-    const ImageResource secondToLastFrameResource(frames.secondToLast.image, 0, 3);
+    const ImageResource srcResource(src, 0, 1);
+    const ImageResource dstResource(dst, 0, 2);
+
+    RenderPassExecution exe;
+    exe.handle = m_fxaaPass;
+    exe.resources.samplers = { colorSampler };
+    exe.resources.sampledImages = { srcResource };
+    exe.resources.storageImages = { dstResource };
+    exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+    exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+    exe.dispatchCount[2] = 1;
+    exe.parents = { parent };
+
+    gRenderBackend.setRenderPassExecution(exe);
+}
+
+void RenderFrontend::copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const {
+    const SamplerResource colorSampler(m_colorSamplerClamp, 0);
+    const ImageResource srcResource(src, 0, 1);
+    const ImageResource dstResource(dst, 0, 2);
+
+    RenderPassExecution exe;
+    exe.handle = m_hdrImageCopyPass;
+    exe.resources.samplers = { colorSampler };
+    exe.resources.sampledImages = { srcResource };
+    exe.resources.storageImages = { dstResource };
+    exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+    exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+    exe.dispatchCount[2] = 1;
+    exe.parents = { parent };
+
+    gRenderBackend.setRenderPassExecution(exe);
+}
+
+void RenderFrontend::computeTemporalSuperSampling(const ColorFrames& frames, const ImageHandle target, const RenderPassHandle parent) const {
+    const SamplerResource colorSampler(m_colorSamplerClamp, 0);
+    const ImageResource currentFrameResource(frames.current, 0, 1);
+    const ImageResource lastFrameResource(frames.last, 0, 2);
+    const ImageResource secondToLastFrameResource(frames.secondToLast, 0, 3);
     const ImageResource targetResource(target, 0, 4);
     const ImageResource velocityBufferResource(m_motionVectorBuffer, 0, 5);
     const ImageResource depthBufferResource(m_depthBuffer, 0, 6);
@@ -890,10 +935,10 @@ void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const Ima
     gRenderBackend.setRenderPassExecution(tonemappingExecution);
 }
 
-void RenderFrontend::renderDebugGeometry(const FramebufferHandle colorFramebuffer) const {
+void RenderFrontend::renderDebugGeometry() const {
     RenderPassExecution debugPassExecution;
     debugPassExecution.handle = m_debugGeoPass;
-    debugPassExecution.framebuffer = colorFramebuffer;
+    debugPassExecution.framebuffer = m_sceneFramebuffer;
     debugPassExecution.parents = { m_mainPass };
     gRenderBackend.setRenderPassExecution(debugPassExecution);
 }
@@ -1262,6 +1307,23 @@ void RenderFrontend::updateGlobalShaderInfo() {
 }
 
 void RenderFrontend::initImages() {
+    //scene images
+    {
+        ImageDescription desc;
+        desc.initialData = std::vector<uint8_t>{};
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::R11G11B10_uFloat;
+        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 0;
+        desc.autoCreateMips = false;
+
+        m_sceneImage = gRenderBackend.createImage(desc);
+        m_colorBuffers.init(desc);
+    }
     //depth buffer
     {
         ImageDescription desc;
@@ -1622,6 +1684,22 @@ void RenderFrontend::initSamplers(){
 }
 
 void RenderFrontend::initFramebuffers() {
+    //scene framebuffer
+    {
+        FramebufferTarget colorTarget;
+        colorTarget.image = m_sceneImage;
+        colorTarget.mipLevel = 0;
+
+        FramebufferTarget depthTarget;
+        depthTarget.image = m_depthBuffer;
+        depthTarget.mipLevel = 0;
+
+        FramebufferDescription desc;
+        desc.compatibleRenderpass = m_mainPass;
+        desc.targets = { colorTarget, depthTarget };
+
+        m_sceneFramebuffer = gRenderBackend.createFramebuffer(desc);
+    }
     //shadow map framebuffers
     for (int i = 0; i < 4; i++) {
         FramebufferTarget depthTarget;
@@ -1717,43 +1795,6 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         desc.size = sizeof(AtmosphereSettings);
         m_atmosphereSettingsBuffer = gRenderBackend.createUniformBuffer(desc);
     }
-}
-
-void RenderFrontend::initColorBuffers() {
-    ImageDescription imageDesc;
-    imageDesc.initialData = std::vector<uint8_t>{};
-    imageDesc.width = m_screenWidth;
-    imageDesc.height = m_screenHeight;
-    imageDesc.depth = 1;
-    imageDesc.type = ImageType::Type2D;
-    imageDesc.format = ImageFormat::R11G11B10_uFloat;
-    imageDesc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-    imageDesc.mipCount = MipCount::One;
-    imageDesc.manualMipCount = 0;
-    imageDesc.autoCreateMips = false;
-
-    ImageHandle images[3];
-    FramebufferHandle framebuffers[3];
-
-    for (int i = 0; i < 3; i++) {
-        images[i] = gRenderBackend.createImage(imageDesc);
-
-        FramebufferTarget colorTarget;
-        colorTarget.image = images[i];
-        colorTarget.mipLevel = 0;
-
-        FramebufferTarget depthTarget;
-        depthTarget.image = m_depthBuffer;
-        depthTarget.mipLevel = 0;
-
-        FramebufferDescription framebufferDesc;
-        framebufferDesc.compatibleRenderpass = m_mainPass;
-        framebufferDesc.targets = { colorTarget, depthTarget };
-
-        framebuffers[i] = gRenderBackend.createFramebuffer(framebufferDesc);
-    }
-
-    m_colorBuffers.init(images, framebuffers);
 }
 
 void RenderFrontend::initMeshs() {
@@ -2208,6 +2249,13 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         m_tonemappingPass = gRenderBackend.createComputePass(desc);
     }
+    //fxaa pass
+    {
+        ComputePassDescription desc;
+        desc.name = "FXAA";
+        desc.shaderDescription.srcPathRelative = "fxaa.comp";
+        m_fxaaPass = gRenderBackend.createComputePass(desc);
+    }
     //temporal filter pass
     {
         ComputePassDescription desc;
@@ -2247,6 +2295,13 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.name = "Sky occlusion gather";
         desc.shaderDescription.srcPathRelative = "skyOcclusionGather.comp";
         m_skyOcclusionGatherPass = gRenderBackend.createComputePass(desc);
+    }
+    //hdr image copy pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Image copy";
+        desc.shaderDescription.srcPathRelative = "imageCopyHDR.comp";
+        m_hdrImageCopyPass = gRenderBackend.createComputePass(desc);
     }
 }
 
@@ -2357,6 +2412,7 @@ void RenderFrontend::drawUi() {
 
     ImGui::Begin("Rendering");
 
+    ImGui::Checkbox("FXAA", &m_useFXAA);
     ImGui::Checkbox("Temporal supersampling", &m_useTemporalSupersampling);
 
     //Temporal filter Settings

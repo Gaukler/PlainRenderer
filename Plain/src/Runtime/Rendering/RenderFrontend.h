@@ -87,25 +87,20 @@ private:
     PingPongImages m_pingPongImages;
 };
 
-struct FramebufferImageCombo {
-    ImageHandle image;
-    FramebufferHandle framebuffer;
-};
-
-struct ColorBuffers {
-    FramebufferImageCombo current;
-    FramebufferImageCombo last;
-    FramebufferImageCombo secondToLast;
+struct ColorFrames {
+    ImageHandle current;
+    ImageHandle last;
+    ImageHandle secondToLast;
 };
 
 class ColorBufferWrapper {
 public:
     //depth buffer and compatible renderpass are used for framebuffer creation
-    void init(const ImageHandle images[3], const FramebufferHandle framebuffers[3]);
+    void init(const ImageDescription& desc);
     void advance(); //advance internal rotation of frame N, N-1, N-2
-    ColorBuffers getImages() const;
+    ColorFrames getImages() const;
 private:
-    FramebufferImageCombo m_images[3];
+    ImageHandle m_images[3];
     uint32_t m_index = 0;
 };
 
@@ -134,17 +129,19 @@ private:
 
     //computes image histogram using compute shaders
     void computeColorBufferHistogram(const ImageHandle lastFrameColor) const;
-    void renderSky(const FramebufferHandle colorFramebuffer, const bool drewDebugPasses) const;
+    void renderSky(const bool drewDebugPasses) const;
     void renderSunShadowCascades() const;
     void computeExposure() const;
     void renderDepthPrepass() const;
     void computeDepthPyramid() const;
     void computeSunLightMatrices() const;
-    void renderForwardShading(const FramebufferHandle colorFramebuffer, const std::vector<RenderPassHandle>& externalDependencies) const;
-    void computeTemporalSuperSampling(const ColorBuffers& frames, const ImageHandle target, const RenderPassHandle parent) const;
+    void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const;
+    void computeFXAA(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const;
+    void copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const; //input must be R11G11B10
+    void computeTemporalSuperSampling(const ColorFrames& frames, const ImageHandle target, const RenderPassHandle parent) const;
     void computeTemporalFilter(const ImageHandle currentFrameColor, const ImageHandle target, const RenderPassHandle parent) const;
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
-    void renderDebugGeometry(const FramebufferHandle colorFramebuffer) const;
+    void renderDebugGeometry() const;
     void issueSkyDrawcalls();
 
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
@@ -182,6 +179,7 @@ private:
     GLFWwindow* m_window = nullptr;
     GlobalShaderInfo m_globalShaderInfo;
     bool m_useTemporalSupersampling = true;
+    bool m_useFXAA = true;
 
     Camera m_camera;    
     glm::mat4 m_viewProjectionMatrix = glm::mat4(1.f);
@@ -224,13 +222,16 @@ private:
     RenderPassHandle m_depthPyramidPass;
     RenderPassHandle m_lightMatrixPass;
     RenderPassHandle m_tonemappingPass;
+    RenderPassHandle m_fxaaPass;
     RenderPassHandle m_temporalSupersamplingPass;
     RenderPassHandle m_temporalFilterPass;
     RenderPassHandle m_skyShadowPass;
     RenderPassHandle m_skyOcclusionGatherPass;  //gathers visibility from sky shadow map
+    RenderPassHandle m_hdrImageCopyPass;    //input must be R11G11B10
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
+    ImageHandle m_sceneImage;
     ImageHandle m_postProcessBuffers[2];
     ImageHandle m_depthBuffer;
     ImageHandle m_motionVectorBuffer;
@@ -263,6 +264,7 @@ private:
     SamplerHandle m_colorSamplerClamp;
     SamplerHandle m_skyOcclusionSampler;
 
+    FramebufferHandle m_sceneFramebuffer;
     FramebufferHandle m_shadowCascadeFramebuffers[4];
     FramebufferHandle m_depthPrepassFramebuffer;
     FramebufferHandle m_skyShadowFramebuffer;
@@ -300,9 +302,6 @@ private:
     void initFramebuffers();
 
     void initBuffers(const HistogramSettings& histogramSettings);
-
-    //must be called after initRenderpasses
-    void initColorBuffers();
 
     //must be called after initImages as images have to be created to be used as attachments
     void initRenderpasses(const HistogramSettings& histogramSettings);

@@ -1,0 +1,176 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "global.inc"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set=1, binding = 0)                  uniform sampler colorSampler;
+layout(set=1, binding = 1) 	                uniform texture2D srcTexture;
+layout(set=1, binding = 2, r11f_g11f_b10f) 	uniform image2D dstImage;
+
+//references:
+//overview, but missing some details
+//https://developer.download.nvidia.com/assets/gamedev/files/sdk/11/FXAA_WhitePaper.pdf
+//
+//this includes many details that are missing in the paper
+//however it's not entirely correct as the subpixel factor is used for edge blending, instead with the lowpass filter
+//should be taken with a grain of salt
+//https://catlikecoding.com/unity/tutorials/advanced-rendering/fxaa/
+
+//reference: https://en.wikipedia.org/wiki/Relative_luminance
+float computeLuminance(vec3 color){
+    return dot(color, vec3(0.21, 0.72, 0.07));
+}
+
+float[3][3] getLuminanceNeighbourhood(ivec2 uv){
+	float[3][3] luminance;
+	for(int x = -1; x <= 1; x++){
+		for(int y = -1; y <= 1; y++){
+			luminance[x+1][y+1] = computeLuminance(texelFetch(sampler2D(srcTexture, colorSampler), uv + ivec2(x, y), 0).rgb);
+		}
+	}
+	return luminance;
+}
+
+vec2 computeLuminanceMinMaxLuminanceCross(float[3][3] neighbourhood){
+
+	ivec2 offsets[5] = {
+        ivec2(1, 1),
+        ivec2(0, 1),
+        ivec2(2, 1),
+        ivec2(1, 0),
+        ivec2(1, 2)
+    };
+
+	vec2 minMax = vec2(1, 0);
+	for(int i = 0; i < 5; i++){
+        float l = neighbourhood[offsets[i].x][offsets[i].y];
+        minMax.x = min(minMax.x, l);
+        minMax.y = max(minMax.y, l);
+    }
+	return minMax;
+}
+
+bool localContrastCheck(float neighbourhood[3][3]){
+	vec2 minMax = computeLuminanceMinMaxLuminanceCross(neighbourhood);
+	float range = minMax.y - minMax.x;
+
+	float minThreshold = 0.06;
+	float edgeThreshold = 0.125;
+
+	return range > max(minThreshold, edgeThreshold * minMax.y);
+}
+
+float computeSubpixelAliasing(float neighbourhood[3][3]){
+	float mean = (
+		neighbourhood[0][1] + 
+		neighbourhood[2][1] +
+		neighbourhood[1][0] +
+		neighbourhood[1][2]
+		) * 0.25f;
+	return clamp(abs(neighbourhood[1][1] - mean), 0, 1);
+}
+
+//box filter
+vec3 lowpassFilter(vec2 uv, vec2 texelSize){
+	vec3 color = vec3(0);
+	for(int x = -1; x <= 1; x++){
+		for(int y = -1; y <= 1; y++){
+			color += texture(sampler2D(srcTexture, colorSampler), uv + vec2(x, y) * texelSize, 0).rgb;
+		}
+	}
+	return color * (1.f / 9.f);
+}
+
+//compare vertical and horizontal change
+//center pixels are weighed stronger
+bool isEdgeHorizontal(float[3][3] neighbourhood){
+	float verticalContrast = 
+		abs(0.25*neighbourhood[0][0] - 0.5*neighbourhood[1][0] + 0.25*neighbourhood[2][0]) +	
+		abs(0.50*neighbourhood[0][1] - 1.0*neighbourhood[1][1] + 0.50*neighbourhood[2][1]) +
+		abs(0.25*neighbourhood[0][2] - 0.5*neighbourhood[1][2] + 0.25*neighbourhood[2][2]);		
+
+	float horizontalContrast = 
+		abs(0.25*neighbourhood[0][0] - 0.5*neighbourhood[0][1] + 0.25*neighbourhood[0][2]) +	
+		abs(0.50*neighbourhood[1][0] - 1.0*neighbourhood[1][1] + 0.50*neighbourhood[1][2]) +
+		abs(0.25*neighbourhood[2][0] - 0.5*neighbourhood[2][1] + 0.25*neighbourhood[2][2]);		
+
+	return horizontalContrast > verticalContrast;
+}
+
+//result in range[0:0.5]
+//searches for edge horizontaly/verticaly in both positive and negative direction
+//blending factor is stronger near edge end and decreases with distance
+float computeEdgeBlend(vec2 uvIn, bool isHorizontalEdge, vec2 edgeDirection, float gradient){
+
+	vec2 searchStep = isHorizontalEdge ? vec2(1, 0) : vec2(0, 1);
+	searchStep /= g_screenResolution;
+
+	vec2 uvStart = uvIn + edgeDirection * 0.5;
+
+	float threshold = 0.25f * abs(gradient);
+	float luminanceEdge = computeLuminance(texture(sampler2D(srcTexture, colorSampler), uvStart).rgb);
+
+	vec2 currentOffset = vec2(0.f);
+	float edgeDistance = 0.f;
+	const int sampleCount = 10;
+
+	for(int i = 0; i < sampleCount; i++){
+		currentOffset += searchStep;
+		edgeDistance++;
+
+		float sampleP = computeLuminance(texture(sampler2D(srcTexture, colorSampler), uvStart + currentOffset).rgb);
+		float sampleN = computeLuminance(texture(sampler2D(srcTexture, colorSampler), uvStart - currentOffset).rgb);
+		
+		float deltaP = sampleP - luminanceEdge;
+		float deltaN = sampleN - luminanceEdge;
+
+		//the sign check makes sure that we are on the correct side of the edge
+		bool doneP = abs(deltaP) > threshold && sign(deltaP) == sign(gradient);
+		bool doneN = abs(deltaN) > threshold && sign(deltaN) == sign(gradient);
+		if(doneN || doneP){
+			return 0.5-edgeDistance / sampleCount * 0.5f;
+		}
+	}	
+	return 0;
+}
+
+void main(){
+	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
+    
+	float[3][3] neighbourhood = getLuminanceNeighbourhood(iUV);
+	bool passedContrastCheck = localContrastCheck(neighbourhood); 
+
+	bool isHorizontalEdge = isEdgeHorizontal(neighbourhood);
+
+	vec2 texelSize = 1.f / g_screenResolution;
+	vec2 uv = (vec2(iUV) + 0.5f) * texelSize;
+
+	float gradientP = isHorizontalEdge ? neighbourhood[1][2] - neighbourhood[1][1] : neighbourhood[2][1] - neighbourhood[1][1];
+	float gradientN = isHorizontalEdge ? neighbourhood[1][0] - neighbourhood[1][1] : neighbourhood[0][1] - neighbourhood[1][1];
+	float gradient = abs(gradientP) > abs(gradientN) ? gradientP : gradientN;
+
+	vec2 edgeDirection = isHorizontalEdge ? vec2(0, 1) : vec2(1, 0);
+	edgeDirection *= texelSize;
+	edgeDirection *= gradientP > gradientN ? 1 : -1;
+	
+	//offset sample in direction of the edge to smooth depending on distance to edge end
+	float edgeBlend = computeEdgeBlend(uv, isHorizontalEdge, edgeDirection, gradient);
+	vec2 offset = edgeDirection * edgeBlend;
+
+	if(!passedContrastCheck){
+		offset = vec2(0);
+	}
+	uv += offset;
+	vec3 color = texture(sampler2D(srcTexture, colorSampler), uv).rgb;
+
+	float subpixelAliasing = computeSubpixelAliasing(neighbourhood);
+	vec3 filtered = lowpassFilter(uv, texelSize);
+
+	if(passedContrastCheck){
+		color = mix(color, filtered, subpixelAliasing);
+	}
+	imageStore(dstImage, iUV, vec4(color, 1.f));
+}
