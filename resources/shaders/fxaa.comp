@@ -9,6 +9,7 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(set=1, binding = 0)                  uniform sampler colorSampler;
 layout(set=1, binding = 1) 	                uniform texture2D srcTexture;
 layout(set=1, binding = 2, r11f_g11f_b10f) 	uniform image2D dstImage;
+layout(set=1, binding = 3) 					uniform texture2D luminanceTexture;
 
 //references:
 //overview, but missing some details
@@ -78,7 +79,7 @@ vec3 lowpassFilter(vec2 uv, vec2 texelSize){
 	vec3 color = vec3(0);
 	for(int x = -1; x <= 1; x++){
 		for(int y = -1; y <= 1; y++){
-			color += texture(sampler2D(srcTexture, colorSampler), uv + vec2(x, y) * texelSize, 0).rgb;
+			color += texture(sampler2D(srcTexture, colorSampler), uv + vec2(x, y) * texelSize).rgb;
 		}
 	}
 	return color * (1.f / 9.f);
