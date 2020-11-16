@@ -228,6 +228,7 @@ private:
     RenderPassHandle m_skyShadowPass;
     RenderPassHandle m_skyOcclusionGatherPass;  //gathers visibility from sky shadow map
     RenderPassHandle m_hdrImageCopyPass;    //input must be R11G11B10
+    RenderPassHandle m_colorToLuminancePass;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -245,6 +246,7 @@ private:
     ImageHandle m_minMaxDepthPyramid;
     ImageHandle m_skyShadowMap;
     ImageHandle m_skyOcclusionVolume;
+    ImageHandle m_sceneLuminance;
 
     PingPongImageWrapper m_historyBuffers;
     ColorBufferWrapper m_colorBuffers;

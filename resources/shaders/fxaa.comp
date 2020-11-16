@@ -20,16 +20,11 @@ layout(set=1, binding = 3) 					uniform texture2D luminanceTexture;
 //should be taken with a grain of salt
 //https://catlikecoding.com/unity/tutorials/advanced-rendering/fxaa/
 
-//reference: https://en.wikipedia.org/wiki/Relative_luminance
-float computeLuminance(vec3 color){
-    return dot(color, vec3(0.21, 0.72, 0.07));
-}
-
 float[3][3] getLuminanceNeighbourhood(ivec2 uv){
 	float[3][3] luminance;
 	for(int x = -1; x <= 1; x++){
 		for(int y = -1; y <= 1; y++){
-			luminance[x+1][y+1] = computeLuminance(texelFetch(sampler2D(srcTexture, colorSampler), uv + ivec2(x, y), 0).rgb);
+			luminance[x+1][y+1] = texelFetch(sampler2D(luminanceTexture, colorSampler), uv + ivec2(x, y), 0).r;
 		}
 	}
 	return luminance;
@@ -112,18 +107,19 @@ float computeEdgeBlend(vec2 uvIn, bool isHorizontalEdge, vec2 edgeDirection, flo
 	vec2 uvStart = uvIn + edgeDirection * 0.5;
 
 	float threshold = 0.25f * abs(gradient);
-	float luminanceEdge = computeLuminance(texture(sampler2D(srcTexture, colorSampler), uvStart).rgb);
+	float luminanceEdge = texture(sampler2D(luminanceTexture, colorSampler), uvStart).r;
 
 	vec2 currentOffset = vec2(0.f);
 	float edgeDistance = 0.f;
 	const int sampleCount = 10;
+	float minDistance = 100.f;
 
 	for(int i = 0; i < sampleCount; i++){
 		currentOffset += searchStep;
 		edgeDistance++;
 
-		float sampleP = computeLuminance(texture(sampler2D(srcTexture, colorSampler), uvStart + currentOffset).rgb);
-		float sampleN = computeLuminance(texture(sampler2D(srcTexture, colorSampler), uvStart - currentOffset).rgb);
+		float sampleP = texture(sampler2D(luminanceTexture, colorSampler), uvStart + currentOffset).r;
+		float sampleN = texture(sampler2D(luminanceTexture, colorSampler), uvStart - currentOffset).r;
 		
 		float deltaP = sampleP - luminanceEdge;
 		float deltaN = sampleN - luminanceEdge;
@@ -131,6 +127,7 @@ float computeEdgeBlend(vec2 uvIn, bool isHorizontalEdge, vec2 edgeDirection, flo
 		//the sign check makes sure that we are on the correct side of the edge
 		bool doneP = abs(deltaP) > threshold && sign(deltaP) == sign(gradient);
 		bool doneN = abs(deltaN) > threshold && sign(deltaN) == sign(gradient);
+
 		if(doneN || doneP){
 			return 0.5-edgeDistance / sampleCount * 0.5f;
 		}
@@ -143,6 +140,13 @@ void main(){
     
 	float[3][3] neighbourhood = getLuminanceNeighbourhood(iUV);
 	bool passedContrastCheck = localContrastCheck(neighbourhood); 
+
+	//early out
+	if(!passedContrastCheck){
+		vec3 color = texelFetch(sampler2D(srcTexture, colorSampler), iUV, 0).rgb;
+		imageStore(dstImage, iUV, vec4(color, 1.f));
+		return;
+	}
 
 	bool isHorizontalEdge = isEdgeHorizontal(neighbourhood);
 
@@ -161,17 +165,13 @@ void main(){
 	float edgeBlend = computeEdgeBlend(uv, isHorizontalEdge, edgeDirection, gradient);
 	vec2 offset = edgeDirection * edgeBlend;
 
-	if(!passedContrastCheck){
-		offset = vec2(0);
-	}
 	uv += offset;
 	vec3 color = texture(sampler2D(srcTexture, colorSampler), uv).rgb;
 
 	float subpixelAliasing = computeSubpixelAliasing(neighbourhood);
 	vec3 filtered = lowpassFilter(uv, texelSize);
 
-	if(passedContrastCheck){
-		color = mix(color, filtered, subpixelAliasing);
-	}
+	color = mix(color, filtered, subpixelAliasing);
+
 	imageStore(dstImage, iUV, vec4(color, 1.f));
 }

@@ -222,7 +222,8 @@ void RenderFrontend::prepareNewFrame() {
             m_depthBuffer, 
             m_motionVectorBuffer,
             historyBuffers.dst, 
-            historyBuffers.src }, 
+            historyBuffers.src,
+            m_sceneLuminance}, 
             m_screenWidth, m_screenHeight);
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
@@ -828,21 +829,43 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
 }
 
 void RenderFrontend::computeFXAA(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const{
-    const SamplerResource colorSampler(m_colorSamplerClamp, 0);
-    const ImageResource srcResource(src, 0, 1);
-    const ImageResource dstResource(dst, 0, 2);
+    //color to luminance
+    {
+        const SamplerResource colorSampler(m_colorSamplerClamp, 0);
+        const ImageResource srcResource(src, 0, 1);
+        const ImageResource dstResource(m_sceneLuminance, 0, 2);
 
-    RenderPassExecution exe;
-    exe.handle = m_fxaaPass;
-    exe.resources.samplers = { colorSampler };
-    exe.resources.sampledImages = { srcResource };
-    exe.resources.storageImages = { dstResource };
-    exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-    exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-    exe.dispatchCount[2] = 1;
-    exe.parents = { parent };
+        RenderPassExecution exe;
+        exe.handle = m_colorToLuminancePass;
+        exe.resources.samplers = { colorSampler };
+        exe.resources.sampledImages = { srcResource };
+        exe.resources.storageImages = { dstResource };
+        exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+        exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+        exe.dispatchCount[2] = 1;
+        exe.parents = { parent };
 
-    gRenderBackend.setRenderPassExecution(exe);
+        gRenderBackend.setRenderPassExecution(exe);
+    }
+    //fxaa pass
+    {
+        const SamplerResource colorSampler(m_colorSamplerClamp, 0);
+        const ImageResource srcResource(src, 0, 1);
+        const ImageResource dstResource(dst, 0, 2);
+        const ImageResource luminanceResource(m_sceneLuminance, 0, 3);
+
+        RenderPassExecution exe;
+        exe.handle = m_fxaaPass;
+        exe.resources.samplers = { colorSampler };
+        exe.resources.sampledImages = { srcResource, luminanceResource };
+        exe.resources.storageImages = { dstResource };
+        exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+        exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+        exe.dispatchCount[2] = 1;
+        exe.parents = { m_colorToLuminancePass };
+
+        gRenderBackend.setRenderPassExecution(exe);
+    }
 }
 
 void RenderFrontend::copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const {
@@ -1549,6 +1572,22 @@ void RenderFrontend::initImages() {
     }
     //sky occlusion volume is created later
     //its resolution is dependent on scene size in order to fit desired texel density
+
+    //scene luminance
+    {
+        ImageDescription desc;
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::R8;
+        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
+
+        m_sceneLuminance = gRenderBackend.createImage(desc);
+    }
 }
 
 void RenderFrontend::initSamplers(){
@@ -2302,6 +2341,13 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.name = "Image copy";
         desc.shaderDescription.srcPathRelative = "imageCopyHDR.comp";
         m_hdrImageCopyPass = gRenderBackend.createComputePass(desc);
+    }
+    //color to luminance pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Color to Luminance";
+        desc.shaderDescription.srcPathRelative = "colorToLuminance.comp";
+        m_colorToLuminancePass = gRenderBackend.createComputePass(desc);
     }
 }
 
