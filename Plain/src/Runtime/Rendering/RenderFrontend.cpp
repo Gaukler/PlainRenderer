@@ -157,6 +157,7 @@ DefaultTextures createDefaultTextures() {
 glm::vec2 computeProjectionMatrixJitter(const float pixelSizeX, const float pixelSizeY) {
     static bool even;
 
+    //jitter is set up as quincunx pattern
     glm::vec2 offset = even ? glm::vec2(0.f) : glm::vec2(0.5f);
     even = !even;
 
