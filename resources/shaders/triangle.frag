@@ -117,7 +117,7 @@ float calcShadow(vec3 pos, float LoV, texture2D shadowMap, mat4 lightMatrix){
     //normal used for bias
     //referenc: http://c0de517e.blogspot.com/2011/05/shadowmap-bias-notes.html
     float biasMin = 0.001f;
-    float biasMax = 0.03f;
+    float biasMax = 0.05f;
     float bias = mix(biasMax, biasMin, LoV);
     
     //we don't want vector from normal map as this is a geometric operation
