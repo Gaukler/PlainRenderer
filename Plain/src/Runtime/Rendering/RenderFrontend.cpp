@@ -53,7 +53,7 @@ void PingPongImageWrapper::init(const ImageDescription& desc) {
 void PingPongImageWrapper::switchImages() {
     const ImageHandle temp = m_pingPongImages.src;
     m_pingPongImages.src = m_pingPongImages.dst;
-    m_pingPongImages.dst = m_pingPongImages.src;
+    m_pingPongImages.dst = temp;
 }
 
 PingPongImages PingPongImageWrapper::getImages() const{
