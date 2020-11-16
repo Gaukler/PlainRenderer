@@ -42,8 +42,8 @@ void computeFrustumPoints(inout vec3[8] frustumPoints, float near, float far){
 
 //reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
 float computeCascadeSplit(float near, float far, int i){
-    return near * pow(far / near, i / float(cascadeCount));
-    //return near + ((far - near) * (i + 1) / float(cascadeCount)); //linear
+    //return near * pow(far / near, i / float(cascadeCount));
+    return near + ((far - near) * (i + 1) / float(cascadeCount)); //linear
 }
 
 //reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
