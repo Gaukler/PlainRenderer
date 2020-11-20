@@ -1,23 +1,6 @@
 #include "pch.h"
 #include "Noise.h"
 
-namespace VoidAndClusterFunctions {
-    std::array<int, 256> computeHistogramm(const std::vector<uint8_t>& array);
-    std::vector<bool> binarizeArray(const std::vector<uint8_t>& array, const float positivePercentage);
-
-    //search for biggest cluster or void
-    glm::ivec2 findBestCandidate(const std::vector<bool>& binaryPattern, const glm::ivec2& resolution, const bool searchForCluster);
-    
-    //set countMinority to true to score clusters, set to false to score voids
-    float voidClusterFilter(const glm::ivec2& coordinate, const std::vector<bool>& binaryPattern, const glm::ivec2& resolution, const bool countMinority);
-    float gaussianFilter(glm::ivec2 offset);
-
-    glm::ivec2 indexToCoordinate(const uint32_t index, const glm::ivec2& resolution);
-    uint32_t coordinateToIndex(const glm::ivec2& coordinate, const glm::ivec2& resolution);
-
-    std::vector<bool> createPrototypeBinaryPattern(const glm::ivec2& resolution);
-}
-
 std::vector<uint8_t> generateWhiteNoiseTexture(const glm::ivec2& resolution) {
     std::vector<uint8_t> noise;
     noise.resize(size_t(resolution.x) * size_t(resolution.y));
@@ -28,6 +11,25 @@ std::vector<uint8_t> generateWhiteNoiseTexture(const glm::ivec2& resolution) {
 }
 
 namespace VoidAndClusterFunctions {
+
+    std::array<int, 256> computeHistogramm(const std::vector<uint8_t>& array);
+    std::vector<bool> binarizeArray(const std::vector<uint8_t>& array, const float positivePercentage);
+
+    glm::ivec2 indexToCoordinate(const uint32_t index, const glm::ivec2& resolution);
+    uint32_t coordinateToIndex(const glm::ivec2& coordinate, const glm::ivec2& resolution);
+
+    glm::ivec2 calculateToroidalOffset(const glm::ivec2 a, const glm::ivec2& b, const glm::ivec2& resolution);
+    float gaussianFilter(const glm::ivec2& offset);
+
+    std::vector<float> calculateFilterLut(const std::vector<bool>& binaryPattern, const glm::ivec2& resolution);
+    std::vector<float> calculatePixelInfluence(const glm::ivec2& inputPosition, const glm::ivec2& resolution);
+    std::vector<float> addInfluenceVectors(const std::vector<float>& a, const std::vector<float>& b);
+    std::vector<float> subtractInfluenceVectors(const std::vector<float>& a, const std::vector<float>& b);
+    
+    size_t findBiggestVoid(const std::vector<float>& influence, const std::vector<bool>& binaryPattern);
+    size_t findTightestCluster(const std::vector<float>& influence, const std::vector<bool>& binaryPattern);
+
+    std::vector<bool> createPrototypeBinaryPattern(const glm::ivec2& resolution);
 
     std::array<int, 256> computeHistogramm(const std::vector<uint8_t>& array) {
         std::array<int, 256> histogramm = {};
@@ -61,67 +63,12 @@ namespace VoidAndClusterFunctions {
         return binaryArray;
     }
 
-    glm::ivec2 findBestCandidate(const std::vector<bool>& binaryPattern, const glm::ivec2& resolution, const bool searchForCluster){
-        glm::ivec2 candidateCoordinates = {};
-        float candidateScore = 0;
-
-        //iterate over every pixel
-        for (uint32_t y = 0; y < resolution.y; y++) {
-            for (uint32_t x = 0; x < resolution.x; x++) {
-                const glm::ivec2 coordinate = glm::ivec2(x, y);
-                const uint32_t index = coordinateToIndex(coordinate, resolution);
-                const bool isMinorityPixel = binaryPattern[index];
-                if (searchForCluster) {
-                    //minority pixels are potential clusters
-                    if (isMinorityPixel) {
-                        const float currentScore = voidClusterFilter(coordinate, binaryPattern, resolution, true);
-                        if (currentScore > candidateScore) {
-                            candidateCoordinates = coordinate;
-                            candidateScore = currentScore;
-                        }
-                    }
-                }
-                else {
-                    //majority pixels are potential voids
-                    if (!isMinorityPixel) {
-                        const float currentScore = voidClusterFilter(coordinate, binaryPattern, resolution, false);
-                        if (currentScore > candidateScore) {
-                            candidateCoordinates = coordinate;
-                            candidateScore = currentScore;
-                        }
-                    }
-                }
-            }
-        }
-        return candidateCoordinates;
-    }
-
-    float voidClusterFilter(const glm::ivec2& coordinate, const std::vector<bool>& binaryPattern, const glm::ivec2& resolution, const bool countMinority) {
-        float score = 0.f;
-        //iterate over offsets from pixel
-        for (int q = -resolution.x / 2; q < resolution.x / 2; q++) {
-            for (int p = -resolution.x / 2; p < resolution.x / 2; p++) {
-                //transform offset into absolute pixel position
-                const glm::ivec2 binaryPatternCo = glm::ivec2(
-                    (resolution.x + coordinate.x - p) % resolution.x,
-                    (resolution.x + coordinate.y - q) % resolution.x);
-
-                const uint32_t index = coordinateToIndex(binaryPatternCo, resolution);
-                //count pixel depending on if we count minority or majority pixels
-                const bool isMinorityPixel = binaryPattern[index];
-                const bool countPixel = countMinority ? isMinorityPixel : !isMinorityPixel;
-                if (countPixel) {
-                    score += gaussianFilter(glm::ivec2(p, q));
-                }
-            }
-        }
-        return score;
-    }
-
-    float gaussianFilter(glm::ivec2 offset) {
-        const float standardDeviation = 1.5f;
-        const float r = offset.x * offset.x + offset.y * offset.y;
-        return glm::exp(-r * r / (2 * standardDeviation * standardDeviation));
+    //sigma taken from: https://blog.demofox.org/2019/06/25/generating-blue-noise-textures-with-void-and-cluster/
+    float gaussianFilter(const glm::ivec2& offset) {
+        const float sigma = 1.9;
+        const float sigmaSquared = sigma * sigma;
+        const float rSquared = offset.x * offset.x + offset.y * offset.y;
+        return glm::exp(-rSquared / (2 * sigmaSquared));
     }
 
     glm::ivec2 indexToCoordinate(const uint32_t index, const glm::ivec2& resolution) {
@@ -132,96 +79,187 @@ namespace VoidAndClusterFunctions {
         return resolution.y * coordinate.y + coordinate.x;
     }
 
+    glm::ivec2 calculateToroidalOffset(const glm::ivec2 a, const glm::ivec2& b, const glm::ivec2& resolution) {
+        //minimize offset in all dimensions separately
+        glm::ivec2 result = abs(a - b);
+        result = glm::min(result, abs(a - resolution - b));
+        result = glm::min(result, abs(a + resolution - b));
+        return result;
+    }
+
+    //return a vector containing the influence of the current pixel on every pixel
+    std::vector<float> calculatePixelInfluence(const glm::ivec2& inputPosition, const glm::ivec2& resolution) {
+        const size_t pixelCount = size_t(resolution.x) * size_t(resolution.y);
+        std::vector<float> influence(pixelCount);
+
+        //iterate over every pixel
+        for (uint32_t y = 0; y < resolution.y; y++) {
+            for (uint32_t x = 0; x < resolution.x; x++) {
+                const glm::ivec2 currentPosition(x, y);
+                const size_t index = coordinateToIndex(currentPosition, resolution);
+                const glm::ivec2 toroidalOffset = calculateToroidalOffset(inputPosition, currentPosition, resolution);
+                influence[index] = gaussianFilter(toroidalOffset);
+            }
+        }
+        return influence;
+    }
+    
+    std::vector<float> addInfluenceVectors(const std::vector<float>& a, const std::vector<float>& b) {
+        assert(a.size() == b.size());
+        std::vector<float> result(a.size());
+        for (size_t i = 0; i < a.size(); i++) {
+            result[i] = a[i] + b[i];
+        }
+        return result;
+    }
+
+    //a - b
+    std::vector<float> subtractInfluenceVectors(const std::vector<float>& a, const std::vector<float>& b) {
+        assert(a.size() == b.size());
+        std::vector<float> result(a.size());
+        for (size_t i = 0; i < a.size(); i++) {
+            result[i] = a[i] - b[i];
+        }
+        return result;
+    }
+
+    std::vector<float> calculateFilterLut(const std::vector<bool>& binaryPattern, const glm::ivec2& resolution) {
+        const size_t pixelCount = size_t(resolution.x) * size_t(resolution.y);
+        std::vector<float> lut(pixelCount, 0);
+
+        //iterate over every pixel
+        for (int i = 0; i < binaryPattern.size(); i++) {
+            if (binaryPattern[i]) {
+                const glm::ivec2 position = indexToCoordinate(i, resolution);
+                const std::vector<float> influence = calculatePixelInfluence(position, resolution);
+                lut = addInfluenceVectors(lut, influence);
+            }
+        }
+        return lut;
+    }
+
+    size_t findBiggestVoid(const std::vector<float>& influence, const std::vector<bool>& binaryPattern) {
+        assert(influence.size() == binaryPattern.size());
+        float min = std::numeric_limits<float>::max();
+        size_t minIndex = 0;
+        for (size_t i = 0; i < influence.size(); i++) {
+            if (!binaryPattern[i] && influence[i] < min) {
+                min = influence[i];
+                minIndex = i;
+            }
+        }
+        return minIndex;
+    }
+    
+    size_t findTightestCluster(const std::vector<float>& influence, const std::vector<bool>& binaryPattern) {
+        assert(influence.size() == binaryPattern.size());
+        float max = std::numeric_limits<float>::min();
+        size_t maxIndex = 0;
+        for (size_t i = 0; i < influence.size(); i++) {
+            if (binaryPattern[i] && influence[i] > max) {
+                max = influence[i];
+                maxIndex = i;
+            }
+        }
+        return maxIndex;
+    }
+
     std::vector<bool> createPrototypeBinaryPattern(const glm::ivec2& resolution) {
         //create initial binary pattern by thresholding white noise
         const std::vector<uint8_t> whiteNoise = generateWhiteNoiseTexture(resolution);
-
+        
         const float binarizationTargetPercentage = 0.1f;
         std::vector<bool> binaryArray = binarizeArray(whiteNoise, binarizationTargetPercentage);
+        std::vector<float> lut = calculateFilterLut(binaryArray, resolution);
 
         //see figure 2 in "The void-and-cluster method for dither array generation"
-        //we now have a binary matrix with around 10 percent minority pixels which are set to true
-        //now we want to modify the binary pattern so it's more even
-        //to do this minority pixels in the biggest cluster are swapped with minority pixels in the biggest void
-        //we stop when it converges
+        //modify binary pattern so it's more even
+        //swap minority pixels in biggest cluster with majority pixels in biggest void
+        //stop when converging
         while (true) {
-            //search for biggest cluster
-            const glm::ivec2 biggestCluster = findBestCandidate(binaryArray, resolution, true);
+            //remove tightest pixel
+            const size_t removedPixelIndex = findTightestCluster(lut, binaryArray);
+            binaryArray[removedPixelIndex] = false;
+            
+            const glm::ivec2 removedPixelCoordinate = indexToCoordinate(removedPixelIndex, resolution);
+            std::vector<float> removedPixelInfluence = calculatePixelInfluence(removedPixelCoordinate, resolution);
+            lut = subtractInfluenceVectors(lut, removedPixelInfluence);
 
-            const uint32_t clusterIndex = coordinateToIndex(biggestCluster, resolution);
-            assert(binaryArray[clusterIndex] == true);
-
-            //remove cluster
-            binaryArray[clusterIndex] = false;
-
-            //search for biggest void
-            const glm::ivec2 biggestVoid = findBestCandidate(binaryArray, resolution, false);
+            const size_t addedPixelIndex = findBiggestVoid(lut, binaryArray);
 
             //stop when moving removing tightest cluster created biggest void
-            if (biggestCluster == biggestVoid) {
+            if (removedPixelIndex == addedPixelIndex) {
                 //restore removed pixel
-                binaryArray[clusterIndex] = true;
-                break;
+                binaryArray[removedPixelIndex] = true;
+                return binaryArray;
             }
 
-            const uint32_t voidIndex = coordinateToIndex(biggestVoid, resolution);
-            assert(binaryArray[voidIndex] == false);
-
             //remove void, effectively swapping pixels
-            binaryArray[voidIndex] = true;
+            binaryArray[addedPixelIndex] = true;
+            const glm::ivec2 addedPixelCoordinate = indexToCoordinate(addedPixelIndex, resolution);
+            const std::vector<float> addedPixelInfluence = calculatePixelInfluence(addedPixelCoordinate, resolution);
+            lut = addInfluenceVectors(lut, addedPixelInfluence);
         }
-        return binaryArray;
     }
 }
 
 //reference: "The void-and-cluster method for dither array generation"
+//reference: https://blog.demofox.org/2019/06/25/generating-blue-noise-textures-with-void-and-cluster/
 std::vector<uint8_t> generateBlueNoiseTexture(const glm::ivec2& resolution) {
     using namespace VoidAndClusterFunctions;
     const size_t pixelCount = size_t(resolution.x) * size_t(resolution.y);
 
     const std::vector<bool> prototypeBinaryPattern = createPrototypeBinaryPattern(resolution);    
+    const std::vector<float> initialLut = calculateFilterLut(prototypeBinaryPattern, resolution);
 
-    //remove minority pixels in tightest clusters and enter corresponding rank
     std::vector<bool> binaryPattern = prototypeBinaryPattern;
+    std::vector<float> lut = initialLut;
     std::vector<uint32_t> rankMatrix(pixelCount, 0);
 
-    //rank corresponds to number of minority pixels in binary pattern
-    int initialRank = 0;
+    int onesCount = 0;
     for (const auto isMinorityPixel : binaryPattern) {
-        initialRank += isMinorityPixel ? 1 : 0;
+        onesCount += isMinorityPixel ? 1 : 0;
     }
-    int rank = initialRank;
+    int rank = onesCount - 1;
 
-    while (rank > 0) {
-        const glm::vec2 tightestCluster = findBestCandidate(binaryPattern, resolution, true);
-        const uint32_t clusterIndex = coordinateToIndex(tightestCluster, resolution);
-        assert(binaryPattern[clusterIndex]);
-        binaryPattern[clusterIndex] = false;
-        rankMatrix[clusterIndex] = rank;
+    //remove tightest clusters and enter corresponding rank
+    while (rank >= 0) {
+        const size_t removedPixelIndex = findTightestCluster(lut, binaryPattern);
+        binaryPattern[removedPixelIndex] = false;
+        
+        const glm::ivec2 removedPixelCoordinates = indexToCoordinate(removedPixelIndex, resolution);
+        const std::vector<float> removedPixelInfluence = calculatePixelInfluence(removedPixelCoordinates, resolution);
+        lut = subtractInfluenceVectors(lut, removedPixelInfluence);
+    
+        rankMatrix[removedPixelIndex] = rank;
         rank--;
     }
 
-    //reset rank and binary pattern
-    rank = initialRank;
+    //reset rank, binary pattern and lut
+    rank = onesCount;
     binaryPattern = prototypeBinaryPattern;
+    lut = initialLut;
 
     //fill up biggest voids
     //in the paper this is split into two phases because the meaning of majority and minority changes after half
     //however this is only semantic and does not have to be implemented in the code
     while (rank < pixelCount) {
-        const glm::vec2 biggestVoid = findBestCandidate(binaryPattern, resolution, false);
-        const uint32_t voidIndex = coordinateToIndex(biggestVoid, resolution);
-        assert(!binaryPattern[voidIndex]);
-        binaryPattern[voidIndex] = true;
-        rankMatrix[voidIndex] = rank;
+        const size_t addedPixelIndex = findBiggestVoid(lut, binaryPattern);
+        binaryPattern[addedPixelIndex] = true;
+    
+        const glm::ivec2 addedPixelCoordinates = indexToCoordinate(addedPixelIndex, resolution);
+        const std::vector<float> addedPixelInfluence = calculatePixelInfluence(addedPixelCoordinates, resolution);
+        lut = addInfluenceVectors(lut, addedPixelInfluence);
+    
+        rankMatrix[addedPixelIndex] = rank;
         rank++;
     }
 
     //normalize rank matrix for use as blue noise
     std::vector<uint8_t> blueNoise(pixelCount);
-    float delta = (pixelCount - 1.f) / (255.f) / pixelCount;
     for (size_t i = 0; i < blueNoise.size(); i++) {
-        blueNoise[i] = (rankMatrix[i] + 0.5f) / delta;
+        blueNoise[i] = (rankMatrix[i] + 0.5f) / pixelCount * 255.f;
     }
+
     return blueNoise;
 }
