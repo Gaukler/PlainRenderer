@@ -29,7 +29,7 @@ namespace VoidAndClusterFunctions {
     size_t findBiggestVoid(const std::vector<float>& influence, const std::vector<bool>& binaryPattern);
     size_t findTightestCluster(const std::vector<float>& influence, const std::vector<bool>& binaryPattern);
 
-    std::vector<bool> createPrototypeBinaryPattern(const glm::ivec2& resolution);
+    std::vector<bool> createPrototypeBinaryPattern(const glm::ivec2& resolution, const uint32_t minorityPixelCount);
 
     std::array<int, 256> computeHistogramm(const std::vector<uint8_t>& array) {
         std::array<int, 256> histogramm = {};
@@ -164,12 +164,23 @@ namespace VoidAndClusterFunctions {
         return maxIndex;
     }
 
-    std::vector<bool> createPrototypeBinaryPattern(const glm::ivec2& resolution) {
+    std::vector<bool> createPrototypeBinaryPattern(const glm::ivec2& resolution, const uint32_t positivePixelCount) {
         //create initial binary pattern by thresholding white noise
         const std::vector<uint8_t> whiteNoise = generateWhiteNoiseTexture(resolution);
         
-        const float binarizationTargetPercentage = 0.1f;
+        const uint32_t pixelCount = resolution.x * resolution.y;
+        const float binarizationTargetPercentage = float(positivePixelCount) / pixelCount;
         std::vector<bool> binaryArray = binarizeArray(whiteNoise, binarizationTargetPercentage);
+
+        //remove true entries over target count as binarization may not be exact
+        uint32_t currentPositiveCount = 0;
+        for (auto& entry : binaryArray) {
+            currentPositiveCount += entry ? 1 : 0;
+            if (currentPositiveCount > positivePixelCount) {
+                entry = false;
+            }
+        }
+
         std::vector<float> lut = calculateFilterLut(binaryArray, resolution);
 
         //see figure 2 in "The void-and-cluster method for dither array generation"
@@ -209,7 +220,7 @@ std::vector<uint8_t> generateBlueNoiseTexture(const glm::ivec2& resolution) {
     using namespace VoidAndClusterFunctions;
     const size_t pixelCount = size_t(resolution.x) * size_t(resolution.y);
 
-    const std::vector<bool> prototypeBinaryPattern = createPrototypeBinaryPattern(resolution);    
+    const std::vector<bool> prototypeBinaryPattern = createPrototypeBinaryPattern(resolution, pixelCount * 0.1f);
     const std::vector<float> initialLut = calculateFilterLut(prototypeBinaryPattern, resolution);
 
     std::vector<bool> binaryPattern = prototypeBinaryPattern;
@@ -262,4 +273,29 @@ std::vector<uint8_t> generateBlueNoiseTexture(const glm::ivec2& resolution) {
     }
 
     return blueNoise;
+}
+
+std::vector<glm::vec2> generateBlueNoiseSampleSequence(const uint32_t count) {
+    //using void and cluster prototype creation function to create discrete sample points
+    const glm::ivec2 sampleMatrixResolution(64);
+    const std::vector<bool> sampleMatrix = VoidAndClusterFunctions::createPrototypeBinaryPattern(sampleMatrixResolution, count);
+
+    //turn into vector of coordinates
+    std::vector<glm::vec2> samples;
+    samples.reserve(count);
+    for (size_t i = 0; i < sampleMatrix.size(); i++) {
+        if (sampleMatrix[i]) {
+            const glm::ivec2 iUV = VoidAndClusterFunctions::indexToCoordinate(i, sampleMatrixResolution);
+            const glm::vec2 uv = glm::vec2(iUV) / glm::vec2(sampleMatrixResolution);
+            samples.push_back(uv);
+            if (samples.size() >= count) {
+                for (size_t j = i+1; j < sampleMatrix.size(); j++) {
+                    assert(!sampleMatrix[j]);
+                }
+                break;
+            }
+        }
+    }
+    assert(samples.size() == count);
+    return samples;
 }

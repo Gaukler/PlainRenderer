@@ -49,6 +49,7 @@ layout(set=1, binding = 7, std430) buffer lightStorageBuffer{
 layout(set=1, binding = 8, std430) buffer sunShadowInfo{
     vec4 cascadeSplits;
     mat4 lightMatrices[cascadeCount];
+	vec2 lightSpaceScale[4];
 };
 
 layout(set=1, binding = 9)  uniform texture2D shadowMapCascade0;
@@ -66,6 +67,28 @@ layout(set=1, binding = 14, std140) uniform occlusionData{
     float weight;
 };
 
+layout(set=1, binding = 15, std140) uniform shadowSampleBuffer{
+	vec2 shadowSample1;
+	vec2 shadowSample2;
+	vec2 shadowSample3;
+	vec2 shadowSample4;
+	vec2 shadowSample5;
+	vec2 shadowSample6;
+	vec2 shadowSample7;
+	vec2 shadowSample8;
+};
+
+vec2 shadowSamples[8] = {
+	shadowSample1,
+	shadowSample2,
+	shadowSample3,
+	shadowSample4,
+	shadowSample5,
+	shadowSample6,
+	shadowSample7,
+	shadowSample8
+};
+
 layout(set=2, binding = 0) uniform texture2D colorTexture;
 layout(set=2, binding = 1) uniform texture2D normalTexture;
 layout(set=2, binding = 2) uniform texture2D specularTexture;
@@ -76,33 +99,38 @@ layout(location = 2) in mat3 passTBN;
 
 layout(location = 0) out vec3 color;
 
-float shadowTest(texture2D shadowMap, vec2 uv, float actualDepth){
-    vec4 depthTexels = textureGather(sampler2D(shadowMap, g_sampler_nearestBlackBorder), uv, 0);
-    
-    vec4 tests;
-    tests.r = float(actualDepth >= depthTexels.r);
-    tests.g = float(actualDepth >= depthTexels.g);
-    tests.b = float(actualDepth >= depthTexels.b);
-    tests.a = float(actualDepth >= depthTexels.a);
-    
-    ivec2 shadowMapRes = textureSize(sampler2D(shadowMap, g_sampler_nearestBlackBorder), 0);
-    vec2 sampleImageCoordinates = vec2(shadowMapRes) * uv + 0.502f;
-    vec2 coordinatesFloored = floor(sampleImageCoordinates);
-    vec2 interpolation = sampleImageCoordinates - coordinatesFloored;
-    
-    //fixes rare NaNs on transparent geo
-    //TODO: proper fix
-    interpolation = clamp(interpolation, 0, 1);
-    
-	float interpolationLeft = mix(tests.b, tests.g, interpolation.y);
-    float interpolationRight  = mix(tests.a, tests.r, interpolation.y);
-    
-    float shadow = mix(interpolationRight, interpolationLeft, interpolation.x);
+//float shadowTestInterpolated(texture2D shadowMap, vec2 uv, float actualDepth){
+//    vec4 depthTexels = textureGather(sampler2D(shadowMap, g_sampler_nearestBlackBorder), uv, 0);
+//    
+//    vec4 tests;
+//    tests.r = float(actualDepth >= depthTexels.r);
+//    tests.g = float(actualDepth >= depthTexels.g);
+//    tests.b = float(actualDepth >= depthTexels.b);
+//    tests.a = float(actualDepth >= depthTexels.a);
+//    
+//    ivec2 shadowMapRes = textureSize(sampler2D(shadowMap, g_sampler_nearestBlackBorder), 0);
+//    vec2 sampleImageCoordinates = vec2(shadowMapRes) * uv + 0.502f;
+//    vec2 coordinatesFloored = floor(sampleImageCoordinates);
+//    vec2 interpolation = sampleImageCoordinates - coordinatesFloored;
+//    
+//    //fixes rare NaNs on transparent geo
+//    //TODO: proper fix
+//    interpolation = clamp(interpolation, 0, 1);
+//    
+//	float interpolationLeft = mix(tests.b, tests.g, interpolation.y);
+//    float interpolationRight  = mix(tests.a, tests.r, interpolation.y);
+//    
+//    float shadow = mix(interpolationRight, interpolationLeft, interpolation.x);
+//
+//    return shadow;
+//}
 
-    return shadow;
+float shadowTest(texture2D shadowMap, vec2 uv, float actualDepth){
+    float depthTexel = texture(sampler2D(shadowMap, g_sampler_nearestBlackBorder), uv, 0).r;
+	return float(actualDepth >= depthTexel);
 }
 
-float calcShadow(vec3 pos, float LoV, texture2D shadowMap, mat4 lightMatrix){
+float calcShadow(vec3 pos, float LoV, texture2D shadowMap, mat4 lightMatrix, int cascade){
     //normal used for bias
     //referenc: http://c0de517e.blogspot.com/2011/05/shadowmap-bias-notes.html
     float biasMin = 0.001f;
@@ -119,20 +147,25 @@ float calcShadow(vec3 pos, float LoV, texture2D shadowMap, mat4 lightMatrix){
 	float actualDepth = clamp(posLightSpace.z, 0.f, 1.f);
     
     vec2 texelSize = vec2(1.f) / textureSize(sampler2D(shadowMap, g_sampler_nearestBlackBorder), 0);
-    float radius = 1.f;
     
-    float shadow = 0;
-    shadow += shadowTest(shadowMap, posLightSpace.xy, actualDepth);
-    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2( 1,  1) * texelSize * radius, actualDepth);
-    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2( 1, -1) * texelSize * radius, actualDepth);
-    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2(-1,  1) * texelSize * radius, actualDepth);
-    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2(-1, -1) * texelSize * radius, actualDepth);
-    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2( 1,  0) * texelSize * radius, actualDepth);
-    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2(-1,  0) * texelSize * radius, actualDepth);
-    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2( 0,  1) * texelSize * radius, actualDepth);
-    shadow += shadowTest(shadowMap, posLightSpace.xy + vec2( 0, -1) * texelSize * radius, actualDepth);
-    
-    return shadow / 9.f;
+	float noise = texture(sampler2D(g_noiseTexture, g_sampler_linearRepeat), gl_FragCoord.xy / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0)).r;
+	noise *= 2 * pi;
+	mat2 R = {
+		vec2(cos(noise), -sin(noise)),
+		vec2(sin(noise), cos(noise))
+	};
+
+	float radius = 0.03; //world space
+	vec2 offsetScale = radius * lightSpaceScale[cascade];
+
+	float shadow = 0.f;
+	for(int i = 0; i < 8; i++){
+		vec2 offset = shadowSamples[i] * 2 - 1;
+		offset = R * offset;
+		offset *= offsetScale;
+		shadow += shadowTest(shadowMap, posLightSpace.xy + offset, actualDepth);
+	}
+	return shadow / 8.f;
 }
 
 //mathematical fit from: "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
@@ -211,16 +244,16 @@ void main(){
         cascadeIndex += int(pixelDistance >= cascadeSplits[cascade]);
     }
     if(cascadeIndex == 0){
-        sunShadow = calcShadow(passPos, LoV, shadowMapCascade0, lightMatrices[cascadeIndex]);
+        sunShadow = calcShadow(passPos, LoV, shadowMapCascade0, lightMatrices[cascadeIndex], 0);
     }
     else if(cascadeIndex == 1){
-        sunShadow = calcShadow(passPos, LoV, shadowMapCascade1, lightMatrices[cascadeIndex]);
+        sunShadow = calcShadow(passPos, LoV, shadowMapCascade1, lightMatrices[cascadeIndex], 1);
     }
     else if(cascadeIndex == 2){
-        sunShadow = calcShadow(passPos, LoV, shadowMapCascade2, lightMatrices[cascadeIndex]);
+        sunShadow = calcShadow(passPos, LoV, shadowMapCascade2, lightMatrices[cascadeIndex], 2);
     }
     else if(cascadeIndex == 3){
-        sunShadow = calcShadow(passPos, LoV, shadowMapCascade3, lightMatrices[cascadeIndex]);
+        sunShadow = calcShadow(passPos, LoV, shadowMapCascade3, lightMatrices[cascadeIndex], 3);
     }
 	vec3 directLighting = max(dot(N, L), 0.f) * sunShadow * lightBuffer.sunColor;
 

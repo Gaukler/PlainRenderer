@@ -11,6 +11,7 @@ layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 layout(set=1, binding = 0, std430) buffer sunShadowInfo{
     vec4 cascadeSplits;
     mat4 lightMatrix[4];
+	vec2 lightSpaceScale[4];
 };
 
 layout(set=1, binding = 1, rg32f) uniform image2D depthMinMaxLowestMip;
@@ -115,5 +116,6 @@ void main(){
         P[3][3] = 1.f;
         
         lightMatrix[i] = coordinateSystemCorrection * P * V;
+		lightSpaceScale[i] = scale.xy;
     }
 }

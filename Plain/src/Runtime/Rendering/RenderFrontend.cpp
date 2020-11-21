@@ -49,6 +49,8 @@ const uint32_t noiseTextureCount = 4;
 const uint32_t noiseTextureWidth = 32;
 const uint32_t noiseTextureHeight = 32;
 
+const uint32_t shadowSampleCount = 8;
+
 //bindings of global shader uniforms
 const uint32_t globalUniformBufferBinding               = 0;
 const uint32_t globalSamplerAnisotropicRepeatBinding    = 1;
@@ -819,13 +821,14 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
 
     const ImageResource occlusionVolumeResource(m_skyOcclusionVolume, 0, 13);
     const UniformBufferResource skyOcclusionInfoBuffer(m_skyOcclusionDataBuffer, 14);
+    const UniformBufferResource shadowSampleBufferResource(m_shadowSampleBuffer, 15);
 
     RenderPassExecution mainPassExecution;
     mainPassExecution.handle = m_mainPass;
     mainPassExecution.framebuffer = m_sceneFramebuffer;
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
     mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource };
-    mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
+    mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer, shadowSampleBufferResource };
 
     //add shadow map cascade resources
     for (uint32_t i = 0; i < shadowCascadeCount; i++) {
@@ -1791,7 +1794,8 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         StorageBufferDescription desc;
         const size_t splitSize = sizeof(glm::vec4);
         const size_t lightMatrixSize = sizeof(glm::mat4) * shadowCascadeCount;
-        desc.size = splitSize + lightMatrixSize;
+        const size_t scaleInfoSize = sizeof(glm::vec2) * shadowCascadeCount;
+        desc.size = splitSize + lightMatrixSize + scaleInfoSize;
         m_sunShadowInfoBuffer = gRenderBackend.createStorageBuffer(desc);
     }
     //sky shadow info buffer
@@ -1811,6 +1815,15 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         UniformBufferDescription desc;
         desc.size = sizeof(m_globalShaderInfo);
         m_globalUniformBuffer = gRenderBackend.createUniformBuffer(desc);
+    }
+    //shadow samples
+    {
+        const std::vector<glm::vec2> samples = generateBlueNoiseSampleSequence(shadowSampleCount);
+
+        UniformBufferDescription desc;
+        desc.size = sizeof(glm::vec2) * shadowSampleCount;
+        desc.initialData = (void*)samples.data();
+        m_shadowSampleBuffer = gRenderBackend.createUniformBuffer(desc);
     }
 }
 
