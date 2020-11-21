@@ -188,6 +188,8 @@ void RenderFrontend::setup(GLFWwindow* window) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, resizeCallback);
 
+    setupGlobalShaderInfo();
+
     m_defaultTextures = createDefaultTextures();
     initSamplers();
     initImages();
@@ -197,7 +199,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     initRenderpasses(histogramSettings);
     initFramebuffers();
     initMeshs();
-    
+
     gRenderBackend.newFrame();
     computeBRDFLut();
     gRenderBackend.renderFrame(false);
@@ -258,13 +260,16 @@ void RenderFrontend::prepareNewFrame() {
     }
 
     gRenderBackend.updateShaderCode();
-    gRenderBackend.newFrame();
-
-    //make sure that UI changes of render config can be incorporated into this frame
-    drawUi();
+    gRenderBackend.newFrame();    
 
     prepareRenderpasses();
     gRenderBackend.startDrawcallRecording();
+}
+
+void RenderFrontend::setupGlobalShaderInfo() {
+    ShaderLayout globalLayout;
+    globalLayout.uniformBufferBindings.push_back(0);
+    gRenderBackend.setGlobalDescriptorSetLayout(globalLayout);
 }
 
 void RenderFrontend::prepareRenderpasses(){
@@ -440,6 +445,13 @@ void RenderFrontend::addStaticMeshes(const std::vector<MeshBinary>& meshData, co
     gRenderBackend.updateDynamicMeshes(debugMeshes, positionsPerMesh, indicesPerMesh);
 }
 
+void RenderFrontend::prepareForDrawcalls() {
+    drawUi();
+    //global shader info must be updated before drawcalls, else they would be invalidated by descriptor set update
+    //cant update at frame start as camera data must be set before updaing global info
+    updateGlobalShaderInfo();
+}
+
 void RenderFrontend::renderStaticMeshes() {
 
     //if we prepare render commands without consuming them we will save up a huge amount of commands
@@ -540,7 +552,6 @@ void RenderFrontend::renderFrame() {
     if (m_minimized) {
         return;
     }
-    updateGlobalShaderInfo();
     issueSkyDrawcalls();
     gRenderBackend.renderFrame(true);
 
@@ -1327,7 +1338,11 @@ void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.cameraAspectRatio = m_camera.intrinsic.aspectRatio;
     m_globalShaderInfo.screenResolution = glm::ivec2(m_screenWidth, m_screenHeight);
 
-    gRenderBackend.setGlobalShaderInfo(m_globalShaderInfo);
+    gRenderBackend.setUniformBufferData(m_globalUniformBuffer, &m_globalShaderInfo, sizeof(m_globalShaderInfo));
+
+    RenderPassResources globalResources;
+    globalResources.uniformBuffers = { UniformBufferResource(m_globalUniformBuffer, 0) };
+    gRenderBackend.setGlobalDescriptorSetResources(globalResources);
 }
 
 void RenderFrontend::initImages() {
@@ -1834,6 +1849,12 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         UniformBufferDescription desc;
         desc.size = sizeof(AtmosphereSettings);
         m_atmosphereSettingsBuffer = gRenderBackend.createUniformBuffer(desc);
+    }
+    //global uniform buffer
+    {
+        UniformBufferDescription desc;
+        desc.size = sizeof(m_globalShaderInfo);
+        m_globalUniformBuffer = gRenderBackend.createUniformBuffer(desc);
     }
 }
 

@@ -149,8 +149,12 @@ public:
     void drawDynamicMeshes(const std::vector<DynamicMeshHandle> meshHandles, 
         const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle);
 
-    void setGlobalShaderInfo(const GlobalShaderInfo& info);
     void setUniformBufferData(const UniformBufferHandle buffer, const void* data, const size_t size);
+
+    //must be set once before creating renderpasses
+    void setGlobalDescriptorSetLayout(const ShaderLayout& layout);
+
+    void setGlobalDescriptorSetResources(const RenderPassResources& resources);
 
     //set path and specialisation constants, forces recompile and pipeline recreation
     void updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc);
@@ -294,8 +298,6 @@ private:
     */
     std::vector<ImageHandle>    m_freeImageHandles;
 
-    UniformBufferHandle m_globalShaderInfoBuffer;
-
     //staging buffer
     VkDeviceSize m_stagingBufferSize = 1048576; //1mb
     Buffer m_stagingBuffer;
@@ -360,6 +362,7 @@ private:
     =========
     */
     VkDescriptorSet m_globalDescriptorSet = VK_NULL_HANDLE;     
+    VkDescriptorSetLayout m_globalDescriptorSetLayout = VK_NULL_HANDLE;    //contains global info, always bound to set 0
 
     //discriptor pools are added as existing ones run out
     std::vector<DescriptorPool> m_descriptorPools;
@@ -383,9 +386,7 @@ private:
         128  //sampler
     };    
 
-    VkDescriptorSetLayout m_globalDescriptorSetLayout = VK_NULL_HANDLE;    //contains global info, always bound to set 0
-
-    DescriptorPoolAllocationSizes descriptorSetAllocationSizeFromShaderReflection(const ShaderReflection& reflection);
+    DescriptorPoolAllocationSizes descriptorSetAllocationSizeFromShaderLayout(const ShaderLayout& layout);
 
     //creates new descriptor pool if needed
     //currently now way to free descriptor set

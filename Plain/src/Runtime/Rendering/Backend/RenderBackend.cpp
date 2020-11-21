@@ -186,37 +186,11 @@ void RenderBackend::setup(GLFWwindow* window) {
             stagingBufferUsageFlags, 
             stagingBufferMemoryFlags);
     }
-    
-    //create common descriptor set layouts
-    ShaderLayout globalLayout;
-    globalLayout.uniformBufferBindings.push_back(0);
-    m_globalDescriptorSetLayout = createDescriptorSetLayout(globalLayout);
 
     m_commandBuffers[0] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
     m_commandBuffers[1] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
 
     initMaterialDescriptorSetLayout();
-
-    //create global storage buffer    
-    std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphicsQueueIndex, vkContext.queueFamilies.computeQueueIndex };
-    GlobalShaderInfo defaultInfo;
-    UniformBufferDescription globalShaderBufferDesc;
-    globalShaderBufferDesc.size = sizeof(GlobalShaderInfo);
-    globalShaderBufferDesc.initialData = &defaultInfo;
-    m_globalShaderInfoBuffer = createUniformBuffer(globalShaderBufferDesc);
-
-    //create global info descriptor set    
-    {
-        RenderPassResources globalResources;
-        UniformBufferResource globalBufferResource(m_globalShaderInfoBuffer, 0);
-        globalResources.uniformBuffers.push_back(globalBufferResource);
-
-        DescriptorPoolAllocationSizes globalDescriptorSetSizes;
-        globalDescriptorSetSizes.uniformBuffer = 1;
-
-        m_globalDescriptorSet = allocateDescriptorSet(m_globalDescriptorSetLayout, globalDescriptorSetSizes);
-        updateDescriptorSet(m_globalDescriptorSet, globalResources);
-    }
 
     m_materialSamplers = createMaterialSamplers();
 
@@ -649,13 +623,21 @@ void RenderBackend::drawDynamicMeshes(
     }
 }
 
-void RenderBackend::setGlobalShaderInfo(const GlobalShaderInfo& info) {
-    const auto& buffer = m_uniformBuffers[m_globalShaderInfoBuffer.index];
-    fillBuffer(buffer, &info, sizeof(info));
-}
-
 void RenderBackend::setUniformBufferData(const UniformBufferHandle buffer, const void* data, const size_t size) {
     fillBuffer(m_uniformBuffers[buffer.index], data, size);
+}
+
+void RenderBackend::setGlobalDescriptorSetLayout(const ShaderLayout& layout) {
+    if (m_globalDescriptorSetLayout != VK_NULL_HANDLE) {
+        std::cout << "Error: global descriptor set layout must only be set once\n";
+    }
+    m_globalDescriptorSetLayout = createDescriptorSetLayout(layout);
+    const DescriptorPoolAllocationSizes setSizes = descriptorSetAllocationSizeFromShaderLayout(layout);
+    m_globalDescriptorSet = allocateDescriptorSet(m_globalDescriptorSetLayout, setSizes);
+}
+
+void RenderBackend::setGlobalDescriptorSetResources(const RenderPassResources& resources) {
+    updateDescriptorSet(m_globalDescriptorSet, resources);
 }
 
 void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc) {
@@ -2671,15 +2653,14 @@ void RenderBackend::createDescriptorPool() {
     m_descriptorPools.push_back(pool);
 }
 
-DescriptorPoolAllocationSizes RenderBackend::descriptorSetAllocationSizeFromShaderReflection(const ShaderReflection& reflection) {
+DescriptorPoolAllocationSizes RenderBackend::descriptorSetAllocationSizeFromShaderLayout(const ShaderLayout& layout) {
     DescriptorPoolAllocationSizes sizes;
     sizes.setCount = 1;
-    const auto& shaderLayout = reflection.shaderLayout;
-    sizes.imageSampled  = (uint32_t)shaderLayout.sampledImageBindings.size();
-    sizes.imageStorage  = (uint32_t)shaderLayout.storageImageBindings.size();
-    sizes.storageBuffer = (uint32_t)shaderLayout.storageBufferBindings.size();
-    sizes.uniformBuffer = (uint32_t)shaderLayout.uniformBufferBindings.size();
-    sizes.sampler       = (uint32_t)shaderLayout.samplerBindings.size();
+    sizes.imageSampled  = (uint32_t)layout.sampledImageBindings.size();
+    sizes.imageStorage  = (uint32_t)layout.storageImageBindings.size();
+    sizes.storageBuffer = (uint32_t)layout.storageBufferBindings.size();
+    sizes.uniformBuffer = (uint32_t)layout.uniformBufferBindings.size();
+    sizes.sampler       = (uint32_t)layout.samplerBindings.size();
     return sizes;
 }
 
@@ -2953,7 +2934,7 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     /*
     descriptor set
     */
-    const auto setSizes = descriptorSetAllocationSizeFromShaderReflection(reflection);
+    const auto setSizes = descriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
     pass.descriptorSet = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
 
     return pass;
@@ -3173,7 +3154,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         }
     }
 
-    const auto setSizes = descriptorSetAllocationSizeFromShaderReflection(reflection);
+    const auto setSizes = descriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
     pass.descriptorSet = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
 
     return pass;

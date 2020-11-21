@@ -114,6 +114,11 @@ public:
     void setCameraExtrinsic(const CameraExtrinsic& extrinsic);
     //static meshes are used for baking and thus cannot be moved
     void addStaticMeshes(const std::vector<MeshBinary>& meshData, const std::vector<glm::mat4>& transforms);
+
+    //before call camera settings and such must be set
+    //after call drawcalls can be made
+    void prepareForDrawcalls();
+
     void renderStaticMeshes();
     void renderFrame();
 
@@ -122,6 +127,8 @@ public:
     void bakeSkyOcclusion();
 
 private:
+
+    void setupGlobalShaderInfo();
 
     //declare render passes to backend
     //this has to be done before meshes drawcalls can be issued
@@ -284,6 +291,7 @@ private:
     StorageBufferHandle m_sunShadowInfoBuffer;  //light matrices and cascade splits
     StorageBufferHandle m_depthPyramidSyncBuffer;
 
+    UniformBufferHandle m_globalUniformBuffer;
     UniformBufferHandle m_skyOcclusionDataBuffer;
     UniformBufferHandle m_atmosphereSettingsBuffer;
 

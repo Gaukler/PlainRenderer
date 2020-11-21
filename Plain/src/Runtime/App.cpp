@@ -26,5 +26,6 @@ void App::setup(const std::string& sceneFilePath) {
 void App::runUpdate() {
     m_cameraController.update();
     gRenderFrontend.setCameraExtrinsic(m_cameraController.getExtrinsic());    
+    gRenderFrontend.prepareForDrawcalls();
     gRenderFrontend.renderStaticMeshes();
 }
