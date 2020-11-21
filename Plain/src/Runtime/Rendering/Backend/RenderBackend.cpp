@@ -1345,7 +1345,7 @@ void RenderBackend::prepareRenderPasses() {
                 }
             }
 
-            if (image.currentlyWriting | needsLayoutTransition) {
+            if (image.currentlyWriting || needsLayoutTransition) {
                 const auto& layoutBarriers = createImageBarriers(image, requiredLayout, VK_ACCESS_SHADER_READ_BIT, 
                     0, (uint32_t)image.viewPerMip.size());
                 barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
@@ -1369,7 +1369,7 @@ void RenderBackend::prepareRenderPasses() {
                     }
                 }
 
-                if (image.currentlyWriting | needsLayoutTransition) {
+                if (image.currentlyWriting || needsLayoutTransition) {
                     const VkAccessFlags access = isDepthFormat(image.format) ?
                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
