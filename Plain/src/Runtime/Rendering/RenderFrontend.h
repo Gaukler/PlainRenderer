@@ -255,6 +255,9 @@ private:
     ImageHandle m_skyOcclusionVolume;
     ImageHandle m_sceneLuminance;
 
+    std::vector<ImageHandle> m_noiseTextures;
+    uint32_t m_noiseTextureIndex = 0;
+
     PingPongImageWrapper m_historyBuffers;
     ColorBufferWrapper m_colorBuffers;
 

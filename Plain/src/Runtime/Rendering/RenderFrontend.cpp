@@ -16,6 +16,7 @@
 #include "Culling.h"
 #include "Utilities/GeneralUtils.h"
 #include "Common/MeshProcessing.h"
+#include "Noise.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -44,6 +45,19 @@ const uint32_t  skyOcclusionVolumeMaxRes = 256;
 const float     skyOcclusionTargetDensity = 0.5f; //meter/texel
 const uint32_t  skyOcclusionSampleCount = 1024;
 
+const uint32_t noiseTextureCount = 4;
+const uint32_t noiseTextureWidth = 32;
+const uint32_t noiseTextureHeight = 32;
+
+//bindings of global shader uniforms
+const uint32_t globalUniformBufferBinding               = 0;
+const uint32_t globalSamplerAnisotropicRepeatBinding    = 1;
+const uint32_t globalSamplerNearestBlackBorderBinding   = 2;
+const uint32_t globalSamplerLinearRepeatBinding         = 3;
+const uint32_t globalSamplerLinearClampBinding          = 4;
+const uint32_t globalSamplerNearestClampBinding         = 5;
+const uint32_t globalSamplerLinearWhiteBorderBinding    = 6;
+const uint32_t globalNoiseTextureBindingBinding         = 7;
 
 void PingPongImageWrapper::init(const ImageDescription& desc) {
     m_pingPongImages.src = gRenderBackend.createImage(desc);
@@ -268,13 +282,16 @@ void RenderFrontend::prepareNewFrame() {
 
 void RenderFrontend::setupGlobalShaderInfo() {
     ShaderLayout globalLayout;
-    globalLayout.uniformBufferBindings.push_back(0);
-    globalLayout.samplerBindings.push_back(1);
-    globalLayout.samplerBindings.push_back(2);
-    globalLayout.samplerBindings.push_back(3);
-    globalLayout.samplerBindings.push_back(4);
-    globalLayout.samplerBindings.push_back(5);
-    globalLayout.samplerBindings.push_back(6);
+    globalLayout.uniformBufferBindings.push_back(globalUniformBufferBinding);
+    globalLayout.sampledImageBindings.push_back(globalNoiseTextureBindingBinding);
+
+    globalLayout.samplerBindings.push_back(globalSamplerAnisotropicRepeatBinding);
+    globalLayout.samplerBindings.push_back(globalSamplerNearestBlackBorderBinding);
+    globalLayout.samplerBindings.push_back(globalSamplerLinearRepeatBinding);
+    globalLayout.samplerBindings.push_back(globalSamplerLinearClampBinding);
+    globalLayout.samplerBindings.push_back(globalSamplerNearestClampBinding);
+    globalLayout.samplerBindings.push_back(globalSamplerLinearWhiteBorderBinding);
+    
     gRenderBackend.setGlobalDescriptorSetLayout(globalLayout);
 }
 
@@ -1308,20 +1325,27 @@ void RenderFrontend::updateGlobalShaderInfo() {
 
     gRenderBackend.setUniformBufferData(m_globalUniformBuffer, &m_globalShaderInfo, sizeof(m_globalShaderInfo));
 
+    m_noiseTextureIndex++;
+    m_noiseTextureIndex = m_noiseTextureIndex % m_noiseTextures.size();
+
     RenderPassResources globalResources;
-    globalResources.uniformBuffers = { UniformBufferResource(m_globalUniformBuffer, 0) };
+    globalResources.uniformBuffers = { UniformBufferResource(m_globalUniformBuffer, globalUniformBufferBinding) };
     globalResources.samplers = { 
-        SamplerResource(m_sampler_anisotropicRepeat, 1),
-        SamplerResource(m_sampler_nearestBlackBorder, 2),
-        SamplerResource(m_sampler_linearRepeat, 3),
-        SamplerResource(m_sampler_linearClamp, 4),
-        SamplerResource(m_sampler_nearestClamp, 5),
-        SamplerResource(m_sampler_linearWhiteBorder, 6)
+        SamplerResource(m_sampler_anisotropicRepeat,    globalSamplerAnisotropicRepeatBinding),
+        SamplerResource(m_sampler_nearestBlackBorder,   globalSamplerNearestBlackBorderBinding),
+        SamplerResource(m_sampler_linearRepeat,         globalSamplerLinearRepeatBinding),
+        SamplerResource(m_sampler_linearClamp,          globalSamplerLinearClampBinding),
+        SamplerResource(m_sampler_nearestClamp,         globalSamplerNearestClampBinding),
+        SamplerResource(m_sampler_linearWhiteBorder,    globalSamplerLinearWhiteBorderBinding)
     };
+    globalResources.sampledImages = { ImageResource(m_noiseTextures[m_noiseTextureIndex], 0, globalNoiseTextureBindingBinding) };
     gRenderBackend.setGlobalDescriptorSetResources(globalResources);
 }
 
 void RenderFrontend::initImages() {
+    //sky occlusion volume is created later
+    //its resolution is dependent on scene size in order to fit desired texel density
+
     //scene images
     {
         ImageDescription desc;
@@ -1562,9 +1586,6 @@ void RenderFrontend::initImages() {
 
         m_skyShadowMap = gRenderBackend.createImage(desc);
     }
-    //sky occlusion volume is created later
-    //its resolution is dependent on scene size in order to fit desired texel density
-
     //scene luminance
     {
         ImageDescription desc;
@@ -1579,6 +1600,21 @@ void RenderFrontend::initImages() {
         desc.autoCreateMips = false;
 
         m_sceneLuminance = gRenderBackend.createImage(desc);
+    }
+    //noise textures
+    for (int i = 0; i < noiseTextureCount; i++) {
+        ImageDescription desc;
+        desc.width = noiseTextureWidth;
+        desc.height = noiseTextureHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::R8;
+        desc.usageFlags = ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.autoCreateMips = false;
+        desc.initialData = generateBlueNoiseTexture(glm::ivec2(noiseTextureWidth, noiseTextureHeight));
+
+        m_noiseTextures.push_back(gRenderBackend.createImage(desc));
     }
 }
 
