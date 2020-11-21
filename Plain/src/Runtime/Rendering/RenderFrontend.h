@@ -262,16 +262,12 @@ private:
 
     std::vector<ImageHandle> m_shadowMaps;
 
-    SamplerHandle m_shadowSampler;
-    SamplerHandle m_hdriSampler;
-    SamplerHandle m_cubeSampler;
-    SamplerHandle m_skySamplerWithMips;
-    SamplerHandle m_lutSampler;
-    SamplerHandle m_defaultTexelSampler;
-    SamplerHandle m_clampedDepthSampler;
-    SamplerHandle m_colorSamplerWrap;
-    SamplerHandle m_colorSamplerClamp;
-    SamplerHandle m_skyOcclusionSampler;
+    SamplerHandle m_sampler_anisotropicRepeat;
+    SamplerHandle m_sampler_nearestBlackBorder;
+    SamplerHandle m_sampler_linearRepeat;
+    SamplerHandle m_sampler_linearClamp;
+    SamplerHandle m_sampler_nearestClamp;
+    SamplerHandle m_sampler_linearWhiteBorder;
 
     FramebufferHandle m_sceneFramebuffer;
     FramebufferHandle m_shadowCascadeFramebuffers[4];

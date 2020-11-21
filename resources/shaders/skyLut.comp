@@ -11,7 +11,6 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(set=1, binding = 0, r11f_g11f_b10f) uniform image2D skyLut;
 layout(set=1, binding = 1) uniform texture2D transmissionLut;
 layout(set=1, binding = 2) uniform texture2D multiscatterLut;
-layout(set=1, binding = 3) uniform sampler skySampler;
 
 layout(set=1, binding = 4, std140) uniform atmosphereSettingsBuffer{
     AtmosphereSettings atmosphereSettings;
@@ -94,7 +93,7 @@ void main(){
          
         //light arriving at point
         vec2 lutUV = computeLutUV(currentHeight, atmosphereSettings.atmosphereHeight, up, L);
-        vec3 transmission = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
+        vec3 transmission = texture(sampler2D(transmissionLut, g_sampler_linearClamp), lutUV).rgb;
         vec3 incomingLight = lightBuffer.sunStrengthExposed * transmission;
         incomingLight *= shadowRay(currentPosition, L, earthCenter, atmosphereSettings.earthRadius);
                 
@@ -110,7 +109,7 @@ void main(){
          
         absorption *= exp(-coefficients.extinction * stepSize); 
         
-        vec3 multiscattering = texture(sampler2D(multiscatterLut, skySampler), lutUV).rgb;
+        vec3 multiscattering = texture(sampler2D(multiscatterLut, g_sampler_linearClamp), lutUV).rgb;
         color += multiscattering * incomingLight * (coefficients.scatterRayleigh + coefficients.scatterMie) * stepSize * transmission;
     }   
     imageStore(skyLut, uv, vec4(color, 0.f));

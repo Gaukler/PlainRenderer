@@ -197,9 +197,6 @@ private:
     VkDescriptorSetLayout m_materialDescriporSetLayout = VK_NULL_HANDLE;
     void initMaterialDescriptorSetLayout();
 
-    MaterialSamplers m_materialSamplers;
-    MaterialSamplers createMaterialSamplers();
-
     //calculates pass order, updates descritor sets, creates barriers    
     void prepareRenderPasses();
 

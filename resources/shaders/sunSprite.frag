@@ -11,7 +11,6 @@ layout(set=1, binding = 0, std430) buffer lightStorageBuffer{
 }; 
 
 layout(set=1, binding = 1) uniform texture2D transmissionLut;
-layout(set=1, binding = 2) uniform sampler skySampler;
 
 layout(location = 0) in vec2 passQuadPos;
 layout(location = 1) in vec3 passWorldPos;
@@ -36,6 +35,6 @@ void main(){
     float bias = 0.002; //corresponds to bias in skyLut.comp
     vec3 V = normalize(passWorldPos + vec3(0, bias, 0));
     vec2 lutUV = computeLutUV(0, 100, vec3(0, -1, 0), V);
-    vec3 transmission = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
+    vec3 transmission = texture(sampler2D(transmissionLut, g_sampler_linearClamp), lutUV).rgb;
     color = lightBuffer.sunStrengthExposed * transmission * limbDarkening(distanceFromCenter);
 }

@@ -8,13 +8,12 @@ layout(location = 0) in vec2 passUV;
 layout(location = 1) in vec4 passPos;
 layout(location = 2) in vec4 passPosPrevious;
 
-layout(set=2, binding = 0) uniform sampler colorSampler;
-layout(set=2, binding = 3) uniform texture2D colorTexture;
+layout(set=2, binding = 0) uniform texture2D colorTexture;
 
 layout(location = 0) out vec2 motion;
 
 void main(){
-    float alpha = texture(sampler2D(colorTexture, colorSampler), passUV).a;
+    float alpha = texture(sampler2D(colorTexture, g_sampler_anisotropicRepeat), passUV).a;
     if(alpha < 0.5f){
         discard;
     }

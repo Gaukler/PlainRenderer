@@ -19,4 +19,11 @@ layout(set=0, binding = 0, std140) uniform global{
 	bool g_cameraCut;
 };
 
+layout(set=0, binding = 1) uniform sampler g_sampler_anisotropicRepeat;
+layout(set=0, binding = 2) uniform sampler g_sampler_nearestBlackBorder;
+layout(set=0, binding = 3) uniform sampler g_sampler_linearRepeat;
+layout(set=0, binding = 4) uniform sampler g_sampler_linearClamp;
+layout(set=0, binding = 5) uniform sampler g_sampler_nearestClamp;
+layout(set=0, binding = 6) uniform sampler g_sampler_linearWhiteBorder;
+
 float pi = 3.1415926535f;

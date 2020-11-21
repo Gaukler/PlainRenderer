@@ -12,7 +12,6 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 0, r11f_g11f_b10f)	uniform imageCube	cubeOut;
 layout(set=1, binding = 1) uniform texture2D	skyLut;
-layout(set=1, binding = 2) uniform sampler 	    skySampler;
 
 //prefiltering by using mips does not work for the sky
 //as the sky lut is already very low resolution color and brightness starts to deviate quickly on lower mips
@@ -42,7 +41,7 @@ void main(){
         //only allow samples in upper hemisphere
         if(NoL > 0.f){                
             vec2 skyUV = toSkyLut(sampleDirection);
-            vec3 sampleColor = textureLod(sampler2D(skyLut, skySampler), skyUV, 0).rgb;
+            vec3 sampleColor = textureLod(sampler2D(skyLut, g_sampler_linearRepeat), skyUV, 0).rgb;
             color += sampleColor;
             samplesTaken += 1.f;
         }

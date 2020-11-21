@@ -31,7 +31,6 @@ layout(set=1, binding = 9, rg32f) uniform image2D pyramidMip9;
 layout(set=1, binding = 10, rg32f) uniform image2D pyramidMip10;
 
 layout(set=1, binding = 13) uniform texture2D    depthBuffer;
-layout(set=1, binding = 14) uniform sampler      depthSampler;
 
 //texture access for sampling
 layout(set=1, binding = 15) uniform texture2D pyramidTexture;
@@ -63,12 +62,12 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
     for(int texel = 0; texel < 4; texel++){
         vec2 uv = upperLeftUV + offsets[texel] * texelSize;
         if(fromDepthBuffer){
-            float depthTexel = textureLod(sampler2D(depthBuffer, depthSampler), uv, srcMipLevel).r;
+            float depthTexel = textureLod(sampler2D(depthBuffer, g_sampler_nearestClamp), uv, srcMipLevel).r;
             depthMin = min(depthMin, depthTexel + float(depthTexel == 0.f));
             depthMax = max(depthMax, depthTexel);
         }
         else{
-            vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, depthSampler), uv, srcMipLevel).rg;
+            vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, g_sampler_nearestClamp), uv, srcMipLevel).rg;
             depthMin = min(depthMin, previousMinMax.r + float(previousMinMax.g == 0.f));
             depthMax = max(depthMax, previousMinMax.g);
         }
@@ -79,12 +78,12 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
         for(int texel = 0; texel < 2; texel++){
             vec2 uv = upperLeftUV + extraRowOffsets[texel] * texelSize;
             if(fromDepthBuffer){
-                float depthTexel = textureLod(sampler2D(depthBuffer, depthSampler), uv, srcMipLevel).r;
+                float depthTexel = textureLod(sampler2D(depthBuffer, g_sampler_nearestClamp), uv, srcMipLevel).r;
                 depthMin = min(depthMin, depthTexel + float(depthTexel == 0.f));
                 depthMax = max(depthMax, depthTexel);
             }
             else{
-                vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, depthSampler), uv, srcMipLevel).rg;
+                vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, g_sampler_nearestClamp), uv, srcMipLevel).rg;
                 depthMin = min(depthMin, previousMinMax.r + float(previousMinMax.g == 0.f));
                 depthMax = max(depthMax, previousMinMax.g);
             }
@@ -96,12 +95,12 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
         for(int texel = 0; texel < 2; texel++){
             vec2 uv = upperLeftUV + extraColumnOffsets[texel] * texelSize;
             if(fromDepthBuffer){
-                float depthTexel = textureLod(sampler2D(depthBuffer, depthSampler), uv, srcMipLevel).r;
+                float depthTexel = textureLod(sampler2D(depthBuffer, g_sampler_nearestClamp), uv, srcMipLevel).r;
                 depthMin = min(depthMin, depthTexel + float(depthTexel == 0.f));
                 depthMax = max(depthMax, depthTexel);
             }
             else{
-                vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, depthSampler), uv, srcMipLevel).rg;
+                vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, g_sampler_nearestClamp), uv, srcMipLevel).rg;
                 depthMin = min(depthMin, previousMinMax.r + float(previousMinMax.g == 0.f));
                 depthMax = max(depthMax, previousMinMax.g);
             }
@@ -111,12 +110,12 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
     if(extraRow && extraColumn){
         vec2 uv = upperLeftUV + ivec2(2, 2) * texelSize;
         if(fromDepthBuffer){
-            float depthTexel = textureLod(sampler2D(depthBuffer, depthSampler), uv, srcMipLevel).r;
+            float depthTexel = textureLod(sampler2D(depthBuffer, g_sampler_nearestClamp), uv, srcMipLevel).r;
             depthMin = min(depthMin, depthTexel * float(depthTexel == 0.f));
             depthMax = max(depthMax, depthTexel);
         }
         else{
-            vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, depthSampler), uv, srcMipLevel).rg;
+            vec2 previousMinMax = textureLod(sampler2D(pyramidTexture, g_sampler_nearestClamp), uv, srcMipLevel).rg;
             depthMin = min(depthMin, previousMinMax.r + float(previousMinMax.g == 0.f));
             depthMax = max(depthMax, previousMinMax.g);
         }

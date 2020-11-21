@@ -9,7 +9,6 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 0, r11f_g11f_b10f) uniform image2D multiscatterLut;
 layout(set=1, binding = 1) uniform texture2D transmissionLut;
-layout(set=1, binding = 2) uniform sampler skySampler;
 
 layout(set=1, binding = 3, std140) uniform atmosphereSettingsBuffer{
     AtmosphereSettings atmosphereSettings;
@@ -61,7 +60,7 @@ void main(){
             
             vec3 up = normalize(currentPosition - earthCenter);
             vec2 lutUV = computeLutUV(0, atmosphereSettings.atmosphereHeight, up, L);
-            vec3 transmissionToIntersection = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
+            vec3 transmissionToIntersection = texture(sampler2D(transmissionLut, g_sampler_linearClamp), lutUV).rgb;
             vec3 incomingLight = transmissionToIntersection;
             vec3 earthLit = earthAlbedo / pi * incomingLight * earthNoL;
             vec3 direct = intersection.hitEarth ? earthLit : vec3(0.f);
@@ -82,7 +81,7 @@ void main(){
                  
                 //light arriving at point
                 vec2 lutUV = computeLutUV(currentHeight, atmosphereSettings.atmosphereHeight, up, L);
-                vec3 transmissionSun = texture(sampler2D(transmissionLut, skySampler), lutUV).rgb;
+                vec3 transmissionSun = texture(sampler2D(transmissionLut, g_sampler_linearClamp), lutUV).rgb;
                 
                 //inscattering from light at point
                 vec3 coefficientIntegral = integrateInscattering(scatteringCo, coefficients.extinction, stepSize);

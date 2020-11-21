@@ -269,6 +269,12 @@ void RenderFrontend::prepareNewFrame() {
 void RenderFrontend::setupGlobalShaderInfo() {
     ShaderLayout globalLayout;
     globalLayout.uniformBufferBindings.push_back(0);
+    globalLayout.samplerBindings.push_back(1);
+    globalLayout.samplerBindings.push_back(2);
+    globalLayout.samplerBindings.push_back(3);
+    globalLayout.samplerBindings.push_back(4);
+    globalLayout.samplerBindings.push_back(5);
+    globalLayout.samplerBindings.push_back(6);
     gRenderBackend.setGlobalDescriptorSetLayout(globalLayout);
 }
 
@@ -567,13 +573,11 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
     //histogram per tile
     {
         ImageResource colorTextureResource(lastFrameColor, 0, 2);
-        SamplerResource texelSamplerResource(m_defaultTexelSampler, 4);
         StorageBufferResource lightBufferResource(m_lightBuffer, true, 3);
 
         RenderPassExecution histogramPerTileExecution;
         histogramPerTileExecution.handle = m_histogramPerTilePass;
         histogramPerTileExecution.resources.storageBuffers = { histogramPerTileResource, lightBufferResource };
-        histogramPerTileExecution.resources.samplers = { texelSamplerResource };
         histogramPerTileExecution.resources.sampledImages = { colorTextureResource };
         histogramPerTileExecution.dispatchCount[0] = uint32_t(std::ceilf((float)m_screenWidth / float(histogramTileSizeX)));
         histogramPerTileExecution.dispatchCount[1] = uint32_t(std::ceilf((float)m_screenHeight / float(histogramTileSizeY)));
@@ -634,7 +638,6 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
     {
         ImageResource multiscatterLutResource(m_skyMultiscatterLut, 0, 0);
         ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
-        SamplerResource lutSampler(m_lutSampler, 2);
         UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 3);
 
         RenderPassExecution skyMultiscatterLutExecution;
@@ -642,7 +645,6 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
         skyMultiscatterLutExecution.parents = { m_skyTransmissionLutPass };
         skyMultiscatterLutExecution.resources.storageImages = { multiscatterLutResource };
         skyMultiscatterLutExecution.resources.sampledImages = { transmissionLutResource };
-        skyMultiscatterLutExecution.resources.samplers = { lutSampler };
         skyMultiscatterLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
         skyMultiscatterLutExecution.dispatchCount[0] = skyMultiscatterLutResolution / 8;
         skyMultiscatterLutExecution.dispatchCount[1] = skyMultiscatterLutResolution / 8;
@@ -654,7 +656,6 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
         ImageResource lutResource(m_skyLut, 0, 0);
         ImageResource lutTransmissionResource(m_skyTransmissionLut, 0, 1);
         ImageResource lutMultiscatterResource(m_skyMultiscatterLut, 0, 2);
-        SamplerResource lutSampler(m_lutSampler, 3);
         UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 4);
         StorageBufferResource lightBufferResource(m_lightBuffer, true, 5);
 
@@ -662,7 +663,6 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
         skyLutExecution.handle = m_skyLutPass;
         skyLutExecution.resources.storageImages = { lutResource };
         skyLutExecution.resources.sampledImages = { lutTransmissionResource, lutMultiscatterResource };
-        skyLutExecution.resources.samplers = { lutSampler };
         skyLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
         skyLutExecution.resources.storageBuffers = { lightBufferResource };
         skyLutExecution.dispatchCount[0] = skyLutWidth / 8;
@@ -674,13 +674,11 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
     //render skybox
     {
         const ImageResource skyLutResource (m_skyLut, 0, 0);
-        const SamplerResource skySamplerResource (m_colorSamplerWrap, 1); //not lut sampler as we want wrapping to avoid artifacts
 
         RenderPassExecution skyPassExecution;
         skyPassExecution.handle = m_skyPass;
         skyPassExecution.framebuffer = m_sceneFramebuffer;
         skyPassExecution.resources.sampledImages = { skyLutResource };
-        skyPassExecution.resources.samplers = { skySamplerResource };
         skyPassExecution.parents = { m_mainPass,  m_skyLutPass };
         if (drewDebugPasses) {
             skyPassExecution.parents.push_back(m_debugGeoPass);
@@ -691,7 +689,6 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
     {
         const StorageBufferResource lightBufferResource(m_lightBuffer, true, 0);
         const ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
-        const SamplerResource skySamplerResource(m_lutSampler, 2);
 
         RenderPassExecution sunSpritePassExecution;
         sunSpritePassExecution.handle = m_sunSpritePass;
@@ -699,7 +696,6 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
         sunSpritePassExecution.parents = { m_skyPass };
         sunSpritePassExecution.resources.storageBuffers = { lightBufferResource };
         sunSpritePassExecution.resources.sampledImages = { transmissionLutResource };
-        sunSpritePassExecution.resources.samplers = { skySamplerResource };
         gRenderBackend.setRenderPassExecution(sunSpritePassExecution);
     }
 }
@@ -722,13 +718,11 @@ void RenderFrontend::computeExposure() const {
     StorageBufferResource lightBufferResource(m_lightBuffer, false, 0);
     StorageBufferResource histogramResource(m_histogramBuffer, false, 1);
     ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 2);
-    SamplerResource lutSamplerResource(m_lutSampler, 3);
 
     RenderPassExecution preExposeLightsExecution;
     preExposeLightsExecution.handle = m_preExposeLightsPass;
     preExposeLightsExecution.resources.storageBuffers = { histogramResource, lightBufferResource };
     preExposeLightsExecution.resources.sampledImages = { transmissionLutResource };
-    preExposeLightsExecution.resources.samplers = { lutSamplerResource };
     preExposeLightsExecution.parents = { m_histogramCombinePass, m_skyTransmissionLutPass };
     preExposeLightsExecution.dispatchCount[0] = 1;
     preExposeLightsExecution.dispatchCount[1] = 1;
@@ -768,9 +762,6 @@ void RenderFrontend::computeDepthPyramid() const {
 
     exe.resources.sampledImages = { depthBufferResource, depthPyramidResource };
 
-    SamplerResource clampedDepthSamplerResource(m_clampedDepthSampler, 14);
-    exe.resources.samplers = { clampedDepthSamplerResource };
-
     StorageBufferResource syncBuffer(m_depthPyramidSyncBuffer, false, 16);
     exe.resources.storageBuffers = { syncBuffer };
 
@@ -803,19 +794,14 @@ void RenderFrontend::computeSunLightMatrices() const{
 }
 
 void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const {
-    const auto shadowSamplerResource = SamplerResource(m_shadowSampler, 0);
     const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 1);
-    const auto cubeSamplerResource = SamplerResource(m_cubeSampler, 2);
     const auto brdfLutResource = ImageResource(m_brdfLut, 0, 3);
     const auto specularProbeResource = ImageResource(m_specularSkyProbe, 0, 4);
-    const auto cubeSamplerMipsResource = SamplerResource(m_skySamplerWithMips, 5);
-    const auto lustSamplerResource = SamplerResource(m_lutSampler, 6);
     const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
     const auto lightMatrixBuffer = StorageBufferResource(m_sunShadowInfoBuffer, true, 8);
 
     const ImageResource occlusionVolumeResource(m_skyOcclusionVolume, 0, 13);
     const UniformBufferResource skyOcclusionInfoBuffer(m_skyOcclusionDataBuffer, 14);
-    const SamplerResource occlusionSamplerResource(m_skyOcclusionSampler, 15);
 
     RenderPassExecution mainPassExecution;
     mainPassExecution.handle = m_mainPass;
@@ -823,8 +809,6 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
     mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource };
     mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
-    mainPassExecution.resources.samplers = { shadowSamplerResource, cubeSamplerResource,
-        cubeSamplerMipsResource, lustSamplerResource, occlusionSamplerResource };
 
     //add shadow map cascade resources
     for (uint32_t i = 0; i < shadowCascadeCount; i++) {
@@ -843,13 +827,11 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
 void RenderFrontend::computeFXAA(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const{
     //color to luminance
     {
-        const SamplerResource colorSampler(m_colorSamplerClamp, 0);
         const ImageResource srcResource(src, 0, 1);
         const ImageResource dstResource(m_sceneLuminance, 0, 2);
 
         RenderPassExecution exe;
         exe.handle = m_colorToLuminancePass;
-        exe.resources.samplers = { colorSampler };
         exe.resources.sampledImages = { srcResource };
         exe.resources.storageImages = { dstResource };
         exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
@@ -861,14 +843,12 @@ void RenderFrontend::computeFXAA(const ImageHandle src, const ImageHandle dst, R
     }
     //fxaa pass
     {
-        const SamplerResource colorSampler(m_colorSamplerClamp, 0);
         const ImageResource srcResource(src, 0, 1);
         const ImageResource dstResource(dst, 0, 2);
         const ImageResource luminanceResource(m_sceneLuminance, 0, 3);
 
         RenderPassExecution exe;
         exe.handle = m_fxaaPass;
-        exe.resources.samplers = { colorSampler };
         exe.resources.sampledImages = { srcResource, luminanceResource };
         exe.resources.storageImages = { dstResource };
         exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
@@ -881,13 +861,11 @@ void RenderFrontend::computeFXAA(const ImageHandle src, const ImageHandle dst, R
 }
 
 void RenderFrontend::copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const {
-    const SamplerResource colorSampler(m_colorSamplerClamp, 0);
     const ImageResource srcResource(src, 0, 1);
     const ImageResource dstResource(dst, 0, 2);
 
     RenderPassExecution exe;
     exe.handle = m_hdrImageCopyPass;
-    exe.resources.samplers = { colorSampler };
     exe.resources.sampledImages = { srcResource };
     exe.resources.storageImages = { dstResource };
     exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
@@ -899,7 +877,6 @@ void RenderFrontend::copyHDRImage(const ImageHandle src, const ImageHandle dst, 
 }
 
 void RenderFrontend::computeTemporalSuperSampling(const ColorFrames& frames, const ImageHandle target, const RenderPassHandle parent) const {
-    const SamplerResource colorSampler(m_colorSamplerClamp, 0);
     const ImageResource currentFrameResource(frames.current, 0, 1);
     const ImageResource lastFrameResource(frames.last, 0, 2);
     const ImageResource secondToLastFrameResource(frames.secondToLast, 0, 3);
@@ -916,7 +893,6 @@ void RenderFrontend::computeTemporalSuperSampling(const ColorFrames& frames, con
         secondToLastFrameResource,
         velocityBufferResource,
         depthBufferResource };
-    temporalSupersamplingExecution.resources.samplers = {colorSampler};
 
     temporalSupersamplingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     temporalSupersamplingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
@@ -936,13 +912,11 @@ void RenderFrontend::computeTemporalFilter(const ImageHandle currentFrameColor, 
     const ImageResource historySrcResource(historyBuffers.src, 0, 3);
     const ImageResource motionBufferResource(m_motionVectorBuffer, 0, 4);
     const ImageResource depthBufferResource(m_depthBuffer, 0, 5);
-    const SamplerResource samplerResource(m_colorSamplerClamp, 6);
 
     RenderPassExecution temporalFilterExecution;
     temporalFilterExecution.handle = m_temporalFilterPass;
     temporalFilterExecution.resources.storageImages = { outputImageResource, historyDstResource };
     temporalFilterExecution.resources.sampledImages = { inputImageResource, historySrcResource, motionBufferResource, depthBufferResource };
-    temporalFilterExecution.resources.samplers = { samplerResource };
     temporalFilterExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     temporalFilterExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
     temporalFilterExecution.dispatchCount[2] = 1;
@@ -955,13 +929,11 @@ void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const Ima
     const auto swapchainInput = gRenderBackend.getSwapchainInputImage();
     ImageResource targetResource(swapchainInput, 0, 0);
     ImageResource colorBufferResource(src, 0, 1);
-    SamplerResource samplerResource(m_defaultTexelSampler, 2);
 
     RenderPassExecution tonemappingExecution;
     tonemappingExecution.handle = m_tonemappingPass;
     tonemappingExecution.resources.storageImages = { targetResource };
     tonemappingExecution.resources.sampledImages = { colorBufferResource };
-    tonemappingExecution.resources.samplers = { samplerResource };
     tonemappingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     tonemappingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
     tonemappingExecution.dispatchCount[2] = 1;
@@ -1022,14 +994,12 @@ void RenderFrontend::skyIBLConvolution() {
     {
         const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 0);
         const auto skyLutResource = ImageResource(m_skyLut, 0, 1);
-        const auto skySamplerResource = SamplerResource(m_colorSamplerWrap, 2);
 
         RenderPassExecution diffuseConvolutionExecution;
         diffuseConvolutionExecution.handle = m_skyDiffuseConvolutionPass;
         diffuseConvolutionExecution.parents = { m_skyLutPass };
         diffuseConvolutionExecution.resources.storageImages = { diffuseProbeResource };
         diffuseConvolutionExecution.resources.sampledImages = { skyLutResource };
-        diffuseConvolutionExecution.resources.samplers = { skySamplerResource };
         diffuseConvolutionExecution.dispatchCount[0] = uint32_t(std::ceil(diffuseSkyProbeRes / 8.f));
         diffuseConvolutionExecution.dispatchCount[1] = uint32_t(std::ceil(diffuseSkyProbeRes / 8.f));
         diffuseConvolutionExecution.dispatchCount[2] = 6;
@@ -1040,14 +1010,12 @@ void RenderFrontend::skyIBLConvolution() {
 
         const auto specularProbeResource = ImageResource(m_specularSkyProbe, mipLevel, 0);
         const auto skyLutResource = ImageResource(m_skyLut, 0, 1);
-        const auto skySamplerResource = SamplerResource(m_colorSamplerWrap, 2);
 
         RenderPassExecution specularConvolutionExecution;
         specularConvolutionExecution.handle = m_skySpecularConvolutionPerMipPasses[mipLevel];
         specularConvolutionExecution.parents = { m_skyLutPass };
         specularConvolutionExecution.resources.storageImages = { specularProbeResource };
         specularConvolutionExecution.resources.sampledImages = { skyLutResource };
-        specularConvolutionExecution.resources.samplers = { skySamplerResource };
         specularConvolutionExecution.dispatchCount[0] = specularSkyProbeRes / uint32_t(pow(2, mipLevel)) / 8;
         specularConvolutionExecution.dispatchCount[1] = specularSkyProbeRes / uint32_t(pow(2, mipLevel)) / 8;
         specularConvolutionExecution.dispatchCount[2] = 6;
@@ -1144,14 +1112,14 @@ void RenderFrontend::bakeSkyOcclusion() {
 
         const ImageResource occlusionVolume(m_skyOcclusionVolume, 0, 0);
         const ImageResource skyShadowMap(m_skyShadowMap, 0, 1);
-        const SamplerResource shadowSamplerResource(m_shadowSampler, 2);
         const UniformBufferResource skyShadowInfo(m_skyOcclusionDataBuffer, 3);
 
         gatherExecution.resources.storageImages = { occlusionVolume };
         gatherExecution.resources.sampledImages = { skyShadowMap };
-        gatherExecution.resources.samplers = { shadowSamplerResource };
         gatherExecution.resources.uniformBuffers = { skyShadowInfo };
     }
+
+    updateGlobalShaderInfo();
 
     for (int i = 0; i < skyOcclusionSampleCount; i++) {
         //compute sample
@@ -1342,6 +1310,14 @@ void RenderFrontend::updateGlobalShaderInfo() {
 
     RenderPassResources globalResources;
     globalResources.uniformBuffers = { UniformBufferResource(m_globalUniformBuffer, 0) };
+    globalResources.samplers = { 
+        SamplerResource(m_sampler_anisotropicRepeat, 1),
+        SamplerResource(m_sampler_nearestBlackBorder, 2),
+        SamplerResource(m_sampler_linearRepeat, 3),
+        SamplerResource(m_sampler_linearClamp, 4),
+        SamplerResource(m_sampler_nearestClamp, 5),
+        SamplerResource(m_sampler_linearWhiteBorder, 6)
+    };
     gRenderBackend.setGlobalDescriptorSetResources(globalResources);
 }
 
@@ -1607,7 +1583,22 @@ void RenderFrontend::initImages() {
 }
 
 void RenderFrontend::initSamplers(){
-    //shadow sampler
+
+    //all samplers have maxMip set to 20, even when not using anisotropy
+    //this ensures that shaders can use texelFetch and textureLod to access all mip levels
+
+    //anisotropic wrap
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Linear;
+        desc.maxMip = 20;
+        desc.useAnisotropy = true;
+        desc.wrapping = SamplerWrapping::Repeat;
+        desc.borderColor = SamplerBorderColor::White;
+
+        m_sampler_anisotropicRepeat = gRenderBackend.createSampler(desc);
+    }
+    //nearest black border
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Nearest;
@@ -1615,35 +1606,11 @@ void RenderFrontend::initSamplers(){
         desc.useAnisotropy = false;
         desc.maxAnisotropy = 0;
         desc.borderColor = SamplerBorderColor::Black;
-        desc.maxMip = 0;
+        desc.maxMip = 20;
 
-        m_shadowSampler = gRenderBackend.createSampler(desc);
+        m_sampler_nearestBlackBorder = gRenderBackend.createSampler(desc);
     }
-    //cube map sampler
-    {
-        SamplerDescription desc;
-        desc.interpolation = SamplerInterpolation::Linear;
-        desc.wrapping = SamplerWrapping::Clamp;
-        desc.useAnisotropy = false;
-        desc.maxAnisotropy = 0;
-        desc.borderColor = SamplerBorderColor::White;
-        desc.maxMip = 0;
-
-        m_cubeSampler = gRenderBackend.createSampler(desc);
-    }
-    //lut sampler
-    {
-        SamplerDescription desc;
-        desc.interpolation = SamplerInterpolation::Linear;
-        desc.wrapping = SamplerWrapping::Clamp;
-        desc.useAnisotropy = false;
-        desc.maxAnisotropy = 0;
-        desc.borderColor = SamplerBorderColor::White;
-        desc.maxMip = 0;
-
-        m_lutSampler = gRenderBackend.createSampler(desc);
-    }
-    //color sampler wrap
+    //linear repeat
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Linear;
@@ -1651,11 +1618,11 @@ void RenderFrontend::initSamplers(){
         desc.useAnisotropy = false;
         desc.maxAnisotropy = 0;
         desc.borderColor = SamplerBorderColor::White;
-        desc.maxMip = 0;
+        desc.maxMip = 20;
 
-        m_colorSamplerWrap = gRenderBackend.createSampler(desc);
+        m_sampler_linearRepeat = gRenderBackend.createSampler(desc);
     }
-    //color sampler clamp
+    //linear clamp
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Linear;
@@ -1663,78 +1630,31 @@ void RenderFrontend::initSamplers(){
         desc.useAnisotropy = false;
         desc.maxAnisotropy = 0;
         desc.borderColor = SamplerBorderColor::White;
-        desc.maxMip = 0;
+        desc.maxMip = 20;
 
-        m_colorSamplerClamp = gRenderBackend.createSampler(desc);
+        m_sampler_linearClamp = gRenderBackend.createSampler(desc);
     }
-    //hdri sampler
-    {
-        SamplerDescription desc;
-        desc.interpolation = SamplerInterpolation::Linear;
-        desc.wrapping = SamplerWrapping::Clamp;
-        desc.useAnisotropy = false;
-        desc.maxAnisotropy = 0;
-        desc.borderColor = SamplerBorderColor::Black;
-        desc.maxMip = 0;
-
-        m_hdriSampler = gRenderBackend.createSampler(desc);
-    }
-    //cubemap sampler
-    {
-        SamplerDescription desc;
-        desc.interpolation = SamplerInterpolation::Linear;
-        desc.wrapping = SamplerWrapping::Clamp;
-        desc.useAnisotropy = false;
-        desc.maxAnisotropy = 0;
-        desc.borderColor = SamplerBorderColor::Black;
-        desc.maxMip = 0;
-
-        m_cubeSampler = gRenderBackend.createSampler(desc);
-    }
-    //sky sampler
-    {
-        SamplerDescription desc;
-        desc.interpolation = SamplerInterpolation::Linear;
-        desc.wrapping = SamplerWrapping::Clamp;
-        desc.useAnisotropy = false;
-        desc.maxAnisotropy = 0;
-        desc.borderColor = SamplerBorderColor::Black;
-        desc.maxMip = skyTextureMipCount;
-
-        m_skySamplerWithMips = gRenderBackend.createSampler(desc);
-    }
-    //texel sampler
+    //nearest clamp
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Nearest;
         desc.wrapping = SamplerWrapping::Clamp;
         desc.useAnisotropy = false;
-        desc.maxAnisotropy = 0;
+        desc.maxMip = 20;
         desc.borderColor = SamplerBorderColor::Black;
-        desc.maxMip = 0;
 
-        m_defaultTexelSampler = gRenderBackend.createSampler(desc);
+        m_sampler_nearestClamp = gRenderBackend.createSampler(desc);
     }
-    //depth sampler
-    {
-        SamplerDescription desc;
-        desc.interpolation = SamplerInterpolation::Nearest;
-        desc.maxMip = 11;
-        desc.useAnisotropy = false;
-        desc.wrapping = SamplerWrapping::Clamp;
-
-        m_clampedDepthSampler = gRenderBackend.createSampler(desc);
-    }
-    //sky occlusion sampler
+    //linear White Border
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Linear;
-        desc.maxMip = 0;
+        desc.maxMip = 20;
         desc.useAnisotropy = false;
         desc.wrapping = SamplerWrapping::Color;
         desc.borderColor = SamplerBorderColor::White;
 
-        m_skyOcclusionSampler = gRenderBackend.createSampler(desc);
+        m_sampler_linearWhiteBorder = gRenderBackend.createSampler(desc);
     }
 }
 

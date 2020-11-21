@@ -6,7 +6,6 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set=1, binding = 0)                  uniform sampler colorSampler;
 layout(set=1, binding = 1) 	                uniform texture2D srcTexture;
 layout(set=1, binding = 2, r11f_g11f_b10f) 	uniform image2D dstImage;
 layout(set=1, binding = 3) 					uniform texture2D luminanceTexture;
@@ -24,7 +23,7 @@ float[3][3] getLuminanceNeighbourhood(ivec2 uv){
 	float[3][3] luminance;
 	for(int x = -1; x <= 1; x++){
 		for(int y = -1; y <= 1; y++){
-			luminance[x+1][y+1] = texelFetch(sampler2D(luminanceTexture, colorSampler), uv + ivec2(x, y), 0).r;
+			luminance[x+1][y+1] = texelFetch(sampler2D(luminanceTexture, g_sampler_linearClamp), uv + ivec2(x, y), 0).r;
 		}
 	}
 	return luminance;
@@ -74,7 +73,7 @@ vec3 lowpassFilter(vec2 uv, vec2 texelSize){
 	vec3 color = vec3(0);
 	for(int x = -1; x <= 1; x++){
 		for(int y = -1; y <= 1; y++){
-			color += texture(sampler2D(srcTexture, colorSampler), uv + vec2(x, y) * texelSize).rgb;
+			color += texture(sampler2D(srcTexture, g_sampler_linearClamp), uv + vec2(x, y) * texelSize).rgb;
 		}
 	}
 	return color * (1.f / 9.f);
@@ -107,7 +106,7 @@ float computeEdgeBlend(vec2 uvIn, bool isHorizontalEdge, vec2 edgeDirection, flo
 	vec2 uvStart = uvIn + edgeDirection * 0.5;
 
 	float threshold = 0.25f * abs(gradient);
-	float luminanceEdge = texture(sampler2D(luminanceTexture, colorSampler), uvStart).r;
+	float luminanceEdge = texture(sampler2D(luminanceTexture, g_sampler_linearClamp), uvStart).r;
 
 	vec2 currentOffset = vec2(0.f);
 	float edgeDistance = 0.f;
@@ -118,8 +117,8 @@ float computeEdgeBlend(vec2 uvIn, bool isHorizontalEdge, vec2 edgeDirection, flo
 		currentOffset += searchStep;
 		edgeDistance++;
 
-		float sampleP = texture(sampler2D(luminanceTexture, colorSampler), uvStart + currentOffset).r;
-		float sampleN = texture(sampler2D(luminanceTexture, colorSampler), uvStart - currentOffset).r;
+		float sampleP = texture(sampler2D(luminanceTexture, g_sampler_linearClamp), uvStart + currentOffset).r;
+		float sampleN = texture(sampler2D(luminanceTexture, g_sampler_linearClamp), uvStart - currentOffset).r;
 		
 		float deltaP = sampleP - luminanceEdge;
 		float deltaN = sampleN - luminanceEdge;
@@ -143,7 +142,7 @@ void main(){
 
 	//early out
 	if(!passedContrastCheck){
-		vec3 color = texelFetch(sampler2D(srcTexture, colorSampler), iUV, 0).rgb;
+		vec3 color = texelFetch(sampler2D(srcTexture, g_sampler_linearClamp), iUV, 0).rgb;
 		imageStore(dstImage, iUV, vec4(color, 1.f));
 		return;
 	}
@@ -166,7 +165,7 @@ void main(){
 	vec2 offset = edgeDirection * edgeBlend;
 
 	uv += offset;
-	vec3 color = texture(sampler2D(srcTexture, colorSampler), uv).rgb;
+	vec3 color = texture(sampler2D(srcTexture, g_sampler_linearClamp), uv).rgb;
 
 	float subpixelAliasing = computeSubpixelAliasing(neighbourhood);
 	vec3 filtered = lowpassFilter(uv, texelSize);

@@ -20,7 +20,6 @@ layout(set=1, binding = 1, std430) buffer histogramBuffer{
 };
 
 layout(set=1, binding = 2) uniform texture2D transmissionLut;
-layout(set=1, binding = 3) uniform sampler lutSampler;
 
 //maps scene brightness to an ev offset
 //this causes brighter scenes to appear brighter and darker scenes to appear darker
@@ -83,5 +82,5 @@ void main(){
     lightBuffer.previousFrameExposure = exposure;
     
     vec2 lutUV = vec2(0, -g_sunDirection.y * 0.5 + 0.5);
-    lightBuffer.sunColor = texture(sampler2D(transmissionLut, lutSampler), lutUV).rgb;
+    lightBuffer.sunColor = texture(sampler2D(transmissionLut, g_sampler_linearClamp), lutUV).rgb;
 }

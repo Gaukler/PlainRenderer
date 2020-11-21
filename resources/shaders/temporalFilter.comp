@@ -25,7 +25,6 @@ layout(set=1, binding = 2, r11f_g11f_b10f) 	uniform image2D historyBufferDst;
 layout(set=1, binding = 3) 	                uniform texture2D historyBufferSrc;
 layout(set=1, binding = 4) 	                uniform texture2D motionBuffer;
 layout(set=1, binding = 5) 	                uniform texture2D depthBuffer;
-layout(set=1, binding = 6)                  uniform sampler colorSampler;
 
 float luminance(vec3 c){
     return dot(c, vec3(0.21f, 0.71f, 0.08f));
@@ -37,39 +36,39 @@ void main(){
     
 	vec2 texelSize = 1.f / imageSize(outputImage).xy;
 	vec2 uv = (iUV + 0.5) * texelSize; //+0.5 to shift to pixel center
-    vec3[3][3] neighbourhood = sampleNeighbourhood(currentFrame, colorSampler, uv, texelSize);
+    vec3[3][3] neighbourhood = sampleNeighbourhood(currentFrame, g_sampler_linearClamp, uv, texelSize);
 	vec3[2] minMax = minMaxFromNeighbourhood(neighbourhood);
     
 	vec3 currentColor = neighbourhood[1][1];
 
     vec2 motion;
     if(useMotionVectorDilation){ 
-        motion = getClosestFragmentMotion(iUV, depthBuffer, motionBuffer, colorSampler); 
+        motion = getClosestFragmentMotion(iUV, depthBuffer, motionBuffer, g_sampler_linearClamp); 
     }
     else{
-        motion = texelFetch(sampler2D(motionBuffer, colorSampler), iUV, 0).rg;
+        motion = texelFetch(sampler2D(motionBuffer, g_sampler_linearClamp), iUV, 0).rg;
     }
     
 	vec3 historySample; 
 	if(historySampleTech == HISTORY_SAMPLING_BILINEAR){ 
 		vec2 uvReprojected = uv + motion;
-		historySample = texture(sampler2D(historyBufferSrc, colorSampler), uvReprojected).rgb;
+		historySample = texture(sampler2D(historyBufferSrc, g_sampler_linearClamp), uvReprojected).rgb;
 	} 
 	else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_16_TAP){
 		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
-		historySample = bicubicSample16Tap(historyBufferSrc, colorSampler, uvReprojected, texelSize);
+		historySample = bicubicSample16Tap(historyBufferSrc, g_sampler_linearClamp, uvReprojected, texelSize);
 	}
 	else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_9_TAP){
 		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
-		historySample = bicubicSample9Tap(historyBufferSrc, colorSampler, uvReprojected, texelSize);
+		historySample = bicubicSample9Tap(historyBufferSrc, g_sampler_linearClamp, uvReprojected, texelSize);
 	}  
 	else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_5_TAP){
 		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
-		historySample = bicubicSample5Tap(historyBufferSrc, colorSampler, uvReprojected, texelSize);
+		historySample = bicubicSample5Tap(historyBufferSrc, g_sampler_linearClamp, uvReprojected, texelSize);
 	}  
 	else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_1_TAP){
 		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
-		historySample = bicubicSample1Tap(historyBufferSrc, colorSampler, uvReprojected, texelSize, neighbourhood);
+		historySample = bicubicSample1Tap(historyBufferSrc, g_sampler_linearClamp, uvReprojected, texelSize, neighbourhood);
 	}
 	else{
 		historySample = vec3(1, 0, 0);

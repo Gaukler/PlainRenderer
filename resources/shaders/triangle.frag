@@ -37,15 +37,10 @@ layout(constant_id = 4) const uint specularProbeMipCount = 0;
 layout(constant_id = 5) const bool useSkyOcclusion = false;
 layout(constant_id = 6) const bool useSkyOcclusionDirection = false;
 
-layout(set=1, binding = 0) uniform sampler depthSampler;
-
 layout(set=1, binding = 1) 	uniform textureCube	diffuseProbe;
-layout(set=1, binding = 2) 	uniform sampler 	cubeSampler;
 
 layout(set=1, binding = 3) 	uniform texture2D 	brdfLutTexture;
 layout(set=1, binding = 4) 	uniform textureCube	specularProbe;
-layout(set=1, binding = 5) 	uniform sampler 	specularProbeSampler;
-layout(set=1, binding = 6) 	uniform sampler 	lutSampler;
 
 layout(set=1, binding = 7, std430) buffer lightStorageBuffer{
     LightBuffer lightBuffer;
@@ -71,15 +66,9 @@ layout(set=1, binding = 14, std140) uniform occlusionData{
     float weight;
 };
 
-layout(set=1, binding = 15) uniform sampler occlusionSampler;
-
-layout(set=2, binding = 0) uniform sampler colorSampler;
-layout(set=2, binding = 1) uniform sampler normalSampler;
-layout(set=2, binding = 2) uniform sampler specularSampler;
-
-layout(set=2, binding = 3) uniform texture2D colorTexture;
-layout(set=2, binding = 4) uniform texture2D normalTexture;
-layout(set=2, binding = 5) uniform texture2D specularTexture;
+layout(set=2, binding = 0) uniform texture2D colorTexture;
+layout(set=2, binding = 1) uniform texture2D normalTexture;
+layout(set=2, binding = 2) uniform texture2D specularTexture;
 
 layout(location = 0) in vec2 passUV;
 layout(location = 1) in vec3 passPos;
@@ -88,7 +77,7 @@ layout(location = 2) in mat3 passTBN;
 layout(location = 0) out vec3 color;
 
 float shadowTest(texture2D shadowMap, vec2 uv, float actualDepth){
-    vec4 depthTexels = textureGather(sampler2D(shadowMap, depthSampler), uv, 0);
+    vec4 depthTexels = textureGather(sampler2D(shadowMap, g_sampler_nearestBlackBorder), uv, 0);
     
     vec4 tests;
     tests.r = float(actualDepth >= depthTexels.r);
@@ -96,7 +85,7 @@ float shadowTest(texture2D shadowMap, vec2 uv, float actualDepth){
     tests.b = float(actualDepth >= depthTexels.b);
     tests.a = float(actualDepth >= depthTexels.a);
     
-    ivec2 shadowMapRes = textureSize(sampler2D(shadowMap, depthSampler), 0);
+    ivec2 shadowMapRes = textureSize(sampler2D(shadowMap, g_sampler_nearestBlackBorder), 0);
     vec2 sampleImageCoordinates = vec2(shadowMapRes) * uv + 0.502f;
     vec2 coordinatesFloored = floor(sampleImageCoordinates);
     vec2 interpolation = sampleImageCoordinates - coordinatesFloored;
@@ -129,7 +118,7 @@ float calcShadow(vec3 pos, float LoV, texture2D shadowMap, mat4 lightMatrix){
 	posLightSpace.xy = posLightSpace.xy * 0.5f + 0.5f;
 	float actualDepth = clamp(posLightSpace.z, 0.f, 1.f);
     
-    vec2 texelSize = vec2(1.f) / textureSize(sampler2D(shadowMap, depthSampler), 0);
+    vec2 texelSize = vec2(1.f) / textureSize(sampler2D(shadowMap, g_sampler_nearestBlackBorder), 0);
     float radius = 1.f;
     
     float shadow = 0;
@@ -167,7 +156,7 @@ SkyOcclusion sampleSkyOcclusion(vec3 worldPos){
     samplePos = samplePos/ occlusionVolumeExtends.xyz;      //in range [-0.5, 0.5]
     samplePos += 0.5f;                                      //in range [0, 1]
     
-    vec4 occlusionTexel = texture(sampler3D(skyOcclusionVolume, occlusionSampler), samplePos);
+    vec4 occlusionTexel = texture(sampler3D(skyOcclusionVolume, g_sampler_linearWhiteBorder), samplePos);
     SkyOcclusion occlusion;
     occlusion.unoccludedDirection = normalize(occlusionTexel.rgb);
     occlusion.factor = occlusionTexel.a;
@@ -176,9 +165,9 @@ SkyOcclusion sampleSkyOcclusion(vec3 worldPos){
 }
 
 void main(){
-	vec3 albedoTexel 		= texture(sampler2D(colorTexture, 		colorSampler), 		passUV).rgb;
-	vec3 specularTexel 		= texture(sampler2D(specularTexture, 	specularSampler), 	passUV).rgb;
-	vec2 normalTexel 		= texture(sampler2D(normalTexture, 		normalSampler), 	passUV).rg;
+	vec3 albedoTexel 		= texture(sampler2D(colorTexture, 		g_sampler_anisotropicRepeat), passUV).rgb;
+	vec3 specularTexel 		= texture(sampler2D(specularTexture, 	g_sampler_anisotropicRepeat), passUV).rgb;
+	vec2 normalTexel 		= texture(sampler2D(normalTexture, 		g_sampler_anisotropicRepeat), passUV).rg;
     vec3 normalTexelReconstructed = vec3(normalTexel, sqrt(1.f - normalTexel.x * normalTexel.x + normalTexel.y + normalTexel.y));
     normalTexelReconstructed = normalTexelReconstructed * 2.f - 1.f;
     
@@ -241,7 +230,7 @@ void main(){
     vec3 diffuseDirect;
     vec3 diffuseBRDFIntegral = vec3(1.f);
     
-    vec3 brdfLut = texture(sampler2D(brdfLutTexture, lutSampler), vec2(r, NoV)).rgb;
+    vec3 brdfLut = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r, NoV)).rgb;
     
     //lambert
     if(diffuseBRDF == 0){
@@ -297,15 +286,15 @@ void main(){
     
     //indirect specular
     float probeLoD = specularProbeMipCount * r;
-    vec3 environmentSample = textureLod(samplerCube(specularProbe, specularProbeSampler), R, probeLoD).rgb;
+    vec3 environmentSample = textureLod(samplerCube(specularProbe, g_sampler_linearClamp), R, probeLoD).rgb;
     vec3 fresnelAverage = f0 + (1-f0) / 21.f;
     
     vec3 irradiance;
     if(useSkyOcclusionDirection){
-        irradiance = texture(samplerCube(diffuseProbe, cubeSampler), skyOcclusion.unoccludedDirection).rgb;
+        irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), skyOcclusion.unoccludedDirection).rgb;
     }
     else{
-        irradiance = texture(samplerCube(diffuseProbe, cubeSampler), N).rgb;
+        irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), N).rgb;
     }
     
     vec3 diffuseIndirect;
@@ -354,7 +343,7 @@ void main(){
     if(directMultiscatterBRDF == 0){
         float energyAverage = EnergyAverage(r);
     
-        vec2 brdfLutIncoming = texture(sampler2D(brdfLutTexture, lutSampler), vec2(r, NoL)).rg;
+        vec2 brdfLutIncoming = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r, NoL)).rg;
         float energyIncoming = brdfLutIncoming.x + brdfLutIncoming.y;
         
         float multiScatteringLobeFloat = (1.f - energyIncoming) * (1.f - energyOutgoing) / (3.1415f * (1.f - energyAverage));

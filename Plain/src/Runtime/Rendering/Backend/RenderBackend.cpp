@@ -191,9 +191,6 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_commandBuffers[1] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
 
     initMaterialDescriptorSetLayout();
-
-    m_materialSamplers = createMaterialSamplers();
-
     setupImgui(window);
 
     //query pools
@@ -864,40 +861,26 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
         //material descriptor set
         DescriptorPoolAllocationSizes layoutSizes;
         layoutSizes.imageSampled = 3;
-        layoutSizes.sampler = 3;
         mesh.materialDescriptorSet = allocateDescriptorSet(m_materialDescriporSetLayout, layoutSizes);
 
         const Material& material = materials[i];
-        const auto albedoTextureResource = ImageResource(
+        const ImageResource albedoTextureResource(
             material.diffuseTexture,
             0,
-            3);
-
-        const auto albedoSamplerResource = SamplerResource(
-            m_materialSamplers.albedoSampler,
             0);
 
-        const auto normalTextureResource = ImageResource(
+        const ImageResource normalTextureResource(
             material.normalTexture,
             0,
-            4);
-
-        const auto normalSamplerResource = SamplerResource(
-            m_materialSamplers.normalSampler,
             1);
 
-        const auto specularTextureResource = ImageResource(
+        const ImageResource specularTextureResource(
             material.specularTexture,
             0,
-            5);
-
-        const auto specularSamplerResource = SamplerResource(
-            m_materialSamplers.specularSampler,
             2);
 
         RenderPassResources resources;
         resources.sampledImages = { albedoTextureResource, normalTextureResource, specularTextureResource };
-        resources.samplers = { albedoSamplerResource, normalSamplerResource, specularSamplerResource };
         updateDescriptorSet(mesh.materialDescriptorSet, resources);
 
         //store and return handle
@@ -1246,34 +1229,6 @@ void RenderBackend::getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsed
 
 std::vector<RenderPassTime> RenderBackend::getRenderpassTimings() {
     return m_renderpassTimings;
-}
-
-MaterialSamplers RenderBackend::createMaterialSamplers(){
-
-    MaterialSamplers samplers;
-
-    SamplerDescription albedoSamplerDesc;
-    albedoSamplerDesc.interpolation = SamplerInterpolation::Linear;
-    albedoSamplerDesc.wrapping = SamplerWrapping::Repeat;
-    albedoSamplerDesc.maxMip = 20;
-    albedoSamplerDesc.useAnisotropy = true;
-    samplers.albedoSampler = createSampler(albedoSamplerDesc);
-
-    SamplerDescription normalSamplerDesc;
-    normalSamplerDesc.interpolation = SamplerInterpolation::Linear;
-    normalSamplerDesc.wrapping = SamplerWrapping::Repeat;
-    normalSamplerDesc.maxMip = 20;
-    normalSamplerDesc.useAnisotropy = true;
-    samplers.normalSampler = createSampler(normalSamplerDesc);
-
-    SamplerDescription specularSamplerDesc;
-    specularSamplerDesc.interpolation = SamplerInterpolation::Linear;
-    specularSamplerDesc.wrapping = SamplerWrapping::Repeat;
-    specularSamplerDesc.maxMip = 20;
-    specularSamplerDesc.useAnisotropy = true;
-    samplers.specularSampler = createSampler(specularSamplerDesc);
-
-    return samplers;
 }
 
 void RenderBackend::prepareRenderPasses() {
@@ -2942,8 +2897,7 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
 
 void RenderBackend::initMaterialDescriptorSetLayout() {
     ShaderLayout shaderLayout;
-    shaderLayout.samplerBindings = { 0, 1, 2 };
-    shaderLayout.sampledImageBindings = { 3, 4, 5 };
+    shaderLayout.sampledImageBindings = { 0, 1, 2 };
     m_materialDescriporSetLayout = createDescriptorSetLayout(shaderLayout);
 }
 

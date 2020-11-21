@@ -7,7 +7,6 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set=1, binding = 0) uniform sampler colorSampler;
 layout(set=1, binding = 1) uniform texture2D currentFrame;
 layout(set=1, binding = 2) uniform texture2D lastFrame;
 layout(set=1, binding = 3) uniform texture2D secondToLastFrame; //unused for now
@@ -22,7 +21,7 @@ void main(){
     
     vec2 uvSample = (uv + vec2(0.5f)) / vec2(imageSize(targetImage));
 
-	vec2 motion = getClosestFragmentMotion(uv, depthBuffer, velocityBuffer, colorSampler);
+	vec2 motion = getClosestFragmentMotion(uv, depthBuffer, velocityBuffer, g_sampler_linearClamp);
 
 	//jitter is set up as quincunx pattern
 	//it's alternating between (0, 0) and (0.5, 0.5)
@@ -30,8 +29,8 @@ void main(){
     vec2 uvSampleCurrent = uvSample - g_currentFrameCameraJitter;
 	vec2 uvSampleLast = uvSample + motion - g_previousFrameCameraJitter;
 
-    vec3 currentSample	= texture(sampler2D(currentFrame, colorSampler), uvSampleCurrent).rgb;
-    vec3 lastSample		= texture(sampler2D(lastFrame, colorSampler), uvSampleLast).rgb;
+    vec3 currentSample	= texture(sampler2D(currentFrame, g_sampler_linearClamp), uvSampleCurrent).rgb;
+    vec3 lastSample		= texture(sampler2D(lastFrame, g_sampler_linearClamp), uvSampleLast).rgb;
     
     vec3 color = mix(currentSample, lastSample, 0.5f);    
 	imageStore(targetImage, uv, vec4(color, 1.f));
