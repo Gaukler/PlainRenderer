@@ -821,14 +821,13 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
 
     const ImageResource occlusionVolumeResource(m_skyOcclusionVolume, 0, 13);
     const UniformBufferResource skyOcclusionInfoBuffer(m_skyOcclusionDataBuffer, 14);
-    const UniformBufferResource shadowSampleBufferResource(m_shadowSampleBuffer, 15);
 
     RenderPassExecution mainPassExecution;
     mainPassExecution.handle = m_mainPass;
     mainPassExecution.framebuffer = m_sceneFramebuffer;
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
     mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource };
-    mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer, shadowSampleBufferResource };
+    mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
 
     //add shadow map cascade resources
     for (uint32_t i = 0; i < shadowCascadeCount; i++) {
@@ -1815,15 +1814,6 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         UniformBufferDescription desc;
         desc.size = sizeof(m_globalShaderInfo);
         m_globalUniformBuffer = gRenderBackend.createUniformBuffer(desc);
-    }
-    //shadow samples
-    {
-        const std::vector<glm::vec2> samples = generateBlueNoiseSampleSequence(shadowSampleCount);
-
-        UniformBufferDescription desc;
-        desc.size = sizeof(glm::vec2) * shadowSampleCount;
-        desc.initialData = (void*)samples.data();
-        m_shadowSampleBuffer = gRenderBackend.createUniformBuffer(desc);
     }
 }
 

@@ -293,7 +293,6 @@ private:
     UniformBufferHandle m_globalUniformBuffer;
     UniformBufferHandle m_skyOcclusionDataBuffer;
     UniformBufferHandle m_atmosphereSettingsBuffer;
-    UniformBufferHandle m_shadowSampleBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
