@@ -43,7 +43,6 @@ void computeFrustumPoints(inout vec3[8] frustumPoints, float near, float far){
 
 //reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
 float computeCascadeSplit(float near, float far, int i){
-    //return near * pow(far / near, i / float(cascadeCount));
     return near + ((far - near) * (i + 1) / float(cascadeCount)); //linear
 }
 
@@ -71,7 +70,7 @@ void main(){
     vec2 depthMinMax = imageLoad(depthMinMaxLowestMip, ivec2(0)).rg;
     float depthMaxLinear = linearizeDepth(depthMinMax.x, g_nearPlane, g_farPlane);
     float depthMinLinear = linearizeDepth(depthMinMax.y, g_nearPlane, g_farPlane);
-    
+
     for(int i = 0; i < cascadeCount - 1; i++){
         cascadeSplits[i] = computeCascadeSplit(depthMinLinear, depthMaxLinear, i);
     }
@@ -102,6 +101,10 @@ void main(){
             minP = min(minP, pTransformed);
             maxP = max(maxP, pTransformed);
         }
+
+		//increase area according to sample radius to avoid sampling outside
+		minP -= shadowSampleRadius * 2;
+		maxP += shadowSampleRadius * 2;
         
         vec3 scale = vec3(2.f) / (maxP - minP);
         vec3 offset = -0.5f * (maxP + minP) * scale;

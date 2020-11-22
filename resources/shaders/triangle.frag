@@ -86,25 +86,16 @@ float shadowTest(texture2D shadowMap, vec2 uv, float actualDepth){
 //reference: "The Rendering of Inside", page 43
 //reference: "Next Generation Post Processing in Call of Duty Advanced Warfare", page 120
 float calcShadow(vec3 pos, float LoV, texture2D shadowMap, mat4 lightMatrix, int cascade){
-    //normal used for bias
-    //referenc: http://c0de517e.blogspot.com/2011/05/shadowmap-bias-notes.html
-    float biasMin = 0.001f;
-    float biasMax = 0.05f;
-    float bias = mix(biasMax, biasMin, LoV);
     
-    //we don't want vector from normal map as this is a geometric operation
-    vec3 N = normalize(passTBN[2]);
-    vec3 offsetPos = pos + N * bias;
-    
-	vec4 posLightSpace = lightMatrix * vec4(offsetPos, 1.f);
+	vec4 posLightSpace = lightMatrix * vec4(pos, 1.f);
 	posLightSpace /= posLightSpace.w;
 	posLightSpace.xy = posLightSpace.xy * 0.5f + 0.5f;
 	float actualDepth = clamp(posLightSpace.z, 0.f, 1.f);
     
-	float noise = texture(sampler2D(g_noiseTexture, g_sampler_linearRepeat), gl_FragCoord.xy / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0)).r;
+	vec2 noiseUV = gl_FragCoord.xy / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
+	float noise = texture(sampler2D(g_noiseTexture, g_sampler_linearRepeat), noiseUV).r;
 
-	float radius = 0.03; //world space
-	vec2 offsetScale = radius * lightSpaceScale[cascade];
+	vec2 offsetScale = shadowSampleRadius * lightSpaceScale[cascade];
 
 	float shadow = 0.f;
 
@@ -112,11 +103,13 @@ float calcShadow(vec3 pos, float LoV, texture2D shadowMap, mat4 lightMatrix, int
 	for(int i = 0; i < sampleCount; i++){
 		float d = (i + 0.5f * noise) / sampleCount;
 		d = sqrt(d);
-
 		float angle = noise * 2 * pi + 2 * pi * i / sampleCount;
+
 		vec2 offset = vec2(cos(angle), sin(angle));
 		offset *= offsetScale * d;
-		shadow += shadowTest(shadowMap, posLightSpace.xy + offset, actualDepth);
+
+		vec2 samplePosition = posLightSpace.xy + offset;
+		shadow += shadowTest(shadowMap, samplePosition, actualDepth);
 	}
 	return shadow / sampleCount;
 }
@@ -356,10 +349,4 @@ void main(){
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
     
     color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
-    vec3 cascadeTestColor[4] = { 
-    vec3(1, 0, 0), 
-    vec3(0, 1, 0), 
-    vec3(0, 0, 1), 
-    vec3(1, 1, 0)};
-    //color = cascadeTestColor[cascadeIndex];
 }
