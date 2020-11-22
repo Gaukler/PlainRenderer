@@ -15,7 +15,7 @@ namespace VoidAndClusterFunctions {
     std::array<int, 256> computeHistogramm(const std::vector<uint8_t>& array);
     std::vector<bool> binarizeArray(const std::vector<uint8_t>& array, const float positivePercentage);
 
-    glm::ivec2 indexToCoordinate(const uint32_t index, const glm::ivec2& resolution);
+    glm::ivec2 indexToCoordinate(const size_t index, const glm::ivec2& resolution);
     uint32_t coordinateToIndex(const glm::ivec2& coordinate, const glm::ivec2& resolution);
 
     glm::ivec2 calculateToroidalOffset(const glm::ivec2 a, const glm::ivec2& b, const glm::ivec2& resolution);
@@ -43,7 +43,7 @@ namespace VoidAndClusterFunctions {
         assert(targetPercentage >= 0 || targetPercentage <= 1);
         std::array<int, 256> histogramm = computeHistogramm(array);
 
-        const uint32_t totalCount = array.size();
+        const size_t totalCount = array.size();
         uint32_t currentCount = 0;
         uint32_t threshold = 0;
         //find threhold
@@ -57,7 +57,7 @@ namespace VoidAndClusterFunctions {
         }
 
         std::vector<bool> binaryArray(totalCount);
-        for (uint32_t i = 0; i < totalCount; i++) {
+        for (size_t i = 0; i < totalCount; i++) {
             binaryArray[i] = array[i] <= threshold;
         }
         return binaryArray;
@@ -65,13 +65,13 @@ namespace VoidAndClusterFunctions {
 
     //sigma taken from: https://blog.demofox.org/2019/06/25/generating-blue-noise-textures-with-void-and-cluster/
     float gaussianFilter(const glm::ivec2& offset) {
-        const float sigma = 1.9;
+        const float sigma = 1.9f;
         const float sigmaSquared = sigma * sigma;
-        const float rSquared = offset.x * offset.x + offset.y * offset.y;
+        const float rSquared = float(offset.x * offset.x + offset.y * offset.y);
         return glm::exp(-rSquared / (2 * sigmaSquared));
     }
 
-    glm::ivec2 indexToCoordinate(const uint32_t index, const glm::ivec2& resolution) {
+    glm::ivec2 indexToCoordinate(const size_t index, const glm::ivec2& resolution) {
         return glm::ivec2(index % resolution.x, index / resolution.x);
     }
 
@@ -93,8 +93,8 @@ namespace VoidAndClusterFunctions {
         std::vector<float> influence(pixelCount);
 
         //iterate over every pixel
-        for (uint32_t y = 0; y < resolution.y; y++) {
-            for (uint32_t x = 0; x < resolution.x; x++) {
+        for (int y = 0; y < resolution.y; y++) {
+            for (int x = 0; x < resolution.x; x++) {
                 const glm::ivec2 currentPosition(x, y);
                 const size_t index = coordinateToIndex(currentPosition, resolution);
                 const glm::ivec2 toroidalOffset = calculateToroidalOffset(inputPosition, currentPosition, resolution);
@@ -174,10 +174,10 @@ namespace VoidAndClusterFunctions {
 
         //remove true entries over target count as binarization may not be exact
         uint32_t currentPositiveCount = 0;
-        for (auto& entry : binaryArray) {
-            currentPositiveCount += entry ? 1 : 0;
+        for (size_t i = 0; i < binaryArray.size(); i++) {
+            currentPositiveCount += binaryArray[i] ? 1 : 0;
             if (currentPositiveCount > positivePixelCount) {
-                entry = false;
+                binaryArray[i] = false;
             }
         }
 
@@ -220,7 +220,7 @@ std::vector<uint8_t> generateBlueNoiseTexture(const glm::ivec2& resolution) {
     using namespace VoidAndClusterFunctions;
     const size_t pixelCount = size_t(resolution.x) * size_t(resolution.y);
 
-    const std::vector<bool> prototypeBinaryPattern = createPrototypeBinaryPattern(resolution, pixelCount * 0.1f);
+    const std::vector<bool> prototypeBinaryPattern = createPrototypeBinaryPattern(resolution, uint32_t(pixelCount * 0.1f));
     const std::vector<float> initialLut = calculateFilterLut(prototypeBinaryPattern, resolution);
 
     std::vector<bool> binaryPattern = prototypeBinaryPattern;
@@ -269,7 +269,7 @@ std::vector<uint8_t> generateBlueNoiseTexture(const glm::ivec2& resolution) {
     //normalize rank matrix for use as blue noise
     std::vector<uint8_t> blueNoise(pixelCount);
     for (size_t i = 0; i < blueNoise.size(); i++) {
-        blueNoise[i] = (rankMatrix[i] + 0.5f) / pixelCount * 255.f;
+        blueNoise[i] = uint8_t((rankMatrix[i] + 0.5f) / pixelCount * 255.f);
     }
 
     return blueNoise;
