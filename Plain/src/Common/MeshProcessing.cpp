@@ -30,9 +30,13 @@ void computeTangentBitangent(MeshData* outMeshData) {
         const glm::vec2 uvDelta1 = uv1 - uv0;
         const glm::vec2 uvDelta2 = uv2 - uv0;
 
-        const float denom = 1.f / (uvDelta1.x * uvDelta2.y - uvDelta1.y * uvDelta2.x);
-        const glm::vec3 tangent = denom * (uvDelta2.y * edge1 - uvDelta1.y * edge2);
-        const glm::vec3 bitangent = denom * (uvDelta1.x * edge2 - uvDelta2.x * edge1);
+        float denom = glm::max(uvDelta1.x * uvDelta2.y - uvDelta1.y * uvDelta2.x, 0.0001f);
+        const float epsilon = 0.00001f;
+        denom = abs(denom) < epsilon ? glm::sign(denom) * epsilon : denom; //avoid division by 0
+        const float denomRcp = 1.f / denom;
+        const glm::vec3 tangent = denomRcp * (uvDelta2.y * edge1 - uvDelta1.y * edge2);
+        const glm::vec3 bitangent = denomRcp * (uvDelta1.x * edge2 - uvDelta2.x * edge1);
+        //(bi)tangent not normalized here as multiples are summed up when building index structure and normalized at the end
 
         outMeshData->tangents.push_back(tangent);
         outMeshData->tangents.push_back(tangent);
@@ -113,8 +117,20 @@ MeshData buildIndexedData(const MeshData& rawData) {
     }
 
     for (uint32_t i = 0; i < rawData.positions.size(); i++) {
-        indexedData.tangents[i] = glm::normalize(indexedData.tangents[i]);
-        indexedData.bitangents[i] = glm::normalize(indexedData.bitangents[i]);
+        //if the mesh is degenerate, e.g. uvs at same position tangents or bitangent might be missing
+        //this must be corrected
+        if (glm::length(indexedData.tangents[i]) == 0.f) {
+            //guess a valid tangent by performing cross product of normal and up vector
+            const glm::vec3 up = glm::dot(indexedData.tangents[i], glm::vec3(0.f, -1.f, 0.f)) < 0.999f ? glm::vec3(0.f, -1.f, 0.f) : glm::vec3(1.f, 0.f, 0.f);
+            indexedData.tangents[i] = glm::cross(rawData.normals[i], up);
+        }
+        if (glm::length(indexedData.bitangents[i]) == 0.f) {
+            //guess a valid bitangent by performing cross product of normal and tangent vector
+            indexedData.bitangents[i] = glm::cross(rawData.normals[i], indexedData.tangents[i]);
+        }
+
+        indexedData.tangents[i]     = glm::normalize(indexedData.tangents[i]);
+        indexedData.bitangents[i]   = glm::normalize(indexedData.bitangents[i]);
     }
 
     return indexedData;
