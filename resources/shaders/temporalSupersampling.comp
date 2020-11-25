@@ -5,6 +5,8 @@
 #include "global.inc"
 #include "temporalReprojection.inc"
 
+layout(constant_id = 0) const bool usingQuincunxJitter = false;
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 1) uniform texture2D currentFrame;
@@ -23,15 +25,19 @@ void main(){
 
 	vec2 motion = getClosestFragmentMotion(uv, depthBuffer, velocityBuffer, g_sampler_linearClamp);
 
-	//jitter is set up as quincunx pattern
-	//it's alternating between (0, 0) and (0.5, 0.5)
-	//for the (0.5, 0.5) offset we want a bilinear sample, see "Filmic SMAA in Call of Duty" page 113
-    vec2 uvSampleCurrent = uvSample - g_currentFrameCameraJitter;
-	vec2 uvSampleLast = uvSample + motion - g_previousFrameCameraJitter;
+	vec2 uvSampleCurrent = uvSample;		
+	vec2 uvSampleLast = uvSample + motion;	
+
+	if(usingQuincunxJitter){
+		//quincunx pattern is alternating between (0, 0) and (0.5, 0.5)
+		//for the (0.5, 0.5) offset we want a bilinear sample, see "Filmic SMAA in Call of Duty" page 113
+		uvSampleCurrent	-= g_currentFrameCameraJitter;
+		uvSampleLast	-= g_previousFrameCameraJitter;
+	}	
 
     vec3 currentSample	= texture(sampler2D(currentFrame, g_sampler_linearClamp), uvSampleCurrent).rgb;
     vec3 lastSample		= texture(sampler2D(lastFrame, g_sampler_linearClamp), uvSampleLast).rgb;
-    
+
     vec3 color = mix(currentSample, lastSample, 0.5f);    
 	imageStore(targetImage, uv, vec4(color, 1.f));
     

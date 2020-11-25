@@ -36,12 +36,14 @@ struct ShadingConfig {
 };
 
 enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2, Bicubic5Tap=3, Bicubic1Tap=4 };
+enum class CameraJitterPattern : int { Quincunx, Halton8 };
 
 struct TemporalFilterSettings {
     bool enabled = true;
     bool useClipping = true;
     bool useMotionVectorDilation = true;
     HistorySamplingTech historySamplingTech = HistorySamplingTech::Bicubic1Tap;
+    CameraJitterPattern jitterPattern = CameraJitterPattern::Quincunx;
 };
 
 struct SkyOcclusionRenderData {
@@ -297,10 +299,12 @@ private:
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
     ShaderDescription createTemporalFilterShaderDescription();
+    ShaderDescription createTemporalSupersamplingShaderDescription();
 
     bool m_isMainPassShaderDescriptionStale = false;
     bool m_isBRDFLutShaderDescriptionStale = false;
     bool m_isTemporalFilterShaderDescriptionStale = false;
+    bool m_isTemporalSupersamplingShaderDescriptionStale = false;
 
     void updateGlobalShaderInfo();
 

@@ -170,16 +170,25 @@ DefaultTextures createDefaultTextures() {
     return defaultTextures;
 }
 
-glm::vec2 computeProjectionMatrixJitter(const float pixelSizeX, const float pixelSizeY) {
-    static bool even;
+//returns jitter in pixels, must be multiplied with texel size before applying to projection matrix
+glm::vec2 computeProjectionMatrixJitter(const CameraJitterPattern pattern) {
 
-    //jitter is set up as quincunx pattern
-    glm::vec2 offset = even ? glm::vec2(0.f) : glm::vec2(0.5f);
-    even = !even;
+    glm::vec2 offset;
+    static int jitterIndex;
+    jitterIndex++;
 
-    offset.x *= pixelSizeX;
-    offset.y *= pixelSizeY;
-
+    if (pattern == CameraJitterPattern::Quincunx) {
+        jitterIndex %= 2;
+        offset = jitterIndex == 0 ? glm::vec2(0.f) : glm::vec2(0.5f);
+    }
+    else if (pattern == CameraJitterPattern::Halton8) {
+        jitterIndex %= 8;
+        offset = 2.f * hammersley2D(jitterIndex) - 1.f;
+    }
+    else {
+        std::cout << "Warning: Unknown camera jitter pattern enum\n";
+        offset = glm::vec2(0);
+    }
     return offset;
 }
 
@@ -273,6 +282,10 @@ void RenderFrontend::prepareNewFrame() {
     if (m_isTemporalFilterShaderDescriptionStale) {
         gRenderBackend.updateComputePassShaderDescription(m_temporalFilterPass, createTemporalFilterShaderDescription());
         m_isTemporalFilterShaderDescriptionStale = false;
+    }
+    if (m_isTemporalSupersamplingShaderDescriptionStale) {
+        gRenderBackend.updateComputePassShaderDescription(m_temporalSupersamplingPass, createTemporalSupersamplingShaderDescription());
+        m_isTemporalSupersamplingShaderDescriptionStale = false;
     }
 
     gRenderBackend.updateShaderCode();
@@ -386,11 +399,11 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     const glm::mat4 projectionMatrix = projectionMatrixFromCameraIntrinsic(m_camera.intrinsic);
 
     //jitter matrix for temporal supersampling
-    if(m_useTemporalSupersampling){
-        const float pixelSizeX = 1.f / m_screenWidth;
-        const float pixelSizeY = 1.f / m_screenHeight;
+    if(m_useTemporalSupersampling || m_temporalFilterSettings.enabled){
+        const glm::vec2 pixelSize = glm::vec2(1.f / m_screenWidth, 1.f / m_screenHeight);
 
-        m_globalShaderInfo.currentFrameCameraJitter = computeProjectionMatrixJitter(pixelSizeX, pixelSizeY);
+        const glm::vec2 jitterInPixels = computeProjectionMatrixJitter(m_temporalFilterSettings.jitterPattern);
+        m_globalShaderInfo.currentFrameCameraJitter = jitterInPixels * pixelSize;
         const glm::mat4 jitteredProjection = applyProjectionMatrixJitter(projectionMatrix, m_globalShaderInfo.currentFrameCameraJitter);
 
         m_viewProjectionMatrix = jitteredProjection * viewMatrix;
@@ -1285,7 +1298,7 @@ ShaderDescription RenderFrontend::createBRDFLutShaderDescription(const ShadingCo
 
 ShaderDescription RenderFrontend::createTemporalFilterShaderDescription() {
     ShaderDescription desc;
-    desc.srcPathRelative = "TemporalFilter.comp";
+    desc.srcPathRelative = "temporalFilter.comp";
     
     //specialisation constants
     {
@@ -1303,6 +1316,23 @@ ShaderDescription RenderFrontend::createTemporalFilterShaderDescription() {
         desc.specialisationConstants.push_back({
             2,                                                                                                                  //location
             dataToCharArray(&m_temporalFilterSettings.historySamplingTech, sizeof(m_temporalFilterSettings.historySamplingTech))//value
+            });
+    }
+
+    return desc;
+}
+
+ShaderDescription RenderFrontend::createTemporalSupersamplingShaderDescription() {
+    ShaderDescription desc;
+    desc.srcPathRelative = "temporalSupersampling.comp";
+
+    //specialisation constant
+    {
+        //using quincunx pattern
+        const bool usingQuincunx = m_temporalFilterSettings.jitterPattern == CameraJitterPattern::Quincunx;
+        desc.specialisationConstants.push_back({
+            0,                                                              //location
+            dataToCharArray((void*)&usingQuincunx, sizeof(usingQuincunx))   //value
             });
     }
 
@@ -2287,7 +2317,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     {
         ComputePassDescription desc;
         desc.name = "Temporal supersampling";
-        desc.shaderDescription.srcPathRelative = "temporalSupersampling.comp";
+        desc.shaderDescription = createTemporalSupersamplingShaderDescription();
         m_temporalSupersamplingPass = gRenderBackend.createComputePass(desc);
     }
     //sky shadow pass
@@ -2454,6 +2484,10 @@ void RenderFrontend::drawUi() {
         const char* historySamplingOptions[] = { "Bilinear", "Bicubic16Tap", "Bicubic9Tap", "Bicubic5Tap", "Bicubic1Tap" };
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Combo("Bicubic history sample", 
             (int*)&m_temporalFilterSettings.historySamplingTech, historySamplingOptions, 5);
+
+        const char* patternOptions[] = { "Quincunx", "Halton8" };
+        m_isTemporalSupersamplingShaderDescriptionStale |= ImGui::Combo("Camera jitter pattern",
+            (int*)&m_temporalFilterSettings.jitterPattern, patternOptions, 2);
     }
 
     //lighting settings
