@@ -25,9 +25,38 @@ layout(set=1, binding = 2, r11f_g11f_b10f) 	uniform image2D historyBufferDst;
 layout(set=1, binding = 3) 	                uniform texture2D historyBufferSrc;
 layout(set=1, binding = 4) 	                uniform texture2D motionBuffer;
 layout(set=1, binding = 5) 	                uniform texture2D depthBuffer;
+layout(set=1, binding = 6) 					uniform resolveWeightBuffer {
+	float w0_0;
+	float w1_0;
+	float w2_0;
+	float w0_1;
+	float w1_1;
+	float w2_1;
+	float w0_2;
+	float w1_2;
+	float w2_2;
+} resolveWeights;
 
 float luminance(vec3 c){
     return dot(c, vec3(0.21f, 0.71f, 0.08f));
+}
+
+vec3 resolveColor(vec3 [3][3] neighbourhood, vec2 jitter){
+	vec3 resolved = vec3(0);
+	
+	resolved += neighbourhood[0][0] * resolveWeights.w0_0;
+	resolved += neighbourhood[1][0] * resolveWeights.w1_0;
+	resolved += neighbourhood[2][0] * resolveWeights.w2_0;
+
+	resolved += neighbourhood[0][1] * resolveWeights.w0_1;
+	resolved += neighbourhood[1][1] * resolveWeights.w1_1;
+	resolved += neighbourhood[2][1] * resolveWeights.w2_1;
+
+	resolved += neighbourhood[0][2] * resolveWeights.w0_2;
+	resolved += neighbourhood[1][2] * resolveWeights.w1_2;
+	resolved += neighbourhood[2][2] * resolveWeights.w2_2;
+
+	return resolved;
 }
 
 void main(){
@@ -38,8 +67,8 @@ void main(){
 	vec2 uv = (iUV + 0.5) * texelSize; //+0.5 to shift to pixel center
     vec3[3][3] neighbourhood = sampleNeighbourhood(currentFrame, g_sampler_linearClamp, uv, texelSize);
 	vec3[2] minMax = minMaxFromNeighbourhood(neighbourhood);
-    
-	vec3 currentColor = neighbourhood[1][1];
+
+	vec3 currentColor = resolveColor(neighbourhood, g_currentFrameCameraJitter);
 
     vec2 motion;
     if(useMotionVectorDilation){ 
@@ -48,7 +77,7 @@ void main(){
     else{
         motion = texelFetch(sampler2D(motionBuffer, g_sampler_linearClamp), iUV, 0).rg;
     }
-    
+     
 	vec3 historySample; 
 	if(historySampleTech == HISTORY_SAMPLING_BILINEAR){ 
 		vec2 uvReprojected = uv + motion;
@@ -80,17 +109,18 @@ void main(){
     else{
         historySample = clamp(historySample, minMax[0], minMax[1]);
     }  
-    
+
     //nan test, mainly a problem when resizing the buffers
     //clear previous frame buffer on resize instead of checking here
     if(isnan(historySample.x) || isnan(historySample.y) || isnan(historySample.z)){
         historySample = currentColor;
     }
-    
-	float blendFactor = 0.1f;
+
+	float blendFactor = 0.05f;
 	if(g_cameraCut){
 		blendFactor = 1.f;
 	}
+
     vec3 color = mix(historySample, currentColor, blendFactor);
 
     imageStore(historyBufferDst, iUV, vec4(color, 1.f));    

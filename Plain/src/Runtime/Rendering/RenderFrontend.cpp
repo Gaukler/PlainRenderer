@@ -201,6 +201,29 @@ glm::mat4 applyProjectionMatrixJitter(const glm::mat4& projectionMatrix, const g
     return jitteredProjection;
 }
 
+//jitter must be in pixels, so before multipliying with screen pixel size
+std::array<float, 9> computeTaaResolveWeights(const glm::vec2 cameraJitterInPixels) {
+    std::array<float, 9> weights = {};
+    int index = 0;
+    float totalWeight = 0.f;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            const float d = glm::length(cameraJitterInPixels - glm::vec2(x, y));
+            //gaussian fit to blackman-Harris 3.3
+            //reference: "High Quality Temporal Supersampling", page 23
+            const float w = glm::exp(-2.29 * d*d);
+            weights[index] = w;
+            totalWeight += w;
+            index++;
+        }
+    }
+
+    for (float& w : weights) {
+        w /= totalWeight;
+    }
+    return weights;
+}
+
 void RenderFrontend::setup(GLFWwindow* window) {
     m_window = window;
 
@@ -403,6 +426,9 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
         const glm::vec2 pixelSize = glm::vec2(1.f / m_screenWidth, 1.f / m_screenHeight);
 
         const glm::vec2 jitterInPixels = computeProjectionMatrixJitter(m_temporalFilterSettings.jitterPattern);
+        const std::array<float, 9> resolveWeights = computeTaaResolveWeights(jitterInPixels);
+        gRenderBackend.setUniformBufferData(m_taaResolveWeightBuffer, &resolveWeights[0], sizeof(float)*9);
+
         m_globalShaderInfo.currentFrameCameraJitter = jitterInPixels * pixelSize;
         const glm::mat4 jitteredProjection = applyProjectionMatrixJitter(projectionMatrix, m_globalShaderInfo.currentFrameCameraJitter);
 
@@ -944,11 +970,13 @@ void RenderFrontend::computeTemporalFilter(const ImageHandle currentFrameColor, 
     const ImageResource historySrcResource(historyBuffers.src, 0, 3);
     const ImageResource motionBufferResource(m_motionVectorBuffer, 0, 4);
     const ImageResource depthBufferResource(m_depthBuffer, 0, 5);
+    const UniformBufferResource resolveWeightsResource(m_taaResolveWeightBuffer, 6);
 
     RenderPassExecution temporalFilterExecution;
     temporalFilterExecution.handle = m_temporalFilterPass;
     temporalFilterExecution.resources.storageImages = { outputImageResource, historyDstResource };
     temporalFilterExecution.resources.sampledImages = { inputImageResource, historySrcResource, motionBufferResource, depthBufferResource };
+    temporalFilterExecution.resources.uniformBuffers = { resolveWeightsResource };
     temporalFilterExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     temporalFilterExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
     temporalFilterExecution.dispatchCount[2] = 1;
@@ -1844,6 +1872,12 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         UniformBufferDescription desc;
         desc.size = sizeof(m_globalShaderInfo);
         m_globalUniformBuffer = gRenderBackend.createUniformBuffer(desc);
+    }
+    //taa resolve weight buffer
+    {
+        UniformBufferDescription desc;
+        desc.size = sizeof(float) * 9;
+        m_taaResolveWeightBuffer = gRenderBackend.createUniformBuffer(desc);
     }
 }
 
