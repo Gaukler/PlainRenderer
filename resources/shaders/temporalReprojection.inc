@@ -49,7 +49,7 @@ vec3[2] minMaxFromNeighbourhood(vec3[3][3] neighbourhood){
 }
 
 vec2 getClosestFragmentMotion(ivec2 uv, texture2D depthTexture, texture2D velocityTexture, sampler textureSampler){
-    float closestDepth = 1;
+    float closestDepth = 0;
     ivec2 closestDepthOffset = ivec2(0);
     
     //3x3 neighbourhood from Inside paper
@@ -57,7 +57,7 @@ vec2 getClosestFragmentMotion(ivec2 uv, texture2D depthTexture, texture2D veloci
         for(int y = -1; y <= 1; y++){
             ivec2 offset = ivec2(x, y);
             float depth = texelFetch(sampler2D(depthTexture, textureSampler), uv + offset, 0).r;
-            if(depth < closestDepth){
+            if(depth > closestDepth){
                 closestDepth = depth;
                 closestDepthOffset = offset;
             }
