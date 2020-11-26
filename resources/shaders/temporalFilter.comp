@@ -115,6 +115,15 @@ void main(){
     if(isnan(historySample.x) || isnan(historySample.y) || isnan(historySample.z)){
         historySample = currentColor;
     }
+	
+	float distanceToClamp = 5 * abs(computeLuminance(unclipped) - computeLuminance(historySample));
+	distanceToClamp = pow(distanceToClamp, 2);
+	distanceToClamp = clamp(distanceToClamp, 0, 1);
+
+	float blendMin = 0.025f;
+	float blendMax = 0.1;
+	//float blendFactor = 0.1f;
+	float blendFactor = mix(blendMin, blendMax, distanceToClamp);
 
 	float blendFactor = 0.05f;
 	if(g_cameraCut){
