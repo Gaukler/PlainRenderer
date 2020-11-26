@@ -38,7 +38,7 @@ layout(set=1, binding = 6) 					uniform resolveWeightBuffer {
 	float w2_2;
 } resolveWeights;
 
-vec3 resolveColor(vec3 [3][3] neighbourhood, vec2 jitter){
+vec3 resolveColor(vec3 [3][3] neighbourhood){
 	vec3 resolved = vec3(0);
 	
 	resolved += neighbourhood[0][0] * resolveWeights.w0_0;
@@ -66,7 +66,7 @@ void main(){
 	vec3[2] minMax = minMaxFromNeighbourhood(neighbourhood);
 
 	//vec3 currentColor = neighbourhood[1][1];
-	vec3 currentColor = resolveColor(neighbourhood, g_currentFrameCameraJitter);
+	vec3 currentColor = resolveColor(neighbourhood);
 
     vec2 motion;
     if(useMotionVectorDilation){ 
