@@ -185,6 +185,10 @@ glm::vec2 computeProjectionMatrixJitter(const CameraJitterPattern pattern) {
         jitterIndex %= 8;
         offset = 2.f * hammersley2D(jitterIndex) - 1.f;
     }
+    else if (pattern == CameraJitterPattern::Halton16) {
+        jitterIndex %= 16;
+        offset = 2.f * hammersley2D(jitterIndex) - 1.f;
+    }
     else {
         std::cout << "Warning: Unknown camera jitter pattern enum\n";
         offset = glm::vec2(0);
@@ -951,7 +955,6 @@ void RenderFrontend::computeTemporalSuperSampling(const ColorFrames& frames, con
         secondToLastFrameResource,
         velocityBufferResource,
         depthBufferResource };
-
     temporalSupersamplingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     temporalSupersamplingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
     temporalSupersamplingExecution.dispatchCount[2] = 1;
@@ -2519,9 +2522,9 @@ void RenderFrontend::drawUi() {
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Combo("Bicubic history sample", 
             (int*)&m_temporalFilterSettings.historySamplingTech, historySamplingOptions, 5);
 
-        const char* patternOptions[] = { "Quincunx", "Halton8" };
+        const char* patternOptions[] = { "Quincunx", "Halton8", "Halton16" };
         m_isTemporalSupersamplingShaderDescriptionStale |= ImGui::Combo("Camera jitter pattern",
-            (int*)&m_temporalFilterSettings.jitterPattern, patternOptions, 2);
+            (int*)&m_temporalFilterSettings.jitterPattern, patternOptions, 3);
     }
 
     //lighting settings
