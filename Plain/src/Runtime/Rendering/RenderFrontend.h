@@ -190,7 +190,7 @@ private:
     GLFWwindow* m_window = nullptr;
     GlobalShaderInfo m_globalShaderInfo;
     bool m_useTemporalSupersampling = true;
-    bool m_useFXAA = true;
+    bool m_useFXAA = false;
 
     Camera m_camera;    
     glm::mat4 m_viewProjectionMatrix = glm::mat4(1.f);
