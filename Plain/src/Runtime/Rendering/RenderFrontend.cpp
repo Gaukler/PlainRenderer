@@ -1348,6 +1348,11 @@ ShaderDescription RenderFrontend::createTemporalFilterShaderDescription() {
             2,                                                                                                                  //location
             dataToCharArray(&m_temporalFilterSettings.historySamplingTech, sizeof(m_temporalFilterSettings.historySamplingTech))//value
             });
+        //using tonemapping
+        desc.specialisationConstants.push_back({
+            3,                                                                                                                      //location
+            dataToCharArray(&m_temporalFilterSettings.filterUseTonemapping, sizeof(m_temporalFilterSettings.filterUseTonemapping))  //value
+            });
     }
 
     return desc;
@@ -1364,6 +1369,11 @@ ShaderDescription RenderFrontend::createTemporalSupersamplingShaderDescription()
         desc.specialisationConstants.push_back({
             0,                                                              //location
             dataToCharArray((void*)&usingQuincunx, sizeof(usingQuincunx))   //value
+            });
+        //using tonemapping
+        desc.specialisationConstants.push_back({
+            1,                                                                                                                                      //location
+            dataToCharArray((void*)&m_temporalFilterSettings.supersampleUseTonemapping, sizeof(m_temporalFilterSettings.supersampleUseTonemapping)) //value
             });
     }
 
@@ -2525,6 +2535,9 @@ void RenderFrontend::drawUi() {
         const char* patternOptions[] = { "Quincunx", "Halton8", "Halton16" };
         m_isTemporalSupersamplingShaderDescriptionStale |= ImGui::Combo("Camera jitter pattern",
             (int*)&m_temporalFilterSettings.jitterPattern, patternOptions, 3);
+
+        m_isTemporalSupersamplingShaderDescriptionStale |= ImGui::Checkbox("Tonemap temporal filter input", &m_temporalFilterSettings.supersampleUseTonemapping);
+        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Tonemap temporal supersample input", &m_temporalFilterSettings.filterUseTonemapping);
     }
 
     //lighting settings

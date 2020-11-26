@@ -3,16 +3,12 @@
 #extension GL_GOOGLE_include_directive : enable
 
 #include "global.inc"
+#include "luminance.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 1) 		uniform texture2D srcTexture;
 layout(set=1, binding = 2, r8)	uniform image2D dstImage;
-
-//reference: https://en.wikipedia.org/wiki/Relative_luminance
-float computeLuminance(vec3 color){
-    return dot(color, vec3(0.21, 0.72, 0.07));
-}
 
 void main(){
 	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);

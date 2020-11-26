@@ -1,3 +1,5 @@
+#include "luminance.inc"
+
 //from: "Temporal ReprojectionAnti-Aliasing in INSIDE"
 //clips a point towards a target in a axis aligned bounding box
 vec3 clipAABB(
@@ -24,11 +26,22 @@ vec3 clipAABB(
     }
 }
 
-vec3[3][3] sampleNeighbourhood(texture2D inputTexture, sampler inputSampler, vec2 uv, vec2 texelSize){
+//reverseable 'tonemapping' function and it's counterpart
+//see "High Quality Temporal Supersampling", page 20
+vec3 tonemap(vec3 color){
+	return color / (1 + computeLuminance(color));
+}
+
+vec3 tonemapReverse(vec3 color){
+	return color / (1 - computeLuminance(color));
+}
+
+vec3[3][3] sampleNeighbourhood(texture2D inputTexture, sampler inputSampler, vec2 uv, vec2 texelSize, bool useTonemapping){
 	vec3[3][3] neighbourhood;
 	for(int x = -1; x <= 1; x++){
         for(int y = -1; y <= 1; y++){
 			vec3 color = texture(sampler2D(inputTexture, inputSampler), uv + texelSize * vec2(x, y)).rgb;
+			color = useTonemapping ? tonemap(color) : color;
 			neighbourhood[x+1][y+1] = color;
 		}
 	}

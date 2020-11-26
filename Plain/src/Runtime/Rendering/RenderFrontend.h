@@ -44,6 +44,8 @@ struct TemporalFilterSettings {
     bool useMotionVectorDilation = true;
     HistorySamplingTech historySamplingTech = HistorySamplingTech::Bicubic1Tap;
     CameraJitterPattern jitterPattern = CameraJitterPattern::Quincunx;
+    bool supersampleUseTonemapping = true;
+    bool filterUseTonemapping = true;
 };
 
 struct SkyOcclusionRenderData {
