@@ -171,28 +171,14 @@ DefaultTextures createDefaultTextures() {
 }
 
 //returns jitter in pixels, must be multiplied with texel size before applying to projection matrix
-glm::vec2 computeProjectionMatrixJitter(const CameraJitterPattern pattern) {
+glm::vec2 computeProjectionMatrixJitter() {
 
     glm::vec2 offset;
     static int jitterIndex;
     jitterIndex++;
+    jitterIndex %= 8;
+    offset = 2.f * hammersley2D(jitterIndex) - 1.f;
 
-    if (pattern == CameraJitterPattern::Quincunx) {
-        jitterIndex %= 2;
-        offset = jitterIndex == 0 ? glm::vec2(0.f) : glm::vec2(0.5f);
-    }
-    else if (pattern == CameraJitterPattern::Halton8) {
-        jitterIndex %= 8;
-        offset = 2.f * hammersley2D(jitterIndex) - 1.f;
-    }
-    else if (pattern == CameraJitterPattern::Halton16) {
-        jitterIndex %= 16;
-        offset = 2.f * hammersley2D(jitterIndex) - 1.f;
-    }
-    else {
-        std::cout << "Warning: Unknown camera jitter pattern enum\n";
-        offset = glm::vec2(0);
-    }
     return offset;
 }
 
@@ -429,7 +415,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     if(m_useTemporalSupersampling || m_temporalFilterSettings.enabled){
         const glm::vec2 pixelSize = glm::vec2(1.f / m_screenWidth, 1.f / m_screenHeight);
 
-        const glm::vec2 jitterInPixels = computeProjectionMatrixJitter(m_temporalFilterSettings.jitterPattern);
+        const glm::vec2 jitterInPixels = computeProjectionMatrixJitter();
         const std::array<float, 9> resolveWeights = computeTaaResolveWeights(jitterInPixels);
         gRenderBackend.setUniformBufferData(m_taaResolveWeightBuffer, &resolveWeights[0], sizeof(float)*9);
 
@@ -1364,15 +1350,9 @@ ShaderDescription RenderFrontend::createTemporalSupersamplingShaderDescription()
 
     //specialisation constant
     {
-        //using quincunx pattern
-        const bool usingQuincunx = m_temporalFilterSettings.jitterPattern == CameraJitterPattern::Quincunx;
-        desc.specialisationConstants.push_back({
-            0,                                                              //location
-            dataToCharArray((void*)&usingQuincunx, sizeof(usingQuincunx))   //value
-            });
         //using tonemapping
         desc.specialisationConstants.push_back({
-            1,                                                                                                                                      //location
+            0,                                                                                                                                      //location
             dataToCharArray((void*)&m_temporalFilterSettings.supersampleUseTonemapping, sizeof(m_temporalFilterSettings.supersampleUseTonemapping)) //value
             });
     }
@@ -2531,10 +2511,6 @@ void RenderFrontend::drawUi() {
         const char* historySamplingOptions[] = { "Bilinear", "Bicubic16Tap", "Bicubic9Tap", "Bicubic5Tap", "Bicubic1Tap" };
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Combo("Bicubic history sample", 
             (int*)&m_temporalFilterSettings.historySamplingTech, historySamplingOptions, 5);
-
-        const char* patternOptions[] = { "Quincunx", "Halton8", "Halton16" };
-        m_isTemporalSupersamplingShaderDescriptionStale |= ImGui::Combo("Camera jitter pattern",
-            (int*)&m_temporalFilterSettings.jitterPattern, patternOptions, 3);
 
         m_isTemporalSupersamplingShaderDescriptionStale |= ImGui::Checkbox("Tonemap temporal filter input", &m_temporalFilterSettings.supersampleUseTonemapping);
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Tonemap temporal supersample input", &m_temporalFilterSettings.filterUseTonemapping);

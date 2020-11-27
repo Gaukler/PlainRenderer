@@ -5,8 +5,7 @@
 #include "global.inc"
 #include "temporalReprojection.inc"
 
-layout(constant_id = 0) const bool usingQuincunxJitter = false;
-layout(constant_id = 1) const bool useTonemap = false;
+layout(constant_id = 0) const bool useTonemap = false;
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -28,13 +27,6 @@ void main(){
 
 	vec2 uvSampleCurrent = uvSample;		
 	vec2 uvSampleLast = uvSample + motion;	
-
-	if(usingQuincunxJitter){
-		//quincunx pattern is alternating between (0, 0) and (0.5, 0.5)
-		//for the (0.5, 0.5) offset we want a bilinear sample, see "Filmic SMAA in Call of Duty" page 113
-		uvSampleCurrent	-= g_currentFrameCameraJitter;
-		uvSampleLast	-= g_previousFrameCameraJitter;
-	}	
 
     vec3 currentSample	= texture(sampler2D(currentFrame, g_sampler_linearClamp), uvSampleCurrent).rgb;
     vec3 lastSample		= texture(sampler2D(lastFrame, g_sampler_linearClamp), uvSampleLast).rgb;
