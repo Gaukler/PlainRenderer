@@ -2996,8 +2996,8 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     //currently only no blending and additive supported    
     VkPipelineColorBlendAttachmentState blendingAttachment = {};
     blendingAttachment.blendEnable = desc.blending != BlendState::None ? VK_TRUE : VK_FALSE;
-    blendingAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_COLOR;
-    blendingAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR;
+    blendingAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blendingAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
     blendingAttachment.colorBlendOp = VK_BLEND_OP_ADD;
     blendingAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
     blendingAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
