@@ -359,16 +359,10 @@ void RenderFrontend::prepareRenderpasses(){
     
     RenderPassHandle currentPass = m_sunSpritePass;
 
-    if (m_useFXAA) {
-        computeFXAA(m_sceneImage, frames.current, currentPass);
-        currentPass = m_fxaaPass;
-    }
-    else {
-        //unecessary copy, but keeps logic simple
-        //assumed to be used for comparison only anyways
-        copyHDRImage(m_sceneImage, frames.current, currentPass);
-        currentPass = m_hdrImageCopyPass;
-    }
+    //unecessary copy, but keeps logic simple
+    //assumed to be used for comparison only anyways
+    copyHDRImage(m_sceneImage, frames.current, currentPass);
+    currentPass = m_hdrImageCopyPass;
     ImageHandle currentSrc = frames.current;
     
     if (m_useTemporalSupersampling) {
@@ -870,42 +864,6 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     mainPassExecution.parents.insert(mainPassExecution.parents.begin(), externalDependencies.begin(), externalDependencies.end());
 
     gRenderBackend.setRenderPassExecution(mainPassExecution);
-}
-
-void RenderFrontend::computeFXAA(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const{
-    //color to luminance
-    {
-        const ImageResource srcResource(src, 0, 1);
-        const ImageResource dstResource(m_sceneLuminance, 0, 2);
-
-        RenderPassExecution exe;
-        exe.handle = m_colorToLuminancePass;
-        exe.resources.sampledImages = { srcResource };
-        exe.resources.storageImages = { dstResource };
-        exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-        exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-        exe.dispatchCount[2] = 1;
-        exe.parents = { parent };
-
-        gRenderBackend.setRenderPassExecution(exe);
-    }
-    //fxaa pass
-    {
-        const ImageResource srcResource(src, 0, 1);
-        const ImageResource dstResource(dst, 0, 2);
-        const ImageResource luminanceResource(m_sceneLuminance, 0, 3);
-
-        RenderPassExecution exe;
-        exe.handle = m_fxaaPass;
-        exe.resources.sampledImages = { srcResource, luminanceResource };
-        exe.resources.storageImages = { dstResource };
-        exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-        exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-        exe.dispatchCount[2] = 1;
-        exe.parents = { m_colorToLuminancePass };
-
-        gRenderBackend.setRenderPassExecution(exe);
-    }
 }
 
 void RenderFrontend::copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const {
@@ -2326,13 +2284,6 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         m_tonemappingPass = gRenderBackend.createComputePass(desc);
     }
-    //fxaa pass
-    {
-        ComputePassDescription desc;
-        desc.name = "FXAA";
-        desc.shaderDescription.srcPathRelative = "fxaa.comp";
-        m_fxaaPass = gRenderBackend.createComputePass(desc);
-    }
     //temporal filter pass
     {
         ComputePassDescription desc;
@@ -2495,8 +2446,6 @@ void RenderFrontend::drawUi() {
     ImGui::End();
 
     ImGui::Begin("Rendering");
-
-    ImGui::Checkbox("FXAA", &m_useFXAA);
     ImGui::Checkbox("Temporal supersampling", &m_useTemporalSupersampling);
 
     //Temporal filter Settings

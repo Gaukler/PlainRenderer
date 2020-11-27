@@ -145,7 +145,6 @@ private:
     void computeDepthPyramid() const;
     void computeSunLightMatrices() const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const;
-    void computeFXAA(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const;
     void copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const; //input must be R11G11B10
     void computeTemporalSuperSampling(const ColorFrames& frames, const ImageHandle target, const RenderPassHandle parent) const;
     void computeTemporalFilter(const ImageHandle currentFrameColor, const ImageHandle target, const RenderPassHandle parent) const;
@@ -188,7 +187,6 @@ private:
     GLFWwindow* m_window = nullptr;
     GlobalShaderInfo m_globalShaderInfo;
     bool m_useTemporalSupersampling = true;
-    bool m_useFXAA = false;
 
     Camera m_camera;    
     glm::mat4 m_viewProjectionMatrix = glm::mat4(1.f);
@@ -231,7 +229,6 @@ private:
     RenderPassHandle m_depthPyramidPass;
     RenderPassHandle m_lightMatrixPass;
     RenderPassHandle m_tonemappingPass;
-    RenderPassHandle m_fxaaPass;
     RenderPassHandle m_temporalSupersamplingPass;
     RenderPassHandle m_temporalFilterPass;
     RenderPassHandle m_skyShadowPass;
