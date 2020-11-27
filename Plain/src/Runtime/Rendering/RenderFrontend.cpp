@@ -226,7 +226,8 @@ void RenderFrontend::prepareNewFrame() {
             m_motionVectorBuffer,
             m_historyBuffers[0],
             m_historyBuffers[1],
-            m_sceneLuminance}, 
+            m_sceneLuminance,
+            m_lastFrameLuminance}, 
             m_screenWidth, m_screenHeight);
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
@@ -265,6 +266,10 @@ void RenderFrontend::prepareNewFrame() {
 
     gRenderBackend.updateShaderCode();
     gRenderBackend.newFrame();    
+
+    const auto tempImage = m_sceneLuminance;
+    m_sceneLuminance = m_lastFrameLuminance;
+    m_lastFrameLuminance = tempImage;
 
     prepareRenderpasses();
     gRenderBackend.startDrawcallRecording();
@@ -850,26 +855,49 @@ void RenderFrontend::copyHDRImage(const ImageHandle src, const ImageHandle dst, 
 }
 
 void RenderFrontend::computeTemporalSuperSampling(const ImageHandle currentFrame, const ImageHandle lastFrame, const ImageHandle target, const RenderPassHandle parent) const {
-    const ImageResource currentFrameResource(currentFrame, 0, 1);
-    const ImageResource lastFrameResource(lastFrame, 0, 2);
-    const ImageResource targetResource(target, 0, 3);
-    const ImageResource velocityBufferResource(m_motionVectorBuffer, 0, 4);
-    const ImageResource depthBufferResource(m_depthBuffer, 0, 5);
+    //scene luminance
+    {
+        const ImageResource srcResource(currentFrame, 0, 0);
+        const ImageResource dstResource(m_sceneLuminance, 0, 1);
 
-    RenderPassExecution temporalSupersamplingExecution;
-    temporalSupersamplingExecution.handle = m_temporalSupersamplingPass;
-    temporalSupersamplingExecution.resources.storageImages = { targetResource };
-    temporalSupersamplingExecution.resources.sampledImages = {
-        currentFrameResource,
-        lastFrameResource,
-        velocityBufferResource,
-        depthBufferResource };
-    temporalSupersamplingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-    temporalSupersamplingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-    temporalSupersamplingExecution.dispatchCount[2] = 1;
-    temporalSupersamplingExecution.parents = { parent };
+        RenderPassExecution exe;
+        exe.handle = m_colorToLuminancePass;
+        exe.resources.storageImages = { dstResource };
+        exe.resources.sampledImages = { srcResource };
+        exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+        exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+        exe.dispatchCount[2] = 1;
+        exe.parents = { parent };
 
-    gRenderBackend.setRenderPassExecution(temporalSupersamplingExecution);
+        gRenderBackend.setRenderPassExecution(exe);
+    }
+    //temporal supersampling
+    {
+        const ImageResource currentFrameResource(currentFrame, 0, 1);
+        const ImageResource lastFrameResource(lastFrame, 0, 2);
+        const ImageResource targetResource(target, 0, 3);
+        const ImageResource velocityBufferResource(m_motionVectorBuffer, 0, 4);
+        const ImageResource depthBufferResource(m_depthBuffer, 0, 5);
+        const ImageResource currentLuminanceResource(m_sceneLuminance, 0, 6);
+        const ImageResource lastLuminanceResource(m_lastFrameLuminance, 0, 7);
+
+        RenderPassExecution temporalSupersamplingExecution;
+        temporalSupersamplingExecution.handle = m_temporalSupersamplingPass;
+        temporalSupersamplingExecution.resources.storageImages = { targetResource };
+        temporalSupersamplingExecution.resources.sampledImages = {
+            currentFrameResource,
+            lastFrameResource,
+            velocityBufferResource,
+            depthBufferResource,
+            currentLuminanceResource,
+            lastLuminanceResource };
+        temporalSupersamplingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+        temporalSupersamplingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+        temporalSupersamplingExecution.dispatchCount[2] = 1;
+        temporalSupersamplingExecution.parents = { m_colorToLuminancePass };
+
+        gRenderBackend.setRenderPassExecution(temporalSupersamplingExecution);
+    }
 }
 
 void RenderFrontend::computeTemporalFilter(const ImageHandle currentFrameColor, const ImageHandle target, const RenderPassHandle parent, 
@@ -1545,7 +1573,7 @@ void RenderFrontend::initImages() {
 
         m_skyShadowMap = gRenderBackend.createImage(desc);
     }
-    //scene luminance
+    //scene and history luminance
     {
         ImageDescription desc;
         desc.width = m_screenWidth;
@@ -1559,6 +1587,7 @@ void RenderFrontend::initImages() {
         desc.autoCreateMips = false;
 
         m_sceneLuminance = gRenderBackend.createImage(desc);
+        m_lastFrameLuminance = gRenderBackend.createImage(desc);
     }
     //noise textures
     for (int i = 0; i < noiseTextureCount; i++) {

@@ -7,8 +7,8 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set=1, binding = 1) 		uniform texture2D srcTexture;
-layout(set=1, binding = 2, r8)	uniform image2D dstImage;
+layout(set=1, binding = 0) 		uniform texture2D srcTexture;
+layout(set=1, binding = 1, r8)	uniform image2D dstImage;
 
 void main(){
 	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);

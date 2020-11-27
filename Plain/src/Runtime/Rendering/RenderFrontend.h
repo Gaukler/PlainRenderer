@@ -229,6 +229,7 @@ private:
     ImageHandle m_skyShadowMap;
     ImageHandle m_skyOcclusionVolume;
     ImageHandle m_sceneLuminance;
+    ImageHandle m_lastFrameLuminance;
 
     std::vector<ImageHandle> m_noiseTextures;
     uint32_t m_noiseTextureIndex = 0;
