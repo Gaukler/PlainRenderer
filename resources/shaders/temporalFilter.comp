@@ -104,8 +104,7 @@ void main(){
 	if(useTonemap){
 		historySample = tonemap(historySample);
 	}
-	
-	vec3 unclipped = historySample;
+
     if(useClipping){
         historySample = clipAABB(historySample, minMax[0], minMax[1]);
     }
@@ -119,14 +118,7 @@ void main(){
         historySample = currentColor;
     }
 	
-	float distanceToClamp = 5 * abs(computeLuminance(unclipped) - computeLuminance(historySample));
-	distanceToClamp = pow(distanceToClamp, 2);
-	distanceToClamp = clamp(distanceToClamp, 0, 1);
-
-	float blendMin = 0.025f;
-	float blendMax = 0.1;
-	//float blendFactor = 0.1f;
-	float blendFactor = mix(blendMin, blendMax, distanceToClamp);
+	float blendFactor = 0.1f;
 
 	if(g_cameraCut){
 		blendFactor = 1.f;
