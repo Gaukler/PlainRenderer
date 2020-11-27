@@ -61,41 +61,6 @@ const uint32_t globalSamplerNearestClampBinding         = 5;
 const uint32_t globalSamplerLinearWhiteBorderBinding    = 6;
 const uint32_t globalNoiseTextureBindingBinding         = 7;
 
-void PingPongImageWrapper::init(const ImageDescription& desc) {
-    m_pingPongImages.src = gRenderBackend.createImage(desc);
-    m_pingPongImages.dst = gRenderBackend.createImage(desc);
-}
-
-void PingPongImageWrapper::switchImages() {
-    const ImageHandle temp = m_pingPongImages.src;
-    m_pingPongImages.src = m_pingPongImages.dst;
-    m_pingPongImages.dst = temp;
-}
-
-PingPongImages PingPongImageWrapper::getImages() const{
-    return m_pingPongImages;
-}
-
-void ColorBufferWrapper::init(const ImageDescription& desc) {
-    for (int i = 0; i < 3; i++) {
-        m_images[i] = gRenderBackend.createImage(desc);
-    }
-}
-
-void ColorBufferWrapper::advance() {
-    m_index++;
-    m_index %= 3;
-}
-
-ColorFrames ColorBufferWrapper::getImages() const {
-    ColorFrames frames;
-    frames.current = m_images[m_index];
-    //+3 on index so that index does not become negative, which messes with modulo
-    frames.last         = m_images[(3 + m_index - 1) % 3];
-    frames.secondToLast = m_images[(3 + m_index - 2) % 3];
-    return frames;
-}
-
 void resizeCallback(GLFWwindow* window, int width, int height) {
     RenderFrontend* frontEnd = reinterpret_cast<RenderFrontend*>(glfwGetWindowUserPointer(window));
     frontEnd->setResolution(width, height);
@@ -236,6 +201,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     initBuffers(histogramSettings);
     initRenderpasses(histogramSettings);
     initFramebuffers();
+    initRenderTargets();
     initMeshs();
 
     gRenderBackend.newFrame();
@@ -249,21 +215,17 @@ void RenderFrontend::shutdown() {
 
 void RenderFrontend::prepareNewFrame() {
     if (m_didResolutionChange) {
-        const PingPongImages historyBuffers = m_historyBuffers.getImages();
-        const ColorFrames frames = m_colorBuffers.getImages();
 
         gRenderBackend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
-        gRenderBackend.resizeImages( { 
-            m_sceneImage,
-            frames.current,
-            frames.last,
-            frames.secondToLast,
-            m_postProcessBuffers[0], 
+        gRenderBackend.resizeImages({
+            m_sceneRenderTargets[0].image,
+            m_sceneRenderTargets[1].image,
+            m_postProcessBuffers[0],
             m_postProcessBuffers[1],
-            m_depthBuffer, 
+            m_depthBuffer,
             m_motionVectorBuffer,
-            historyBuffers.dst, 
-            historyBuffers.src,
+            m_historyBuffers[0],
+            m_historyBuffers[1],
             m_sceneLuminance}, 
             m_screenWidth, m_screenHeight);
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
@@ -333,16 +295,19 @@ void RenderFrontend::prepareRenderpasses(){
         m_isBRDFLutShaderDescriptionStale = false;
     }
 
-    m_colorBuffers.advance();
-    const ColorFrames frames = m_colorBuffers.getImages();
+    static int sceneRenderTargetIndex;
+    const RenderTarget lastRenderTarget = m_sceneRenderTargets[sceneRenderTargetIndex];
+    sceneRenderTargetIndex++;
+    sceneRenderTargetIndex %= 2;
+    const RenderTarget currentRenderTarget = m_sceneRenderTargets[sceneRenderTargetIndex];
 
     renderSunShadowCascades();
-    computeColorBufferHistogram(frames.last);
+    computeColorBufferHistogram(lastRenderTarget.image);
     computeExposure();
     renderDepthPrepass();
     computeDepthPyramid();
     computeSunLightMatrices();
-    renderForwardShading(preparationPasses);
+    renderForwardShading(preparationPasses, currentRenderTarget.framebuffer);
 
     const bool drawDebugPass =
         m_freezeAndDrawCameraFrustum ||
@@ -351,34 +316,34 @@ void RenderFrontend::prepareRenderpasses(){
 
     //debug pass
     if (drawDebugPass) {
-        renderDebugGeometry();
+        renderDebugGeometry(currentRenderTarget.framebuffer);
     }
-    renderSky(drawDebugPass);
+    renderSky(drawDebugPass, currentRenderTarget.framebuffer);
     skyIBLConvolution();
 
     
     RenderPassHandle currentPass = m_sunSpritePass;
+    ImageHandle currentSrc = currentRenderTarget.image;
 
-    //unecessary copy, but keeps logic simple
-    //assumed to be used for comparison only anyways
-    copyHDRImage(m_sceneImage, frames.current, currentPass);
-    currentPass = m_hdrImageCopyPass;
-    ImageHandle currentSrc = frames.current;
-    
     if (m_temporalFilterSettings.enabled) {
 
         if (m_temporalFilterSettings.useSeparateSupersampling) {
-            computeTemporalSuperSampling(frames, m_postProcessBuffers[0], currentPass);
+            computeTemporalSuperSampling(currentSrc, lastRenderTarget.image,
+                m_postProcessBuffers[0], currentPass);
+
             currentPass = m_temporalSupersamplingPass;
             currentSrc = m_postProcessBuffers[0];
         }
 
-        computeTemporalFilter(currentSrc, m_postProcessBuffers[1], currentPass);
-        currentPass = m_temporalFilterPass;
-        currentSrc = m_postProcessBuffers[1];
+        static int historyIndex;
+        const ImageHandle lastHistory = m_historyBuffers[historyIndex];
+        historyIndex++;
+        historyIndex %= 2;
+        const ImageHandle currentHistory = m_historyBuffers[historyIndex];
 
-        m_historyBuffers.switchImages();
-        
+        computeTemporalFilter(currentSrc, m_postProcessBuffers[1], currentPass, currentHistory, lastHistory);
+        currentPass = m_temporalFilterPass;
+        currentSrc = m_postProcessBuffers[1];        
     }
     computeTonemapping(currentPass, currentSrc);
 }
@@ -659,7 +624,7 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
     }
 }
    
-void RenderFrontend::renderSky(const bool drewDebugPasses) const {
+void RenderFrontend::renderSky(const bool drewDebugPasses, const FramebufferHandle framebuffer) const {
     gRenderBackend.setUniformBufferData(
         m_atmosphereSettingsBuffer, 
         &m_atmosphereSettings, 
@@ -721,7 +686,7 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
 
         RenderPassExecution skyPassExecution;
         skyPassExecution.handle = m_skyPass;
-        skyPassExecution.framebuffer = m_sceneFramebuffer;
+        skyPassExecution.framebuffer = framebuffer;
         skyPassExecution.resources.sampledImages = { skyLutResource };
         skyPassExecution.parents = { m_mainPass,  m_skyLutPass };
         if (drewDebugPasses) {
@@ -736,7 +701,7 @@ void RenderFrontend::renderSky(const bool drewDebugPasses) const {
 
         RenderPassExecution sunSpritePassExecution;
         sunSpritePassExecution.handle = m_sunSpritePass;
-        sunSpritePassExecution.framebuffer = m_sceneFramebuffer;
+        sunSpritePassExecution.framebuffer = framebuffer;
         sunSpritePassExecution.parents = { m_skyPass };
         sunSpritePassExecution.resources.storageBuffers = { lightBufferResource };
         sunSpritePassExecution.resources.sampledImages = { transmissionLutResource };
@@ -837,7 +802,7 @@ void RenderFrontend::computeSunLightMatrices() const{
     gRenderBackend.setRenderPassExecution(exe);
 }
 
-void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const {
+void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const {
     const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 1);
     const auto brdfLutResource = ImageResource(m_brdfLut, 0, 3);
     const auto specularProbeResource = ImageResource(m_specularSkyProbe, 0, 4);
@@ -849,7 +814,7 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
 
     RenderPassExecution mainPassExecution;
     mainPassExecution.handle = m_mainPass;
-    mainPassExecution.framebuffer = m_sceneFramebuffer;
+    mainPassExecution.framebuffer = framebuffer;
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
     mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource };
     mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
@@ -884,13 +849,12 @@ void RenderFrontend::copyHDRImage(const ImageHandle src, const ImageHandle dst, 
     gRenderBackend.setRenderPassExecution(exe);
 }
 
-void RenderFrontend::computeTemporalSuperSampling(const ColorFrames& frames, const ImageHandle target, const RenderPassHandle parent) const {
-    const ImageResource currentFrameResource(frames.current, 0, 1);
-    const ImageResource lastFrameResource(frames.last, 0, 2);
-    const ImageResource secondToLastFrameResource(frames.secondToLast, 0, 3);
-    const ImageResource targetResource(target, 0, 4);
-    const ImageResource velocityBufferResource(m_motionVectorBuffer, 0, 5);
-    const ImageResource depthBufferResource(m_depthBuffer, 0, 6);
+void RenderFrontend::computeTemporalSuperSampling(const ImageHandle currentFrame, const ImageHandle lastFrame, const ImageHandle target, const RenderPassHandle parent) const {
+    const ImageResource currentFrameResource(currentFrame, 0, 1);
+    const ImageResource lastFrameResource(lastFrame, 0, 2);
+    const ImageResource targetResource(target, 0, 3);
+    const ImageResource velocityBufferResource(m_motionVectorBuffer, 0, 4);
+    const ImageResource depthBufferResource(m_depthBuffer, 0, 5);
 
     RenderPassExecution temporalSupersamplingExecution;
     temporalSupersamplingExecution.handle = m_temporalSupersamplingPass;
@@ -898,7 +862,6 @@ void RenderFrontend::computeTemporalSuperSampling(const ColorFrames& frames, con
     temporalSupersamplingExecution.resources.sampledImages = {
         currentFrameResource,
         lastFrameResource,
-        secondToLastFrameResource,
         velocityBufferResource,
         depthBufferResource };
     temporalSupersamplingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
@@ -909,14 +872,13 @@ void RenderFrontend::computeTemporalSuperSampling(const ColorFrames& frames, con
     gRenderBackend.setRenderPassExecution(temporalSupersamplingExecution);
 }
 
-void RenderFrontend::computeTemporalFilter(const ImageHandle currentFrameColor, const ImageHandle target, const RenderPassHandle parent) const {
-    
-    const PingPongImages historyBuffers = m_historyBuffers.getImages();
+void RenderFrontend::computeTemporalFilter(const ImageHandle currentFrameColor, const ImageHandle target, const RenderPassHandle parent, 
+    const ImageHandle historyBufferSrc, const ImageHandle historyBufferDst) const {
 
     const ImageResource inputImageResource(currentFrameColor, 0, 0);
     const ImageResource outputImageResource(target, 0, 1);
-    const ImageResource historyDstResource(historyBuffers.dst, 0, 2);
-    const ImageResource historySrcResource(historyBuffers.src, 0, 3);
+    const ImageResource historyDstResource(historyBufferDst, 0, 2);
+    const ImageResource historySrcResource(historyBufferSrc, 0, 3);
     const ImageResource motionBufferResource(m_motionVectorBuffer, 0, 4);
     const ImageResource depthBufferResource(m_depthBuffer, 0, 5);
     const UniformBufferResource resolveWeightsResource(m_taaResolveWeightBuffer, 6);
@@ -951,10 +913,10 @@ void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const Ima
     gRenderBackend.setRenderPassExecution(tonemappingExecution);
 }
 
-void RenderFrontend::renderDebugGeometry() const {
+void RenderFrontend::renderDebugGeometry(const FramebufferHandle framebuffer) const {
     RenderPassExecution debugPassExecution;
     debugPassExecution.handle = m_debugGeoPass;
-    debugPassExecution.framebuffer = m_sceneFramebuffer;
+    debugPassExecution.framebuffer = framebuffer;
     debugPassExecution.parents = { m_mainPass };
     gRenderBackend.setRenderPassExecution(debugPassExecution);
 }
@@ -1359,23 +1321,6 @@ void RenderFrontend::initImages() {
     //sky occlusion volume is created later
     //its resolution is dependent on scene size in order to fit desired texel density
 
-    //scene images
-    {
-        ImageDescription desc;
-        desc.initialData = std::vector<uint8_t>{};
-        desc.width = m_screenWidth;
-        desc.height = m_screenHeight;
-        desc.depth = 1;
-        desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 0;
-        desc.autoCreateMips = false;
-
-        m_sceneImage = gRenderBackend.createImage(desc);
-        m_colorBuffers.init(desc);
-    }
     //depth buffer
     {
         ImageDescription desc;
@@ -1437,7 +1382,8 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_historyBuffers.init(desc);
+        m_historyBuffers[0] = gRenderBackend.createImage(desc);
+        m_historyBuffers[1] = gRenderBackend.createImage(desc);
     }
     //shadow map cascades
     {
@@ -1708,22 +1654,6 @@ void RenderFrontend::initSamplers(){
 }
 
 void RenderFrontend::initFramebuffers() {
-    //scene framebuffer
-    {
-        FramebufferTarget colorTarget;
-        colorTarget.image = m_sceneImage;
-        colorTarget.mipLevel = 0;
-
-        FramebufferTarget depthTarget;
-        depthTarget.image = m_depthBuffer;
-        depthTarget.mipLevel = 0;
-
-        FramebufferDescription desc;
-        desc.compatibleRenderpass = m_mainPass;
-        desc.targets = { colorTarget, depthTarget };
-
-        m_sceneFramebuffer = gRenderBackend.createFramebuffer(desc);
-    }
     //shadow map framebuffers
     for (int i = 0; i < 4; i++) {
         FramebufferTarget depthTarget;
@@ -1763,6 +1693,47 @@ void RenderFrontend::initFramebuffers() {
 
         m_skyShadowFramebuffer = gRenderBackend.createFramebuffer(desc);
     }
+}
+
+void RenderFrontend::initRenderTargets() {
+    //scene render targets
+    for (int i = 0; i < 2; i++) {
+        //image
+        ImageHandle image;
+        {
+            ImageDescription desc;
+            desc.initialData = std::vector<uint8_t>{};
+            desc.width = m_screenWidth;
+            desc.height = m_screenHeight;
+            desc.depth = 1;
+            desc.type = ImageType::Type2D;
+            desc.format = ImageFormat::R11G11B10_uFloat;
+            desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
+            desc.mipCount = MipCount::One;
+            desc.manualMipCount = 0;
+            desc.autoCreateMips = false;
+
+            m_sceneRenderTargets[i].image = gRenderBackend.createImage(desc);
+        }
+        //framebuffer
+        {
+            FramebufferTarget colorTarget;
+            colorTarget.image = m_sceneRenderTargets[i].image;
+            colorTarget.mipLevel = 0;
+
+            FramebufferTarget depthTarget;
+            depthTarget.image = m_depthBuffer;
+            depthTarget.mipLevel = 0;
+
+            FramebufferDescription desc;
+            desc.compatibleRenderpass = m_mainPass;
+            desc.targets = { colorTarget, depthTarget };
+
+            m_sceneRenderTargets[i].framebuffer = gRenderBackend.createFramebuffer(desc);
+        }
+    }
+    
+    
 }
 
 void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {

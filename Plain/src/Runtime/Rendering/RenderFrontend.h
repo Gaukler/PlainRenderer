@@ -76,35 +76,10 @@ struct DefaultTextures {
     ImageHandle sky;
 };
 
-struct PingPongImages{
-    ImageHandle src;
-    ImageHandle dst;
-};
-
-class PingPongImageWrapper {
-public:
-    void init(const ImageDescription& desc);
-    void switchImages(); //internal switch between src and dst
-    PingPongImages getImages() const;
-private:
-    PingPongImages m_pingPongImages;
-};
-
-struct ColorFrames {
-    ImageHandle current;
-    ImageHandle last;
-    ImageHandle secondToLast;
-};
-
-class ColorBufferWrapper {
-public:
-    //depth buffer and compatible renderpass are used for framebuffer creation
-    void init(const ImageDescription& desc);
-    void advance(); //advance internal rotation of frame N, N-1, N-2
-    ColorFrames getImages() const;
-private:
-    ImageHandle m_images[3];
-    uint32_t m_index = 0;
+//simple wrapper to keep image and corresponding framebuffer in one place
+struct RenderTarget {
+    ImageHandle image;
+    FramebufferHandle framebuffer;
 };
 
 class RenderFrontend {
@@ -139,18 +114,19 @@ private:
 
     //computes image histogram using compute shaders
     void computeColorBufferHistogram(const ImageHandle lastFrameColor) const;
-    void renderSky(const bool drewDebugPasses) const;
+    void renderSky(const bool drewDebugPasses, const FramebufferHandle framebuffer) const;
     void renderSunShadowCascades() const;
     void computeExposure() const;
     void renderDepthPrepass() const;
     void computeDepthPyramid() const;
     void computeSunLightMatrices() const;
-    void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies) const;
+    void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const;
     void copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const; //input must be R11G11B10
-    void computeTemporalSuperSampling(const ColorFrames& frames, const ImageHandle target, const RenderPassHandle parent) const;
-    void computeTemporalFilter(const ImageHandle currentFrameColor, const ImageHandle target, const RenderPassHandle parent) const;
+    void computeTemporalSuperSampling(const ImageHandle currentFrame, const ImageHandle lastFrame, const ImageHandle target, const RenderPassHandle parent) const;
+    void computeTemporalFilter(const ImageHandle currentFrameColor, const ImageHandle target, const RenderPassHandle parent,
+        const ImageHandle historyBufferSrc, const ImageHandle historyBufferDst) const;
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
-    void renderDebugGeometry() const;
+    void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void issueSkyDrawcalls();
 
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
@@ -238,8 +214,8 @@ private:
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
-    ImageHandle m_sceneImage;
     ImageHandle m_postProcessBuffers[2];
+    ImageHandle m_historyBuffers[2];
     ImageHandle m_depthBuffer;
     ImageHandle m_motionVectorBuffer;
     ImageHandle m_skyTexture;
@@ -257,9 +233,6 @@ private:
     std::vector<ImageHandle> m_noiseTextures;
     uint32_t m_noiseTextureIndex = 0;
 
-    PingPongImageWrapper m_historyBuffers;
-    ColorBufferWrapper m_colorBuffers;
-
     DefaultTextures m_defaultTextures;
 
     std::vector<ImageHandle> m_shadowMaps;
@@ -271,10 +244,11 @@ private:
     SamplerHandle m_sampler_nearestClamp;
     SamplerHandle m_sampler_linearWhiteBorder;
 
-    FramebufferHandle m_sceneFramebuffer;
     FramebufferHandle m_shadowCascadeFramebuffers[4];
     FramebufferHandle m_depthPrepassFramebuffer;
     FramebufferHandle m_skyShadowFramebuffer;
+
+    RenderTarget m_sceneRenderTargets[2];
 
     MeshHandle m_skyCube;
     MeshHandle m_quad;
@@ -311,6 +285,8 @@ private:
 
     //must be called after initImages and initRenderpasses
     void initFramebuffers();
+
+    void initRenderTargets();
 
     void initBuffers(const HistogramSettings& histogramSettings);
 

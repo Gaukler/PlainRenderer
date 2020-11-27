@@ -11,10 +11,9 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 1) uniform texture2D currentFrame;
 layout(set=1, binding = 2) uniform texture2D lastFrame;
-layout(set=1, binding = 3) uniform texture2D secondToLastFrame; //unused for now
-layout(set=1, binding = 4, r11f_g11f_b10f) 	uniform image2D targetImage;
-layout(set=1, binding = 5) uniform texture2D velocityBuffer;
-layout(set=1, binding = 6) uniform texture2D depthBuffer;
+layout(set=1, binding = 3, r11f_g11f_b10f) 	uniform image2D targetImage;
+layout(set=1, binding = 4) uniform texture2D velocityBuffer;
+layout(set=1, binding = 5) uniform texture2D depthBuffer;
 
 //no clamping or history sample rejection as no problems occured yet
 //will probably have to revisit this after particle effects volumetric etc. are added that might cause artifacts
