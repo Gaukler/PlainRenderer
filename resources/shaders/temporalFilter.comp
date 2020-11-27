@@ -56,6 +56,18 @@ vec3 resolveColor(vec3 [3][3] neighbourhood){
 	return resolved;
 }
 
+float computeNeighbourhoodContrast(vec3 neighbourhood[3][3]){
+	return 
+		abs(computeLuminance(neighbourhood[0][0]) - computeLuminance(neighbourhood[1][1]))+
+		abs(computeLuminance(neighbourhood[1][0]) - computeLuminance(neighbourhood[1][1]))+
+		abs(computeLuminance(neighbourhood[2][0]) - computeLuminance(neighbourhood[1][1]))+
+		abs(computeLuminance(neighbourhood[0][2]) - computeLuminance(neighbourhood[1][1]))+
+		abs(computeLuminance(neighbourhood[1][2]) - computeLuminance(neighbourhood[1][1]))+
+		abs(computeLuminance(neighbourhood[2][2]) - computeLuminance(neighbourhood[1][1]))+
+		abs(computeLuminance(neighbourhood[0][1]) - computeLuminance(neighbourhood[1][1]))+
+		abs(computeLuminance(neighbourhood[2][1]) - computeLuminance(neighbourhood[1][1]));
+}
+
 void main(){
 
 	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
@@ -118,7 +130,20 @@ void main(){
         historySample = currentColor;
     }
 	
-	float blendFactor = 0.1f;
+	//blend factor dependant on contrast change to prevent flickering
+	//see "Filmic SMAA", page 94
+	float currentContrast = computeNeighbourhoodContrast(neighbourhood);
+
+	//TODO: compute history luminance once instead of costly color fetches
+	vec3[3][3] lastNeighbourhood = sampleNeighbourhood(historyBufferSrc, g_sampler_linearClamp, uv + motion, texelSize, useTonemap);
+	float lastContrast = computeNeighbourhoodContrast(lastNeighbourhood);
+	float contrastChange = abs(currentContrast - lastContrast);
+	contrastChange = clamp(contrastChange, 0, 1);
+
+	float blendMin = 0.03f;
+	float blendMax = 0.13;
+	float blendFactor = mix(blendMax, blendMin, contrastChange);
+	//blendFactor = 0.03f; //static low blend factor overly blury in some areas
 
 	if(g_cameraCut){
 		blendFactor = 1.f;
