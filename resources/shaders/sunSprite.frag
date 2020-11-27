@@ -15,7 +15,7 @@ layout(set=1, binding = 1) uniform texture2D transmissionLut;
 layout(location = 0) in vec2 passQuadPos;
 layout(location = 1) in vec3 passWorldPos;
 
-layout(location = 0) out vec3 color;
+layout(location = 0) out vec4 color;
 
 //from: "Wavelength dependency of the Solar limb darkening" equation(1)
 //coefficients picked from table 2 at wavelenghts corresponding to RGB
@@ -36,5 +36,8 @@ void main(){
     vec3 V = normalize(passWorldPos + vec3(0, bias, 0));
     vec2 lutUV = computeLutUV(0, 100, vec3(0, -1, 0), V);
     vec3 transmission = texture(sampler2D(transmissionLut, g_sampler_linearClamp), lutUV).rgb;
-    color = lightBuffer.sunStrengthExposed * transmission * limbDarkening(distanceFromCenter);
+    color.rgb = lightBuffer.sunStrengthExposed * transmission * limbDarkening(distanceFromCenter);
+	//soft alpha blend at edge
+	color.a = 1.f - distanceFromCenter;
+	color.a *= color.a;
 }
