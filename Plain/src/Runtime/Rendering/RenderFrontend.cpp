@@ -365,12 +365,14 @@ void RenderFrontend::prepareRenderpasses(){
     currentPass = m_hdrImageCopyPass;
     ImageHandle currentSrc = frames.current;
     
-    if (m_useTemporalSupersampling) {
-        computeTemporalSuperSampling(frames, m_postProcessBuffers[0], currentPass);
-        currentPass = m_temporalSupersamplingPass;
-        currentSrc = m_postProcessBuffers[0];
-    }
     if (m_temporalFilterSettings.enabled) {
+
+        if (m_temporalFilterSettings.useSeparateSupersampling) {
+            computeTemporalSuperSampling(frames, m_postProcessBuffers[0], currentPass);
+            currentPass = m_temporalSupersamplingPass;
+            currentSrc = m_postProcessBuffers[0];
+        }
+
         computeTemporalFilter(currentSrc, m_postProcessBuffers[1], currentPass);
         currentPass = m_temporalFilterPass;
         currentSrc = m_postProcessBuffers[1];
@@ -406,7 +408,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     const glm::mat4 projectionMatrix = projectionMatrixFromCameraIntrinsic(m_camera.intrinsic);
 
     //jitter matrix for temporal supersampling
-    if(m_useTemporalSupersampling || m_temporalFilterSettings.enabled){
+    if(m_temporalFilterSettings.enabled){
         const glm::vec2 pixelSize = glm::vec2(1.f / m_screenWidth, 1.f / m_screenHeight);
 
         const glm::vec2 jitterInPixels = computeProjectionMatrixJitter();
@@ -2446,7 +2448,6 @@ void RenderFrontend::drawUi() {
     ImGui::End();
 
     ImGui::Begin("Rendering");
-    ImGui::Checkbox("Temporal supersampling", &m_useTemporalSupersampling);
 
     //Temporal filter Settings
     if(ImGui::CollapsingHeader("Temporal filter settings")){
@@ -2454,6 +2455,9 @@ void RenderFrontend::drawUi() {
         if (ImGui::Checkbox("Enabled", &m_temporalFilterSettings.enabled)) {
             m_globalShaderInfo.cameraCut = true;
         }
+
+        ImGui::Checkbox("Separate temporal supersampling", &m_temporalFilterSettings.useSeparateSupersampling);
+
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Clipping", &m_temporalFilterSettings.useClipping);
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Dilate motion vector", &m_temporalFilterSettings.useMotionVectorDilation);
 

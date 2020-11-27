@@ -39,6 +39,7 @@ enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2
 
 struct TemporalFilterSettings {
     bool enabled = true;
+    bool useSeparateSupersampling = true;
     bool useClipping = true;
     bool useMotionVectorDilation = true;
     HistorySamplingTech historySamplingTech = HistorySamplingTech::Bicubic1Tap;
@@ -186,7 +187,6 @@ private:
     //stored for resizing
     GLFWwindow* m_window = nullptr;
     GlobalShaderInfo m_globalShaderInfo;
-    bool m_useTemporalSupersampling = true;
 
     Camera m_camera;    
     glm::mat4 m_viewProjectionMatrix = glm::mat4(1.f);
