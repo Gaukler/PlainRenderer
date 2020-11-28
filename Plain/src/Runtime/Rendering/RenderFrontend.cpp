@@ -1331,6 +1331,13 @@ void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.cameraAspectRatio = m_camera.intrinsic.aspectRatio;
     m_globalShaderInfo.screenResolution = glm::ivec2(m_screenWidth, m_screenHeight);
 
+    //supersampling needs a lod bias as the derivatives are incorrect
+    //see "Filmic SMAA", page 117
+    //we spread 8 samples over a 2 pixek radius, resulting in an average distance of 2/8 = 0.25
+    //the resulting diagonal distance between the samples is sqrt(0.25) = 0.5
+    const float lodBiasSampleRadius = 0.5f;
+    m_globalShaderInfo.mipBias = m_temporalFilterSettings.enabled && m_temporalFilterSettings.useMipBias ? glm::log2(lodBiasSampleRadius) : 0.f;
+
     gRenderBackend.setUniformBufferData(m_globalUniformBuffer, &m_globalShaderInfo, sizeof(m_globalShaderInfo));
 
     m_noiseTextureIndex++;
@@ -2472,6 +2479,7 @@ void RenderFrontend::drawUi() {
 
         m_isTemporalSupersamplingShaderDescriptionStale |= ImGui::Checkbox("Tonemap temporal filter input", &m_temporalFilterSettings.supersampleUseTonemapping);
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Tonemap temporal supersample input", &m_temporalFilterSettings.filterUseTonemapping);
+        ImGui::Checkbox("Use mip bias", &m_temporalFilterSettings.useMipBias);
     }
 
     //lighting settings

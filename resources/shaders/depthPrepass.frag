@@ -13,7 +13,7 @@ layout(set=2, binding = 0) uniform texture2D colorTexture;
 layout(location = 0) out vec2 motion;
 
 void main(){
-    float alpha = texture(sampler2D(colorTexture, g_sampler_anisotropicRepeat), passUV).a;
+    float alpha = texture(sampler2D(colorTexture, g_sampler_anisotropicRepeat), passUV, g_mipBias).a;
     if(alpha < 0.5f){
         discard;
     }

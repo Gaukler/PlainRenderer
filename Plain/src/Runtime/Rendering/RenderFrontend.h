@@ -45,6 +45,7 @@ struct TemporalFilterSettings {
     HistorySamplingTech historySamplingTech = HistorySamplingTech::Bicubic1Tap;
     bool supersampleUseTonemapping = true;
     bool filterUseTonemapping = true;
+    bool useMipBias = true;
 };
 
 struct SkyOcclusionRenderData {

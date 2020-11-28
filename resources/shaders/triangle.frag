@@ -144,9 +144,9 @@ SkyOcclusion sampleSkyOcclusion(vec3 worldPos){
 }
 
 void main(){
-	vec3 albedoTexel 		= texture(sampler2D(colorTexture, 		g_sampler_anisotropicRepeat), passUV).rgb;
-	vec3 specularTexel 		= texture(sampler2D(specularTexture, 	g_sampler_anisotropicRepeat), passUV).rgb;
-	vec2 normalTexel 		= texture(sampler2D(normalTexture, 		g_sampler_anisotropicRepeat), passUV).rg;
+	vec3 albedoTexel 		= texture(sampler2D(colorTexture, 		g_sampler_anisotropicRepeat), passUV, g_mipBias).rgb;
+	vec3 specularTexel 		= texture(sampler2D(specularTexture, 	g_sampler_anisotropicRepeat), passUV, g_mipBias).rgb;
+	vec2 normalTexel 		= texture(sampler2D(normalTexture, 		g_sampler_anisotropicRepeat), passUV, g_mipBias).rg;
     vec3 normalTexelReconstructed = vec3(normalTexel, sqrt(1.f - normalTexel.x * normalTexel.x + normalTexel.y + normalTexel.y));
     normalTexelReconstructed = normalTexelReconstructed * 2.f - 1.f;
     
