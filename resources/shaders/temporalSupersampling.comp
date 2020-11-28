@@ -75,7 +75,10 @@ bool acceptLastFrameSample(vec2 uvCurrent, vec2 uvLast){
 	float depthDifference = abs(currentDepth - lastDepth);
 	bool depthTest = depthDifference < depthTreshold;
 
-	return contrastTest && depthTest;
+	//reject samples from off screen
+	bool outOfScreen = isUVOutOfImage(uvLast);
+
+	return contrastTest && depthTest && !outOfScreen;
 }
 
 void main(){
