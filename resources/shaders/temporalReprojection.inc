@@ -78,3 +78,7 @@ vec2 getClosestFragmentMotion(ivec2 uv, texture2D depthTexture, texture2D veloci
     }
     return texelFetch(sampler2D(velocityTexture, textureSampler), uv + closestDepthOffset, 0).rg;
 }
+
+bool isUVOutOfImage(vec2 uv){
+	return uv.x < 0 || uv.y < 0 || uv.x > 1 || uv.y > 1;
+}

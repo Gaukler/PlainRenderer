@@ -68,6 +68,19 @@ float computeNeighbourhoodContrast(vec3 neighbourhood[3][3]){
 		abs(computeLuminance(neighbourhood[2][1]) - computeLuminance(neighbourhood[1][1]));
 }
 
+vec3 gaussianFilteredNeighbourhood(vec3 neighbourhood[3][3]){
+	return 
+		neighbourhood[0][0] * 0.0625 + 
+		neighbourhood[0][2] * 0.0625 +
+		neighbourhood[2][0] * 0.0625 +
+		neighbourhood[2][2] * 0.0625 +
+		neighbourhood[1][0] * 0.125 + 
+		neighbourhood[0][1] * 0.125 +
+		neighbourhood[1][2] * 0.125 +
+		neighbourhood[2][1] * 0.125 +
+		neighbourhood[1][1] * 0.25;
+}
+
 void main(){
 
 	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
@@ -129,7 +142,7 @@ void main(){
     if(isnan(historySample.x) || isnan(historySample.y) || isnan(historySample.z)){
         historySample = currentColor;
     }
-	
+
 	//blend factor dependant on contrast change to prevent flickering
 	//see "Filmic SMAA", page 94
 	float currentContrast = computeNeighbourhoodContrast(neighbourhood);
@@ -147,6 +160,12 @@ void main(){
 
 	if(g_cameraCut){
 		blendFactor = 1.f;
+	}
+
+	//if reprojected uv is outside screen use filtered color
+	if(isUVOutOfImage(uv + motion)){
+		blendFactor = 1.f;
+		currentColor = gaussianFilteredNeighbourhood(neighbourhood);
 	}
 
     vec3 color = mix(historySample, currentColor, blendFactor);
