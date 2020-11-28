@@ -76,10 +76,15 @@ struct DefaultTextures {
     ImageHandle sky;
 };
 
-//simple wrapper to keep image and corresponding framebuffer in one place
-struct RenderTarget {
-    ImageHandle image;
-    FramebufferHandle framebuffer;
+//simple wrapper to keep all images and framebuffers used in a frame in one place
+//simplifies keeping resources of multiples frames around for temporal techniques
+//motion buffer is shared between all frames as it's never reused
+struct FrameRenderTargets {
+    ImageHandle colorBuffer;
+    ImageHandle motionBuffer;
+    ImageHandle depthBuffer;
+    FramebufferHandle colorFramebuffer;
+    FramebufferHandle motionFramebuffer;
 };
 
 class RenderFrontend {
@@ -117,13 +122,14 @@ private:
     void renderSky(const bool drewDebugPasses, const FramebufferHandle framebuffer) const;
     void renderSunShadowCascades() const;
     void computeExposure() const;
-    void renderDepthPrepass() const;
-    void computeDepthPyramid() const;
+    void renderDepthPrepass(const FramebufferHandle framebuffer) const;
+    void computeDepthPyramid(const ImageHandle depthBuffer) const;
     void computeSunLightMatrices() const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const;
     void copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const; //input must be R11G11B10
-    void computeTemporalSuperSampling(const ImageHandle currentFrame, const ImageHandle lastFrame, const ImageHandle target, const RenderPassHandle parent) const;
-    void computeTemporalFilter(const ImageHandle currentFrameColor, const ImageHandle target, const RenderPassHandle parent,
+    void computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
+        const ImageHandle target, const RenderPassHandle parent) const;
+    void computeTemporalFilter(const ImageHandle colorSrc, const FrameRenderTargets& currentFrame, const ImageHandle target, const RenderPassHandle parent,
         const ImageHandle historyBufferSrc, const ImageHandle historyBufferDst) const;
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
@@ -216,8 +222,6 @@ private:
 
     ImageHandle m_postProcessBuffers[2];
     ImageHandle m_historyBuffers[2];
-    ImageHandle m_depthBuffer;
-    ImageHandle m_motionVectorBuffer;
     ImageHandle m_skyTexture;
     ImageHandle m_diffuseSkyProbe;
     ImageHandle m_specularSkyProbe;
@@ -246,10 +250,9 @@ private:
     SamplerHandle m_sampler_linearWhiteBorder;
 
     FramebufferHandle m_shadowCascadeFramebuffers[4];
-    FramebufferHandle m_depthPrepassFramebuffer;
     FramebufferHandle m_skyShadowFramebuffer;
 
-    RenderTarget m_sceneRenderTargets[2];
+    FrameRenderTargets m_frameRenderTargets[2];
 
     MeshHandle m_skyCube;
     MeshHandle m_quad;

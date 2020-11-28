@@ -4,6 +4,7 @@
 
 #include "global.inc"
 #include "temporalReprojection.inc"
+#include "linearDepth.inc"
 
 layout(constant_id = 0) const bool useTonemap = false;
 
@@ -13,9 +14,10 @@ layout(set=1, binding = 1) uniform texture2D currentFrame;
 layout(set=1, binding = 2) uniform texture2D lastFrame;
 layout(set=1, binding = 3, r11f_g11f_b10f) 	uniform image2D targetImage;
 layout(set=1, binding = 4) uniform texture2D velocityBuffer;
-layout(set=1, binding = 5) uniform texture2D depthBuffer;
-layout(set=1, binding = 6) uniform texture2D currentLuminanceTexture;
-layout(set=1, binding = 7) uniform texture2D lastLuminanceTexture;
+layout(set=1, binding = 5) uniform texture2D currentDepthBuffer;
+layout(set=1, binding = 6) uniform texture2D lastDepthBuffer;
+layout(set=1, binding = 7) uniform texture2D currentLuminanceTexture;
+layout(set=1, binding = 8) uniform texture2D lastLuminanceTexture;
 
 //returns absolute difference of scalar and each closest vector component
 float minAbsoluteDifference(float s, vec4 v){
@@ -34,47 +36,73 @@ float computeLuminanceBlockDifference(vec4 currentLuminance, vec4 lastLuminance)
 		minAbsoluteDifference(currentLuminance.w, lastLuminance);
 }
 
-//see: "Filmic SMAA", page 126
-//reject based on 2x2 block min luminance difference
-bool acceptLastFrameSample(vec4 currentLuminance, vec4 lastLuminance){
-	//return true;
-	float threshold = 0.5f;
-	float contrast = computeLuminanceBlockDifference(currentLuminance, lastLuminance);
-	return contrast < threshold;
+float getClosestNeighbourhoodDepth(texture2D depthBuffer, vec2 uv){
+	vec2 texelSize = 1.f / g_screenResolution;
+	float closestDepth = texture(sampler2D(depthBuffer, g_sampler_nearestClamp), uv + vec2(-1, -1) * texelSize).r;
+	//use max because using reverse-z
+	closestDepth = max(texture(sampler2D(depthBuffer, g_sampler_nearestClamp), uv + vec2( 0, -1) * texelSize).r, closestDepth);
+	closestDepth = max(texture(sampler2D(depthBuffer, g_sampler_nearestClamp), uv + vec2( 1, -1) * texelSize).r, closestDepth);
+
+	closestDepth = max(texture(sampler2D(depthBuffer, g_sampler_nearestClamp), uv + vec2(-1, 0) * texelSize).r, closestDepth);
+	closestDepth = max(texture(sampler2D(depthBuffer, g_sampler_nearestClamp), uv + vec2( 0, 0) * texelSize).r, closestDepth);
+	closestDepth = max(texture(sampler2D(depthBuffer, g_sampler_nearestClamp), uv + vec2( 1, 0) * texelSize).r, closestDepth);
+
+	closestDepth = max(texture(sampler2D(depthBuffer, g_sampler_nearestClamp), uv + vec2(-1, 1) * texelSize).r, closestDepth);
+	closestDepth = max(texture(sampler2D(depthBuffer, g_sampler_nearestClamp), uv + vec2( 0, 1) * texelSize).r, closestDepth);
+	closestDepth = max(texture(sampler2D(depthBuffer, g_sampler_nearestClamp), uv + vec2( 1, 1) * texelSize).r, closestDepth);
+	
+	return linearizeDepth(closestDepth, g_nearPlane, g_farPlane);
 }
 
-//no clamping or history sample rejection as no problems occured yet
-//will probably have to revisit this after particle effects volumetric etc. are added that might cause artifacts
+bool acceptLastFrameSample(vec2 uvCurrent, vec2 uvLast){
+	//contrast test 
+	//see: "Filmic SMAA", page 126
+	//reject based on 2x2 block min luminance difference
+	vec4 currentLuminance = textureGather(sampler2D(currentLuminanceTexture, g_sampler_nearestClamp), uvCurrent, 0);
+	vec4 lastLuminance	  = textureGather(sampler2D(lastLuminanceTexture, g_sampler_nearestClamp), uvLast, 0);
+	
+	float contrastThreshold = 0.5f;
+	float contrast = computeLuminanceBlockDifference(currentLuminance, lastLuminance);
+	bool contrastTest = contrast < contrastThreshold;
+
+	//depth test 
+	//see: "Filmic SMAA", page 99
+	//need to be conservative because of camera jitter, pick closest depth from neighbourhood
+	float currentDepth = getClosestNeighbourhoodDepth(currentDepthBuffer, uvCurrent);
+	float lastDepth	= getClosestNeighbourhoodDepth(lastDepthBuffer, uvLast);
+
+	float depthTreshold = 1.f;
+	float depthDifference = abs(currentDepth - lastDepth);
+	bool depthTest = depthDifference < depthTreshold;
+
+	return contrastTest && depthTest;
+}
+
 void main(){
-	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
     
 	vec2 texelSize = 1.f / g_screenResolution;
-    vec2 uvSample = (uv + vec2(0.5f)) * texelSize;
+    vec2 uvCurrent = (iUV + vec2(0.5f)) * texelSize;
+	
+	vec2 motion = getClosestFragmentMotion(iUV, currentDepthBuffer, velocityBuffer, g_sampler_linearClamp);
+	vec2 uvLast = uvCurrent + motion;
 
-	vec2 motion = getClosestFragmentMotion(uv, depthBuffer, velocityBuffer, g_sampler_linearClamp);
-
-	vec2 uvSampleCurrent = uvSample;		
-	vec2 uvSampleLast = uvSample + motion;	
-
-    vec3 currentSample	= texture(sampler2D(currentFrame, g_sampler_linearClamp), uvSampleCurrent).rgb;
-    vec3 lastSample		= texture(sampler2D(lastFrame, g_sampler_linearClamp), uvSampleLast).rgb;
+    vec3 currentSample	= texture(sampler2D(currentFrame, g_sampler_linearClamp), uvCurrent).rgb;
+    vec3 lastSample		= texture(sampler2D(lastFrame, g_sampler_linearClamp), uvLast).rgb;
 
 	if(useTonemap){
 		currentSample = tonemap(currentSample);
 		lastSample = tonemap(lastSample);
 	}
 
-	vec4 currentLuminance = textureGather(sampler2D(currentLuminanceTexture, g_sampler_nearestClamp), uvSampleCurrent, 0);
-	vec4 lastLuminance	  = textureGather(sampler2D(lastLuminanceTexture, g_sampler_nearestClamp), uvSampleLast, 0);
+	bool acceptSample = acceptLastFrameSample(uvCurrent, uvLast);
 
-	bool acceptSample = acceptLastFrameSample(currentLuminance, lastLuminance);
 	float blendFactor = acceptSample ? 0.5f : 0.f;
     vec3 color = mix(currentSample, lastSample, blendFactor);   
-	
+
 	if(useTonemap){
 		color = tonemapReverse(color);
 	}
-	//color = acceptSample ? color : vec3(1, 0, 0);
-	//color = vec3(computeLuminanceBlockDifference(currentLuminance, lastLuminance));
-	imageStore(targetImage, uv, vec4(color, 1.f));
+
+	imageStore(targetImage, iUV, vec4(color, 1.f));
 }

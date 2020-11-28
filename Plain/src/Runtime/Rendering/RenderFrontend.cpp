@@ -218,12 +218,14 @@ void RenderFrontend::prepareNewFrame() {
 
         gRenderBackend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
         gRenderBackend.resizeImages({
-            m_sceneRenderTargets[0].image,
-            m_sceneRenderTargets[1].image,
+            //motion buffer is shared
+            m_frameRenderTargets[0].motionBuffer,
+            m_frameRenderTargets[0].colorBuffer,
+            m_frameRenderTargets[0].depthBuffer,
+            m_frameRenderTargets[1].colorBuffer,
+            m_frameRenderTargets[1].depthBuffer,
             m_postProcessBuffers[0],
             m_postProcessBuffers[1],
-            m_depthBuffer,
-            m_motionVectorBuffer,
             m_historyBuffers[0],
             m_historyBuffers[1],
             m_sceneLuminance,
@@ -301,18 +303,18 @@ void RenderFrontend::prepareRenderpasses(){
     }
 
     static int sceneRenderTargetIndex;
-    const RenderTarget lastRenderTarget = m_sceneRenderTargets[sceneRenderTargetIndex];
+    const FrameRenderTargets lastRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
     sceneRenderTargetIndex++;
     sceneRenderTargetIndex %= 2;
-    const RenderTarget currentRenderTarget = m_sceneRenderTargets[sceneRenderTargetIndex];
+    const FrameRenderTargets currentRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
 
     renderSunShadowCascades();
-    computeColorBufferHistogram(lastRenderTarget.image);
+    computeColorBufferHistogram(lastRenderTarget.colorBuffer);
     computeExposure();
-    renderDepthPrepass();
-    computeDepthPyramid();
+    renderDepthPrepass(currentRenderTarget.motionFramebuffer);
+    computeDepthPyramid(currentRenderTarget.depthBuffer);
     computeSunLightMatrices();
-    renderForwardShading(preparationPasses, currentRenderTarget.framebuffer);
+    renderForwardShading(preparationPasses, currentRenderTarget.colorFramebuffer);
 
     const bool drawDebugPass =
         m_freezeAndDrawCameraFrustum ||
@@ -321,19 +323,19 @@ void RenderFrontend::prepareRenderpasses(){
 
     //debug pass
     if (drawDebugPass) {
-        renderDebugGeometry(currentRenderTarget.framebuffer);
+        renderDebugGeometry(currentRenderTarget.colorFramebuffer);
     }
-    renderSky(drawDebugPass, currentRenderTarget.framebuffer);
+    renderSky(drawDebugPass, currentRenderTarget.colorFramebuffer);
     skyIBLConvolution();
 
     
     RenderPassHandle currentPass = m_sunSpritePass;
-    ImageHandle currentSrc = currentRenderTarget.image;
+    ImageHandle currentSrc = currentRenderTarget.colorBuffer;
 
     if (m_temporalFilterSettings.enabled) {
 
         if (m_temporalFilterSettings.useSeparateSupersampling) {
-            computeTemporalSuperSampling(currentSrc, lastRenderTarget.image,
+            computeTemporalSuperSampling(currentRenderTarget, lastRenderTarget,
                 m_postProcessBuffers[0], currentPass);
 
             currentPass = m_temporalSupersamplingPass;
@@ -346,7 +348,7 @@ void RenderFrontend::prepareRenderpasses(){
         historyIndex %= 2;
         const ImageHandle currentHistory = m_historyBuffers[historyIndex];
 
-        computeTemporalFilter(currentSrc, m_postProcessBuffers[1], currentPass, currentHistory, lastHistory);
+        computeTemporalFilter(currentSrc, currentRenderTarget, m_postProcessBuffers[1], currentPass, currentHistory, lastHistory);
         currentPass = m_temporalFilterPass;
         currentSrc = m_postProcessBuffers[1];        
     }
@@ -745,14 +747,14 @@ void RenderFrontend::computeExposure() const {
     gRenderBackend.setRenderPassExecution(preExposeLightsExecution);
 }
 
-void RenderFrontend::renderDepthPrepass() const {
+void RenderFrontend::renderDepthPrepass(const FramebufferHandle framebuffer) const {
     RenderPassExecution prepassExe;
     prepassExe.handle = m_depthPrePass;
-    prepassExe.framebuffer = m_depthPrepassFramebuffer;
+    prepassExe.framebuffer = framebuffer;
     gRenderBackend.setRenderPassExecution(prepassExe);
 }
 
-void RenderFrontend::computeDepthPyramid() const {
+void RenderFrontend::computeDepthPyramid(const ImageHandle depthBuffer) const {
     RenderPassExecution exe;
     exe.handle = m_depthPyramidPass;
     exe.parents = { m_depthPrePass };
@@ -771,7 +773,7 @@ void RenderFrontend::computeDepthPyramid() const {
     exe.dispatchCount[1] = dispatchCount.y;
     exe.dispatchCount[2] = 1;
 
-    ImageResource depthBufferResource(m_depthBuffer, 0, 13);
+    ImageResource depthBufferResource(depthBuffer, 0, 13);
     ImageResource depthPyramidResource(m_minMaxDepthPyramid, 0, 15);
 
     exe.resources.sampledImages = { depthBufferResource, depthPyramidResource };
@@ -854,10 +856,11 @@ void RenderFrontend::copyHDRImage(const ImageHandle src, const ImageHandle dst, 
     gRenderBackend.setRenderPassExecution(exe);
 }
 
-void RenderFrontend::computeTemporalSuperSampling(const ImageHandle currentFrame, const ImageHandle lastFrame, const ImageHandle target, const RenderPassHandle parent) const {
+void RenderFrontend::computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame, 
+    const ImageHandle target, const RenderPassHandle parent) const {
     //scene luminance
     {
-        const ImageResource srcResource(currentFrame, 0, 0);
+        const ImageResource srcResource(currentFrame.colorBuffer, 0, 0);
         const ImageResource dstResource(m_sceneLuminance, 0, 1);
 
         RenderPassExecution exe;
@@ -873,13 +876,14 @@ void RenderFrontend::computeTemporalSuperSampling(const ImageHandle currentFrame
     }
     //temporal supersampling
     {
-        const ImageResource currentFrameResource(currentFrame, 0, 1);
-        const ImageResource lastFrameResource(lastFrame, 0, 2);
+        const ImageResource currentFrameResource(currentFrame.colorBuffer, 0, 1);
+        const ImageResource lastFrameResource(lastFrame.colorBuffer, 0, 2);
         const ImageResource targetResource(target, 0, 3);
-        const ImageResource velocityBufferResource(m_motionVectorBuffer, 0, 4);
-        const ImageResource depthBufferResource(m_depthBuffer, 0, 5);
-        const ImageResource currentLuminanceResource(m_sceneLuminance, 0, 6);
-        const ImageResource lastLuminanceResource(m_lastFrameLuminance, 0, 7);
+        const ImageResource velocityBufferResource(currentFrame.motionBuffer, 0, 4);
+        const ImageResource currentDepthResource(currentFrame.depthBuffer, 0, 5);
+        const ImageResource lastDepthResource(lastFrame.depthBuffer, 0, 6);
+        const ImageResource currentLuminanceResource(m_sceneLuminance, 0, 7);
+        const ImageResource lastLuminanceResource(m_lastFrameLuminance, 0, 8);
 
         RenderPassExecution temporalSupersamplingExecution;
         temporalSupersamplingExecution.handle = m_temporalSupersamplingPass;
@@ -888,7 +892,8 @@ void RenderFrontend::computeTemporalSuperSampling(const ImageHandle currentFrame
             currentFrameResource,
             lastFrameResource,
             velocityBufferResource,
-            depthBufferResource,
+            currentDepthResource,
+            lastDepthResource,
             currentLuminanceResource,
             lastLuminanceResource };
         temporalSupersamplingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
@@ -900,15 +905,15 @@ void RenderFrontend::computeTemporalSuperSampling(const ImageHandle currentFrame
     }
 }
 
-void RenderFrontend::computeTemporalFilter(const ImageHandle currentFrameColor, const ImageHandle target, const RenderPassHandle parent, 
+void RenderFrontend::computeTemporalFilter(const ImageHandle colorSrc, const FrameRenderTargets& currentFrame, const ImageHandle target, const RenderPassHandle parent, 
     const ImageHandle historyBufferSrc, const ImageHandle historyBufferDst) const {
 
-    const ImageResource inputImageResource(currentFrameColor, 0, 0);
+    const ImageResource inputImageResource(colorSrc, 0, 0);
     const ImageResource outputImageResource(target, 0, 1);
     const ImageResource historyDstResource(historyBufferDst, 0, 2);
     const ImageResource historySrcResource(historyBufferSrc, 0, 3);
-    const ImageResource motionBufferResource(m_motionVectorBuffer, 0, 4);
-    const ImageResource depthBufferResource(m_depthBuffer, 0, 5);
+    const ImageResource motionBufferResource(currentFrame.motionBuffer, 0, 4);
+    const ImageResource depthBufferResource(currentFrame.depthBuffer, 0, 5);
     const UniformBufferResource resolveWeightsResource(m_taaResolveWeightBuffer, 6);
 
     RenderPassExecution temporalFilterExecution;
@@ -1349,22 +1354,6 @@ void RenderFrontend::initImages() {
     //sky occlusion volume is created later
     //its resolution is dependent on scene size in order to fit desired texel density
 
-    //depth buffer
-    {
-        ImageDescription desc;
-        desc.initialData = std::vector<uint8_t>{};
-        desc.width = m_screenWidth;
-        desc.height = m_screenHeight;
-        desc.depth = 1;
-        desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::Depth32;
-        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 0;
-        desc.autoCreateMips = false;
-
-        m_depthBuffer = gRenderBackend.createImage(desc);
-    }
     //post process buffer
     {
         ImageDescription desc;
@@ -1381,21 +1370,6 @@ void RenderFrontend::initImages() {
 
         m_postProcessBuffers[0] = gRenderBackend.createImage(desc);
         m_postProcessBuffers[1] = gRenderBackend.createImage(desc);
-    }
-    //motion vector buffer
-    {
-        ImageDescription desc;
-        desc.width = m_screenWidth;
-        desc.height = m_screenHeight;
-        desc.depth = 1;
-        desc.format = ImageFormat::RG16_sNorm;
-        desc.autoCreateMips = false;
-        desc.manualMipCount = 1;
-        desc.mipCount = MipCount::One;
-        desc.type = ImageType::Type2D;
-        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
-
-        m_motionVectorBuffer = gRenderBackend.createImage(desc);
     }
     //history buffer for TAA
     {
@@ -1694,22 +1668,6 @@ void RenderFrontend::initFramebuffers() {
         desc.targets = { depthTarget };
         m_shadowCascadeFramebuffers[i] = gRenderBackend.createFramebuffer(desc);
     }
-    //depth prepass framebuffer
-    {
-        FramebufferTarget depthTarget;
-        depthTarget.image = m_depthBuffer;
-        depthTarget.mipLevel = 0;
-
-        FramebufferTarget velocityTarget;
-        velocityTarget.image = m_motionVectorBuffer;
-        velocityTarget.mipLevel = 0;
-
-        FramebufferDescription desc;
-        desc.compatibleRenderpass = m_depthPrePass;
-        desc.targets = { velocityTarget, depthTarget };
-
-        m_depthPrepassFramebuffer = gRenderBackend.createFramebuffer(desc);
-    }
     //sky shadow framebuffer
     {
         FramebufferTarget depthTarget;
@@ -1725,10 +1683,27 @@ void RenderFrontend::initFramebuffers() {
 }
 
 void RenderFrontend::initRenderTargets() {
-    //scene render targets
+    //motion buffer is shared by all frames
+    ImageHandle motionBuffer;
+    {
+        ImageDescription desc;
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.format = ImageFormat::RG16_sNorm;
+        desc.autoCreateMips = false;
+        desc.manualMipCount = 1;
+        desc.mipCount = MipCount::One;
+        desc.type = ImageType::Type2D;
+        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
+
+        motionBuffer = gRenderBackend.createImage(desc);
+    }
+
     for (int i = 0; i < 2; i++) {
-        //image
-        ImageHandle image;
+        //shared motion buffer
+        m_frameRenderTargets[i].motionBuffer = motionBuffer;
+        //color buffer
         {
             ImageDescription desc;
             desc.initialData = std::vector<uint8_t>{};
@@ -1742,27 +1717,57 @@ void RenderFrontend::initRenderTargets() {
             desc.manualMipCount = 0;
             desc.autoCreateMips = false;
 
-            m_sceneRenderTargets[i].image = gRenderBackend.createImage(desc);
+            m_frameRenderTargets[i].colorBuffer = gRenderBackend.createImage(desc);
         }
-        //framebuffer
+        //depth buffer
+        {
+            ImageDescription desc;
+            desc.initialData = std::vector<uint8_t>{};
+            desc.width = m_screenWidth;
+            desc.height = m_screenHeight;
+            desc.depth = 1;
+            desc.type = ImageType::Type2D;
+            desc.format = ImageFormat::Depth32;
+            desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
+            desc.mipCount = MipCount::One;
+            desc.manualMipCount = 0;
+            desc.autoCreateMips = false;
+
+            m_frameRenderTargets[i].depthBuffer = gRenderBackend.createImage(desc);
+        }
+        //color framebuffer
         {
             FramebufferTarget colorTarget;
-            colorTarget.image = m_sceneRenderTargets[i].image;
+            colorTarget.image = m_frameRenderTargets[i].colorBuffer;
             colorTarget.mipLevel = 0;
 
             FramebufferTarget depthTarget;
-            depthTarget.image = m_depthBuffer;
+            depthTarget.image = m_frameRenderTargets[i].depthBuffer;
             depthTarget.mipLevel = 0;
 
             FramebufferDescription desc;
             desc.compatibleRenderpass = m_mainPass;
             desc.targets = { colorTarget, depthTarget };
 
-            m_sceneRenderTargets[i].framebuffer = gRenderBackend.createFramebuffer(desc);
+            m_frameRenderTargets[i].colorFramebuffer = gRenderBackend.createFramebuffer(desc);
+        }
+        //prepass
+        {
+            FramebufferTarget motionTarget;
+            motionTarget.image = m_frameRenderTargets[i].motionBuffer;
+            motionTarget.mipLevel = 0;
+
+            FramebufferTarget depthTarget;
+            depthTarget.image = m_frameRenderTargets[i].depthBuffer;
+            depthTarget.mipLevel = 0;
+
+            FramebufferDescription desc;
+            desc.compatibleRenderpass = m_depthPrePass;
+            desc.targets = { motionTarget, depthTarget };
+
+            m_frameRenderTargets[i].motionFramebuffer = gRenderBackend.createFramebuffer(desc);
         }
     }
-    
-    
 }
 
 void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
