@@ -32,7 +32,7 @@ void main(){
     
 	for(int i = 0; i < samples; i++){
         vec2 xi = hammersley2d(i, samples);
-        vec2 noise = (vec2(hash(samples + storageCo.yz), hash(samples + storageCo.xy)) - 0.5) * 0.5f;
+        vec2 noise = hash32(samples + storageCo.yz).xy;
         xi += groundTruth ? vec2(0) : noise;
         xi = fract(xi); //bring back into [0,1] range
         vec3 sampleDirection = importanceSampleCosine(xi, N);
