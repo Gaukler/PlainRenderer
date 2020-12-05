@@ -23,10 +23,10 @@ ShaderReflection performShaderReflection(const GraphicPassShaderSpirV& shaderCod
     if (shaderCode.geometry.has_value()) {
         layoutFromSpirv(shaderCode.geometry.value(), VK_SHADER_STAGE_GEOMETRY_BIT, &reflection);
     }
-    if (shaderCode.tesselationControl.has_value()) {
-        assert(shaderCode.tesselationEvaluation.has_value());
-        layoutFromSpirv(shaderCode.tesselationControl.value(), VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, &reflection);
-        layoutFromSpirv(shaderCode.tesselationEvaluation.value(), VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, &reflection);
+    if (shaderCode.tessellationControl.has_value()) {
+        assert(shaderCode.tessellationEvaluation.has_value());
+        layoutFromSpirv(shaderCode.tessellationControl.value(), VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, &reflection);
+        layoutFromSpirv(shaderCode.tessellationEvaluation.value(), VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, &reflection);
     }
 
     return reflection;

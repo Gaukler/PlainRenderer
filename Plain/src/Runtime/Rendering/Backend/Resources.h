@@ -68,15 +68,23 @@ struct GraphicPassShaderSpirV {
     std::vector<uint32_t> vertex;
     std::vector<uint32_t> fragment;
     std::optional<std::vector<uint32_t>> geometry;
-    std::optional<std::vector<uint32_t>> tesselationEvaluation;
-    std::optional<std::vector<uint32_t>> tesselationControl;
+    std::optional<std::vector<uint32_t>> tessellationEvaluation;
+    std::optional<std::vector<uint32_t>> tessellationControl;
+};
+
+struct GraphicPassShaderGLSL {
+    std::vector<char> vertex;
+    std::vector<char> fragment;
+    std::optional<std::vector<char>> geometry;
+    std::optional<std::vector<char>> tesselationEvaluation;
+    std::optional<std::vector<char>> tesselationControl;
 };
 
 struct GraphicPass {
     //used to reconstruct pass when reloading shader
     GraphicPassDescription graphicPassDesc;
-    
-    std::filesystem::file_time_type lastModifiedShader;
+
+    GraphicShadersHandle shaderHandle;
 
     VkRenderPass            vulkanRenderPass    = VK_NULL_HANDLE;
     VkPipeline              pipeline            = VK_NULL_HANDLE;
@@ -98,7 +106,7 @@ struct GraphicPass {
 struct ComputePass {
     ComputePassDescription computePassDesc;
 
-    std::filesystem::file_time_type lastModifiedShader;
+    ComputeShaderHandle shaderHandle;
 
     VkRenderPass            vulkanRenderPass    = VK_NULL_HANDLE;
     VkPipeline              pipeline            = VK_NULL_HANDLE;

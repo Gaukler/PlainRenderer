@@ -327,56 +327,13 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
 }
 
 void RenderBackend::updateShaderCode() {
-    //helper comparing last change dates of cache and source and updating date to prevent constant reloading if shader is not compiling
-    auto isShaderOutOfDate = [](std::filesystem::path relativePath) {
-        const auto absolutePath = absoluteShaderPathFromRelative(relativePath);
-        const auto cachePath = shaderCachePathFromRelative(relativePath);
-        //when accessing file while its being saved an error occurs
-        //in this case just return false, shader will be updated next frame
-        std::error_code exception;
-        const auto lastWriteTimeSrc = std::filesystem::last_write_time(absolutePath, exception);
-        if (exception.value() != 0) {
-            return false;
-        }
-        const auto lastWriteTimeCache = std::filesystem::last_write_time(cachePath, exception);
-        if (exception.value() != 0) {
-            return false;
-        }
-        return lastWriteTimeSrc > lastWriteTimeCache;
-    };
 
-    //iterate over all render passes and check for every shader if it's out of date
-    //graphic passes
-    std::vector<uint32_t> outOfDateGraphicPasses;
-    for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
-        bool needsUpdate = false;
-        const auto shaderDescriptions = m_renderPasses.getGraphicPassRefByIndex(i).graphicPassDesc.shaderDescriptions;
-        needsUpdate |= isShaderOutOfDate(shaderDescriptions.vertex.srcPathRelative);
-        needsUpdate |= isShaderOutOfDate(shaderDescriptions.fragment.srcPathRelative);
-        if (shaderDescriptions.geometry.has_value()) {
-            needsUpdate |= isShaderOutOfDate(shaderDescriptions.geometry.value().srcPathRelative);
-        }
-        if (shaderDescriptions.tesselationControl.has_value()) {
-            needsUpdate |= isShaderOutOfDate(shaderDescriptions.tesselationControl.value().srcPathRelative);
-        }
-        if (shaderDescriptions.tesselationEvaluation.has_value()) {
-            needsUpdate |= isShaderOutOfDate(shaderDescriptions.tesselationEvaluation.value().srcPathRelative);
-        }           
-        if (needsUpdate) {
-            outOfDateGraphicPasses.push_back(i);
-        }
-    }
+    m_shaderFileManager.updateFileLastChangeTimes();
 
-    //compute passes
-    std::vector<uint32_t> outOfDateComputePasses;
-    for (uint32_t i = 0; i < m_renderPasses.getNComputePasses(); i++) {
-        if (isShaderOutOfDate(m_renderPasses.getComputePassRefByIndex(i).computePassDesc.shaderDescription.srcPathRelative)) {
-            outOfDateComputePasses.push_back(i);
-        }
-    }
+    const std::vector<ComputePassShaderReloadInfo> computeShadersReloadInfos = m_shaderFileManager.reloadOutOfDateComputeShaders();
+    const std::vector<GraphicPassShaderReloadInfo> graphicShadersReloadInfos = m_shaderFileManager.reloadOutOfDateGraphicShaders();
 
-    //return if no updates are needed
-    if (outOfDateGraphicPasses.size() + outOfDateComputePasses.size()  == 0) {
+    if (computeShadersReloadInfos.size() == 0 && graphicShadersReloadInfos.size() == 0) {
         return;
     }
 
@@ -384,26 +341,18 @@ void RenderBackend::updateShaderCode() {
     auto result = vkDeviceWaitIdle(vkContext.device);
     checkVulkanResult(result);
 
-    /*
-    iterate over all out of date passes
-    if a shader can't be loaded or compiled it's just skipped as the current version can still be used
-    */
-    for (const auto passIndex : outOfDateGraphicPasses) {
-        GraphicPassShaderSpirV spirV;
-        auto& pass = m_renderPasses.getGraphicPassRefByIndex(passIndex);
-        if (loadGraphicPassShaders(pass.graphicPassDesc.shaderDescriptions, &spirV)) {
-            destroyGraphicPass(pass);
-            pass = createGraphicPassInternal(pass.graphicPassDesc, spirV);
-        }
+    //recreate compute passes
+    for (const ComputePassShaderReloadInfo& reloadInfo : computeShadersReloadInfos) {
+        ComputePass& pass = m_renderPasses.getComputePassRefByHandle(reloadInfo.renderpass);
+        destroyComputePass(pass);
+        pass = createComputePassInternal(pass.computePassDesc, reloadInfo.spirV);
     }
 
-    for (const auto passIndex : outOfDateComputePasses) {
-        std::vector<uint32_t> spirV;
-        auto& pass = m_renderPasses.getComputePassRefByIndex(passIndex);
-        if (loadShader(pass.computePassDesc.shaderDescription, &spirV)) {
-            destroyComputePass(pass);
-            pass = createComputePassInternal(pass.computePassDesc, spirV);
-        }
+    //recreate graphic passes
+    for (const GraphicPassShaderReloadInfo& reloadInfo : graphicShadersReloadInfos) {
+        GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(reloadInfo.renderpass);
+        destroyGraphicPass(pass);
+        pass = createGraphicPassInternal(pass.graphicPassDesc, reloadInfo.spirV);
     }
 }
 
@@ -639,10 +588,10 @@ void RenderBackend::setGlobalDescriptorSetResources(const RenderPassResources& r
 
 void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc) {
     assert(m_renderPasses.isGraphicPassHandle(passHandle));
-    auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+    GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
     pass.graphicPassDesc.shaderDescriptions = desc;
     GraphicPassShaderSpirV spirV;
-    if (loadGraphicPassShaders(pass.graphicPassDesc.shaderDescriptions, &spirV)) {
+    if (m_shaderFileManager.loadGraphicShadersSpirV(pass.shaderHandle, &spirV)) {
         auto result = vkDeviceWaitIdle(vkContext.device);
         checkVulkanResult(result);
         destroyGraphicPass(pass);
@@ -652,10 +601,11 @@ void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle pa
 
 void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle passHandle, const ShaderDescription& desc) {
     assert(!m_renderPasses.isGraphicPassHandle(passHandle));
-    auto& pass = m_renderPasses.getComputePassRefByHandle(passHandle);
+    ComputePass& pass = m_renderPasses.getComputePassRefByHandle(passHandle);
     pass.computePassDesc.shaderDescription = desc;
     std::vector<uint32_t> spirV;
-    if (loadShader(pass.computePassDesc.shaderDescription, &spirV)) {
+    std::vector<char> glsl;
+    if (m_shaderFileManager.loadComputeShaderSpirV(pass.shaderHandle, &spirV)) {
         auto result = vkDeviceWaitIdle(vkContext.device);
         checkVulkanResult(result);
         destroyComputePass(pass);
@@ -799,26 +749,37 @@ void RenderBackend::renderFrame(bool presentToScreen) {
 
 RenderPassHandle RenderBackend::createComputePass(const ComputePassDescription& desc) {
 
+    const ComputeShaderHandle shaderHandle = m_shaderFileManager.addComputeShader(desc.shaderDescription);
+
     std::vector<uint32_t> spirV;
-    if (!loadShader(desc.shaderDescription, &spirV)) {
+    if (!m_shaderFileManager.loadComputeShaderSpirV(shaderHandle, &spirV)) {
         std::cout << "Initial shader loading failed" << std::endl; //loadShaders provides error details trough cout
         throw;
     }
 
     ComputePass pass = createComputePassInternal(desc, spirV);
-    return m_renderPasses.addComputePass(pass);
+    pass.shaderHandle = shaderHandle;
+    RenderPassHandle passHandle = m_renderPasses.addComputePass(pass);
+    m_shaderFileManager.setComputePassHandle(shaderHandle, passHandle);
+    return passHandle;
 }
 
 RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& desc) {
 
+    const GraphicShadersHandle shaderHandle = m_shaderFileManager.addGraphicShaders(desc.shaderDescriptions);
+
     GraphicPassShaderSpirV spirV;
-    if (!loadGraphicPassShaders(desc.shaderDescriptions, &spirV)) {
+    if (!m_shaderFileManager.loadGraphicShadersSpirV(shaderHandle, &spirV)) {
         std::cout << "Initial shader loading failed" << std::endl;
         throw;
-    }
+    }    
 
-    GraphicPass pass = createGraphicPassInternal(desc, spirV);    
-    return m_renderPasses.addGraphicPass(pass);;
+    //create vulkan pass and handle
+    GraphicPass pass = createGraphicPassInternal(desc, spirV);
+    pass.shaderHandle = shaderHandle;
+    RenderPassHandle passHandle = m_renderPasses.addGraphicPass(pass); 
+    m_shaderFileManager.setGraphicPassHandle(shaderHandle, passHandle);
+    return passHandle;
 }
 
 std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary>& meshes, const std::vector<Material>& materials) {
@@ -2918,8 +2879,8 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     }
     if (desc.shaderDescriptions.tesselationControl.has_value()) {
         assert(desc.shaderDescriptions.tesselationEvaluation.has_value());   //both shaders must be defined or none
-        tesselationControlModule    = createShaderModule(spirV.tesselationControl.value());
-        tesselationEvaluationModule = createShaderModule(spirV.tesselationEvaluation.value());
+        tesselationControlModule    = createShaderModule(spirV.tessellationControl.value());
+        tesselationEvaluationModule = createShaderModule(spirV.tessellationEvaluation.value());
     }
 
     //create module infos    

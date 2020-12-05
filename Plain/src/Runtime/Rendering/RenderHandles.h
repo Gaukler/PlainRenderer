@@ -36,3 +36,11 @@ struct StorageBufferHandle {
 struct FramebufferHandle {
     uint32_t index = invalidIndex;
 };
+
+struct ComputeShaderHandle {
+    uint32_t index = invalidIndex;
+};
+
+struct GraphicShadersHandle {
+    uint32_t index = invalidIndex;
+};

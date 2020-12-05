@@ -976,11 +976,11 @@ bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* 
         return false;
     }
 
-    if (m_textureMap.find(path) == m_textureMap.end()) {
+    if (m_textureMap.find(path.string()) == m_textureMap.end()) {
         ImageDescription image;
         if (loadImage(path, true, &image)) {
             *outImageHandle = gRenderBackend.createImage(image);
-            m_textureMap[path] = *outImageHandle;
+            m_textureMap[path.string()] = *outImageHandle;
             return true;
         }
         else {
@@ -988,7 +988,7 @@ bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* 
         }
     }
     else {
-        *outImageHandle = m_textureMap[path];
+        *outImageHandle = m_textureMap[path.string()];
         return true;
     }
 }

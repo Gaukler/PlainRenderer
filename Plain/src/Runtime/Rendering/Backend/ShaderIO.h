@@ -3,35 +3,24 @@
 #include "Resources.h"
 #include "Runtime/Rendering/ResourceDescriptions.h"
 
-/*
-entire shader loading process, returns spirV code
-checks for a cached up to date spirV version
-only recompiles if none is found
-recompiled shaders are written into the shader cache directory for next time
-filename must be relative to resources\\shaders\\
-*/
-bool loadShader(const ShaderDescription& desc, std::vector<uint32_t>* outSpirV);
+bool loadShader(const std::filesystem::path pathAbsolute, std::vector<uint32_t>* outSpirV);
+
+struct GraphicPassShaderPaths {
+    std::filesystem::path                 vertex;
+    std::filesystem::path                 fragment;
+    std::optional<std::filesystem::path>  geometry;
+    std::optional<std::filesystem::path>  tessellationControl;
+    std::optional<std::filesystem::path>  tessellationEvaluation;
+};
 
 //helper that loads shaders from all supplied paths into the corresponding out struct
-bool loadGraphicPassShaders(const GraphicPassShaderDescriptions& shaderDescriptions, GraphicPassShaderSpirV* outSpirV);
+bool loadGraphicPassShaders(const GraphicPassShaderPaths& shaderPaths, GraphicPassShaderSpirV* outSpirV);
 
-/*
-file loader functions
-*/
 
-//loads text NOT spirV which would be binary data
-bool loadShaderTextFile(const std::filesystem::path& absolutePath, std::vector<char>* outShaderCode);
+std::filesystem::path relativeShaderPathToAbsolute(std::filesystem::path relativePath);
 
-//loads spirV binary file
-bool loadShaderSpirVFile(const std::filesystem::path& absolutePath, std::vector<uint32_t>* outSpirV);
-
-//path is for final absolute path and should end with ".spv"
-void writeSpirVToFile(const std::vector<uint32_t>& spirV, const std::filesystem::path absolutePath);
-
-/*
-directory utilites
-*/
-std::filesystem::path absoluteShaderPathFromRelative(std::filesystem::path relativePath);
+//returns absolute cache path
 std::filesystem::path shaderCachePathFromRelative(std::filesystem::path relativePath);
+
 std::filesystem::path getShaderDirectory();
 std::filesystem::path getShaderCacheDirectory();

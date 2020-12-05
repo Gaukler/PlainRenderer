@@ -9,6 +9,7 @@
 #include "VkMemoryAllocator.h"
 #include "Runtime/Rendering/Backend/SpirvReflection.h"
 #include "Common/MeshData.h"
+#include "ShaderFileManager.h"
 
 struct GLFWwindow;
 
@@ -193,6 +194,8 @@ public:
     std::vector<RenderPassTime> getRenderpassTimings();
 
 private:
+
+    ShaderFileManager m_shaderFileManager;
 
     VkDescriptorSetLayout m_materialDescriporSetLayout = VK_NULL_HANDLE;
     void initMaterialDescriptorSetLayout();
