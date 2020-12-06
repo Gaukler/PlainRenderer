@@ -3,29 +3,6 @@
 #include "Runtime/FileIO.h"
 #include "ShaderIO.h"
 
-bool isShaderOutOfDate(std::filesystem::path relativePath);
-
-//returns absolute include paths 
-std::vector<fs::path> parseIncludePathsFromGLSL(const std::vector<char>& glslCode);
-
-//helper comparing last change dates of cache and source and updating date to prevent constant reloading if shader is not compiling
-bool isShaderOutOfDate(std::filesystem::path relativePath) {
-    const auto absolutePath = relativeShaderPathToAbsolute(relativePath);
-    const auto cachePath = shaderCachePathFromRelative(relativePath);
-    //when accessing file while its being saved an error occurs
-    //in this case just return false, shader will be updated next frame
-    std::error_code exception;
-    const auto lastWriteTimeSrc = std::filesystem::last_write_time(absolutePath, exception);
-    if (exception.value() != 0) {
-        return false;
-    }
-    const auto lastWriteTimeCache = std::filesystem::last_write_time(cachePath, exception);
-    if (exception.value() != 0) {
-        return false;
-    }
-    return lastWriteTimeSrc > lastWriteTimeCache;
-};
-
 //not terribly robust, e.g. not checking if include is commented out, but it does it's job
 std::vector<fs::path> parseIncludePathsFromGLSL(const std::vector<char>& glslCode) {
     std::string codeString = std::string(glslCode.data());
