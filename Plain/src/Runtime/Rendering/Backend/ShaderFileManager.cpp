@@ -148,14 +148,12 @@ ShaderLoadInfo ShaderFileManager::loadInfoFromShaderDescription(const ShaderDesc
     return loadInfo;
 }
 
-void ShaderFileManager::addGLSLIncludesFileIndicesToSet(const fs::path& shaderPathRelative, std::unordered_set<size_t>* outIndexSet) {
+void ShaderFileManager::addGLSLIncludesFileIndicesToSet(const fs::path& shaderPathAbsolute, std::unordered_set<size_t>* outIndexSet) {
     assert(outIndexSet != nullptr);
     //TODO: reuse loaded glsl code
     std::vector<char> glsl;
-    //TODO: reuse full path computation from loadInfoFromShaderDescription
-    const fs::path pathAbsolute = relativeShaderPathToAbsolute(shaderPathRelative);
-    if (!loadTextFile(pathAbsolute, &glsl)) {
-        std::cout << "Failed to load shader GLSL, skipping includes: " << pathAbsolute << "\n";
+    if (!loadTextFile(shaderPathAbsolute, &glsl)) {
+        std::cout << "Failed to load shader GLSL, skipping includes: " << shaderPathAbsolute << "\n";
         //glsl will stay empty, so include files just be empty
     }
     const std::vector<fs::path> includeFiles = parseIncludePathsFromGLSL(glsl);
@@ -168,7 +166,8 @@ void ShaderFileManager::addGLSLIncludesFileIndicesToSet(const fs::path& shaderPa
 ComputeShaderHandle ShaderFileManager::addComputeShader(const ShaderDescription& computeShaderDesc) {
     ComputeShaderSourceInfo srcInfo;
     srcInfo.loadInfo = loadInfoFromShaderDescription(computeShaderDesc);
-    addGLSLIncludesFileIndicesToSet(computeShaderDesc.srcPathRelative, &srcInfo.includeFileIndices);    
+    const fs::path shaderPathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.shaderFileIndex];
+    addGLSLIncludesFileIndicesToSet(shaderPathAbsolute, &srcInfo.includeFileIndices);
 
     //save info and return handle
     ComputeShaderHandle shaderHandle = { m_computeShaderSourceInfos.size() };
@@ -179,25 +178,34 @@ ComputeShaderHandle ShaderFileManager::addComputeShader(const ShaderDescription&
 GraphicShadersHandle ShaderFileManager::addGraphicShaders(const GraphicPassShaderDescriptions& graphicShadersDesc) {
     GraphicShaderSourceInfo srcInfo;
     //vertex
-    srcInfo.loadInfo.vertex = loadInfoFromShaderDescription(graphicShadersDesc.vertex);
-    addGLSLIncludesFileIndicesToSet(graphicShadersDesc.vertex.srcPathRelative, &srcInfo.includeFileIndices);
+    {
+        srcInfo.loadInfo.vertex = loadInfoFromShaderDescription(graphicShadersDesc.vertex);
+        const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.vertex.shaderFileIndex];
+        addGLSLIncludesFileIndicesToSet(path, &srcInfo.includeFileIndices);
+    }
     //fragment
-    srcInfo.loadInfo.fragment = loadInfoFromShaderDescription(graphicShadersDesc.fragment);
-    addGLSLIncludesFileIndicesToSet(graphicShadersDesc.fragment.srcPathRelative, &srcInfo.includeFileIndices);
+    {
+        srcInfo.loadInfo.fragment = loadInfoFromShaderDescription(graphicShadersDesc.fragment);
+        const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.fragment.shaderFileIndex];
+        addGLSLIncludesFileIndicesToSet(path, &srcInfo.includeFileIndices);
+    }
     //geometry
     if (graphicShadersDesc.geometry.has_value()) {
         srcInfo.loadInfo.geometry = loadInfoFromShaderDescription(graphicShadersDesc.geometry.value());
-        addGLSLIncludesFileIndicesToSet(graphicShadersDesc.geometry.value().srcPathRelative, &srcInfo.includeFileIndices);
+        const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.geometry.value().shaderFileIndex];
+        addGLSLIncludesFileIndicesToSet(path, &srcInfo.includeFileIndices);
     }
     //tesselation control
     if (graphicShadersDesc.tesselationControl.has_value()) {
         srcInfo.loadInfo.tessellationControl = loadInfoFromShaderDescription(graphicShadersDesc.tesselationControl.value());
-        addGLSLIncludesFileIndicesToSet(graphicShadersDesc.tesselationControl.value().srcPathRelative, &srcInfo.includeFileIndices);
+        const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessellationControl.value().shaderFileIndex];
+        addGLSLIncludesFileIndicesToSet(path, &srcInfo.includeFileIndices);
     }
     //tesselation evaluation
     if (graphicShadersDesc.tesselationEvaluation.has_value()) {
         srcInfo.loadInfo.tessellationEvaluation = loadInfoFromShaderDescription(graphicShadersDesc.tesselationEvaluation.value());
-        addGLSLIncludesFileIndicesToSet(graphicShadersDesc.tesselationEvaluation.value().srcPathRelative, &srcInfo.includeFileIndices);
+        const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessellationEvaluation.value().shaderFileIndex];
+        addGLSLIncludesFileIndicesToSet(path, &srcInfo.includeFileIndices);
     }
 
     //save info and return handle
@@ -307,7 +315,7 @@ void ShaderFileManager::updateFileLastChangeTimes() {
 std::vector<ComputePassShaderReloadInfo> ShaderFileManager::reloadOutOfDateComputeShaders() {
     std::vector<ComputePassShaderReloadInfo> reloadList;
     //iterate over all compute shaders
-    for (const ComputeShaderSourceInfo& shaderSrcInfo : m_computeShaderSourceInfos) {
+    for (ComputeShaderSourceInfo& shaderSrcInfo : m_computeShaderSourceInfos) {
         if (isComputeShaderCacheOutOfDate(shaderSrcInfo)) {
             //reload glsl and compile to spirv
             fs::path shaderPathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.shaderFileIndex];
@@ -321,6 +329,10 @@ std::vector<ComputePassShaderReloadInfo> ShaderFileManager::reloadOutOfDateCompu
                 //update spirv cache
                 const fs::path spirvCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.spirvCacheFileIndex];
                 writeBinaryFile(spirvCachePathAbsolute, reloadInfo.spirV);
+
+                //rebuild include file list to accomodate changes
+                shaderSrcInfo.includeFileIndices.clear();
+                addGLSLIncludesFileIndicesToSet(shaderPathAbsolute, &shaderSrcInfo.includeFileIndices);
             }
             //update latest cache update point
             //even if load/compilation is not succesfull we don't want to keep failing every frame before problem is solved
@@ -333,7 +345,7 @@ std::vector<ComputePassShaderReloadInfo> ShaderFileManager::reloadOutOfDateCompu
 std::vector<GraphicPassShaderReloadInfo> ShaderFileManager::reloadOutOfDateGraphicShaders() {
 
     std::vector<GraphicPassShaderReloadInfo> reloadList;
-    for (const GraphicShaderSourceInfo& shaderSrcInfo : m_graphicShaderSourceInfos) {
+    for (GraphicShaderSourceInfo& shaderSrcInfo : m_graphicShaderSourceInfos) {
 
         const bool hasGeometryShader = shaderSrcInfo.loadInfo.geometry.has_value();
         const bool hasTessellationControlShader = shaderSrcInfo.loadInfo.tessellationControl.has_value();
@@ -369,31 +381,37 @@ std::vector<GraphicPassShaderReloadInfo> ShaderFileManager::reloadOutOfDateGraph
             if (loadGraphicPassShaders(shaderPaths, &reloadInfo.spirV)) {
                 reloadList.push_back(reloadInfo); 
 
-                //update spirv caches
+                //update spirv caches and include file list
+                shaderSrcInfo.includeFileIndices.clear();
                 //vertex
                 {
                     const fs::path vertexCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.vertex.spirvCacheFileIndex];
                     writeBinaryFile(vertexCachePathAbsolute, reloadInfo.spirV.vertex);
+                    addGLSLIncludesFileIndicesToSet(shaderPaths.vertex, &shaderSrcInfo.includeFileIndices);
                 }
                 //fragment
                 {
                     const fs::path fragmentCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.fragment.spirvCacheFileIndex];
                     writeBinaryFile(fragmentCachePathAbsolute, reloadInfo.spirV.fragment);
+                    addGLSLIncludesFileIndicesToSet(shaderPaths.fragment, &shaderSrcInfo.includeFileIndices);
                 }
                 //geometry
                 if (hasGeometryShader) {
                     const fs::path geometryCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.geometry.value().spirvCacheFileIndex];
                     writeBinaryFile(geometryCachePathAbsolute, reloadInfo.spirV.geometry.value());
+                    addGLSLIncludesFileIndicesToSet(shaderPaths.geometry.value(), &shaderSrcInfo.includeFileIndices);
                 }
                 //tessellation control
                 if (hasTessellationControlShader) {
                     const fs::path tessellationControlCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex];
                     writeBinaryFile(tessellationControlCachePathAbsolute, reloadInfo.spirV.tessellationControl.value());
+                    addGLSLIncludesFileIndicesToSet(shaderPaths.tessellationControl.value(), &shaderSrcInfo.includeFileIndices);
                 }
                 //tessellation control
                 if (hasTessellationEvauluationShader) {
                     const fs::path tessellationEvaluationCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex];
                     writeBinaryFile(tessellationEvaluationCachePathAbsolute, reloadInfo.spirV.tessellationEvaluation.value());
+                    addGLSLIncludesFileIndicesToSet(shaderPaths.tessellationEvaluation.value(), &shaderSrcInfo.includeFileIndices);
                 }
             }
             //update latest cache update point

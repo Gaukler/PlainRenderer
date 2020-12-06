@@ -45,6 +45,7 @@ struct GraphicShaderSourceInfo {
 //manages shader loading and hot reloading
 //uses spirv cache files to reuse compiled results between app runs
 //tracks include files to detect if a shader needs to be reloaded due to include file change
+//currently includes in includes are not tracked
 class ShaderFileManager {
 public:    
     ComputeShaderHandle addComputeShader(const ShaderDescription& computeShaderDesc);
@@ -76,7 +77,7 @@ private:
     ShaderLoadInfo loadInfoFromShaderDescription(const ShaderDescription& shaderDesc);
     //loads GLSL shader file, parses include paths, then adds them to index set
     //outIndexSet must not be nullptr
-    void addGLSLIncludesFileIndicesToSet(const fs::path& shaderPathRelative, std::unordered_set<size_t>* outIndexSet);
+    void addGLSLIncludesFileIndicesToSet(const fs::path& shaderPathAbsolute, std::unordered_set<size_t>* outIndexSet);
 
     //---- source information ----
 
