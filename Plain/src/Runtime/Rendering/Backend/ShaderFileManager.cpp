@@ -29,117 +29,6 @@ std::vector<fs::path> parseIncludePathsFromGLSL(const std::vector<char>& glslCod
     return includes;
 }
 
-size_t ShaderFileManager::addFilePath(const fs::path& filePathAbsolute) {
-    if (m_pathToFileIndex.find(filePathAbsolute.string()) == m_pathToFileIndex.end()) {
-        const size_t fileIndex = m_filePathsAbsolute.size();
-        m_pathToFileIndex[filePathAbsolute.string()] = fileIndex;
-        m_filePathsAbsolute.push_back(filePathAbsolute);
-
-        fs::file_time_type lastChangeTime;
-        const bool readSuccess = checkLastChangeTime(filePathAbsolute, &lastChangeTime);
-        if (!readSuccess) {
-            lastChangeTime = fs::file_time_type::time_point();
-        }
-        m_fileLastChanges.push_back(lastChangeTime);
-        return fileIndex;
-    }
-    else {
-        return m_pathToFileIndex[filePathAbsolute.string()];
-    }
-}
-
-bool ShaderFileManager::isComputeShaderCacheOutOfDate(const ComputeShaderSourceInfo& shaderSrcInfo) const{
-    //search for latest change of source files
-    const size_t shaderFileIndex = shaderSrcInfo.loadInfo.shaderFileIndex;
-    fs::file_time_type latestSrcChange = m_fileLastChanges[shaderFileIndex];
-    for (const size_t includeFileIndex : shaderSrcInfo.includeFileIndices) {
-        latestSrcChange = std::max(latestSrcChange, m_fileLastChanges[includeFileIndex]);
-    }
-    //check for latest change of spirv cache file
-    const size_t spirvCacheFileIndex = shaderSrcInfo.loadInfo.spirvCacheFileIndex;
-    const fs::file_time_type latestSpirvCacheChange = m_fileLastChanges[spirvCacheFileIndex];
-
-
-    return latestSpirvCacheChange < latestSrcChange;
-}
-
-bool ShaderFileManager::areGraphicShadersCachesOutOfDate(const GraphicShaderSourceInfo& shaderSrcInfo) const{
-    //helper function
-    //look up src and cache last file changes from load info using latestFileChanges and max with existing values
-    const auto latestSrcAndCacheFileChanges = [](const ShaderLoadInfo& loadInfo, fs::file_time_type* outLatestSrcChangeTime,
-        fs::file_time_type* outLatestCacheChangeTime, const std::vector<fs::file_time_type>& latestFileChanges) {
-        //src file
-        const size_t srcFileIndex = loadInfo.shaderFileIndex;
-        *outLatestSrcChangeTime = std::max(*outLatestSrcChangeTime, latestFileChanges[srcFileIndex]);
-        //cache file
-        size_t cacheFileIndex = loadInfo.spirvCacheFileIndex;
-        *outLatestCacheChangeTime = std::max(*outLatestCacheChangeTime, latestFileChanges[cacheFileIndex]);
-    };
-
-    //search for latest change of source files and spirvCache
-    fs::file_time_type latestSrcChange = fs::file_time_type::min();
-    fs::file_time_type latestSpirvCacheChange = fs::file_time_type::min();
-    //vertex
-    latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.vertex,
-        &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
-    //fragment
-    latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.fragment,
-        &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
-    //geometry
-    if (shaderSrcInfo.loadInfo.geometry.has_value()) {
-        latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.geometry.value(),
-            &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
-    }
-    //tesselation control
-    if (shaderSrcInfo.loadInfo.tessellationControl.has_value()) {
-        latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.tessellationControl.value(),
-            &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
-    }
-    //tesselation evaluation
-    if (shaderSrcInfo.loadInfo.tessellationEvaluation.has_value()) {
-        latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.tessellationEvaluation.value(),
-            &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
-    }
-    //include files
-    for (const size_t includeFileIndex : shaderSrcInfo.includeFileIndices) {
-        latestSrcChange = std::max(latestSrcChange, m_fileLastChanges[includeFileIndex]);
-    }
-
-    return latestSpirvCacheChange < latestSrcChange;
-}
-
-ShaderLoadInfo ShaderFileManager::loadInfoFromShaderDescription(const ShaderDescription& shaderDesc) {
-    ShaderLoadInfo loadInfo;
-    const fs::path pathAbsolute = relativeShaderPathToAbsolute(shaderDesc.srcPathRelative);
-    //shader file index
-    {
-        const size_t fileIndex = addFilePath(pathAbsolute);
-        loadInfo.shaderFileIndex = fileIndex;
-    }
-    //cache file index
-    {
-        const fs::path cachePathAbsolute = shaderCachePathFromRelative(shaderDesc.srcPathRelative);
-        const size_t cacheIndex = addFilePath(cachePathAbsolute);
-        loadInfo.spirvCacheFileIndex = cacheIndex;
-    }
-    return loadInfo;
-}
-
-void ShaderFileManager::addGLSLIncludesFileIndicesToSet(const fs::path& shaderPathAbsolute, std::unordered_set<size_t>* outIndexSet){
-    assert(outIndexSet != nullptr);
-    //TODO: reuse loaded glsl code
-    std::vector<char> glsl;
-    if (!loadTextFile(shaderPathAbsolute, &glsl)) {
-        std::cout << "Failed to load shader GLSL, skipping includes: " << shaderPathAbsolute << "\n";
-        //glsl will stay empty, so include files just be empty
-    }
-    const std::vector<fs::path> includeFiles = parseIncludePathsFromGLSL(glsl);
-    for (const auto& includePath : includeFiles) {
-        const size_t cacheIndex = addFilePath(includePath);
-        outIndexSet->insert(cacheIndex);
-    }
-}
-
 ComputeShaderHandle ShaderFileManager::addComputeShader(const ShaderDescription& computeShaderDesc) {
     ComputeShaderSourceInfo srcInfo;
     srcInfo.loadInfo = loadInfoFromShaderDescription(computeShaderDesc);
@@ -199,7 +88,7 @@ void ShaderFileManager::setComputePassHandle(const ComputeShaderHandle shaderHan
     m_computeShaderSourceInfos[shaderHandle.index].renderpass = passHandle;
 }
 
-bool ShaderFileManager::loadComputeShaderSpirV(const ComputeShaderHandle handle, std::vector<uint32_t>* outSpirV) const{
+bool ShaderFileManager::loadComputeShaderSpirV(const ComputeShaderHandle handle, std::vector<uint32_t>* outSpirV) const {
     const ComputeShaderSourceInfo srcInfo = m_computeShaderSourceInfos[handle.index];
     if (isComputeShaderCacheOutOfDate(srcInfo)) {
         const fs::path filePath = m_filePathsAbsolute[srcInfo.loadInfo.shaderFileIndex];
@@ -212,7 +101,7 @@ bool ShaderFileManager::loadComputeShaderSpirV(const ComputeShaderHandle handle,
     }
 }
 
-bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handle, GraphicPassShaderSpirV* outSpirV) const{
+bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handle, GraphicPassShaderSpirV* outSpirV) const {
     const GraphicShaderSourceInfo srcInfo = m_graphicShaderSourceInfos[handle.index];
     if (areGraphicShadersCachesOutOfDate(srcInfo)) {
         //load GLSL and compile
@@ -356,7 +245,7 @@ std::vector<GraphicPassShaderReloadInfo> ShaderFileManager::reloadOutOfDateGraph
             std::cout << "\n";
 
             if (loadGraphicPassShaders(shaderPaths, &reloadInfo.spirV)) {
-                reloadList.push_back(reloadInfo); 
+                reloadList.push_back(reloadInfo);
 
                 //update spirv caches and include file list
                 shaderSrcInfo.includeFileIndices.clear();
@@ -407,4 +296,115 @@ std::vector<GraphicPassShaderReloadInfo> ShaderFileManager::reloadOutOfDateGraph
         }
     }
     return reloadList;
+}
+
+size_t ShaderFileManager::addFilePath(const fs::path& filePathAbsolute) {
+    if (m_pathToFileIndex.find(filePathAbsolute.string()) == m_pathToFileIndex.end()) {
+        const size_t fileIndex = m_filePathsAbsolute.size();
+        m_pathToFileIndex[filePathAbsolute.string()] = fileIndex;
+        m_filePathsAbsolute.push_back(filePathAbsolute);
+
+        fs::file_time_type lastChangeTime;
+        const bool readSuccess = checkLastChangeTime(filePathAbsolute, &lastChangeTime);
+        if (!readSuccess) {
+            lastChangeTime = fs::file_time_type::time_point();
+        }
+        m_fileLastChanges.push_back(lastChangeTime);
+        return fileIndex;
+    }
+    else {
+        return m_pathToFileIndex[filePathAbsolute.string()];
+    }
+}
+
+bool ShaderFileManager::isComputeShaderCacheOutOfDate(const ComputeShaderSourceInfo& shaderSrcInfo) const{
+    //search for latest change of source files
+    const size_t shaderFileIndex = shaderSrcInfo.loadInfo.shaderFileIndex;
+    fs::file_time_type latestSrcChange = m_fileLastChanges[shaderFileIndex];
+    for (const size_t includeFileIndex : shaderSrcInfo.includeFileIndices) {
+        latestSrcChange = std::max(latestSrcChange, m_fileLastChanges[includeFileIndex]);
+    }
+    //check for latest change of spirv cache file
+    const size_t spirvCacheFileIndex = shaderSrcInfo.loadInfo.spirvCacheFileIndex;
+    const fs::file_time_type latestSpirvCacheChange = m_fileLastChanges[spirvCacheFileIndex];
+
+
+    return latestSpirvCacheChange < latestSrcChange;
+}
+
+bool ShaderFileManager::areGraphicShadersCachesOutOfDate(const GraphicShaderSourceInfo& shaderSrcInfo) const{
+    //helper function
+    //look up src and cache last file changes from load info using latestFileChanges and max with existing values
+    const auto latestSrcAndCacheFileChanges = [](const ShaderLoadInfo& loadInfo, fs::file_time_type* outLatestSrcChangeTime,
+        fs::file_time_type* outLatestCacheChangeTime, const std::vector<fs::file_time_type>& latestFileChanges) {
+        //src file
+        const size_t srcFileIndex = loadInfo.shaderFileIndex;
+        *outLatestSrcChangeTime = std::max(*outLatestSrcChangeTime, latestFileChanges[srcFileIndex]);
+        //cache file
+        size_t cacheFileIndex = loadInfo.spirvCacheFileIndex;
+        *outLatestCacheChangeTime = std::max(*outLatestCacheChangeTime, latestFileChanges[cacheFileIndex]);
+    };
+
+    //search for latest change of source files and spirvCache
+    fs::file_time_type latestSrcChange = fs::file_time_type::min();
+    fs::file_time_type latestSpirvCacheChange = fs::file_time_type::min();
+    //vertex
+    latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.vertex,
+        &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
+    //fragment
+    latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.fragment,
+        &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
+    //geometry
+    if (shaderSrcInfo.loadInfo.geometry.has_value()) {
+        latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.geometry.value(),
+            &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
+    }
+    //tesselation control
+    if (shaderSrcInfo.loadInfo.tessellationControl.has_value()) {
+        latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.tessellationControl.value(),
+            &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
+    }
+    //tesselation evaluation
+    if (shaderSrcInfo.loadInfo.tessellationEvaluation.has_value()) {
+        latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.tessellationEvaluation.value(),
+            &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
+    }
+    //include files
+    for (const size_t includeFileIndex : shaderSrcInfo.includeFileIndices) {
+        latestSrcChange = std::max(latestSrcChange, m_fileLastChanges[includeFileIndex]);
+    }
+
+    return latestSpirvCacheChange < latestSrcChange;
+}
+
+ShaderLoadInfo ShaderFileManager::loadInfoFromShaderDescription(const ShaderDescription& shaderDesc) {
+    ShaderLoadInfo loadInfo;
+    const fs::path pathAbsolute = relativeShaderPathToAbsolute(shaderDesc.srcPathRelative);
+    //shader file index
+    {
+        const size_t fileIndex = addFilePath(pathAbsolute);
+        loadInfo.shaderFileIndex = fileIndex;
+    }
+    //cache file index
+    {
+        const fs::path cachePathAbsolute = shaderCachePathFromRelative(shaderDesc.srcPathRelative);
+        const size_t cacheIndex = addFilePath(cachePathAbsolute);
+        loadInfo.spirvCacheFileIndex = cacheIndex;
+    }
+    return loadInfo;
+}
+
+void ShaderFileManager::addGLSLIncludesFileIndicesToSet(const fs::path& shaderPathAbsolute, std::unordered_set<size_t>* outIndexSet){
+    assert(outIndexSet != nullptr);
+    //TODO: reuse loaded glsl code
+    std::vector<char> glsl;
+    if (!loadTextFile(shaderPathAbsolute, &glsl)) {
+        std::cout << "Failed to load shader GLSL, skipping includes: " << shaderPathAbsolute << "\n";
+        //glsl will stay empty, so include files just be empty
+    }
+    const std::vector<fs::path> includeFiles = parseIncludePathsFromGLSL(glsl);
+    for (const auto& includePath : includeFiles) {
+        const size_t cacheIndex = addFilePath(includePath);
+        outIndexSet->insert(cacheIndex);
+    }
 }
