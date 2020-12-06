@@ -57,8 +57,8 @@ public:
     //add compute pass handle that is returned when shader is out of date
     void setComputePassHandle(const ComputeShaderHandle shaderHandle, const RenderPassHandle passHandle);
     
-    bool loadComputeShaderSpirV(const ComputeShaderHandle handle, std::vector<uint32_t>* outSpirV);
-    bool loadGraphicShadersSpirV(const GraphicShadersHandle handle, GraphicPassShaderSpirV* outSpirV);
+    bool loadComputeShaderSpirV(const ComputeShaderHandle handle, std::vector<uint32_t>* outSpirV) const;
+    bool loadGraphicShadersSpirV(const GraphicShadersHandle handle, GraphicPassShaderSpirV* outSpirV) const;
 
     //iterates over all shader files and updates the last changed time point
     //must be called before reloading out of date shaders so that out of date check is correct
@@ -71,8 +71,8 @@ private:
     //else adds entry in m_pathToFileIndex, m_filePathsAbsolute and m_fileLastChanges
     size_t addFilePath(const fs::path& filePathAbsolute);
     
-    bool isComputeShaderCacheOutOfDate(const ComputeShaderSourceInfo& shaderSrcInfo);
-    bool areGraphicShadersCachesOutOfDate(const GraphicShaderSourceInfo& shaderSrcInfo);
+    bool isComputeShaderCacheOutOfDate(const ComputeShaderSourceInfo& shaderSrcInfo) const;
+    bool areGraphicShadersCachesOutOfDate(const GraphicShaderSourceInfo& shaderSrcInfo) const;
 
     ShaderLoadInfo loadInfoFromShaderDescription(const ShaderDescription& shaderDesc);
     //loads GLSL shader file, parses include paths, then adds them to index set

@@ -48,7 +48,7 @@ size_t ShaderFileManager::addFilePath(const fs::path& filePathAbsolute) {
     }
 }
 
-bool ShaderFileManager::isComputeShaderCacheOutOfDate(const ComputeShaderSourceInfo& shaderSrcInfo) {
+bool ShaderFileManager::isComputeShaderCacheOutOfDate(const ComputeShaderSourceInfo& shaderSrcInfo) const{
     //search for latest change of source files
     const size_t shaderFileIndex = shaderSrcInfo.loadInfo.shaderFileIndex;
     fs::file_time_type latestSrcChange = m_fileLastChanges[shaderFileIndex];
@@ -63,7 +63,7 @@ bool ShaderFileManager::isComputeShaderCacheOutOfDate(const ComputeShaderSourceI
     return latestSpirvCacheChange < latestSrcChange;
 }
 
-bool ShaderFileManager::areGraphicShadersCachesOutOfDate(const GraphicShaderSourceInfo& shaderSrcInfo) {
+bool ShaderFileManager::areGraphicShadersCachesOutOfDate(const GraphicShaderSourceInfo& shaderSrcInfo) const{
     //helper function
     //look up src and cache last file changes from load info using latestFileChanges and max with existing values
     const auto latestSrcAndCacheFileChanges = [](const ShaderLoadInfo& loadInfo, fs::file_time_type* outLatestSrcChangeTime,
@@ -125,7 +125,7 @@ ShaderLoadInfo ShaderFileManager::loadInfoFromShaderDescription(const ShaderDesc
     return loadInfo;
 }
 
-void ShaderFileManager::addGLSLIncludesFileIndicesToSet(const fs::path& shaderPathAbsolute, std::unordered_set<size_t>* outIndexSet) {
+void ShaderFileManager::addGLSLIncludesFileIndicesToSet(const fs::path& shaderPathAbsolute, std::unordered_set<size_t>* outIndexSet){
     assert(outIndexSet != nullptr);
     //TODO: reuse loaded glsl code
     std::vector<char> glsl;
@@ -199,7 +199,7 @@ void ShaderFileManager::setComputePassHandle(const ComputeShaderHandle shaderHan
     m_computeShaderSourceInfos[shaderHandle.index].renderpass = passHandle;
 }
 
-bool ShaderFileManager::loadComputeShaderSpirV(const ComputeShaderHandle handle, std::vector<uint32_t>* outSpirV) {
+bool ShaderFileManager::loadComputeShaderSpirV(const ComputeShaderHandle handle, std::vector<uint32_t>* outSpirV) const{
     const ComputeShaderSourceInfo srcInfo = m_computeShaderSourceInfos[handle.index];
     if (isComputeShaderCacheOutOfDate(srcInfo)) {
         const fs::path filePath = m_filePathsAbsolute[srcInfo.loadInfo.shaderFileIndex];
@@ -212,7 +212,7 @@ bool ShaderFileManager::loadComputeShaderSpirV(const ComputeShaderHandle handle,
     }
 }
 
-bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handle, GraphicPassShaderSpirV* outSpirV) {
+bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handle, GraphicPassShaderSpirV* outSpirV) const{
     const GraphicShaderSourceInfo srcInfo = m_graphicShaderSourceInfos[handle.index];
     if (areGraphicShadersCachesOutOfDate(srcInfo)) {
         //load GLSL and compile
