@@ -344,15 +344,19 @@ void RenderBackend::updateShaderCode() {
     //recreate compute passes
     for (const ComputePassShaderReloadInfo& reloadInfo : computeShadersReloadInfos) {
         ComputePass& pass = m_renderPasses.getComputePassRefByHandle(reloadInfo.renderpass);
+        ComputeShaderHandle shaderHandle = pass.shaderHandle;
         destroyComputePass(pass);
         pass = createComputePassInternal(pass.computePassDesc, reloadInfo.spirV);
+        pass.shaderHandle = shaderHandle;
     }
 
     //recreate graphic passes
     for (const GraphicPassShaderReloadInfo& reloadInfo : graphicShadersReloadInfos) {
         GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(reloadInfo.renderpass);
+        const GraphicShadersHandle shaderHandle = pass.shaderHandle;
         destroyGraphicPass(pass);
         pass = createGraphicPassInternal(pass.graphicPassDesc, reloadInfo.spirV);
+        pass.shaderHandle = shaderHandle;
     }
 }
 
@@ -594,8 +598,10 @@ void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle pa
     if (m_shaderFileManager.loadGraphicShadersSpirV(pass.shaderHandle, &spirV)) {
         auto result = vkDeviceWaitIdle(vkContext.device);
         checkVulkanResult(result);
+        const GraphicShadersHandle shaderHandle = pass.shaderHandle;
         destroyGraphicPass(pass);
         pass = createGraphicPassInternal(pass.graphicPassDesc, spirV);
+        pass.shaderHandle = shaderHandle;
     }
 }
 
@@ -608,8 +614,10 @@ void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle pa
     if (m_shaderFileManager.loadComputeShaderSpirV(pass.shaderHandle, &spirV)) {
         auto result = vkDeviceWaitIdle(vkContext.device);
         checkVulkanResult(result);
+        const ComputeShaderHandle shaderHandle = pass.shaderHandle;
         destroyComputePass(pass);
         pass = createComputePassInternal(pass.computePassDesc, spirV);
+        pass.shaderHandle = shaderHandle;
     }
 }
 
