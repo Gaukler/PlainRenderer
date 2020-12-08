@@ -5,6 +5,7 @@
 #include "global.inc"
 #include "colorConversion.inc"
 #include "tonemapping.inc"
+#include "dither.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -20,6 +21,7 @@ void main(){
 	vec3 linearColor = texelFetch(sampler2D(imageIn, g_sampler_nearestClamp), uv, 0).rgb;
     vec3 tonemapped = ACESFitted(linearColor);
     vec3 sRGB = linearTosRGB(tonemapped);
-    
+    sRGB = ditherRGB8(sRGB, uv);
+
 	imageStore(imageOut, uv, vec4(sRGB, 1.f));
 }
