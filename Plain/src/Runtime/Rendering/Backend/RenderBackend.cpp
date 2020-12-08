@@ -2860,7 +2860,7 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     */
     const auto setSizes = descriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
     pass.descriptorSet = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
-
+    assert(pass.descriptorSet != VK_NULL_HANDLE);
     return pass;
 }
 
