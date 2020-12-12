@@ -2143,6 +2143,9 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
     else if (target.desc.format == ImageFormat::RG8) {
         bytePerPixel = 2;
     }
+    else if (target.desc.format == ImageFormat::R16_sFloat) {
+        bytePerPixel = 2;
+    }
     else if (target.desc.format == ImageFormat::RGBA16_sFloat) {
         bytePerPixel = 8;
     }
@@ -2175,9 +2178,10 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
     uint32_t mipLevel = 0;
     VkDeviceSize currentMipWidth = target.extent.width;
     VkDeviceSize currentMipHeight = target.extent.height;
+    VkDeviceSize currentMipDepth = target.extent.depth;
 
     VkDeviceSize bytesPerRow    = (size_t)(target.extent.width * bytePerPixel);
-    VkDeviceSize currentMipSize = (VkDeviceSize)(currentMipWidth * currentMipHeight * bytePerPixel);
+    VkDeviceSize currentMipSize = (VkDeviceSize)(currentMipWidth * currentMipHeight * currentMipDepth * bytePerPixel);
 
     //memory offset per mip is tracked separately to check if a mip border is reached
     VkDeviceSize mipMemoryOffset = 0;
@@ -2187,7 +2191,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
 
     //if the image data is bigger than the staging buffer multiple copies are needed
     //use a while loop because currentMemoryOffset is increased by copySize, which can vary at mip borders    
-    //TODO: creation of cmd buffer and fence in loop is somewhat inefficient
+    //TODO: creation of cmd buffer and fence in loop is inefficient
     while (totalMemoryOffset < size) {
 
         //check if mip border is reached
@@ -2196,10 +2200,25 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
             //resoltion is halved at every mip level
             currentMipWidth /= 2;
             currentMipHeight /= 2;
+            currentMipDepth /= 2;
+            currentMipDepth = glm::max(currentMipDepth, VkDeviceSize(1));
             bytesPerRow /= 2;
 
-            //halving resolution means size is quartered
-            currentMipSize /= 4;
+            //reduce size depending on dimensions
+            if (target.type == ImageType::Type1D) {
+                currentMipSize /= 2;
+            }
+            else if (target.type == ImageType::Type2D) {
+                currentMipSize /= 4;
+            }
+            else if (target.type == ImageType::Type3D) {
+                currentMipSize /= 8;
+            }
+            else {
+                std::cout << "Error: unknown image type" << std::endl;
+                assert(false);
+                return;
+            }
 
             //memory offset per mip is reset
             mipMemoryOffset = 0;
@@ -2249,7 +2268,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         //copy as many rows as fit into the copy size, without going over the mip height
         region.imageExtent.height = (uint32_t)std::min(copySize / bytesPerRow, currentMipHeight);
         region.imageExtent.width = (uint32_t)currentMipWidth;
-        region.imageExtent.depth = 1;
+        region.imageExtent.depth = (uint32_t)currentMipDepth;
 
         //BCn compressed textures are stored in 4x4 pixel blocks, so that is the minimum buffer size
         if (isBCnCompressed) {
