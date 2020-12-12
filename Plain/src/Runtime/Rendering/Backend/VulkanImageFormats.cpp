@@ -8,6 +8,7 @@ VkFormat imageFormatToVulkanFormat(const ImageFormat format) {
     case ImageFormat::RGBA8:            return VK_FORMAT_R8G8B8A8_UNORM;
     case ImageFormat::RG16_sFloat:      return VK_FORMAT_R16G16_SFLOAT;
     case ImageFormat::RG32_sFloat:      return VK_FORMAT_R32G32_SFLOAT;
+    case ImageFormat::R16_sFloat:       return VK_FORMAT_R16_SFLOAT;
     case ImageFormat::RG16_sNorm:       return VK_FORMAT_R16G16_SNORM;
     case ImageFormat::RGBA16_sFloat:    return VK_FORMAT_R16G16B16A16_SFLOAT;
     case ImageFormat::RGBA16_sNorm:     return VK_FORMAT_R16G16B16A16_SNORM;
@@ -30,6 +31,7 @@ VkImageAspectFlagBits imageFormatToVkAspectFlagBits(const ImageFormat format) {
     case ImageFormat::RGBA8:            return VK_IMAGE_ASPECT_COLOR_BIT;
     case ImageFormat::RG16_sFloat:      return VK_IMAGE_ASPECT_COLOR_BIT;
     case ImageFormat::RG32_sFloat:      return VK_IMAGE_ASPECT_COLOR_BIT;
+    case ImageFormat::R16_sFloat:       return VK_IMAGE_ASPECT_COLOR_BIT;
     case ImageFormat::RG16_sNorm:       return VK_IMAGE_ASPECT_COLOR_BIT;
     case ImageFormat::RGBA16_sFloat:    return VK_IMAGE_ASPECT_COLOR_BIT;
     case ImageFormat::RGBA16_sNorm:     return VK_IMAGE_ASPECT_COLOR_BIT;
@@ -52,6 +54,7 @@ ImageFormat vulkanImageFormatToImageFormat(const VkFormat format) {
     case VK_FORMAT_R8G8B8A8_UNORM:          return ImageFormat::RGBA8;
     case VK_FORMAT_R16G16_SFLOAT:           return ImageFormat::RG16_sFloat;
     case VK_FORMAT_R32G32_SFLOAT:           return ImageFormat::RG32_sFloat;
+    case VK_FORMAT_R16_SFLOAT:              return ImageFormat::R16_sFloat;
     case VK_FORMAT_R16G16_SNORM:            return ImageFormat::RG16_sNorm;
     case VK_FORMAT_R16G16B16A16_SFLOAT:     return ImageFormat::RGBA16_sFloat;
     case VK_FORMAT_R16G16B16A16_SNORM:      return ImageFormat::RGBA16_sNorm;

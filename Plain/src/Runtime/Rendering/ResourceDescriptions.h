@@ -82,7 +82,7 @@ struct DepthTest {
 
 enum class BlendState { None, Additive };
 enum class AttachmentLoadOp { Load, Clear, DontCare };
-enum class ImageFormat { R8, RG8, RGBA8, RG16_sFloat, RG32_sFloat, RG16_sNorm, RGBA16_sFloat, RGBA16_sNorm, RGBA32_sFloat, R11G11B10_uFloat, Depth16, Depth32, BC1, BC3, BC5, BGRA8_uNorm };
+enum class ImageFormat { R8, RG8, RGBA8, R16_sFloat, RG16_sFloat, RG32_sFloat, RG16_sNorm, RGBA16_sFloat, RGBA16_sNorm, RGBA32_sFloat, R11G11B10_uFloat, Depth16, Depth32, BC1, BC3, BC5, BGRA8_uNorm };
 
 struct Attachment {
     Attachment(
