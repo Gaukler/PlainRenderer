@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "ResourceDescriptions.h"
+#include "ImageDescription.h"
 
 //enum class bit operators
 ImageUsageFlags operator&(const ImageUsageFlags l, const ImageUsageFlags r) {

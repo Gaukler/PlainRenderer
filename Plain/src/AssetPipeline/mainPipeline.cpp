@@ -3,6 +3,9 @@
 #include "Common/ModelLoadSaveBinary.h"
 #include "Common/MeshProcessing.h"
 #include "Utilities/DirectoryUtils.h"
+#include "SceneSDF.h"
+#include "ImageIO.h"
+#include "sdfPath.h"
 
 //expected command line arguments:
 //argv[0] = executablePath
@@ -27,17 +30,27 @@ int main(const int argc, char* argv[]) {
     CommandLineSettings settings = parseCommandLineArguments(argc, argv);
 
     DirectoryUtils::init();
-    
-    std::filesystem::path outputFile =  settings.modelFilePath;
-    outputFile.replace_extension("bin");
+
+    std::filesystem::path binaryPathRelative =  settings.modelFilePath;
+    binaryPathRelative.replace_extension("bin");
+
+    const std::filesystem::path sdfPathRelative = binaryToSDFPath(binaryPathRelative);
 
     std::vector<MeshData> meshData;
+    std::cout << "Input model: " << settings.modelFilePath << "\n";
     if (loadModelOBJ(settings.modelFilePath, &meshData)) {
-        std::vector<MeshBinary> meshesBinary = meshesToBinary(meshData);
-        saveBinaryMeshData(outputFile, meshesBinary);
-        std::cout << "Input model: " << settings.modelFilePath << "\n";
+        std::vector<AxisAlignedBoundingBox> AABBList = AABBListFromMeshes(meshData);
+        std::vector<MeshBinary> meshesBinary = meshesToBinary(meshData, AABBList);
         std::cout << "Sucessfully converted model to binary format\n";
-        std::cout << "Saved binary file: " << outputFile << "\n";
+        saveBinaryMeshData(binaryPathRelative, meshesBinary);
+        std::cout << "Saved binary file: " << binaryPathRelative << "\n";
+
+        std::cout << "Computing signed distance field...\n";
+        const ImageDescription sceneSDFTexture = ComputeSceneSDFTexture(meshData, AABBList);
+
+        writeDDSFile(DirectoryUtils::getResourceDirectory() / sdfPathRelative, sceneSDFTexture);
+        std::cout << "Saved SDF texture: " << sdfPathRelative << "\n";
+
     }
     return 0;
 }

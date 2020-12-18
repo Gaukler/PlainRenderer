@@ -1,0 +1,79 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "global.inc"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set=1, binding = 0, r11f_g11f_b10f)	uniform image2D imageOut;
+layout(set=1, binding = 1)					uniform texture3D sceneSDF;
+layout(set=1, binding = 2, std140)			uniform occlusionData{
+	mat4 skyShadowMatrix;
+    vec4 occlusionVolumeExtends;
+    vec4 sampleDirection;
+    vec4 occlusionVolumeOffset;
+    float weight;
+};
+
+vec3 worldToSDF(vec3 w){
+	vec3 samplePos = w - occlusionVolumeOffset.xyz;  //in range[-extend/2, extend/2]
+    samplePos = samplePos / occlusionVolumeExtends.xyz;      //in range [-0.5, 0.5]
+    samplePos += 0.5f;  
+	return samplePos;
+}
+
+float sampleSDF(vec3 uv){
+	return texture(sampler3D(sceneSDF, g_sampler_linearClamp), uv).r;
+}
+
+vec3 normalFromSDF(vec3 uv){
+	float extendsMax = max(occlusionVolumeExtends.x, max(occlusionVolumeExtends.y, occlusionVolumeExtends.z));
+	vec3 extendsNormalized = occlusionVolumeExtends.xyz / extendsMax;
+	vec3 epsilon = vec3(0.025) / extendsNormalized; //voxels are anisotropic so epsilon must be scaled per axis
+	return normalize(vec3(
+		sampleSDF(uv + vec3(epsilon.x, 0, 0)) - sampleSDF(uv - vec3(epsilon.x, 0, 0)),
+		sampleSDF(uv + vec3(0, epsilon.y, 0)) - sampleSDF(uv - vec3(0, epsilon.y, 0)),
+		sampleSDF(uv + vec3(0, 0, epsilon.z)) - sampleSDF(uv - vec3(0, 0, epsilon.z))
+	));
+}
+
+void main(){
+	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+
+	vec2 pixelCoor = (vec2(uv.xy) / g_screenResolution - 0.5) * 2;
+	pixelCoor.y *= -1;
+
+	vec3 V = -g_cameraForward.xyz;
+	V += g_cameraUp.xyz * g_cameraTanFovHalf * pixelCoor.y;
+	V += g_cameraRight.xyz * g_cameraTanFovHalf * g_cameraAspectRatio * pixelCoor.x;
+	V = normalize(V);
+
+	vec3 samplePosWorld = g_cameraPosition.xyz + g_nearPlane * V;                                  //in range [0, 1]
+    
+	float steps = 0;
+	float sampleCount = 40.f;
+	bool hit = false;
+
+	
+	ivec3 sdfResolution = textureSize(sampler3D(sceneSDF, g_sampler_linearClamp), 0);
+	float sdfThreshold = length(occlusionVolumeExtends.xyz / vec3(sdfResolution)) * 0.1f;
+	const float minStepSize = sdfThreshold * 0.8f;
+
+	for(int i = 0; i < sampleCount; i++){
+		vec3 samplePos = worldToSDF(samplePosWorld);
+		float sdf = texture(sampler3D(sceneSDF, g_sampler_linearClamp), samplePos).r;
+
+		hit = sdf < sdfThreshold;
+		
+		if(hit){
+			break;
+		}
+
+		float stepSize = max(abs(sdf), minStepSize);
+		samplePosWorld += V * stepSize;
+		steps++;
+	}
+	vec3 color = hit ? normalFromSDF(worldToSDF(samplePosWorld)) : vec3(0);
+	imageStore(imageOut, uv, vec4(color, 1.f));
+}

@@ -2123,56 +2123,10 @@ VkImageSubresourceLayers RenderBackend::createSubresourceLayers(const Image& ima
 void RenderBackend::transferDataIntoImage(Image& target, const void* data, const VkDeviceSize size) {
 
     //BCn compressed formats have certain properties that have to be considered when copying data
-    bool isBCnCompressed = false;
+    bool isBCnCompressed = getImageFormatIsBCnCompressed(target.desc.format);
 
-    //bytePerPixel is a float because compressed formats can have less than one byte per pixel
     //use double to avoid 4 to 8 byte casting warnings after arithmetic
-    double bytePerPixel = 0;
-    if (target.desc.format == ImageFormat::R8) {
-        bytePerPixel = 1;
-    }
-    else if (target.desc.format == ImageFormat::R11G11B10_uFloat) {
-        bytePerPixel = 4;
-    }
-    else if (target.desc.format == ImageFormat::RG16_sFloat) {
-        bytePerPixel = 4;
-    }
-    else if (target.desc.format == ImageFormat::RG32_sFloat) {
-        bytePerPixel = 8;
-    }
-    else if (target.desc.format == ImageFormat::RG8) {
-        bytePerPixel = 2;
-    }
-    else if (target.desc.format == ImageFormat::R16_sFloat) {
-        bytePerPixel = 2;
-    }
-    else if (target.desc.format == ImageFormat::RGBA16_sFloat) {
-        bytePerPixel = 8;
-    }
-    else if (target.desc.format == ImageFormat::RGBA16_sNorm) {
-        bytePerPixel = 8;
-    }
-    else if (target.desc.format == ImageFormat::RGBA32_sFloat) {
-        bytePerPixel = 16;
-    }
-    else if (target.desc.format == ImageFormat::RGBA8) {
-        bytePerPixel = 4;
-    }
-    else if (target.desc.format == ImageFormat::BC1) {
-        isBCnCompressed = true;
-        bytePerPixel = 0.5;
-    }
-    else if (target.desc.format == ImageFormat::BC3) {
-        isBCnCompressed = true;
-        bytePerPixel = 1;
-    }
-    else if (target.desc.format == ImageFormat::BC5) {
-        isBCnCompressed = true;
-        bytePerPixel = 1;
-    }
-    else {
-        throw("Unsupported format");
-    }
+    double bytePerPixel = getImageFormatBytePerPixel(target.desc.format);
 
     //if size is bigger than mip level 0 automatically switch to next mip level
     uint32_t mipLevel = 0;

@@ -98,6 +98,7 @@ public:
     void setCameraExtrinsic(const CameraExtrinsic& extrinsic);
     //static meshes are used for baking and thus cannot be moved
     void addStaticMeshes(const std::vector<MeshBinary>& meshData, const std::vector<glm::mat4>& transforms);
+    void setSceneSDF(const ImageDescription& desc);
 
     //before call camera settings and such must be set
     //after call drawcalls can be made
@@ -190,6 +191,7 @@ private:
     ShadingConfig m_shadingConfig;
     TemporalFilterSettings m_temporalFilterSettings;
     AtmosphereSettings m_atmosphereSettings;
+    bool m_renderSDFDebug = false;
 
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
@@ -218,6 +220,7 @@ private:
     RenderPassHandle m_skyOcclusionGatherPass;  //gathers visibility from sky shadow map
     RenderPassHandle m_hdrImageCopyPass;    //input must be R11G11B10
     RenderPassHandle m_colorToLuminancePass;
+    RenderPassHandle m_sdfDebugPass;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -235,6 +238,7 @@ private:
     ImageHandle m_skyOcclusionVolume;
     ImageHandle m_sceneLuminance;
     ImageHandle m_lastFrameLuminance;
+    ImageHandle m_sceneSDF;
 
     std::vector<ImageHandle> m_noiseTextures;
     uint32_t m_noiseTextureIndex = 0;

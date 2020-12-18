@@ -1,7 +1,7 @@
 #include "ShaderIO.h"
 #include "Utilities/DirectoryUtils.h"
 #include "ShaderCompile.h"
-#include "Runtime/FileIO.h"
+#include "Common/FileIO.h"
 
 bool loadShader(const std::filesystem::path pathAbsolute, std::vector<uint32_t>* outSpirV) {
     std::vector<char> shaderGLSL;

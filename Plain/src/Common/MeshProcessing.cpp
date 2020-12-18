@@ -2,6 +2,15 @@
 #include "MeshProcessing.h"
 #include "Common/CompressedTypes.h"
 
+std::vector<AxisAlignedBoundingBox> AABBListFromMeshes(const std::vector<MeshData>& meshes) {
+    std::vector<AxisAlignedBoundingBox> AABBList;
+    AABBList.reserve(meshes.size());
+    for (const MeshData& meshData : meshes) {
+        AABBList.push_back(axisAlignedBoundingBoxFromPositions(meshData.positions));
+    }
+    return AABBList;
+}
+
 void computeTangentBitangent(MeshData* outMeshData) {
     assert(outMeshData != nullptr);
     assert(outMeshData->positions.size() == outMeshData->uvs.size());
@@ -136,16 +145,16 @@ MeshData buildIndexedData(const MeshData& rawData) {
     return indexedData;
 }
 
-std::vector<MeshBinary> meshesToBinary(const std::vector<MeshData>& meshes) {
-
+std::vector<MeshBinary> meshesToBinary(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList) {
+    assert(meshes.size() == AABBList.size());
     std::vector<MeshBinary> meshesBinary;
     meshesBinary.reserve(meshes.size());
 
-    for (const MeshData& meshData : meshes) {
-
+    for (size_t i = 0; i < meshes.size(); i++) {
+        const MeshData& meshData = meshes[i];
         MeshBinary meshBinary;
         meshBinary.texturePaths = meshData.texturePaths;
-        meshBinary.boundingBox = axisAlignedBoundingBoxFromPositions(meshData.positions);
+        meshBinary.boundingBox = AABBList[i];
 
         //index buffer
         meshBinary.indexCount = (uint32_t)meshData.indices.size();

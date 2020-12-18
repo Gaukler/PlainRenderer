@@ -1,6 +1,5 @@
 #include "pch.h"
 #include "RenderFrontend.h"
-#include "Runtime/ImageLoader.h"
 
 //disable ImGui warning
 #pragma warning( push )
@@ -17,6 +16,8 @@
 #include "Utilities/GeneralUtils.h"
 #include "Common/MeshProcessing.h"
 #include "Noise.h"
+#include "Common/Utilities/DirectoryUtils.h"
+#include "Common/ImageIO.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -352,6 +353,28 @@ void RenderFrontend::prepareRenderpasses(){
         currentPass = m_temporalFilterPass;
         currentSrc = m_postProcessBuffers[1];        
     }
+
+    if (m_renderSDFDebug) {
+        const ImageResource targetImageResource(m_postProcessBuffers[0], 0, 0);
+        const ImageResource sdfImageResource(m_sceneSDF, 0, 1);
+        const UniformBufferResource occlusionBufferResource(m_skyOcclusionDataBuffer, 2);
+
+        RenderPassExecution exe;
+        exe.handle = m_sdfDebugPass;
+        exe.resources.storageImages = { targetImageResource };
+        exe.resources.sampledImages = { sdfImageResource };
+        exe.resources.uniformBuffers = { occlusionBufferResource };
+        exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+        exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+        exe.dispatchCount[2] = 1;
+        exe.parents = { currentPass };
+
+        gRenderBackend.setRenderPassExecution(exe);
+
+        currentPass = m_sdfDebugPass;
+        currentSrc = m_postProcessBuffers[0];
+    }
+
     computeTonemapping(currentPass, currentSrc);
 }
 
@@ -465,6 +488,10 @@ void RenderFrontend::addStaticMeshes(const std::vector<MeshBinary>& meshData, co
     }
 
     gRenderBackend.updateDynamicMeshes(debugMeshes, positionsPerMesh, indicesPerMesh);
+}
+
+void RenderFrontend::setSceneSDF(const ImageDescription& desc) {
+    m_sceneSDF = gRenderBackend.createImage(desc);
 }
 
 void RenderFrontend::prepareForDrawcalls() {
@@ -1588,6 +1615,21 @@ void RenderFrontend::initImages() {
 
         m_noiseTextures.push_back(gRenderBackend.createImage(desc));
     }
+    //scene SDF default data
+    {
+        const uint32_t sdfRes = 1;
+        ImageDescription desc;
+        desc.width = sdfRes;
+        desc.height = sdfRes;
+        desc.depth = sdfRes;
+        desc.type = ImageType::Type3D;
+        desc.format = ImageFormat::R16_sFloat;
+        desc.usageFlags = ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.autoCreateMips = false;
+        desc.initialData = { 0, 0 };
+        m_sceneSDF = gRenderBackend.createImage(desc);
+    }
 }
 
 void RenderFrontend::initSamplers(){
@@ -1919,7 +1961,7 @@ void RenderFrontend::initMeshs() {
             3, 2, 7, 7, 2, 6,
             4, 5, 0, 0, 5, 1
         };
-        const std::vector<MeshBinary> cubeBinary = meshesToBinary(std::vector<MeshData>{cubeData});
+        const std::vector<MeshBinary> cubeBinary = meshesToBinary(std::vector<MeshData>{cubeData}, AABBListFromMeshes({cubeData}));
 
         Material cubeMaterial;
         cubeMaterial.diffuseTexture = m_defaultTextures.diffuse;
@@ -1965,7 +2007,7 @@ void RenderFrontend::initMeshs() {
             0, 1, 2, 
             0, 1, 3
         };
-        const std::vector<MeshBinary> quadBinary = meshesToBinary(std::vector<MeshData>{quadData});
+        const std::vector<MeshBinary> quadBinary = meshesToBinary(std::vector<MeshData>{quadData}, AABBListFromMeshes({ quadData }));
 
         Material cubeMaterial;
         cubeMaterial.diffuseTexture = m_defaultTextures.diffuse;
@@ -2355,6 +2397,13 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.shaderDescription.srcPathRelative = "colorToLuminance.comp";
         m_colorToLuminancePass = gRenderBackend.createComputePass(desc);
     }
+    //sdf debug pass
+    {
+        ComputePassDescription desc;
+        desc.name = "SDF Debug";
+        desc.shaderDescription.srcPathRelative = "SDFDebug.comp";
+        m_sdfDebugPass = gRenderBackend.createComputePass(desc);
+    }
 }
 
 ShaderDescription RenderFrontend::createDepthPyramidShaderDescription(uint32_t* outThreadgroupCount) {
@@ -2484,6 +2533,8 @@ void RenderFrontend::drawUi() {
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Tonemap temporal supersample input", &m_temporalFilterSettings.filterUseTonemapping);
         ImGui::Checkbox("Use mip bias", &m_temporalFilterSettings.useMipBias);
     }
+
+    ImGui::Checkbox("SDF debug", &m_renderSDFDebug);
 
     //lighting settings
     if(ImGui::CollapsingHeader("Lighting settings")){
