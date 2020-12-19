@@ -18,6 +18,7 @@
 #include "Noise.h"
 #include "Common/Utilities/DirectoryUtils.h"
 #include "Common/ImageIO.h"
+#include "Common/VolumeInfo.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -358,13 +359,13 @@ void RenderFrontend::prepareRenderpasses(){
     if (m_renderSDFDebug) {
         const ImageResource targetImageResource(m_postProcessBuffers[0], 0, 0);
         const ImageResource sdfImageResource(m_sceneSDF, 0, 1);
-        const UniformBufferResource occlusionBufferResource(m_skyOcclusionDataBuffer, 2);
+        const UniformBufferResource sdfInfoBufferResource(m_sdfVolumeInfoBuffer, 2);
 
         RenderPassExecution exe;
         exe.handle = m_sdfDebugPass;
         exe.resources.storageImages = { targetImageResource };
         exe.resources.sampledImages = { sdfImageResource };
-        exe.resources.uniformBuffers = { occlusionBufferResource };
+        exe.resources.uniformBuffers = { sdfInfoBufferResource };
         exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
         exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
         exe.dispatchCount[2] = 1;
@@ -489,6 +490,25 @@ void RenderFrontend::addStaticMeshes(const std::vector<MeshBinary>& meshData, co
     }
 
     gRenderBackend.updateDynamicMeshes(debugMeshes, positionsPerMesh, indicesPerMesh);
+
+    //update scene bounding box
+    std::vector<AxisAlignedBoundingBox> meshBoundingBoxes;
+    for (const auto& mesh : m_staticMeshes) {
+        meshBoundingBoxes.push_back(mesh.bbWorldSpace);
+    }
+
+    const AxisAlignedBoundingBox addedBBs = combineAxisAlignedBoundingBoxes(meshBoundingBoxes);
+    m_sceneBoundingBox = combineAxisAlignedBoundingBoxes({ m_sceneBoundingBox, addedBBs });
+
+    //update scene sdf volume info
+    AxisAlignedBoundingBox paddedSceneBB = m_sceneBoundingBox;
+
+    const float bbBias = 1.f;
+    paddedSceneBB.max += bbBias;
+    paddedSceneBB.min -= bbBias;
+
+    const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(paddedSceneBB);
+    gRenderBackend.setUniformBufferData(m_sdfVolumeInfoBuffer, &sdfVolumeInfo, sizeof(sdfVolumeInfo));
 }
 
 void RenderFrontend::setSceneSDF(const ImageDescription& desc) {
@@ -1072,21 +1092,17 @@ void RenderFrontend::computeBRDFLut() {
 
 void RenderFrontend::bakeSkyOcclusion() {
     
-    std::vector<AxisAlignedBoundingBox> meshBoundingBoxes;
-    for (const auto& mesh : m_staticMeshes) {
-        meshBoundingBoxes.push_back(mesh.bbWorldSpace);
-    }
+    AxisAlignedBoundingBox paddedSceneBB = m_sceneBoundingBox;
+    
+    const float bbBias = 1.f;
+    paddedSceneBB.max += bbBias;
+    paddedSceneBB.min -= bbBias;
+
+    const VolumeInfo occlusionVolumeInfo = volumeInfoFromBoundingBox(paddedSceneBB);
 
     SkyOcclusionRenderData occlusionData;
-    auto sceneBB = combineAxisAlignedBoundingBoxes(meshBoundingBoxes);
-
-    const float bbBias = 1.f;
-    sceneBB.max += bbBias;
-    sceneBB.min -= bbBias;
-
-    occlusionData.offset = glm::vec4((sceneBB.max + sceneBB.min) * 0.5f, 0.f);
-    occlusionData.extends = glm::vec4((sceneBB.max - sceneBB.min), 0.f);
-
+    occlusionData.offset = occlusionVolumeInfo.offset;
+    occlusionData.extends = occlusionVolumeInfo.extends;
     occlusionData.weight = 1.f / skyOcclusionSampleCount;
 
     m_skyOcclusionVolumeRes = glm::ivec3(
@@ -1170,7 +1186,7 @@ void RenderFrontend::bakeSkyOcclusion() {
             occlusionData.sampleDirection = glm::vec4(cos(phi) * sinTheta, cosTheta, sin(phi) * sinTheta, 0.f);
         }
         //compute shadow matrix
-        occlusionData.shadowMatrix = viewProjectionMatrixAroundBB(sceneBB, glm::vec3(occlusionData.sampleDirection));
+        occlusionData.shadowMatrix = viewProjectionMatrixAroundBB(m_sceneBoundingBox, glm::vec3(occlusionData.sampleDirection));
 
         gRenderBackend.newFrame();
         
@@ -1888,6 +1904,12 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         UniformBufferDescription desc;
         desc.size = sizeof(float) * 9;
         m_taaResolveWeightBuffer = gRenderBackend.createUniformBuffer(desc);
+    }
+    //scene signed distance field volume info
+    {
+        UniformBufferDescription desc;
+        desc.size = sizeof(VolumeInfo);
+        m_sdfVolumeInfoBuffer = gRenderBackend.createUniformBuffer(desc);
     }
 }
 

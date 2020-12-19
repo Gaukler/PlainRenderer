@@ -8,17 +8,14 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 0, r11f_g11f_b10f)	uniform image2D imageOut;
 layout(set=1, binding = 1)					uniform texture3D sceneSDF;
-layout(set=1, binding = 2, std140)			uniform occlusionData{
-	mat4 skyShadowMatrix;
-    vec4 occlusionVolumeExtends;
-    vec4 sampleDirection;
-    vec4 occlusionVolumeOffset;
-    float weight;
+layout(set=1, binding = 2, std140)			uniform sdfVolumeData{
+    vec4 sdfVolumeExtends;
+    vec4 sdfVolumeOffset;
 };
 
 vec3 worldToSDF(vec3 w){
-	vec3 samplePos = w - occlusionVolumeOffset.xyz;  //in range[-extend/2, extend/2]
-    samplePos = samplePos / occlusionVolumeExtends.xyz;      //in range [-0.5, 0.5]
+	vec3 samplePos = w - sdfVolumeOffset.xyz;		//in range[-extend/2, extend/2]
+    samplePos = samplePos / sdfVolumeExtends.xyz;   //in range [-0.5, 0.5]
     samplePos += 0.5f;  
 	return samplePos;
 }
@@ -28,8 +25,8 @@ float sampleSDF(vec3 uv){
 }
 
 vec3 normalFromSDF(vec3 uv){
-	float extendsMax = max(occlusionVolumeExtends.x, max(occlusionVolumeExtends.y, occlusionVolumeExtends.z));
-	vec3 extendsNormalized = occlusionVolumeExtends.xyz / extendsMax;
+	float extendsMax = max(sdfVolumeExtends.x, max(sdfVolumeExtends.y, sdfVolumeExtends.z));
+	vec3 extendsNormalized = sdfVolumeExtends.xyz / extendsMax;
 	vec3 epsilon = vec3(0.025) / extendsNormalized; //voxels are anisotropic so epsilon must be scaled per axis
 	return normalize(vec3(
 		sampleSDF(uv + vec3(epsilon.x, 0, 0)) - sampleSDF(uv - vec3(epsilon.x, 0, 0)),
@@ -57,7 +54,7 @@ void main(){
 
 	
 	ivec3 sdfResolution = textureSize(sampler3D(sceneSDF, g_sampler_linearClamp), 0);
-	float sdfThreshold = length(occlusionVolumeExtends.xyz / vec3(sdfResolution)) * 0.1f;
+	float sdfThreshold = length(sdfVolumeExtends.xyz / vec3(sdfResolution)) * 0.1f;
 	const float minStepSize = sdfThreshold * 0.8f;
 
 	for(int i = 0; i < sampleCount; i++){

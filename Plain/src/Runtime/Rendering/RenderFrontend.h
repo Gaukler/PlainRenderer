@@ -151,6 +151,7 @@ private:
 
     //contains meshes created by createMeshes()
     std::vector<StaticMesh> m_staticMeshes;
+    AxisAlignedBoundingBox m_sceneBoundingBox = {};
 
     //drawcall stats
     uint32_t m_currentMeshCount = 0;                //mesh commands received
@@ -276,6 +277,7 @@ private:
     UniformBufferHandle m_skyOcclusionDataBuffer;
     UniformBufferHandle m_atmosphereSettingsBuffer;
     UniformBufferHandle m_taaResolveWeightBuffer;
+    UniformBufferHandle m_sdfVolumeInfoBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);

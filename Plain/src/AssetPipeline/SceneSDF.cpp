@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "SceneSDF.h"
 #include "Utilities/DirectoryUtils.h"
+#include "VolumeInfo.h"
 
 std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
     const std::vector<AxisAlignedBoundingBox>& AABBList, const std::vector<MeshData>& meshes);
@@ -30,14 +31,14 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 
     const auto startTime = std::chrono::system_clock::now();
 
-    auto sceneBB = combineAxisAlignedBoundingBoxes(AABBList);
+    const AxisAlignedBoundingBox sceneBB = combineAxisAlignedBoundingBoxes(AABBList);
+    AxisAlignedBoundingBox sceneBBPadded = sceneBB;
 
     const float bbBias = 1.f;
-    sceneBB.max += bbBias;
-    sceneBB.min -= bbBias;
+    sceneBBPadded.max += bbBias;
+    sceneBBPadded.min -= bbBias;
 
-    glm::vec3 offset = glm::vec4((sceneBB.max + sceneBB.min) * 0.5f, 0.f);
-    glm::vec3 extends = glm::vec4((sceneBB.max - sceneBB.min), 0.f);
+    const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(sceneBBPadded);
 
     struct TriangleInfo {
         glm::vec3 v1;
@@ -97,7 +98,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
                 const size_t byteIndex = index * bytePerPixel;
 
                 //reference: https://www.iquilezles.org/www/articles/triangledistance/triangledistance.htm
-                const glm::vec3 p = (glm::vec3(x, y, z) / glm::vec3(resolution) - 0.5f) * extends + offset;
+                const glm::vec3 p = (glm::vec3(x, y, z) / glm::vec3(resolution) - 0.5f) * glm::vec3(sdfVolumeInfo.extends) + glm::vec3(sdfVolumeInfo.offset);
 
                 float value = std::numeric_limits<float>::max();
                 for (const TriangleInfo& t : triangles) {
