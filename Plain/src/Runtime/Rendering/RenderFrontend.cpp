@@ -274,6 +274,7 @@ void RenderFrontend::prepareNewFrame() {
     m_sceneLuminance = m_lastFrameLuminance;
     m_lastFrameLuminance = tempImage;
 
+    drawUi();
     prepareRenderpasses();
     gRenderBackend.startDrawcallRecording();
 }
@@ -498,7 +499,6 @@ void RenderFrontend::prepareForDrawcalls() {
     if (m_minimized) {
         return;
     }
-    drawUi();
     //global shader info must be updated before drawcalls, else they would be invalidated by descriptor set update
     //cant update at frame start as camera data must be set before updaing global info
     updateGlobalShaderInfo();
