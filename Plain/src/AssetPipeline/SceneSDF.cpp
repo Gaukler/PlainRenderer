@@ -23,6 +23,77 @@ ImageDescription ComputeSceneSDFTexture(const std::vector<MeshData>& meshes, con
     return desc;
 }
 
+bool isAxisSeparating(const glm::vec3& axis, const glm::vec3 bbHalfVector, 
+    const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2) {
+
+    const float p0 = glm::dot(axis, v0);
+    const float p1 = glm::dot(axis, v1);
+    const float p2 = glm::dot(axis, v2);
+
+    const float r = glm::abs(glm::dot(axis, bbHalfVector));
+
+    const float pMin = glm::min(glm::min(p0, p1), p2);
+    const float pMax = glm::max(glm::max(p0, p1), p2);
+
+    return pMin > r || pMax < -r;
+}
+
+//reference: https://gdbooks.gitbooks.io/3dcollisions/content/Chapter4/aabb-triangle.html
+//reference: "Fast 3D Triangle-Box OverlapTesting"
+bool doTriangleAABBOverlap(const glm::vec3& bbCenter, const glm::vec3& bbExtends, 
+    const glm::vec3& v0In, const glm::vec3& v1In, const glm::vec3& v2In, const glm::vec3& N) {
+
+    //move triangle to world center
+    const glm::vec3 v0 = v0In - bbCenter;
+    const glm::vec3 v1 = v1In - bbCenter;
+    const glm::vec3 v2 = v2In - bbCenter;
+
+    //compute edges
+    const glm::vec3 e0 = v1 - v0;
+    const glm::vec3 e1 = v2 - v1;
+    const glm::vec3 e2 = v0 - v2;
+
+    const glm::vec3 bbHalf = bbExtends * 0.5f;
+
+    //normals of bb are x,y,z -axis
+    const glm::vec3 bbN0 = glm::vec3(1, 0, 0);
+    const glm::vec3 bbN1 = glm::vec3(0, 1, 0);
+    const glm::vec3 bbN2 = glm::vec3(0, 0, 1);
+
+    //9-SAT tests
+    if (
+        //edge 0
+        isAxisSeparating(glm::cross(e0, bbN0), bbHalf, v0, v1, v2) ||
+        isAxisSeparating(glm::cross(e0, bbN1), bbHalf, v0, v1, v2) ||
+        isAxisSeparating(glm::cross(e0, bbN2), bbHalf, v0, v1, v2) ||
+        //edge 1
+        isAxisSeparating(glm::cross(e1, bbN0), bbHalf, v0, v1, v2) ||
+        isAxisSeparating(glm::cross(e1, bbN1), bbHalf, v0, v1, v2) ||
+        isAxisSeparating(glm::cross(e1, bbN2), bbHalf, v0, v1, v2) ||
+        //edge 2
+        isAxisSeparating(glm::cross(e2, bbN0), bbHalf, v0, v1, v2) ||
+        isAxisSeparating(glm::cross(e2, bbN1), bbHalf, v0, v1, v2) ||
+        isAxisSeparating(glm::cross(e2, bbN2), bbHalf, v0, v1, v2)) {
+        return false;
+    }
+
+    //test aabb normals
+    if (
+        isAxisSeparating(bbN0, bbHalf, v0, v1, v2) ||
+        isAxisSeparating(bbN1, bbHalf, v0, v1, v2) ||
+        isAxisSeparating(bbN2, bbHalf, v0, v1, v2)) {
+        return false;
+    }
+
+    //test triangle normal
+    if (isAxisSeparating(N, bbHalf, v0, v1, v2)) {
+        return false;
+    }
+
+    //no separating axis found -> overlapping
+    return true;
+}
+
 std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
     const std::vector<AxisAlignedBoundingBox>& AABBList, const std::vector<MeshData>& meshes) {
 
@@ -41,6 +112,54 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 
     const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(sceneBBPadded);
     
+    struct TriangleIndex {
+        size_t mesh;
+        size_t indexBuffer;
+    };
+
+    const size_t uniformGridResolution = 3;
+    std::vector<std::vector<TriangleIndex>> uniformGrid; //for every cell contains list of triangle indices
+
+    for (size_t z = 0; z < uniformGridResolution; z++) {
+        for (size_t y = 0; y < uniformGridResolution; y++) {
+            for (size_t x = 0; x < uniformGridResolution; x++) {
+                const glm::vec3 cellCenter = ((glm::vec3(x, y, z) + 0.5f) / glm::vec3(uniformGridResolution) - 0.5f) * glm::vec3(sdfVolumeInfo.extends) + glm::vec3(sdfVolumeInfo.offset);
+                const glm::vec3 cellExtends = glm::vec3(sdfVolumeInfo.extends) / float(uniformGridResolution);
+
+                std::vector<TriangleIndex> cellIndices;
+
+                for (size_t meshIndex = 0; meshIndex < meshes.size(); meshIndex++) {
+                    const MeshData mesh = meshes[meshIndex];
+                    for (size_t i = 0; i < mesh.indices.size(); i += 3) {
+
+                        const size_t i0 = mesh.indices[i];
+                        const size_t i1 = mesh.indices[i + 1];
+                        const size_t i2 = mesh.indices[i + 2];
+
+                        const glm::vec3 v0 = mesh.positions[i0];
+                        const glm::vec3 v1 = mesh.positions[i1];
+                        const glm::vec3 v2 = mesh.positions[i2];
+
+                        const glm::vec3 n0 = mesh.normals[i0];
+                        const glm::vec3 n1 = mesh.normals[i1];
+                        const glm::vec3 n2 = mesh.normals[i2];
+
+                        const glm::vec3 N = glm::normalize(n0 + n1 + n2);
+
+                        if (doTriangleAABBOverlap(
+                            cellCenter, cellExtends, v0, v1, v2, N)) {
+                                TriangleIndex triangleIndex;
+                                triangleIndex.mesh = meshIndex;
+                                triangleIndex.indexBuffer = i;
+                                cellIndices.push_back(triangleIndex);
+                        }
+                    }
+                }
+                uniformGrid.push_back(cellIndices);
+            }
+        }
+    }
+
     const size_t pixelCount = resolution.x * resolution.y * resolution.z;
     const size_t bytePerPixel = 2; //float 16
     const size_t byteCount = pixelCount * bytePerPixel;
@@ -73,6 +192,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
                         float rayClosestHit = std::numeric_limits<float>::max();
                         for (const MeshData mesh : meshes) {
                             for (size_t i = 0; i < mesh.indices.size(); i += 3) {
+
                                 const size_t i0 = mesh.indices[i];
                                 const size_t i1 = mesh.indices[i + 1];
                                 const size_t i2 = mesh.indices[i + 2];
