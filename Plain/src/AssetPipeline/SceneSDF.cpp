@@ -2,13 +2,14 @@
 #include "SceneSDF.h"
 #include "Utilities/DirectoryUtils.h"
 #include "VolumeInfo.h"
+#include "Utilities/MathUtils.h"
 
 std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
     const std::vector<AxisAlignedBoundingBox>& AABBList, const std::vector<MeshData>& meshes);
 
 ImageDescription ComputeSceneSDFTexture(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList) {
 
-    const uint32_t sdfRes = 64;
+    const uint32_t sdfRes = 8;
     ImageDescription desc;
     desc.width = sdfRes;
     desc.height = sdfRes;
@@ -39,53 +40,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
     sceneBBPadded.min -= bbBias;
 
     const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(sceneBBPadded);
-
-    struct TriangleInfo {
-        glm::vec3 v1;
-        glm::vec3 v2;
-        glm::vec3 v3;
-        glm::vec3 eN1;
-        glm::vec3 eN2;
-        glm::vec3 eN3;
-        glm::vec3 v1ToV2;
-        glm::vec3 v2ToV3;
-        glm::vec3 v3ToV1;
-        glm::vec3 N;
-        float v12DotInv;
-        float v23DotInv;
-        float v31DotInv;
-    };
-
-    std::vector<TriangleInfo> triangles;
-    for (const auto& mesh : meshes) {
-        for (size_t i = 0; i < mesh.indices.size(); i += 3) {
-            const uint32_t i1 = mesh.indices[i];
-            const uint32_t i2 = mesh.indices[i + 1];
-            const uint32_t i3 = mesh.indices[i + 2];
-
-            TriangleInfo t;
-            t.v1 = mesh.positions[i1];
-            t.v2 = mesh.positions[i2];
-            t.v3 = mesh.positions[i3];
-
-            t.N = glm::normalize(mesh.normals[i1] + mesh.normals[i2] + mesh.normals[i3]);
-
-            t.v1ToV2 = t.v2 - t.v1;
-            t.v2ToV3 = t.v3 - t.v2;
-            t.v3ToV1 = t.v1 - t.v3;
-
-            t.eN1 = glm::cross(t.v1ToV2, t.N);
-            t.eN2 = glm::cross(t.v2ToV3, t.N);
-            t.eN3 = glm::cross(t.v3ToV1, t.N);
-
-            t.v12DotInv = 1.f / glm::dot(t.v1ToV2, t.v1ToV2);
-            t.v23DotInv = 1.f / glm::dot(t.v2ToV3, t.v2ToV3);
-            t.v31DotInv = 1.f / glm::dot(t.v3ToV1, t.v3ToV1);
-
-            triangles.push_back(t);
-        }
-    }
-
+    
     const size_t pixelCount = resolution.x * resolution.y * resolution.z;
     const size_t bytePerPixel = 2; //float 16
     const size_t byteCount = pixelCount * bytePerPixel;
@@ -97,48 +52,97 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
                 const size_t index = x + y * resolution.x + z * resolution.x * resolution.y;
                 const size_t byteIndex = index * bytePerPixel;
 
-                //reference: https://www.iquilezles.org/www/articles/triangledistance/triangledistance.htm
-                const glm::vec3 p = (glm::vec3(x, y, z) / glm::vec3(resolution) - 0.5f) * glm::vec3(sdfVolumeInfo.extends) + glm::vec3(sdfVolumeInfo.offset);
+                //ray triangle intersection
+                //scratch a pixel has a sign error in computation of t
+                //reference: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/ray-triangle-intersection-geometric-solution
+                //reference: https://courses.cs.washington.edu/courses/csep557/10au/lectures/triangle_intersection.pdf
+                const glm::vec3 rayOrigin = ((glm::vec3(x, y, z) + 0.5f) / glm::vec3(resolution) - 0.5f) * glm::vec3(sdfVolumeInfo.extends) + glm::vec3(sdfVolumeInfo.offset);
+                float closestHitTotal = std::numeric_limits<float>::max();
 
-                float value = std::numeric_limits<float>::max();
-                for (const TriangleInfo& t : triangles) {
+                const int sampleCount = 20;
+                const float phiMax = 3.1415f * 2.f;
+                const float thetaMax = 3.1415f;
 
-                    const glm::vec3 v1ToP = p - t.v1;
-                    const glm::vec3 v2ToP = p - t.v2;
-                    const glm::vec3 v3ToP = p - t.v3;
+                size_t backHitCounter = 0;
+                for (float theta = 0.f; theta < thetaMax; theta += thetaMax / sampleCount) {
+                    for (float phi = 0.f; phi < phiMax; phi += phiMax / sampleCount) {
+                        bool isBackfaceHit = false;
 
-                    float c1 = glm::clamp(glm::dot(v1ToP, t.v1ToV2) * t.v12DotInv, 0.f, 1.f);
-                    float c2 = glm::clamp(glm::dot(v2ToP, t.v2ToV3) * t.v23DotInv, 0.f, 1.f);
-                    float c3 = glm::clamp(glm::dot(v3ToP, t.v3ToV1) * t.v31DotInv, 0.f, 1.f);
+                        const glm::vec2 angles = glm::vec2(phi, theta) / 3.1415f * 180.f;
+                        const glm::vec3 rayDirection = directionToVector(angles);
+                        float rayClosestHit = std::numeric_limits<float>::max();
+                        for (const MeshData mesh : meshes) {
+                            for (size_t i = 0; i < mesh.indices.size(); i += 3) {
+                                const size_t i0 = mesh.indices[i];
+                                const size_t i1 = mesh.indices[i + 1];
+                                const size_t i2 = mesh.indices[i + 2];
 
-                    float s1 = glm::sign(glm::dot(t.eN1, -v1ToP));
-                    float s2 = glm::sign(glm::dot(t.eN2, -v2ToP));
-                    float s3 = glm::sign(glm::dot(t.eN3, -v3ToP));
+                                const glm::vec3 n1 = mesh.normals[i0];
+                                const glm::vec3 n2 = mesh.normals[i1];
+                                const glm::vec3 n3 = mesh.normals[i2];
 
-                    bool onEdge =
-                        s1 +
-                        s2 +
-                        s3 < 2.f;
+                                const glm::vec3 N = glm::normalize(n1 + n2 + n3);
+                                const float NoR = glm::dot(N, rayDirection);
 
-                    float l1 = dot2(p - (t.v1 + t.v1ToV2 * c1));
-                    float l2 = dot2(p - (t.v2 + t.v2ToV3 * c2));
-                    float l3 = dot2(p - (t.v3 + t.v3ToV1 * c3));
+                                if (abs(NoR) < 0.0001f) {
+                                    continue; //ray parallel to triangle
+                                }
 
-                    float d = onEdge ? glm::min(glm::min(
-                        l1,
-                        l2),
-                        l3)
-                        :
-                        abs(glm::dot(t.N, v1ToP) * glm::dot(t.N, v1ToP));
+                                const glm::vec3 v0 = mesh.positions[i0];
+                                const glm::vec3 v1 = mesh.positions[i1];
+                                const glm::vec3 v2 = mesh.positions[i2];
 
-                    if (d < abs(value)) {
-                        bool inFront = glm::dot(v1ToP, t.N) > 0;
-                        d *= inFront ? 1 : -1;
-                        value = d;
+                                const float D = glm::dot(N, v0);
+
+                                const float t = (D - glm::dot(N, rayOrigin)) / NoR;
+
+                                if (t < 0.f) {
+                                    continue; //intersection in wrong direction
+                                }
+
+                                const glm::vec3 edge0 = v1 - v0;
+                                const glm::vec3 edge1 = v2 - v1;
+                                const glm::vec3 edge2 = v0 - v2;
+
+                                const glm::vec3 planeIntersection = rayOrigin + rayDirection * t;
+
+                                const glm::vec3 C0 = planeIntersection - v0;
+                                const glm::vec3 C1 = planeIntersection - v1;
+                                const glm::vec3 C2 = planeIntersection - v2;
+
+                                const float d0 = glm::dot(N, cross(edge0, C0));
+                                const float d1 = glm::dot(N, cross(edge1, C1));
+                                const float d2 = glm::dot(N, cross(edge2, C2));
+
+                                bool isInsideTriangle =
+                                    d0 >= 0.f &&
+                                    d1 >= 0.f &&
+                                    d2 >= 0.f;
+
+                                if (!isInsideTriangle) {
+                                    continue;
+                                }
+
+                                //rayDirection is normalized so t is distance to hit
+                                if (t < rayClosestHit) {
+                                    rayClosestHit = t;
+                                    float test = glm::dot(rayDirection, N);
+                                    isBackfaceHit = test > 0.f;
+                                }
+                            }
+                        }
+                        if (isBackfaceHit) {
+                            backHitCounter++;
+                        }
+                        closestHitTotal = glm::min(closestHitTotal, rayClosestHit);
                     }
                 }
-                value = glm::sign(value) * sqrt(abs(value));
-                uint16_t half = glm::packHalf(glm::vec1(value))[0];
+                //using sign heuristic from "Dynamic Occlusion with Signed Distance Fields", page 22
+                //assuming negative sign when more than half rays hit backface
+                const size_t hitsTotal = sampleCount * sampleCount;
+                float backHitPercentage = backHitCounter / (float)hitsTotal;
+                closestHitTotal *= backHitPercentage > 0.5f ? -1 : 1;
+                uint16_t half = glm::packHalf(glm::vec1(closestHitTotal))[0];
                 byteData[byteIndex] = ((uint8_t*)&half)[0];
                 byteData[byteIndex + 1] = ((uint8_t*)&half)[1];
             }
