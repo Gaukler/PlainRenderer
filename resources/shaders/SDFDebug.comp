@@ -71,6 +71,6 @@ void main(){
 		samplePosWorld += V * stepSize;
 		steps++;
 	}
-	vec3 color = hit ? normalFromSDF(worldToSDF(samplePosWorld)) : vec3(0);
+	vec3 color = hit ? 0.5f * normalFromSDF(worldToSDF(samplePosWorld)) + 0.5f : vec3(0);
 	imageStore(imageOut, uv, vec4(color, 1.f));
 }
