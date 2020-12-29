@@ -5,7 +5,7 @@
 #include "Timer.h"
 #include "Common/ModelLoadSaveBinary.h"
 #include "Utilities/MathUtils.h"
-#include "Common/sdfPath.h"
+#include "Common/sdfUtilities.h"
 #include "ImageIO.h"
 
 App::App() {

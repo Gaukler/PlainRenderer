@@ -5,7 +5,7 @@
 #include "Utilities/DirectoryUtils.h"
 #include "SceneSDF.h"
 #include "ImageIO.h"
-#include "sdfPath.h"
+#include "sdfUtilities.h"
 
 //expected command line arguments:
 //argv[0] = executablePath

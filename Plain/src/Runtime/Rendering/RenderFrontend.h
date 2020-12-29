@@ -137,6 +137,8 @@ private:
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void issueSkyDrawcalls();
 
+	void updateSceneSDFInfo();
+
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
     bool loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);
     std::unordered_map<std::string, ImageHandle> m_textureMap; //using string instead of path to use default string hash
@@ -162,6 +164,8 @@ private:
     std::vector<RenderPassTime> m_currentRenderTimings;
     float m_renderTimingUpdateFrequency = 0.2f;
     float m_renderTimingTimeSinceLastUpdate = 0.f;
+
+	glm::ivec3 m_sceneSDFResolution = glm::ivec3(1);
 
     bool m_didResolutionChange = false;
     bool m_minimized = false;

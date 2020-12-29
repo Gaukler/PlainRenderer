@@ -3,6 +3,7 @@
 #include "Utilities/DirectoryUtils.h"
 #include "VolumeInfo.h"
 #include "Utilities/MathUtils.h"
+#include "Common/sdfUtilities.h"
 
 //private function declarations
 void triangleAABBOverlapTests();
@@ -219,11 +220,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
     const auto startTime = std::chrono::system_clock::now();
 
     const AxisAlignedBoundingBox sceneBB = combineAxisAlignedBoundingBoxes(AABBList);
-    AxisAlignedBoundingBox sceneBBPadded = sceneBB;
-
-    const float bbBias = 1.f;
-    sceneBBPadded.max += bbBias;
-    sceneBBPadded.min -= bbBias;
+    const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(sceneBB, resolution);
 
     const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(sceneBBPadded);
     

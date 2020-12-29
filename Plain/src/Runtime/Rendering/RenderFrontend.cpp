@@ -19,6 +19,7 @@
 #include "Common/Utilities/DirectoryUtils.h"
 #include "Common/ImageIO.h"
 #include "Common/VolumeInfo.h"
+#include "Common/sdfUtilities.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -500,19 +501,13 @@ void RenderFrontend::addStaticMeshes(const std::vector<MeshBinary>& meshData, co
     const AxisAlignedBoundingBox addedBBs = combineAxisAlignedBoundingBoxes(meshBoundingBoxes);
     m_sceneBoundingBox = combineAxisAlignedBoundingBoxes({ m_sceneBoundingBox, addedBBs });
 
-    //update scene sdf volume info
-    AxisAlignedBoundingBox paddedSceneBB = m_sceneBoundingBox;
-
-    const float bbBias = 1.f;
-    paddedSceneBB.max += bbBias;
-    paddedSceneBB.min -= bbBias;
-
-    const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(paddedSceneBB);
-    gRenderBackend.setUniformBufferData(m_sdfVolumeInfoBuffer, &sdfVolumeInfo, sizeof(sdfVolumeInfo));
+	updateShadowFrustum();
 }
 
 void RenderFrontend::setSceneSDF(const ImageDescription& desc) {
     m_sceneSDF = gRenderBackend.createImage(desc);
+	m_sceneSDFResolution = glm::ivec3(desc.width, desc.height, desc.depth);
+	updateSceneSDFInfo();
 }
 
 void RenderFrontend::prepareForDrawcalls() {
@@ -1018,6 +1013,12 @@ void RenderFrontend::issueSkyDrawcalls() {
 
     const glm::mat4 spriteMVP = m_viewProjectionMatrix * spriteRotation;
     gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, { { spriteMVP, spriteRotation } }, m_sunSpritePass);
+}
+
+void RenderFrontend::updateSceneSDFInfo() {
+	AxisAlignedBoundingBox paddedSceneBB = padSDFBoundingBox(m_sceneBoundingBox, m_sceneSDFResolution);
+	const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(paddedSceneBB);
+	gRenderBackend.setUniformBufferData(m_sdfVolumeInfoBuffer, &sdfVolumeInfo, sizeof(sdfVolumeInfo));
 }
 
 bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
