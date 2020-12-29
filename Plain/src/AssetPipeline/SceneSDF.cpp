@@ -314,14 +314,19 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
                 const glm::vec3 rayOrigin = ((glm::vec3(x, y, z) + 0.5f) / glm::vec3(resolution) - 0.5f) * glm::vec3(sdfVolumeInfo.extends) + glm::vec3(sdfVolumeInfo.offset);
                 float closestHitTotal = std::numeric_limits<float>::max();
 
-                const int sampleCount = 20;
-                const float phiMax = 3.1415f * 2.f;
-                const float thetaMax = 3.1415f;
+                const int sampleCount1D = 15;
 
                 size_t backHitCounter = 0;
 				//for every ray, parametrized by angles theta and phi
-                for (float theta = 0.f; theta < thetaMax; theta += thetaMax / sampleCount) {
-                    for (float phi = 0.f; phi < phiMax; phi += phiMax / sampleCount) {
+				for (int sampleIndexX = 0; sampleIndexX < sampleCount1D; sampleIndexX++) {
+                    for (int sampleIndexY = 0; sampleIndexY < sampleCount1D; sampleIndexY++) {
+
+						float sampleX = sampleIndexX / float(sampleCount1D - 1);			//in range [0:1]
+						float sampleY = sampleIndexY / float(sampleCount1D - 1) * 2 - 1;	//in range [-1:1]
+
+						const float phi = sampleX * 2.f * 3.1415f;
+						const float theta = acosf(sampleY);
+
                         bool isBackfaceHit = false;
 
                         const glm::vec2 angles = glm::vec2(phi, theta) / 3.1415f * 180.f;
@@ -477,7 +482,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 
                 //using sign heuristic from "Dynamic Occlusion with Signed Distance Fields", page 22
                 //assuming negative sign when more than half rays hit backface
-                const size_t hitsTotal = sampleCount * sampleCount;
+                const size_t hitsTotal = sampleCount1D * sampleCount1D;
                 float backHitPercentage = backHitCounter / (float)hitsTotal;
                 closestHitTotal *= backHitPercentage > 0.5f ? -1 : 1;
                 uint16_t half = glm::packHalf(glm::vec1(closestHitTotal))[0];
