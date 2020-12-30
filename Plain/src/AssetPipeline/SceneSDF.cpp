@@ -124,7 +124,7 @@ void triangleAABBOverlapTests() {
 
 ImageDescription ComputeSceneSDFTexture(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList) {
 	//triangleAABBOverlapTests();
-    const uint32_t sdfRes = 8;
+    const uint32_t sdfRes = 16;
     ImageDescription desc;
     desc.width = sdfRes;
     desc.height = sdfRes;
@@ -230,63 +230,66 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
     };
 	
 	//build uniform grid
-    const size_t uniformGridResolution = 6;
+    const size_t uniformGridResolution = 64;
 	const glm::vec3 uniformGridCellSize = glm::vec3(sdfVolumeInfo.extends) / float(uniformGridResolution);
-    std::vector<std::vector<TriangleIndex>> uniformGrid; //for every cell contains list of triangle indices
 
-    for (size_t z = 0; z < uniformGridResolution; z++) {
-        for (size_t y = 0; y < uniformGridResolution; y++) {
-            for (size_t x = 0; x < uniformGridResolution; x++) {
-                const glm::vec3 cellCenter = ((glm::vec3(x, y, z) + 0.5f) / glm::vec3(uniformGridResolution) - 0.5f) * glm::vec3(sdfVolumeInfo.extends) + glm::vec3(sdfVolumeInfo.offset);
+	const size_t uniformGridCellCount = uniformGridResolution * uniformGridResolution * uniformGridResolution;
+    std::vector<std::vector<TriangleIndex>> uniformGrid(uniformGridCellCount); //for every cell contains list of triangle indices
 
-                std::vector<TriangleIndex> cellIndices;
+	auto flattenGridIndex = [](const glm::ivec3& index3D, const glm::ivec3& resolution) {
+		return index3D.x + index3D.y * resolution.x + index3D.z * resolution.x * resolution.y;
+	};
 
-                for (size_t meshIndex = 0; meshIndex < meshes.size(); meshIndex++) {
-                    const MeshData mesh = meshes[meshIndex];
-                    for (size_t i = 0; i < mesh.indices.size(); i += 3) {
+	for (size_t meshIndex = 0; meshIndex < meshes.size(); meshIndex++) {
+		const MeshData mesh = meshes[meshIndex];
+		for (size_t i = 0; i < mesh.indices.size(); i += 3) {
 
-                        const size_t i0 = mesh.indices[i];
-                        const size_t i1 = mesh.indices[i + 1];
-                        const size_t i2 = mesh.indices[i + 2];
+			const size_t i0 = mesh.indices[i];
+			const size_t i1 = mesh.indices[i + 1];
+			const size_t i2 = mesh.indices[i + 2];
 
-                        const glm::vec3 v0 = mesh.positions[i0];
-                        const glm::vec3 v1 = mesh.positions[i1];
-                        const glm::vec3 v2 = mesh.positions[i2];
+			const glm::vec3 v0 = mesh.positions[i0];
+			const glm::vec3 v1 = mesh.positions[i1];
+			const glm::vec3 v2 = mesh.positions[i2];
 
-                        const glm::vec3 n0 = mesh.normals[i0];
-                        const glm::vec3 n1 = mesh.normals[i1];
-                        const glm::vec3 n2 = mesh.normals[i2];
+			const glm::vec3 triangleMin = glm::min(glm::min(v0, v1), v2);
+			const glm::vec3 triangleMax = glm::max(glm::max(v0, v1), v2);
 
-                        const glm::vec3 N = glm::normalize(n0 + n1 + n2);
+			TriangleIndex triangleIndex;
+			triangleIndex.mesh = meshIndex;
+			triangleIndex.indexBuffer = i;
 
-						const bool isTriangleInCell = doTriangleAABBOverlap(
-							cellCenter, uniformGridCellSize, v0, v1, v2, N)
-							
-							//|| true//FOR TESTING
-							;	
+			auto pointToGridIndex = [](const glm::vec3& p, const AxisAlignedBoundingBox& volumeBB, const glm::ivec3& resolution) {
+				p;																		//in range [min:max]
+				const glm::vec3 pShifted = p - volumeBB.min;							//in range [0, max-min]
+				const glm::vec3 normalized = pShifted / (volumeBB.max - volumeBB.min);	//in range [0, 1]
+				return glm::ivec3(normalized * glm::vec3(resolution));					//in range [0, resolution-1]
+																						//index floored and p < max, so normalized can never reach 1
+																						//because of this multiplication with resolution results in range until resolution-1
+			};
 
-                        if (isTriangleInCell) {
-                                TriangleIndex triangleIndex;
-                                triangleIndex.mesh = meshIndex;
-                                triangleIndex.indexBuffer = i;
-                                cellIndices.push_back(triangleIndex);
-                        }
-                    }
-                }
-                uniformGrid.push_back(cellIndices);
-            }
-        }
-    }
+			const glm::ivec3 minIndex = pointToGridIndex(triangleMin, sceneBBPadded, glm::ivec3(uniformGridResolution));
+			const glm::ivec3 maxIndex = pointToGridIndex(triangleMax, sceneBBPadded, glm::ivec3(uniformGridResolution));
+
+			//add triangle to all cells that it touches
+			for (int x = minIndex.x; x <= maxIndex.x; x++) {
+				for (int y = minIndex.y; y <= maxIndex.y; y++) {
+					for (int z = minIndex.z; z <= maxIndex.z; z++) {
+						const size_t cellIndex = flattenGridIndex(glm::ivec3(x, y, z), glm::ivec3(uniformGridResolution));
+						uniformGrid[cellIndex].push_back(triangleIndex);
+					}
+				}
+			}
+		}
+	}
+
+	std::cout << "Built uniform grid\n";
 
 	//calculate SDF
     const size_t pixelCount = resolution.x * resolution.y * resolution.z;
     const size_t bytePerPixel = 2; //float 16
     const size_t byteCount = pixelCount * bytePerPixel;
     std::vector<uint8_t> byteData(byteCount);
-
-	auto flattenGridIndex = [](const glm::ivec3& index3D, const glm::ivec3& resolution) {
-		return index3D.x + index3D.y * resolution.x + index3D.z * resolution.x * resolution.y;
-	};
 
 	auto isPointInAABB = [](const glm::vec3 p, const glm::vec3 min, const glm::vec3 max) {
 		return 
@@ -302,6 +305,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
     for (size_t z = 0; z < resolution.z; z++) {
 		std::cout << z << std::endl;
         for (size_t y = 0; y < resolution.y; y++) {
+			std::cout << y << std::endl;
             for (size_t x = 0; x < resolution.x; x++) {
 
 				const size_t index = flattenGridIndex(glm::ivec3(x, y, z), glm::ivec3(resolution));
