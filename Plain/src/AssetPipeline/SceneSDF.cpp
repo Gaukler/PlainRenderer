@@ -6,8 +6,6 @@
 #include "Common/sdfUtilities.h"
 
 //private function declarations
-void triangleAABBOverlapTests();
-
 ImageDescription ComputeSceneSDFTexture(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList);
 
 bool isAxisSeparating(const glm::vec3& axis, const glm::vec3 bbHalfVector,
@@ -21,110 +19,8 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 
 //---- implementation ----
 
-void triangleAABBOverlapTests() {
-
-	auto testPermutationVertexShuffle = [](
-		const glm::vec3 bbCenter,
-		const glm::vec3 bbExtends,
-		const glm::vec3& v0,
-		const glm::vec3& v1,
-		const glm::vec3& v2,
-		const glm::vec3& N,
-		bool expectedResult){
-		assert(doTriangleAABBOverlap(bbCenter, bbExtends, v0, v1, v2, N) == expectedResult);
-		assert(doTriangleAABBOverlap(bbCenter, bbExtends, v0, v2, v1, N) == expectedResult);
-		assert(doTriangleAABBOverlap(bbCenter, bbExtends, v1, v2, v0, N) == expectedResult);
-		assert(doTriangleAABBOverlap(bbCenter, bbExtends, v1, v0, v2, N) == expectedResult);
-		assert(doTriangleAABBOverlap(bbCenter, bbExtends, v2, v0, v1, N) == expectedResult);
-		assert(doTriangleAABBOverlap(bbCenter, bbExtends, v2, v1, v0, N) == expectedResult);
-	};
-
-	auto testPermutationNormalFlip = [testPermutationVertexShuffle](
-		const glm::vec3 bbCenter,
-		const glm::vec3 bbExtends,
-		const glm::vec3& v0,
-		const glm::vec3& v1,
-		const glm::vec3& v2,
-		const glm::vec3& N,
-		bool expectedResult) {
-		testPermutationVertexShuffle(bbCenter, bbExtends, v0, v1, v2, N, expectedResult);
-		testPermutationVertexShuffle(bbCenter, bbExtends, v0, v1, v2, -N, expectedResult);
-	};
-
-	auto testPermutationScale = [testPermutationNormalFlip](
-		const glm::vec3 bbCenter,
-		const glm::vec3 bbExtends,
-		const glm::vec3& v0,
-		const glm::vec3& v1,
-		const glm::vec3& v2,
-		const glm::vec3& N,
-		bool expectedResult
-		) {
-		float scale = 0.01;
-		testPermutationNormalFlip(bbCenter * scale, bbExtends * scale, v0 * scale, v1 * scale, v2 * scale, N, expectedResult);
-		scale = 0.1;
-		testPermutationNormalFlip(bbCenter * scale, bbExtends * scale, v0 * scale, v1 * scale, v2 * scale, N, expectedResult);
-		scale = 0.5;
-		testPermutationNormalFlip(bbCenter * scale, bbExtends * scale, v0 * scale, v1 * scale, v2 * scale, N, expectedResult);
-		scale = 1.f;
-		testPermutationNormalFlip(bbCenter * scale, bbExtends * scale, v0 * scale, v1 * scale, v2 * scale, N, expectedResult);
-		scale = 2.f;
-		testPermutationNormalFlip(bbCenter * scale, bbExtends * scale, v0 * scale, v1 * scale, v2 * scale, N, expectedResult);
-		scale = 10.f;
-		testPermutationNormalFlip(bbCenter * scale, bbExtends * scale, v0 * scale, v1 * scale, v2 * scale, N, expectedResult);
-	};
-
-	auto testPermutationOffset = [testPermutationScale](
-		const glm::vec3 bbCenter,
-		const glm::vec3 bbExtends,
-		const glm::vec3& v0,
-		const glm::vec3& v1,
-		const glm::vec3& v2,
-		const glm::vec3& N,
-		bool expectedResult
-		) {
-		glm::vec3 offset = glm::vec3(0.f);
-		testPermutationScale(bbCenter + offset, bbExtends, v0 + offset, v1 + offset, v2 + offset, N, expectedResult);
-		offset = glm::vec3(1.f);
-		testPermutationScale(bbCenter + offset, bbExtends, v0 + offset, v1 + offset, v2 + offset, N, expectedResult);
-		offset = glm::vec3(-1.f);
-		testPermutationScale(bbCenter + offset, bbExtends, v0 + offset, v1 + offset, v2 + offset, N, expectedResult);
-		offset = glm::vec3(10.f);
-		testPermutationScale(bbCenter + offset, bbExtends, v0 + offset, v1 + offset, v2 + offset, N, expectedResult);
-		offset = glm::vec3(-10.f);
-		testPermutationScale(bbCenter + offset, bbExtends, v0 + offset, v1 + offset, v2 + offset, N, expectedResult);
-	};
-
-	{
-		const glm::vec3 bbCenter = glm::vec3(0.f);
-		const glm::vec3 bbExtends = glm::vec3(2.f);
-
-		glm::vec3 v0 = glm::vec3(0.5f, 0.f, 0.f);
-		glm::vec3 v1 = glm::vec3(-0.5f, 0.f, 0.f);
-		glm::vec3 v2 = glm::vec3(0.f, 0.5f, 0.f);
-
-		const glm::vec3 N = glm::normalize(glm::cross(v0 - v1, v0 - v2));
-
-		testPermutationOffset(bbCenter, bbExtends, v0, v1, v2, N, true);
-
-		v2 = glm::vec3(0.f, 0.f, 0.5f);
-		testPermutationOffset(bbCenter, bbExtends, v0, v1, v2, N, true);
-
-		v0 = glm::vec3( 0.5f, 2.f, 0.f);
-		v1 = glm::vec3(-0.5f, 2.f, 0.f);
-		v2 = glm::vec3(0.f, 2.f, 1.f);
-		testPermutationOffset(bbCenter, bbExtends, v0, v1, v2, N, false);
-
-		v0 = glm::vec3(1.5f, -0.2f, 0.f);
-		v1 = glm::vec3(-1.5f, 0.2f, 0.f);
-		v2 = glm::vec3(0.f, 2.f, 1.f);
-		testPermutationOffset(bbCenter, bbExtends, v0, v1, v2, N, true);
-	}
-}
-
 ImageDescription ComputeSceneSDFTexture(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList) {
-	//triangleAABBOverlapTests();
-    const uint32_t sdfRes = 16;
+    const uint32_t sdfRes = 32;
     ImageDescription desc;
     desc.width = sdfRes;
     desc.height = sdfRes;
@@ -220,13 +116,15 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
     const auto startTime = std::chrono::system_clock::now();
 
     const AxisAlignedBoundingBox sceneBB = combineAxisAlignedBoundingBoxes(AABBList);
-    const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(sceneBB, resolution);
+	const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(sceneBB, resolution);
 
     const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(sceneBBPadded);
     
-    struct TriangleIndex {
-        size_t mesh;
-        size_t indexBuffer;
+    struct TriangleInfo {
+		glm::vec3 v0;
+		glm::vec3 v1;
+		glm::vec3 v2;
+		glm::vec3 N;
     };
 	
 	//build uniform grid
@@ -234,10 +132,19 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 	const glm::vec3 uniformGridCellSize = glm::vec3(sdfVolumeInfo.extends) / float(uniformGridResolution);
 
 	const size_t uniformGridCellCount = uniformGridResolution * uniformGridResolution * uniformGridResolution;
-    std::vector<std::vector<TriangleIndex>> uniformGrid(uniformGridCellCount); //for every cell contains list of triangle indices
+    std::vector<std::vector<TriangleInfo>> uniformGrid(uniformGridCellCount); //for every cell contains list of triangles
 
 	auto flattenGridIndex = [](const glm::ivec3& index3D, const glm::ivec3& resolution) {
 		return index3D.x + index3D.y * resolution.x + index3D.z * resolution.x * resolution.y;
+	};
+
+	auto pointToCellIndex = [](const glm::vec3& p, const AxisAlignedBoundingBox& aabb, const glm::ivec3 resolution) {
+		const glm::vec3 pRelative = p - aabb.min;							//range [0:max-min]
+		glm::vec3 normalized = pRelative / (aabb.max - aabb.min);		//range [0:1]
+		normalized = glm::clamp(normalized, glm::vec3(0.f), glm::vec3(0.999f)); //do not allow 1, otherwise it would not be floored and be exactly resoltuin, exceeding max index
+		const glm::vec3 posInTexels = normalized * glm::vec3(resolution);	//range [0:cellRes]
+		const glm::ivec3 index = glm::floor(posInTexels);
+		return index;
 	};
 
 	for (size_t meshIndex = 0; meshIndex < meshes.size(); meshIndex++) {
@@ -248,35 +155,34 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 			const size_t i1 = mesh.indices[i + 1];
 			const size_t i2 = mesh.indices[i + 2];
 
-			const glm::vec3 v0 = mesh.positions[i0];
-			const glm::vec3 v1 = mesh.positions[i1];
-			const glm::vec3 v2 = mesh.positions[i2];
+			TriangleInfo triangle;
+			triangle.v0 = mesh.positions[i0];
+			triangle.v1 = mesh.positions[i1];
+			triangle.v2 = mesh.positions[i2];
 
-			const glm::vec3 triangleMin = glm::min(glm::min(v0, v1), v2);
-			const glm::vec3 triangleMax = glm::max(glm::max(v0, v1), v2);
+			const glm::vec3 n1 = mesh.normals[i0];
+			const glm::vec3 n2 = mesh.normals[i1];
+			const glm::vec3 n3 = mesh.normals[i2];
 
-			TriangleIndex triangleIndex;
-			triangleIndex.mesh = meshIndex;
-			triangleIndex.indexBuffer = i;
+			triangle.N = glm::normalize(n1 + n2 + n3);
 
-			auto pointToGridIndex = [](const glm::vec3& p, const AxisAlignedBoundingBox& volumeBB, const glm::ivec3& resolution) {
-				p;																		//in range [min:max]
-				const glm::vec3 pShifted = p - volumeBB.min;							//in range [0, max-min]
-				const glm::vec3 normalized = pShifted / (volumeBB.max - volumeBB.min);	//in range [0, 1]
-				return glm::ivec3(normalized * glm::vec3(resolution));					//in range [0, resolution-1]
-																						//index floored and p < max, so normalized can never reach 1
-																						//because of this multiplication with resolution results in range until resolution-1
-			};
+			const glm::vec3 triangleMin = glm::min(glm::min(triangle.v0, triangle.v1), triangle.v2);
+			const glm::vec3 triangleMax = glm::max(glm::max(triangle.v0, triangle.v1), triangle.v2);
 
-			const glm::ivec3 minIndex = pointToGridIndex(triangleMin, sceneBBPadded, glm::ivec3(uniformGridResolution));
-			const glm::ivec3 maxIndex = pointToGridIndex(triangleMax, sceneBBPadded, glm::ivec3(uniformGridResolution));
+			const glm::ivec3 minIndex = pointToCellIndex(triangleMin, sceneBBPadded, glm::ivec3(uniformGridResolution));
+			const glm::ivec3 maxIndex = pointToCellIndex(triangleMax, sceneBBPadded, glm::ivec3(uniformGridResolution));
 
-			//add triangle to all cells that it touches
+			//iterate over cells within triangles bounding box
 			for (int x = minIndex.x; x <= maxIndex.x; x++) {
 				for (int y = minIndex.y; y <= maxIndex.y; y++) {
 					for (int z = minIndex.z; z <= maxIndex.z; z++) {
-						const size_t cellIndex = flattenGridIndex(glm::ivec3(x, y, z), glm::ivec3(uniformGridResolution));
-						uniformGrid[cellIndex].push_back(triangleIndex);
+						//const glm::vec3 indexNormalized = (glm::vec3(x, y, z) + 0.5f) / glm::vec3(uniformGridResolution);	//range [0:1]
+						//const glm::vec3 indexNormShifted = indexNormalized - 0.5f;								//range [-0.5:0.5]
+						//const glm::vec3 cellCenter = indexNormShifted * glm::vec3(sdfVolumeInfo.extends) + glm::vec3(sdfVolumeInfo.offset);
+						//if (doTriangleAABBOverlap(cellCenter, uniformGridCellSize, triangle.v0, triangle.v1, triangle.v2, triangle.N)) {
+							const size_t cellIndex = flattenGridIndex(glm::ivec3(x, y, z), glm::ivec3(uniformGridResolution));
+							uniformGrid[cellIndex].push_back(triangle);
+						//}
 					}
 				}
 			}
@@ -305,7 +211,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
     for (size_t z = 0; z < resolution.z; z++) {
 		std::cout << z << std::endl;
         for (size_t y = 0; y < resolution.y; y++) {
-			std::cout << y << std::endl;
+			//std::cout << y << std::endl;
             for (size_t x = 0; x < resolution.x; x++) {
 
 				const size_t index = flattenGridIndex(glm::ivec3(x, y, z), glm::ivec3(resolution));
@@ -315,7 +221,9 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
                 //scratch a pixel has a sign error in computation of t
                 //reference: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/ray-triangle-intersection-geometric-solution
                 //reference: https://courses.cs.washington.edu/courses/csep557/10au/lectures/triangle_intersection.pdf
-                const glm::vec3 rayOrigin = ((glm::vec3(x, y, z) + 0.5f) / glm::vec3(resolution) - 0.5f) * glm::vec3(sdfVolumeInfo.extends) + glm::vec3(sdfVolumeInfo.offset);
+				const glm::vec3 indexNormalized = (glm::vec3(x, y, z) + 0.5f) / glm::vec3(resolution);	//range [0:1]
+				const glm::vec3 indexNormShifted = indexNormalized - 0.5f;								//range [-0.5:0.5]
+                const glm::vec3 rayOrigin = indexNormShifted * glm::vec3(sdfVolumeInfo.extends) + glm::vec3(sdfVolumeInfo.offset);
                 float closestHitTotal = std::numeric_limits<float>::max();
 
                 const int sampleCount1D = 15;
@@ -340,63 +248,48 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 						bool rayIsInBoundingBox = true;
 
 						//start index
-						const glm::vec3 posRelativeToVolume = rayOrigin - sceneBBPadded.min;				//range [0:max-min]
-						const glm::vec3 posNormalized = posRelativeToVolume / glm::vec3(sdfVolumeInfo.extends); //range [0:1]
-						const glm::vec3 posInTexels = posNormalized * glm::vec3(uniformGridResolution);			//range [0:cellRes]
-						glm::ivec3 uniformGridIndex = glm::floor(posInTexels);
-
-						glm::vec3 rayGridTraversalFraction(0.5f); //starts in center of cell, cell border is hit at 0 and 1
+						glm::ivec3 uniformGridIndex = pointToCellIndex(rayOrigin, sceneBBPadded, glm::ivec3(uniformGridResolution));
 						
+						glm::vec3 currentRayPosition = rayOrigin;
+
 						//traverse uniform grid until hit or going out of bounding box
 						while (rayIsInBoundingBox) {
 							const size_t cellIndex = flattenGridIndex(uniformGridIndex, glm::ivec3(uniformGridResolution));
 
+							const glm::vec3 cellMin = sceneBBPadded.min + glm::vec3(uniformGridIndex) / glm::vec3(uniformGridResolution) * glm::vec3(sdfVolumeInfo.extends);
+							const glm::vec3 cellMax = cellMin + uniformGridCellSize;
+
 							bool hitTriangle = false;
 							//for every triangle in uniform grid cell
-							for (const TriangleIndex& triangleIndex : uniformGrid[cellIndex]) {
-
-								const MeshData mesh = meshes[triangleIndex.mesh];
-
-								const size_t i0 = mesh.indices[triangleIndex.indexBuffer];
-								const size_t i1 = mesh.indices[triangleIndex.indexBuffer + 1];
-								const size_t i2 = mesh.indices[triangleIndex.indexBuffer + 2];
-
-								const glm::vec3 n1 = mesh.normals[i0];
-								const glm::vec3 n2 = mesh.normals[i1];
-								const glm::vec3 n3 = mesh.normals[i2];
-
-								const glm::vec3 N = glm::normalize(n1 + n2 + n3);
-								const float NoR = glm::dot(N, rayDirection);
+							for (const TriangleInfo& triangle : uniformGrid[cellIndex]) {
+								
+								const float NoR = glm::dot(triangle.N, rayDirection);
 
 								if (abs(NoR) < 0.0001f) {
 									continue; //ray parallel to triangle
 								}
 
-								const glm::vec3 v0 = mesh.positions[i0];
-								const glm::vec3 v1 = mesh.positions[i1];
-								const glm::vec3 v2 = mesh.positions[i2];
+								const float D = glm::dot(triangle.N, triangle.v0);
 
-								const float D = glm::dot(N, v0);
-
-								const float t = (D - glm::dot(N, rayOrigin)) / NoR;
+								const float t = (D - glm::dot(triangle.N, rayOrigin)) / NoR;
 
 								if (t < 0.f) {
 									continue; //intersection in wrong direction
 								}
 
-								const glm::vec3 edge0 = v1 - v0;
-								const glm::vec3 edge1 = v2 - v1;
-								const glm::vec3 edge2 = v0 - v2;
+								const glm::vec3 edge0 = triangle.v1 - triangle.v0;
+								const glm::vec3 edge1 = triangle.v2 - triangle.v1;
+								const glm::vec3 edge2 = triangle.v0 - triangle.v2;
 
 								const glm::vec3 planeIntersection = rayOrigin + rayDirection * t;
 
-								const glm::vec3 C0 = planeIntersection - v0;
-								const glm::vec3 C1 = planeIntersection - v1;
-								const glm::vec3 C2 = planeIntersection - v2;
+								const glm::vec3 C0 = planeIntersection - triangle.v0;
+								const glm::vec3 C1 = planeIntersection - triangle.v1;
+								const glm::vec3 C2 = planeIntersection - triangle.v2;
 
-								const float d0 = glm::dot(N, cross(edge0, C0));
-								const float d1 = glm::dot(N, cross(edge1, C1));
-								const float d2 = glm::dot(N, cross(edge2, C2));
+								const float d0 = glm::dot(triangle.N, cross(edge0, C0));
+								const float d1 = glm::dot(triangle.N, cross(edge1, C1));
+								const float d2 = glm::dot(triangle.N, cross(edge2, C2));
 
 								const bool isInsideTriangle =
 									d0 >= 0.f &&
@@ -409,8 +302,6 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 
 								//discard hits in other cells
 								const glm::vec3 hitPos = rayOrigin + t * rayDirection;
-								const glm::vec3 cellMin = sceneBBPadded.min + glm::vec3(uniformGridIndex) / glm::vec3(uniformGridResolution) * glm::vec3(sdfVolumeInfo.extends);
-								const glm::vec3 cellMax = cellMin + uniformGridCellSize;
 								const bool hitInCurrentCell = isPointInAABB(hitPos, cellMin, cellMax);
 
 								if (hitInCurrentCell) {
@@ -423,7 +314,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 								//rayDirection is normalized so t is distance to hit
 								if (t < rayClosestHit) {
 									rayClosestHit = t;
-									const float test = glm::dot(rayDirection, N);
+									const float test = glm::dot(rayDirection, triangle.N);
 									isBackfaceHit = test > 0.f;
 								}
 							}
@@ -439,33 +330,36 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 								//check x,y,z
 								int intersectedComponent;
 								for (int component = 0; component < 3; component++) {
-									const float fractionChange = rayDirection[component] / uniformGridCellSize[component];
-									float distanceToCellIntersection;
-									if (abs(fractionChange) < 0.0001f) {
+									if (rayDirection[component] == 0.f) {
 										//parallel, ignore
 										continue;
 									}
-									else if (fractionChange > 0) {
-										//going positive solve 1 = fractionCurrent + fractionChange*t
-										//t = (1 - fractionCurrent) / fractionChange
-										distanceToCellIntersection = (1 - rayGridTraversalFraction[component]) / fractionChange;
-									}
-									else {
-										//going negative solve 0 = fractionCurrent + fractionChange*t
-										//t = -fractionCurrent / fractionChange
-										distanceToCellIntersection = -rayGridTraversalFraction[component] / fractionChange;
-									}
-									//choose smallest distance
-									if (distanceToCellIntersection < distanceToNextCellIntersection) {
-										distanceToNextCellIntersection = distanceToCellIntersection;
-										intersectedComponent = component;
+									else  {
+										float nextIntersection;
+										if (rayDirection[component] > 0) {
+											//moving in positive direction, intersecting with cell max
+											nextIntersection = cellMax[component];
+											//move to next cell if currently at intersection
+											nextIntersection = nextIntersection == currentRayPosition[component]
+												? nextIntersection + uniformGridCellSize[component] : nextIntersection;
+										}
+										else {
+											//moving in negative direction, intersecting with cell min
+											nextIntersection = cellMin[component];
+											//move to next cell if currently at intersection
+											nextIntersection = nextIntersection == currentRayPosition[component]
+												? nextIntersection - uniformGridCellSize[component] : nextIntersection;
+										}
+										const float distanceToCellIntersection = (nextIntersection - currentRayPosition[component]) / rayDirection[component];
+										//choose smallest distance
+										if (distanceToCellIntersection < distanceToNextCellIntersection) {
+											distanceToNextCellIntersection = distanceToCellIntersection;
+											intersectedComponent = component;
+										}
 									}
 								}
-								//update fractions
-								rayGridTraversalFraction += distanceToNextCellIntersection * rayDirection / uniformGridCellSize;
-
-								//reset fraction that intersected
-								rayGridTraversalFraction[intersectedComponent] = rayDirection[intersectedComponent] > 0 ? 0 : 1;
+								assert(distanceToNextCellIntersection != 0);
+								currentRayPosition += distanceToNextCellIntersection * rayDirection;
 
 								//advance index
 								uniformGridIndex[intersectedComponent] += rayDirection[intersectedComponent] > 0 ? 1 : -1;
