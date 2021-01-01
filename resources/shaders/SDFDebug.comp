@@ -35,6 +35,16 @@ vec3 normalFromSDF(vec3 uv){
 	));
 }
 
+bool isPointInAABB(vec3 p, vec3 aabbMin, vec3 aabbMax){
+	return 
+		p.x >= aabbMin.x &&
+		p.y >= aabbMin.y &&
+		p.z >= aabbMin.z &&
+		p.x <= aabbMax.x &&
+		p.y <= aabbMax.y &&
+		p.z <= aabbMax.z;
+}
+
 void main(){
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
 
@@ -46,15 +56,70 @@ void main(){
 	V += g_cameraRight.xyz * g_cameraTanFovHalf * g_cameraAspectRatio * pixelCoor.x;
 	V = normalize(V);
 
-	vec3 samplePosWorld = g_cameraPosition.xyz + g_nearPlane * V;                                  //in range [0, 1]
-    
+	vec3 samplePosWorld = g_cameraPosition.xyz + g_nearPlane * V;	//in range [0, 1]
+
+	vec3 sdfMin = sdfVolumeOffset.xyz - sdfVolumeExtends.xyz * 0.5f;
+	vec3 sdfMax = sdfVolumeOffset.xyz + sdfVolumeExtends.xyz * 0.5f;
+
+    if(!isPointInAABB(samplePosWorld, sdfMin, sdfMax)){
+
+		bool hitAABB = false;
+
+		//search for bounding box intersection
+		float intersection =  samplePosWorld.x < sdfVolumeOffset.x ? sdfMin.x : sdfMax.x;
+		float t = 100000;	//will be replaced by min
+		float tx = (intersection - samplePosWorld.x) / V.x;
+		vec3 planeIntersection = samplePosWorld + tx * V;
+		if(	tx > 0 && 
+			planeIntersection.y >= sdfMin.y && 
+			planeIntersection.y <= sdfMax.y &&
+			planeIntersection.z >= sdfMin.z && 
+			planeIntersection.z <= sdfMax.z){
+			t = min(t, tx);
+			hitAABB = true;
+		}
+
+		intersection =  samplePosWorld.y < sdfVolumeOffset.y ? sdfMin.y : sdfMax.y;
+		float ty = (intersection - samplePosWorld.y) / V.y;
+		planeIntersection = samplePosWorld + ty * V;
+		if(	ty > 0 && 
+			planeIntersection.x >= sdfMin.x && 
+			planeIntersection.x <= sdfMax.x &&
+			planeIntersection.z >= sdfMin.z && 
+			planeIntersection.z <= sdfMax.z){
+			t = min(t, ty);
+			hitAABB = true;
+		}
+
+		intersection =  samplePosWorld.z < sdfVolumeOffset.z ? sdfMin.z : sdfMax.z;
+		float tz = (intersection - samplePosWorld.z) / V.z;
+		planeIntersection = samplePosWorld + tz * V;
+		if(	tz > 0 && 
+			planeIntersection.x >= sdfMin.x && 
+			planeIntersection.x <= sdfMax.x &&
+			planeIntersection.y >= sdfMin.y && 
+			planeIntersection.y <= sdfMax.y){
+			t = min(t, tz);
+			hitAABB = true;
+		}
+
+		if(hitAABB){
+			samplePosWorld += t * V;
+		}
+		else{
+			//early out
+			imageStore(imageOut, uv, vec4(0));
+			return;
+		}
+	}
+
 	float steps = 0;
-	float sampleCount = 40.f;
+	float sampleCount = 20.f;
 	bool hit = false;
 
-	
 	ivec3 sdfResolution = textureSize(sampler3D(sceneSDF, g_sampler_linearClamp), 0);
-	float sdfThreshold = length(sdfVolumeExtends.xyz / vec3(sdfResolution)) * 0.1f;
+	float sdfThreshold = length(sdfVolumeExtends.xyz / vec3(sdfResolution)) * 0.1;
+	sdfThreshold = 0.04;
 	const float minStepSize = sdfThreshold * 0.8f;
 
 	for(int i = 0; i < sampleCount; i++){
