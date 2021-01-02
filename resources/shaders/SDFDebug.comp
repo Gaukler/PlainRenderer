@@ -27,7 +27,7 @@ float sampleSDF(vec3 uv){
 vec3 normalFromSDF(vec3 uv){
 	float extendsMax = max(sdfVolumeExtends.x, max(sdfVolumeExtends.y, sdfVolumeExtends.z));
 	vec3 extendsNormalized = sdfVolumeExtends.xyz / extendsMax;
-	vec3 epsilon = vec3(0.025) / extendsNormalized; //voxels are anisotropic so epsilon must be scaled per axis
+	vec3 epsilon = vec3(0.3f) / textureSize(sampler3D(sceneSDF, g_sampler_linearClamp), 0) / extendsNormalized; //voxels are anisotropic so epsilon must be scaled per axis
 	return normalize(vec3(
 		sampleSDF(uv + vec3(epsilon.x, 0, 0)) - sampleSDF(uv - vec3(epsilon.x, 0, 0)),
 		sampleSDF(uv + vec3(0, epsilon.y, 0)) - sampleSDF(uv - vec3(0, epsilon.y, 0)),
@@ -114,13 +114,13 @@ void main(){
 	}
 
 	float steps = 0;
-	float sampleCount = 20.f;
+	float sampleCount = 45.f;
 	bool hit = false;
 
 	ivec3 sdfResolution = textureSize(sampler3D(sceneSDF, g_sampler_linearClamp), 0);
 	float sdfThreshold = length(sdfVolumeExtends.xyz / vec3(sdfResolution)) * 0.1;
-	sdfThreshold = 0.04;
-	const float minStepSize = sdfThreshold * 0.8f;
+	sdfThreshold = 0.13;
+	const float minStepSize = 0.f;//sdfThreshold;
 
 	for(int i = 0; i < sampleCount; i++){
 		vec3 samplePos = worldToSDF(samplePosWorld);
@@ -136,6 +136,9 @@ void main(){
 		samplePosWorld += V * stepSize;
 		steps++;
 	}
-	vec3 color = hit ? 0.5f * normalFromSDF(worldToSDF(samplePosWorld)) + 0.5f : vec3(0);
+	vec3 N = normalFromSDF(worldToSDF(samplePosWorld));
+	vec3 color = hit ? 0.5f * N + 0.5f : vec3(0);
+	//color = vec3(dot(N, g_sunDirection.xyz));
+	//color = 0.05 * vec3(distance(samplePosWorld, g_cameraPosition.xyz));
 	imageStore(imageOut, uv, vec4(color, 1.f));
 }
