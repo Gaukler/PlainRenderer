@@ -396,7 +396,8 @@ private:
 
     //materialSetLayout may be VK_NULL_HANDLE, this is the case for compute passes
     //isGraphicsPass controls if the push constant range is setup for the MVP matrix    
-    VkPipelineLayout        createPipelineLayout(const VkDescriptorSetLayout setLayout, const bool isGraphicPass);
+    VkPipelineLayout        createPipelineLayout(const VkDescriptorSetLayout setLayout, const bool isGraphicPass, 
+		const VkShaderStageFlags stageFlags);
 
 
     /*

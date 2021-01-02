@@ -517,6 +517,11 @@ void RenderBackend::drawMeshes(
         std::cout << "Error: drawMeshes handle and matrix count does not match\n";
     }
 
+	VkShaderStageFlags pushConstantStageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	if (pass.graphicPassDesc.shaderDescriptions.geometry.has_value()) {
+		pushConstantStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+	}
+
     for (uint32_t i = 0; i < std::min(meshHandles.size(), primarySecondaryMatrices.size()); i++) {
 
         const auto mesh = m_meshes[meshHandles[i].index];
@@ -531,7 +536,7 @@ void RenderBackend::drawMeshes(
         vkCmdPushConstants(
             pass.meshCommandBuffer, 
             pass.pipelineLayout, 
-            VK_SHADER_STAGE_VERTEX_BIT, 
+            pushConstantStageFlags, 
             0, 
             sizeof(matrices),
             &matrices);
@@ -555,6 +560,11 @@ void RenderBackend::drawDynamicMeshes(
 
     auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
 
+	VkShaderStageFlags pipelineLayoutStageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	if (pass.graphicPassDesc.shaderDescriptions.geometry.has_value()) {
+		pipelineLayoutStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+	}
+
     for (uint32_t i = 0; i < std::min(meshHandles.size(), primarySecondaryMatrices.size()); i++) {
 
         const auto meshHandle = meshHandles[i];
@@ -567,7 +577,7 @@ void RenderBackend::drawDynamicMeshes(
 
         //update push constants
         const auto& matrices = primarySecondaryMatrices[i];
-        vkCmdPushConstants(pass.meshCommandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(matrices), &matrices);
+        vkCmdPushConstants(pass.meshCommandBuffer, pass.pipelineLayout, pipelineLayoutStageFlags, 0, sizeof(matrices), &matrices);
 
         vkCmdDrawIndexed(pass.meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
     }
@@ -1618,6 +1628,7 @@ bool RenderBackend::hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDev
         features.fragmentStoresAndAtomics &&
         features.fillModeNonSolid &&
         features.depthClamp &&
+		features.geometryShader && 
         features12.hostQueryReset;
 }
 
@@ -1733,6 +1744,7 @@ void RenderBackend::createLogicalDevice() {
     features.fragmentStoresAndAtomics = true;
     features.fillModeNonSolid = true;
     features.depthClamp = true;
+	features.geometryShader = true;
 
     VkPhysicalDeviceVulkan12Features features12 = {}; //vulkan 1.2 features
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
@@ -2774,10 +2786,11 @@ VkDescriptorSetLayout RenderBackend::createDescriptorSetLayout(const ShaderLayou
     return setLayout;
 }
 
-VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout setLayout, const bool isGraphicPass) {
+VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout setLayout, const bool isGraphicPass, 
+	const VkShaderStageFlags stageFlags) {
 
     VkPushConstantRange matrices = {};
-    matrices.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    matrices.stageFlags = stageFlags;
     matrices.offset = 0;
     matrices.size = 128;
 
@@ -2809,7 +2822,7 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     VkShaderModule module = createShaderModule(spirV);
     ShaderReflection reflection = performComputeShaderReflection(spirV);
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
-    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, false);
+    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, false, 0);
 
     VulkanShaderCreateAdditionalStructs additionalStructs;
 
@@ -2885,9 +2898,14 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
             desc.shaderDescriptions.tesselationEvaluation.value().specialisationConstants, &additionalStructs[4]));
     }
 
+	VkShaderStageFlags pipelineLayoutStageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	if (desc.shaderDescriptions.geometry.has_value()) {
+		pipelineLayoutStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+	}
+
     ShaderReflection reflection = performShaderReflection(spirV);
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
-    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, true);
+    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, true, pipelineLayoutStageFlags);
 
     std::vector<VkVertexInputAttributeDescription> attributes;
     uint32_t currentOffset = 0;
