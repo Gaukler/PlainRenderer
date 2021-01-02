@@ -51,7 +51,7 @@ bool isAxisSeparating(const glm::vec3& axis, const glm::vec3 bbHalfVector,
 }
 
 //reference: https://gdbooks.gitbooks.io/3dcollisions/content/Chapter4/aabb-triangle.html
-//reference: "	"
+//reference: "Fast 3D Triangle-Box Overlap Testing"
 bool doTriangleAABBOverlap(const glm::vec3& bbCenter, const glm::vec3& bbExtends, 
     const glm::vec3& v0In, const glm::vec3& v1In, const glm::vec3& v2In, const glm::vec3& N) {
 
