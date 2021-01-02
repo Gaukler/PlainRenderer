@@ -149,16 +149,19 @@ bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handl
         //geometry
         if (srcInfo.loadInfo.geometry.has_value()) {
             const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.geometry.value().spirvCacheFileIndex];
+			outSpirV->geometry = std::vector<uint32_t>();
             success &= loadBinaryFile(path, &outSpirV->geometry.value());
         }
         //tessellation evaluation
         if (srcInfo.loadInfo.tessellationControl.has_value()) {
             const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex];
+			outSpirV->tessellationControl = std::vector<uint32_t>();
             success &= loadBinaryFile(path, &outSpirV->tessellationControl.value());
         }
         //geometry
         if (srcInfo.loadInfo.tessellationEvaluation.has_value()) {
             const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex];
+			outSpirV->tessellationEvaluation = std::vector<uint32_t>();
             success &= loadBinaryFile(path, &outSpirV->tessellationEvaluation.value());
         }
         return success;
