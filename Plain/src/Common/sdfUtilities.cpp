@@ -11,13 +11,14 @@ std::filesystem::path binaryToSDFPath(const std::filesystem::path binaryPathRela
 }
 
 AxisAlignedBoundingBox padSDFBoundingBox(const AxisAlignedBoundingBox& bb, const glm::ivec3 resolution) {
-	//pad min and max by cell size
-	const glm::vec3 extends = bb.max - bb.min;
-	const glm::vec3 cellSize = extends / glm::vec3(resolution);
+	//padding avoids the sdf texture clamping resulting in hits outside or at the edge of the volume
+	//additionally it ensures that the outside texels are outside the scene and dont intersect with it, causing problems with the surface
+	//however excessive padding reduces the effective resolution
+	const float padding = 0.75f;
 
 	AxisAlignedBoundingBox padded;
-	padded.min = bb.min - 2.f * cellSize;
-	padded.max = bb.max + 2.f * cellSize;
+	padded.min = bb.min - padding;
+	padded.max = bb.max + padding;
 
 	return padded;
 }
