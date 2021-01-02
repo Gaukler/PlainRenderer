@@ -17,6 +17,7 @@ file(GLOB_RECURSE RUNTIME_FILES
 	${CMAKE_SOURCE_DIR}/resources/shaders/*.inc
 	${CMAKE_SOURCE_DIR}/resources/shaders/*.comp
 	${CMAKE_SOURCE_DIR}/resources/shaders/*.vert
+	${CMAKE_SOURCE_DIR}/resources/shaders/*.geom
 	${CMAKE_SOURCE_DIR}/resources/shaders/*.frag)
 
 file(GLOB_RECURSE ASSET_PIPELINE_FILES
