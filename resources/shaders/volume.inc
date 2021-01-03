@@ -6,3 +6,7 @@ vec3 worldPositionToVolume(vec3 pWorld, vec3 volumeOffset, vec3 volumeExtent){
     samplePos += 0.5f;						//in range [0:1]
 	return samplePos;
 }
+
+uint flatten3DIndex(ivec3 index, ivec3 resolution){
+	return index.x + index.y * resolution.x + index.z * resolution.x * resolution.y;
+}

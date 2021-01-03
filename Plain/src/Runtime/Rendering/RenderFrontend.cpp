@@ -1250,6 +1250,14 @@ void RenderFrontend::bakeSceneMaterialVoxelTexture() {
 		m_materialVoxelizationPass = gRenderBackend.createGraphicPass(desc);
 	}
 
+	//buffer to image pass
+	{
+		ComputePassDescription desc;
+		desc.name = "Material voxelization to image";
+		desc.shaderDescription.srcPathRelative = "materialVoxelizationToImage.comp";
+		m_materialVoxelizationToImagePass = gRenderBackend.createComputePass(desc);
+	}
+
 	ImageHandle dummyImage;
 	{
 		ImageDescription desc;
@@ -1276,8 +1284,8 @@ void RenderFrontend::bakeSceneMaterialVoxelTexture() {
 		desc.targets = { dummyTarget };
 		dummyFramebuffer = gRenderBackend.createFramebuffer(desc);
 	}
-		
-	//set execution
+
+	//voxelization execution
 	{
 		RenderPassExecution materialVoxelizationExecution;
 		materialVoxelizationExecution.handle = m_materialVoxelizationPass;
@@ -1288,8 +1296,30 @@ void RenderFrontend::bakeSceneMaterialVoxelTexture() {
 		materialVoxelizationExecution.resources.uniformBuffers = {
 			UniformBufferResource(m_sdfVolumeInfoBuffer, 1)
 		};
+		materialVoxelizationExecution.resources.storageBuffers = {
+			StorageBufferResource(m_materialVoxelizationBuffer, false, 2)
+		};
 
 		gRenderBackend.setRenderPassExecution(materialVoxelizationExecution);
+	}
+
+	//to image execution
+	{
+		RenderPassExecution toImageExecution;
+		toImageExecution.handle = m_materialVoxelizationToImagePass;
+		const glm::vec3 localThreadSize = glm::vec3(4);
+		const glm::ivec3 dispatchCount = glm::ivec3(glm::ceil(glm::vec3(sceneMaterialVoxelTextureResolution) / localThreadSize));
+		toImageExecution.dispatchCount[0] = dispatchCount.x;
+		toImageExecution.dispatchCount[1] = dispatchCount.y;
+		toImageExecution.dispatchCount[2] = dispatchCount.z;
+		toImageExecution.parents = { m_materialVoxelizationPass };
+		toImageExecution.resources.storageImages = {
+			ImageResource(m_sceneMaterialVoxelTexture, 0, 0)
+		};
+		toImageExecution.resources.storageBuffers = {
+			StorageBufferResource(m_materialVoxelizationBuffer, false, 1)
+		};
+		gRenderBackend.setRenderPassExecution(toImageExecution);
 	}
 
 	const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(m_sceneBoundingBox); //sdf uses padded bb
@@ -1762,8 +1792,6 @@ void RenderFrontend::initImages() {
 		desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
 		desc.mipCount = MipCount::One;
 		desc.autoCreateMips = false;
-		const size_t textureSize = desc.width * desc.height * desc.depth * getImageFormatBytePerPixel(desc.format);
-		desc.initialData.resize(textureSize, 0);
 		m_sceneMaterialVoxelTexture = gRenderBackend.createImage(desc);
 	}
 }
@@ -2031,6 +2059,19 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         desc.size = sizeof(VolumeInfo);
         m_sdfVolumeInfoBuffer = gRenderBackend.createUniformBuffer(desc);
     }
+	//material voxelization counter buffer
+	{
+		StorageBufferDescription desc;
+		const size_t pixelCount = sceneMaterialVoxelTextureResolution.x * sceneMaterialVoxelTextureResolution.y * sceneMaterialVoxelTextureResolution.z;
+		const size_t channels = 4;	//storing rgb and counter per cell
+		desc.size = pixelCount * channels * sizeof(uint32_t);
+
+		//initialize with zeros
+		std::vector<uint32_t> zerosBuffer(pixelCount * channels, 0);
+		desc.initialData = zerosBuffer.data(); 
+
+		m_materialVoxelizationBuffer = gRenderBackend.createStorageBuffer(desc);
+	}
 }
 
 void RenderFrontend::initMeshs() {

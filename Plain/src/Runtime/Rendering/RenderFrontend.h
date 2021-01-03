@@ -228,6 +228,7 @@ private:
     RenderPassHandle m_colorToLuminancePass;
     RenderPassHandle m_sdfDebugPass;
 	RenderPassHandle m_materialVoxelizationPass;
+	RenderPassHandle m_materialVoxelizationToImagePass;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -279,6 +280,7 @@ private:
     StorageBufferHandle m_lightBuffer;          //previous exposure and exposured light values
     StorageBufferHandle m_sunShadowInfoBuffer;  //light matrices and cascade splits
     StorageBufferHandle m_depthPyramidSyncBuffer;
+	StorageBufferHandle m_materialVoxelizationBuffer;
 
     UniformBufferHandle m_globalUniformBuffer;
     UniformBufferHandle m_skyOcclusionDataBuffer;

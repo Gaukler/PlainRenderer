@@ -5,11 +5,16 @@
 #include "global.inc"
 #include "volume.inc"
 #include "colorConversion.inc"
+#include "materialVoxelization.inc"
 
 layout(set=1, binding = 0, rgba8) uniform image3D materialVoxelImage;
 layout(set=1, binding = 1, std140) uniform sdfVolumeData{
     vec4 sdfVolumeExtends;
     vec4 sdfVolumeOffset;
+};
+
+layout(set=1, binding = 2, std430) buffer sdfVolumeData{
+    MaterialCounter counters[];
 };
 
 layout(set=2, binding = 0) uniform texture2D colorTexture;
@@ -27,6 +32,13 @@ void main(){
 
 	vec3 albedoTexel = texture(sampler2D(colorTexture, g_sampler_anisotropicRepeat), passUV, g_mipBias).rgb;
 	vec3 albedo = sRGBToLinear(albedoTexel);
+	uvec3 albedoUInt = uvec3(albedo * 255);
 
-	imageStore(materialVoxelImage, texelIndex, vec4(albedo, 1.f));
+	ivec3 imageRes = imageSize(materialVoxelImage);
+	uint indexFlat = flatten3DIndex(texelIndex, imageRes);
+
+	atomicAdd(counters[indexFlat].r, albedoUInt.r);
+	atomicAdd(counters[indexFlat].g, albedoUInt.g);
+	atomicAdd(counters[indexFlat].b, albedoUInt.b);
+	atomicAdd(counters[indexFlat].counter, 1);
 }
