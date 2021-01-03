@@ -83,6 +83,11 @@ struct RenderPassTime{
     std::string name;
 };
 
+struct VulkanRasterizationStateCreateInfo {
+	VkPipelineRasterizationStateCreateInfo	baseInfo;
+	VkPipelineRasterizationConservativeStateCreateInfoEXT conservativeInfo;
+};
+
 /*
 RenderPass handles are shared between compute and graphics to allow easy dependency management in the frontend
 the first bit of the handle indicates wether a handle is a compute or graphic pass
@@ -230,7 +235,7 @@ private:
     const bool m_useValidationLayers = false;
 #endif
 
-    std::vector<const char*>    getRequiredExtensions();
+    std::vector<const char*>    getRequiredInstanceExtensions();
     void                        createVulkanInstance();
     bool                        hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDevice);
     void                        pickPhysicalDevice();
@@ -426,7 +431,8 @@ private:
         const std::vector<SpecialisationConstant>& specialisationInfo, VulkanShaderCreateAdditionalStructs* outAdditionalInfo);
     VkPipelineInputAssemblyStateCreateInfo  createDefaultInputAssemblyInfo();
     VkPipelineTessellationStateCreateInfo   createTesselationState(const uint32_t patchControlPoints);
-    VkPipelineRasterizationStateCreateInfo  createRasterizationState(const RasterizationConfig& raster);
+
+	VulkanRasterizationStateCreateInfo		createRasterizationState(const RasterizationConfig& raster);
     VkPipelineMultisampleStateCreateInfo    createDefaultMultisamplingInfo();
     VkPipelineDepthStencilStateCreateInfo   createDepthStencilState(const DepthTest& depthTest);
 

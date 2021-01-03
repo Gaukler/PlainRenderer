@@ -70,6 +70,7 @@ struct RasterizationConfig {
     RasterizationeMode  mode = RasterizationeMode::Fill;
     CullMode            cullMode = CullMode::None;
     bool                clampDepth = false;
+	bool				conservative = false;
 };
 
 

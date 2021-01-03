@@ -1491,7 +1491,7 @@ bool RenderBackend::validateFramebufferTargetGraphicPassCombination(const std::v
     return true;
 }
 
-std::vector<const char*> RenderBackend::getRequiredExtensions() {
+std::vector<const char*> RenderBackend::getRequiredInstanceExtensions() {
 
     //query required glfw extensions
     uint32_t requiredExtensionGlfwCount = 0;
@@ -1510,7 +1510,7 @@ std::vector<const char*> RenderBackend::getRequiredExtensions() {
 void RenderBackend::createVulkanInstance() {
 
     //retrieve and print requested extensions
-    std::vector<const char*> requestedExtensions = getRequiredExtensions();
+    std::vector<const char*> requestedExtensions = getRequiredInstanceExtensions();
     std::cout << "requested extensions: " << std::endl;
     for (const auto ext : requestedExtensions) {
         std::cout << ext << std::endl;
@@ -1525,7 +1525,7 @@ void RenderBackend::createVulkanInstance() {
     res = vkEnumerateInstanceExtensionProperties(nullptr, &avaibleExtensionCount, avaibleExtensions.data());
     assert(res == VK_SUCCESS);
 
-    std::cout << "avaible extensions: " << std::endl;
+    std::cout << "avaible instance extensions: " << std::endl;
     for (const auto& ext : avaibleExtensions) {
         std::cout << ext.extensionName << std::endl;
     }
@@ -1542,7 +1542,7 @@ void RenderBackend::createVulkanInstance() {
             }
         }
         if (!supported) {
-            throw std::runtime_error("required extension not avaible: " + required);
+            throw std::runtime_error("required instance extension not avaible: " + required);
         }
     }
 
@@ -1609,6 +1609,7 @@ void RenderBackend::createVulkanInstance() {
 }
 
 bool RenderBackend::hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDevice) {
+	//check features
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physicalDevice, &features);
 
@@ -1622,14 +1623,34 @@ bool RenderBackend::hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDev
 
     vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
 
-    return
-        features.samplerAnisotropy &&
-        features.imageCubeArray &&
-        features.fragmentStoresAndAtomics &&
-        features.fillModeNonSolid &&
-        features.depthClamp &&
-		features.geometryShader && 
-        features12.hostQueryReset;
+	const bool supportsRequiredFeatures = 
+		features.samplerAnisotropy &&
+		features.imageCubeArray &&
+		features.fragmentStoresAndAtomics &&
+		features.fillModeNonSolid &&
+		features.depthClamp &&
+		features.geometryShader &&
+		features12.hostQueryReset;
+
+	//check device extensions
+	uint32_t extensionCount;
+	vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, nullptr);
+
+	std::vector<VkExtensionProperties> extensions(extensionCount);
+	vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, extensions.data());
+
+	bool supportsDeviceExtensions = false;
+
+	//currently only requiring conservative rasterisation
+	for (const VkExtensionProperties& ext : extensions) {
+		if (strcmp(ext.extensionName, VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME)) {
+			supportsDeviceExtensions = true;
+			break;
+		}
+	}
+
+	return supportsRequiredFeatures && supportsDeviceExtensions;
+        
 }
 
 void RenderBackend::pickPhysicalDevice() {
@@ -3029,7 +3050,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pipelineInfo.pInputAssemblyState = &inputAssemblyState;
     pipelineInfo.pTessellationState = pTesselationState;
     pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizationState;
+    pipelineInfo.pRasterizationState = &rasterizationState.baseInfo;
     pipelineInfo.pMultisampleState = &multisamplingState;
     pipelineInfo.pDepthStencilState = &depthStencilState;
     pipelineInfo.pColorBlendState = &blending;
@@ -3336,7 +3357,7 @@ VkPipelineTessellationStateCreateInfo RenderBackend::createTesselationState(cons
     return info;
 }
 
-VkPipelineRasterizationStateCreateInfo RenderBackend::createRasterizationState(const RasterizationConfig& raster) {
+VulkanRasterizationStateCreateInfo RenderBackend::createRasterizationState(const RasterizationConfig& raster) {
 
     VkPolygonMode polygonMode = VK_POLYGON_MODE_FILL;
     switch (raster.mode) {
@@ -3354,21 +3375,32 @@ VkPipelineRasterizationStateCreateInfo RenderBackend::createRasterizationState(c
     default: std::cout << "RenderBackend::createRasterizationState unknown CullMode\n"; break;
     };
 
-    VkPipelineRasterizationStateCreateInfo rasterization = {};
-    rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterization.pNext = nullptr;
-    rasterization.flags = 0;
-    rasterization.depthClampEnable = raster.clampDepth;
-    rasterization.rasterizerDiscardEnable = VK_FALSE;
-    rasterization.polygonMode = polygonMode;
-    rasterization.cullMode = cullFlags;
-    rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rasterization.depthBiasEnable = VK_FALSE;
-    rasterization.depthBiasConstantFactor = 0.f;
-    rasterization.depthBiasClamp = 0.f;
-    rasterization.depthBiasSlopeFactor = 0.f;
-    rasterization.lineWidth = 1.f;
-    return rasterization;
+	VulkanRasterizationStateCreateInfo vkRaster = {};
+
+	vkRaster.baseInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    vkRaster.baseInfo.pNext = nullptr;
+    vkRaster.baseInfo.flags = 0;
+    vkRaster.baseInfo.depthClampEnable = raster.clampDepth;
+    vkRaster.baseInfo.rasterizerDiscardEnable = VK_FALSE;
+    vkRaster.baseInfo.polygonMode = polygonMode;
+    vkRaster.baseInfo.cullMode = cullFlags;
+    vkRaster.baseInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    vkRaster.baseInfo.depthBiasEnable = VK_FALSE;
+    vkRaster.baseInfo.depthBiasConstantFactor = 0.f;
+    vkRaster.baseInfo.depthBiasClamp = 0.f;
+    vkRaster.baseInfo.depthBiasSlopeFactor = 0.f;
+    vkRaster.baseInfo.lineWidth = 1.f;
+
+	if (raster.conservative) {
+		vkRaster.conservativeInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_CONSERVATIVE_STATE_CREATE_INFO_EXT;
+		vkRaster.conservativeInfo.pNext = nullptr;
+		vkRaster.conservativeInfo.flags = 0;
+		vkRaster.conservativeInfo.conservativeRasterizationMode = VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT;
+
+		vkRaster.baseInfo.pNext = &vkRaster.conservativeInfo;
+	}
+
+    return vkRaster;
 }
 
 VkPipelineMultisampleStateCreateInfo RenderBackend::createDefaultMultisamplingInfo() {
