@@ -1244,6 +1244,7 @@ void RenderFrontend::bakeSceneMaterialVoxelTexture() {
 		desc.depthTest.write = false;
 		desc.rasterization.cullMode = CullMode::None;
 		desc.rasterization.mode = RasterizationeMode::Fill;
+		desc.rasterization.conservative = true;
 		desc.blending = BlendState::None;
 		desc.vertexFormat = VertexFormat::Full;
 
