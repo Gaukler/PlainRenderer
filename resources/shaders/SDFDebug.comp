@@ -3,6 +3,7 @@
 #extension GL_GOOGLE_include_directive : enable
 
 #include "global.inc"
+#include "volume.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -12,13 +13,7 @@ layout(set=1, binding = 2, std140)			uniform sdfVolumeData{
     vec4 sdfVolumeExtends;
     vec4 sdfVolumeOffset;
 };
-
-vec3 worldToSDF(vec3 w){
-	vec3 samplePos = w - sdfVolumeOffset.xyz;		//in range[-extend/2, extend/2]
-    samplePos = samplePos / sdfVolumeExtends.xyz;   //in range [-0.5, 0.5]
-    samplePos += 0.5f;  
-	return samplePos;
-}
+layout(set=1, binding = 3)					uniform texture3D materialTexture;
 
 float sampleSDF(vec3 uv){
 	return texture(sampler3D(sceneSDF, g_sampler_linearClamp), uv).r;
@@ -119,11 +114,11 @@ void main(){
 
 	ivec3 sdfResolution = textureSize(sampler3D(sceneSDF, g_sampler_linearClamp), 0);
 	float sdfThreshold = length(sdfVolumeExtends.xyz / vec3(sdfResolution)) * 0.1;
-	sdfThreshold = 0.13;
+	sdfThreshold = 0.1f;
 	const float minStepSize = 0.f;//sdfThreshold;
 
 	for(int i = 0; i < sampleCount; i++){
-		vec3 samplePos = worldToSDF(samplePosWorld);
+		vec3 samplePos = worldPositionToVolume(samplePosWorld, sdfVolumeOffset.xyz, sdfVolumeExtends.xyz);
 		float sdf = texture(sampler3D(sceneSDF, g_sampler_linearClamp), samplePos).r;
 
 		hit = sdf < sdfThreshold;
@@ -136,8 +131,14 @@ void main(){
 		samplePosWorld += V * stepSize;
 		steps++;
 	}
-	vec3 N = normalFromSDF(worldToSDF(samplePosWorld));
+	vec3 hitNormalized = worldPositionToVolume(samplePosWorld, sdfVolumeOffset.xyz, sdfVolumeExtends.xyz);
+	vec3 N = normalFromSDF(hitNormalized);
 	vec3 color = hit ? 0.5f * N + 0.5f : vec3(0);
+
+	vec4 albedoTexel = texture(sampler3D(materialTexture, g_sampler_linearClamp), hitNormalized);
+	vec3 albedo = albedoTexel.rgb / max(albedoTexel.a, 0.00001);
+	color = albedo;
+
 	//color = vec3(dot(N, g_sunDirection.xyz));
 	//color = 0.05 * vec3(distance(samplePosWorld, g_cameraPosition.xyz));
 	imageStore(imageOut, uv, vec4(color, 1.f));

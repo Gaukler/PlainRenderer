@@ -34,6 +34,7 @@ void App::setup(const std::string& sceneFilePath) {
     }
     
     gRenderFrontend.bakeSkyOcclusion();
+	gRenderFrontend.bakeSceneMaterialVoxelTexture();
 }
 
 void App::runUpdate() {

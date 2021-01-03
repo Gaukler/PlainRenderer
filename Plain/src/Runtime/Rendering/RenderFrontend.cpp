@@ -64,6 +64,8 @@ const uint32_t globalSamplerNearestClampBinding         = 5;
 const uint32_t globalSamplerLinearWhiteBorderBinding    = 6;
 const uint32_t globalNoiseTextureBindingBinding         = 7;
 
+const glm::uvec3 sceneMaterialVoxelTextureResolution = glm::uvec3(64);
+
 void resizeCallback(GLFWwindow* window, int width, int height) {
     RenderFrontend* frontEnd = reinterpret_cast<RenderFrontend*>(glfwGetWindowUserPointer(window));
     frontEnd->setResolution(width, height);
@@ -361,11 +363,12 @@ void RenderFrontend::prepareRenderpasses(){
         const ImageResource targetImageResource(m_postProcessBuffers[0], 0, 0);
         const ImageResource sdfImageResource(m_sceneSDF, 0, 1);
         const UniformBufferResource sdfInfoBufferResource(m_sdfVolumeInfoBuffer, 2);
+		const ImageResource materialTextureResource(m_sceneMaterialVoxelTexture, 0, 3);
 
         RenderPassExecution exe;
         exe.handle = m_sdfDebugPass;
         exe.resources.storageImages = { targetImageResource };
-        exe.resources.sampledImages = { sdfImageResource };
+        exe.resources.sampledImages = { sdfImageResource, materialTextureResource };
         exe.resources.uniformBuffers = { sdfInfoBufferResource };
         exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
         exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
@@ -1016,7 +1019,7 @@ void RenderFrontend::issueSkyDrawcalls() {
 }
 
 void RenderFrontend::updateSceneSDFInfo() {
-	AxisAlignedBoundingBox paddedSceneBB = padSDFBoundingBox(m_sceneBoundingBox, m_sceneSDFResolution);
+	AxisAlignedBoundingBox paddedSceneBB = padSDFBoundingBox(m_sceneBoundingBox);
 	const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(paddedSceneBB);
 	gRenderBackend.setUniformBufferData(m_sdfVolumeInfoBuffer, &sdfVolumeInfo, sizeof(sdfVolumeInfo));
 }
@@ -1216,6 +1219,107 @@ void RenderFrontend::bakeSkyOcclusion() {
 
         gRenderBackend.renderFrame(false);
     }
+}
+
+void RenderFrontend::bakeSceneMaterialVoxelTexture() {
+	gRenderBackend.newFrame();
+
+	const ImageFormat dummyImageFormat = ImageFormat::R8;
+
+	//create material voxelization pass
+	{
+		Attachment dummyAttachment(dummyImageFormat, AttachmentLoadOp::DontCare);
+
+		GraphicPassDescription desc;
+		desc.name = "Material voxelization";
+		desc.shaderDescriptions.vertex.srcPathRelative = "materialVoxelization.vert";
+
+		ShaderDescription geometryShaderDesc;
+		geometryShaderDesc.srcPathRelative = "materialVoxelization.geom";
+		desc.shaderDescriptions.geometry = geometryShaderDesc;
+
+		desc.shaderDescriptions.fragment.srcPathRelative = "materialVoxelization.frag";
+		desc.attachments = { dummyAttachment };
+		desc.depthTest.function = DepthFunction::Always;
+		desc.depthTest.write = false;
+		desc.rasterization.cullMode = CullMode::None;
+		desc.rasterization.mode = RasterizationeMode::Fill;
+		desc.blending = BlendState::None;
+		desc.vertexFormat = VertexFormat::Full;
+
+		m_materialVoxelizationPass = gRenderBackend.createGraphicPass(desc);
+	}
+
+	ImageHandle dummyImage;
+	{
+		ImageDescription desc;
+		desc.width = sceneMaterialVoxelTextureResolution.x;
+		desc.height = sceneMaterialVoxelTextureResolution.y;
+		desc.depth = 1;
+		desc.type = ImageType::Type2D;
+		desc.format = dummyImageFormat;
+		desc.usageFlags = ImageUsageFlags::Attachment;
+		desc.mipCount = MipCount::One;
+		desc.manualMipCount = 0;
+		desc.autoCreateMips = false;
+
+		dummyImage = gRenderBackend.createImage(desc);
+	}
+
+	FramebufferHandle dummyFramebuffer;
+	//dummy framebuffer
+	{
+		FramebufferDescription desc;
+		desc.compatibleRenderpass = m_materialVoxelizationPass;
+		FramebufferTarget dummyTarget;
+		dummyTarget.image = dummyImage;
+		desc.targets = { dummyTarget };
+		dummyFramebuffer = gRenderBackend.createFramebuffer(desc);
+	}
+		
+	//set execution
+	{
+		RenderPassExecution materialVoxelizationExecution;
+		materialVoxelizationExecution.handle = m_materialVoxelizationPass;
+		materialVoxelizationExecution.framebuffer = dummyFramebuffer;
+		materialVoxelizationExecution.resources.storageImages = {
+			ImageResource(m_sceneMaterialVoxelTexture, 0, 0)
+		};
+		materialVoxelizationExecution.resources.uniformBuffers = {
+			UniformBufferResource(m_sdfVolumeInfoBuffer, 1)
+		};
+
+		gRenderBackend.setRenderPassExecution(materialVoxelizationExecution);
+	}
+
+	const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(m_sceneBoundingBox); //sdf uses padded bb
+
+	const glm::mat4 projectionMatrix = glm::ortho(
+		sceneBBPadded.min.x,	//left
+		sceneBBPadded.max.x,	//right
+		sceneBBPadded.min.y,	//bottom
+		sceneBBPadded.max.y,	//top
+		sceneBBPadded.min.z,	//near
+		sceneBBPadded.max.z);	//far
+
+	std::vector<MeshHandle> meshHandles;
+	std::vector<std::array<glm::mat4, 2>> transforms;
+
+	//draw static meshes
+	for (const StaticMesh& mesh : m_staticMeshes) {
+
+		const std::array<glm::mat4, 2> t = {
+			projectionMatrix,
+			mesh.modelMatrix };
+
+		meshHandles.push_back(mesh.backendHandle);
+		transforms.push_back(t);
+	}
+	gRenderBackend.startDrawcallRecording();
+	gRenderBackend.drawMeshes(meshHandles, transforms, m_materialVoxelizationPass);
+
+	//execute
+	gRenderBackend.renderFrame(false);
 }
 
 void RenderFrontend::updateCameraFrustum() {
@@ -1647,6 +1751,21 @@ void RenderFrontend::initImages() {
         desc.initialData = { 0, 0 };
         m_sceneSDF = gRenderBackend.createImage(desc);
     }
+	//scene material voxel texture
+	{
+		ImageDescription desc;
+		desc.width = sceneMaterialVoxelTextureResolution.x;
+		desc.height = sceneMaterialVoxelTextureResolution.y;
+		desc.depth = sceneMaterialVoxelTextureResolution.z;
+		desc.type = ImageType::Type3D;
+		desc.format = ImageFormat::RGBA8;
+		desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
+		desc.mipCount = MipCount::One;
+		desc.autoCreateMips = false;
+		const size_t textureSize = desc.width * desc.height * desc.depth * getImageFormatBytePerPixel(desc.format);
+		desc.initialData.resize(textureSize, 0);
+		m_sceneMaterialVoxelTexture = gRenderBackend.createImage(desc);
+	}
 }
 
 void RenderFrontend::initSamplers(){

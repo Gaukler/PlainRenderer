@@ -10,6 +10,7 @@
 #include "linearDepth.inc"
 #include "specularOcclusion.inc"
 #include "lightBuffer.inc"
+#include "volume.inc"
 
 /*
 specialisation constants
@@ -131,10 +132,7 @@ struct SkyOcclusion{
 
 SkyOcclusion sampleSkyOcclusion(vec3 worldPos){
 
-    vec3 samplePos = worldPos - occlusionVolumeOffset.xyz;  //in range[-extend/2, extend/2]
-    samplePos = samplePos/ occlusionVolumeExtends.xyz;      //in range [-0.5, 0.5]
-    samplePos += 0.5f;                                      //in range [0, 1]
-    
+	vec3 samplePos = worldPositionToVolume(worldPos, occlusionVolumeOffset.xyz, occlusionVolumeExtends.xyz);    
     vec4 occlusionTexel = texture(sampler3D(skyOcclusionVolume, g_sampler_linearWhiteBorder), samplePos);
     SkyOcclusion occlusion;
     occlusion.unoccludedDirection = normalize(occlusionTexel.rgb);

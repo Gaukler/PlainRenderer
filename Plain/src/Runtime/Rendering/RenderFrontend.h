@@ -110,6 +110,7 @@ public:
     //compute sky occlusion for all static meshes
     //must be called between frames as it calls gRenderBackend.newFrame() and gRenderBackend.renderFrame();
     void bakeSkyOcclusion();
+	void bakeSceneMaterialVoxelTexture();
 
 private:
 
@@ -226,6 +227,7 @@ private:
     RenderPassHandle m_hdrImageCopyPass;    //input must be R11G11B10
     RenderPassHandle m_colorToLuminancePass;
     RenderPassHandle m_sdfDebugPass;
+	RenderPassHandle m_materialVoxelizationPass;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -244,6 +246,7 @@ private:
     ImageHandle m_sceneLuminance;
     ImageHandle m_lastFrameLuminance;
     ImageHandle m_sceneSDF;
+	ImageHandle m_sceneMaterialVoxelTexture;
 
     std::vector<ImageHandle> m_noiseTextures;
     uint32_t m_noiseTextureIndex = 0;

@@ -10,7 +10,7 @@ std::filesystem::path binaryToSDFPath(const std::filesystem::path binaryPathRela
     return sdfPathRelative;
 }
 
-AxisAlignedBoundingBox padSDFBoundingBox(const AxisAlignedBoundingBox& bb, const glm::ivec3 resolution) {
+AxisAlignedBoundingBox padSDFBoundingBox(const AxisAlignedBoundingBox& bb) {
 	//padding avoids the sdf texture clamping resulting in hits outside or at the edge of the volume
 	//additionally it ensures that the outside texels are outside the scene and dont intersect with it, causing problems with the surface
 	//however excessive padding reduces the effective resolution

@@ -6,4 +6,4 @@
 //adds "_sdf" suffix and changes extensions to ".dds"
 std::filesystem::path binaryToSDFPath(const std::filesystem::path binaryPathRelative);
 
-AxisAlignedBoundingBox padSDFBoundingBox(const AxisAlignedBoundingBox& bb, const glm::ivec3 resolution);
+AxisAlignedBoundingBox padSDFBoundingBox(const AxisAlignedBoundingBox& bb);
