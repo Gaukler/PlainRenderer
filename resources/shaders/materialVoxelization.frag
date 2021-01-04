@@ -37,6 +37,9 @@ void main(){
 	ivec3 imageRes = imageSize(materialVoxelImage);
 	uint indexFlat = flatten3DIndex(texelIndex, imageRes);
 
+	//only writing to one voxel per fragment
+	//searching for additional voxels in z-direction using triangle/box intersection would be more accurate
+	//but is not needed
 	atomicAdd(counters[indexFlat].r, albedoUInt.r);
 	atomicAdd(counters[indexFlat].g, albedoUInt.g);
 	atomicAdd(counters[indexFlat].b, albedoUInt.b);
