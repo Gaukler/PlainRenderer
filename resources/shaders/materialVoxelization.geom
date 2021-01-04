@@ -28,9 +28,9 @@ void main(){
 	vec3 N = cross(passPosIn[0] - passPosIn[1], passPosIn[0] - passPosIn[2]);
 
 	vec3 ndc[3] = {
-		(passPosIn[0] - sdfVolumeOffset.xyz) / sdfVolumeExtends.xyz,
-		(passPosIn[1] - sdfVolumeOffset.xyz) / sdfVolumeExtends.xyz,
-		(passPosIn[2] - sdfVolumeOffset.xyz) / sdfVolumeExtends.xyz
+		2.f * (passPosIn[0] - sdfVolumeOffset.xyz) / sdfVolumeExtends.xyz,
+		2.f * (passPosIn[1] - sdfVolumeOffset.xyz) / sdfVolumeExtends.xyz,
+		2.f * (passPosIn[2] - sdfVolumeOffset.xyz) / sdfVolumeExtends.xyz
 	};
 
 	if(abs(N.x) > abs(N.y) && abs(N.x) > abs(N.z)){
