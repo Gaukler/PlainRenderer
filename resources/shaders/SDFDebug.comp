@@ -22,7 +22,7 @@ float sampleSDF(vec3 uv){
 vec3 normalFromSDF(vec3 uv){
 	float extendsMax = max(sdfVolumeExtends.x, max(sdfVolumeExtends.y, sdfVolumeExtends.z));
 	vec3 extendsNormalized = sdfVolumeExtends.xyz / extendsMax;
-	vec3 epsilon = vec3(0.3f) / textureSize(sampler3D(sceneSDF, g_sampler_linearClamp), 0) / extendsNormalized; //voxels are anisotropic so epsilon must be scaled per axis
+	vec3 epsilon = vec3(0.1f) / textureSize(sampler3D(sceneSDF, g_sampler_linearClamp), 0) / extendsNormalized; //voxels are anisotropic so epsilon must be scaled per axis
 	return normalize(vec3(
 		sampleSDF(uv + vec3(epsilon.x, 0, 0)) - sampleSDF(uv - vec3(epsilon.x, 0, 0)),
 		sampleSDF(uv + vec3(0, epsilon.y, 0)) - sampleSDF(uv - vec3(0, epsilon.y, 0)),
@@ -114,7 +114,7 @@ void main(){
 
 	ivec3 sdfResolution = textureSize(sampler3D(sceneSDF, g_sampler_linearClamp), 0);
 	float sdfThreshold = length(sdfVolumeExtends.xyz / vec3(sdfResolution)) * 0.1;
-	sdfThreshold = 0.13f;
+	sdfThreshold = 0.12f;
 	const float minStepSize = 0.f;//sdfThreshold;
 
 	float sdf = 0.f;
@@ -137,21 +137,26 @@ void main(){
 		steps++;
 	}
 
+	vec3 originalHitPos = samplePosWorld;
+
+	//normal calculation is based on original position
+	//the modified position is more accurate but on thin objects the modification might push the position to the other side
+	//because of this normals are more consistent when using the original position
+	vec3 hitOriginalNormalized = worldPositionToVolume(originalHitPos, sdfVolumeOffset.xyz, sdfVolumeExtends.xyz);
+	vec3 N = normalFromSDF(hitOriginalNormalized);
+
 	//assume surface is planar and calculate hit using geometric series
 	//see: "GPU-based clay simulation and ray-tracing tech in Claybook", page 25
 	float lastStepSize = sdf / (1.f - (sdf - sdfLast));
-	samplePosWorld += V * lastStepSize;
+	vec3 modifiedHitPos = originalHitPos + V * lastStepSize;
+	vec3 hitModifiedNormalized = worldPositionToVolume(modifiedHitPos, sdfVolumeOffset.xyz, sdfVolumeExtends.xyz);
 
-	vec3 hitNormalized = worldPositionToVolume(samplePosWorld, sdfVolumeOffset.xyz, sdfVolumeExtends.xyz);
-	vec3 N = normalFromSDF(hitNormalized);
-
-	vec3 color = hit ? 0.5f * N + 0.5f : vec3(0);
-
-	vec4 albedoTexel = texture(sampler3D(materialTexture, g_sampler_linearClamp), hitNormalized);
+	//material lookup uses the modified position as it is more accurate
+	vec4 albedoTexel = texture(sampler3D(materialTexture, g_sampler_linearClamp), hitModifiedNormalized);
 	vec3 albedo = albedoTexel.rgb / max(albedoTexel.a, 0.00001);
-	color = albedo;
 
-	//color *= vec3(dot(N, g_sunDirection.xyz));
-	//color = 0.05 * vec3(distance(samplePosWorld, g_cameraPosition.xyz));
+	vec3 color = albedo * dot(N, g_sunDirection.xyz);
+
+	//color = N * 0.5 + 0.5;	//visualize colors
 	imageStore(imageOut, uv, vec4(color, 1.f));
 }
