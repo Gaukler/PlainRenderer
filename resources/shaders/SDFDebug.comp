@@ -114,12 +114,17 @@ void main(){
 
 	ivec3 sdfResolution = textureSize(sampler3D(sceneSDF, g_sampler_linearClamp), 0);
 	float sdfThreshold = length(sdfVolumeExtends.xyz / vec3(sdfResolution)) * 0.1;
-	sdfThreshold = 0.1f;
+	sdfThreshold = 0.13f;
 	const float minStepSize = 0.f;//sdfThreshold;
+
+	float sdf = 0.f;
+	float sdfLast = 0.f;
 
 	for(int i = 0; i < sampleCount; i++){
 		vec3 samplePos = worldPositionToVolume(samplePosWorld, sdfVolumeOffset.xyz, sdfVolumeExtends.xyz);
-		float sdf = texture(sampler3D(sceneSDF, g_sampler_linearClamp), samplePos).r;
+
+		sdfLast = sdf;
+		sdf = texture(sampler3D(sceneSDF, g_sampler_linearClamp), samplePos).r;
 
 		hit = sdf < sdfThreshold;
 		
@@ -131,15 +136,22 @@ void main(){
 		samplePosWorld += V * stepSize;
 		steps++;
 	}
+
+	//assume surface is planar and calculate hit using geometric series
+	//see: "GPU-based clay simulation and ray-tracing tech in Claybook", page 25
+	float lastStepSize = sdf / (1.f - (sdf - sdfLast));
+	samplePosWorld += V * lastStepSize;
+
 	vec3 hitNormalized = worldPositionToVolume(samplePosWorld, sdfVolumeOffset.xyz, sdfVolumeExtends.xyz);
 	vec3 N = normalFromSDF(hitNormalized);
+
 	vec3 color = hit ? 0.5f * N + 0.5f : vec3(0);
 
 	vec4 albedoTexel = texture(sampler3D(materialTexture, g_sampler_linearClamp), hitNormalized);
 	vec3 albedo = albedoTexel.rgb / max(albedoTexel.a, 0.00001);
 	color = albedo;
 
-	//color = vec3(dot(N, g_sunDirection.xyz));
+	//color *= vec3(dot(N, g_sunDirection.xyz));
 	//color = 0.05 * vec3(distance(samplePosWorld, g_cameraPosition.xyz));
 	imageStore(imageOut, uv, vec4(color, 1.f));
 }
