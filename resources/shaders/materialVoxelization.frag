@@ -30,7 +30,7 @@ void main(){
 	vec3 posNormalized = worldPositionToVolume(passPos, sdfVolumeOffset.xyz, sdfVolumeExtends.xyz);
 	ivec3 texelIndex = ivec3(posNormalized * imageSize(materialVoxelImage));
 
-	vec3 albedoTexel = texture(sampler2D(colorTexture, g_sampler_anisotropicRepeat), passUV, g_mipBias).rgb;
+	vec3 albedoTexel = texture(sampler2D(colorTexture, g_sampler_anisotropicRepeat), passUV).rgb;
 	vec3 albedo = sRGBToLinear(albedoTexel);
 	uvec3 albedoUInt = uvec3(albedo * 255);
 
