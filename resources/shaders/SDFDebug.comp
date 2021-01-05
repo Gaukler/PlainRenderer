@@ -4,6 +4,7 @@
 
 #include "global.inc"
 #include "volume.inc"
+#include "lightBuffer.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -14,6 +15,10 @@ layout(set=1, binding = 2, std140)			uniform sdfVolumeData{
     vec4 sdfVolumeOffset;
 };
 layout(set=1, binding = 3)					uniform texture3D materialTexture;
+
+layout(set=1, binding = 4, std430) buffer lightStorageBuffer{
+    LightBuffer lightBuffer;
+};
 
 float sampleSDF(vec3 uv){
 	return texture(sampler3D(sceneSDF, g_sampler_linearClamp), uv).r;
@@ -47,7 +52,7 @@ bool isPointInAABB(vec3 p, vec3 aabbMin, vec3 aabbMax){
 float shadowRay(vec3 startPosWorld, float sdfThreshold){
 	vec3 sdfMin = sdfVolumeOffset.xyz - sdfVolumeExtends.xyz * 0.5f;
 	vec3 sdfMax = sdfVolumeOffset.xyz + sdfVolumeExtends.xyz * 0.5f;
-	int sampleCount = 40;
+	int sampleCount = 80;
 
 	vec3 samplePosWorld = startPosWorld;
 
@@ -185,11 +190,11 @@ void main(){
 	vec4 albedoTexel = texture(sampler3D(materialTexture, g_sampler_linearClamp), hitModifiedNormalized);
 	vec3 albedo = albedoTexel.rgb / max(albedoTexel.a, 0.00001);
 
-	vec3 color = albedo * dot(N, g_sunDirection.xyz);
-
 	//shadow ray origin is offset into normal direction to avoid self intersection
 	float shadow = shadowRay(originalHitPos + N * sdfThreshold, sdfThreshold);
-	color *= shadow;
+	vec3 sunLight = shadow * dot(N, g_sunDirection.xyz) * lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
+	vec3 ambient = vec3(0.1);
+	vec3 color = albedo * (sunLight + ambient);
 
 	//color = N * 0.5 + 0.5;	//visualize normals
 	imageStore(imageOut, uv, vec4(color, 1.f));

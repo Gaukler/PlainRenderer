@@ -370,6 +370,9 @@ void RenderFrontend::prepareRenderpasses(){
         exe.resources.storageImages = { targetImageResource };
         exe.resources.sampledImages = { sdfImageResource, materialTextureResource };
         exe.resources.uniformBuffers = { sdfInfoBufferResource };
+		exe.resources.storageBuffers = {
+			StorageBufferResource(m_lightBuffer, true, 4)
+		};
         exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
         exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
         exe.dispatchCount[2] = 1;
