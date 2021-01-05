@@ -66,6 +66,9 @@ const uint32_t globalNoiseTextureBindingBinding         = 7;
 
 const glm::uvec3 sceneMaterialVoxelTextureResolution = glm::uvec3(64);
 
+//currently rendering without attachment is not supported, so a small dummy is used
+const ImageFormat dummyImageFormat = ImageFormat::R8;
+
 void resizeCallback(GLFWwindow* window, int width, int height) {
     RenderFrontend* frontEnd = reinterpret_cast<RenderFrontend*>(glfwGetWindowUserPointer(window));
     frontEnd->setResolution(width, height);
@@ -1227,73 +1230,11 @@ void RenderFrontend::bakeSkyOcclusion() {
 void RenderFrontend::bakeSceneMaterialVoxelTexture() {
 	gRenderBackend.newFrame();
 
-	const ImageFormat dummyImageFormat = ImageFormat::R8;
-
-	//create material voxelization pass
-	{
-		Attachment dummyAttachment(dummyImageFormat, AttachmentLoadOp::DontCare);
-
-		GraphicPassDescription desc;
-		desc.name = "Material voxelization";
-		desc.shaderDescriptions.vertex.srcPathRelative = "materialVoxelization.vert";
-
-		ShaderDescription geometryShaderDesc;
-		geometryShaderDesc.srcPathRelative = "materialVoxelization.geom";
-		desc.shaderDescriptions.geometry = geometryShaderDesc;
-
-		desc.shaderDescriptions.fragment.srcPathRelative = "materialVoxelization.frag";
-		desc.attachments = { dummyAttachment };
-		desc.depthTest.function = DepthFunction::Always;
-		desc.depthTest.write = false;
-		desc.rasterization.cullMode = CullMode::None;
-		desc.rasterization.mode = RasterizationeMode::Fill;
-		desc.rasterization.conservative = true;
-		desc.blending = BlendState::None;
-		desc.vertexFormat = VertexFormat::Full;
-
-		m_materialVoxelizationPass = gRenderBackend.createGraphicPass(desc);
-	}
-
-	//buffer to image pass
-	{
-		ComputePassDescription desc;
-		desc.name = "Material voxelization to image";
-		desc.shaderDescription.srcPathRelative = "materialVoxelizationToImage.comp";
-		m_materialVoxelizationToImagePass = gRenderBackend.createComputePass(desc);
-	}
-
-	ImageHandle dummyImage;
-	{
-		ImageDescription desc;
-		desc.width = sceneMaterialVoxelTextureResolution.x;
-		desc.height = sceneMaterialVoxelTextureResolution.y;
-		desc.depth = 1;
-		desc.type = ImageType::Type2D;
-		desc.format = dummyImageFormat;
-		desc.usageFlags = ImageUsageFlags::Attachment;
-		desc.mipCount = MipCount::One;
-		desc.manualMipCount = 0;
-		desc.autoCreateMips = false;
-
-		dummyImage = gRenderBackend.createImage(desc);
-	}
-
-	FramebufferHandle dummyFramebuffer;
-	//dummy framebuffer
-	{
-		FramebufferDescription desc;
-		desc.compatibleRenderpass = m_materialVoxelizationPass;
-		FramebufferTarget dummyTarget;
-		dummyTarget.image = dummyImage;
-		desc.targets = { dummyTarget };
-		dummyFramebuffer = gRenderBackend.createFramebuffer(desc);
-	}
-
-	//voxelization execution
+	//scene material voxelization
 	{
 		RenderPassExecution materialVoxelizationExecution;
 		materialVoxelizationExecution.handle = m_materialVoxelizationPass;
-		materialVoxelizationExecution.framebuffer = dummyFramebuffer;
+		materialVoxelizationExecution.framebuffer = m_materialVoxelizationFramebuffer;
 		materialVoxelizationExecution.resources.storageImages = {
 			ImageResource(m_sceneMaterialVoxelTexture, 0, 0)
 		};
@@ -1306,8 +1247,7 @@ void RenderFrontend::bakeSceneMaterialVoxelTexture() {
 
 		gRenderBackend.setRenderPassExecution(materialVoxelizationExecution);
 	}
-
-	//to image execution
+	//transform from buffer to image
 	{
 		RenderPassExecution toImageExecution;
 		toImageExecution.handle = m_materialVoxelizationToImagePass;
@@ -1325,34 +1265,36 @@ void RenderFrontend::bakeSceneMaterialVoxelTexture() {
 		};
 		gRenderBackend.setRenderPassExecution(toImageExecution);
 	}
+	//drawcalls
+	{
+		const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(m_sceneBoundingBox); //sdf uses padded bb
 
-	const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(m_sceneBoundingBox); //sdf uses padded bb
+		const glm::mat4 projectionMatrix = glm::ortho(
+			sceneBBPadded.min.x,	//left
+			sceneBBPadded.max.x,	//right
+			sceneBBPadded.min.y,	//bottom
+			sceneBBPadded.max.y,	//top
+			sceneBBPadded.min.z,	//near
+			sceneBBPadded.max.z);	//far
 
-	const glm::mat4 projectionMatrix = glm::ortho(
-		sceneBBPadded.min.x,	//left
-		sceneBBPadded.max.x,	//right
-		sceneBBPadded.min.y,	//bottom
-		sceneBBPadded.max.y,	//top
-		sceneBBPadded.min.z,	//near
-		sceneBBPadded.max.z);	//far
+		std::vector<MeshHandle> meshHandles;
+		std::vector<std::array<glm::mat4, 2>> transforms;
 
-	std::vector<MeshHandle> meshHandles;
-	std::vector<std::array<glm::mat4, 2>> transforms;
+		//draw static meshes
+		for (const StaticMesh& mesh : m_staticMeshes) {
 
-	//draw static meshes
-	for (const StaticMesh& mesh : m_staticMeshes) {
+			const std::array<glm::mat4, 2> t = {
+				projectionMatrix,
+				mesh.modelMatrix };
 
-		const std::array<glm::mat4, 2> t = {
-			projectionMatrix,
-			mesh.modelMatrix };
-
-		meshHandles.push_back(mesh.backendHandle);
-		transforms.push_back(t);
+			meshHandles.push_back(mesh.backendHandle);
+			transforms.push_back(t);
+		}
+		gRenderBackend.startDrawcallRecording();
+		gRenderBackend.drawMeshes(meshHandles, transforms, m_materialVoxelizationPass);
 	}
-	gRenderBackend.startDrawcallRecording();
-	gRenderBackend.drawMeshes(meshHandles, transforms, m_materialVoxelizationPass);
-
-	//execute
+	
+	//execute frame
 	gRenderBackend.renderFrame(false);
 }
 
@@ -1798,6 +1740,21 @@ void RenderFrontend::initImages() {
 		desc.autoCreateMips = false;
 		m_sceneMaterialVoxelTexture = gRenderBackend.createImage(desc);
 	}
+	//material voxelization dummy image
+	{
+		ImageDescription desc;
+		desc.width = sceneMaterialVoxelTextureResolution.x;
+		desc.height = sceneMaterialVoxelTextureResolution.y;
+		desc.depth = 1;
+		desc.type = ImageType::Type2D;
+		desc.format = dummyImageFormat;
+		desc.usageFlags = ImageUsageFlags::Attachment;
+		desc.mipCount = MipCount::One;
+		desc.manualMipCount = 0;
+		desc.autoCreateMips = false;
+
+		m_materialVoxelizationDummyTexture = gRenderBackend.createImage(desc);
+	}
 }
 
 void RenderFrontend::initSamplers(){
@@ -1900,6 +1857,15 @@ void RenderFrontend::initFramebuffers() {
 
         m_skyShadowFramebuffer = gRenderBackend.createFramebuffer(desc);
     }
+	//dummy framebuffer
+	{
+		FramebufferDescription desc;
+		desc.compatibleRenderpass = m_materialVoxelizationPass;
+		FramebufferTarget dummyTarget;
+		dummyTarget.image = m_materialVoxelizationDummyTexture;
+		desc.targets = { dummyTarget };
+		m_materialVoxelizationFramebuffer = gRenderBackend.createFramebuffer(desc);
+	}
 }
 
 void RenderFrontend::initRenderTargets() {
@@ -2591,6 +2557,38 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.shaderDescription.srcPathRelative = "SDFDebug.comp";
         m_sdfDebugPass = gRenderBackend.createComputePass(desc);
     }
+	//material voxelization pass
+	{
+		Attachment dummyAttachment(dummyImageFormat, AttachmentLoadOp::DontCare);
+
+		GraphicPassDescription desc;
+		desc.name = "Material voxelization";
+		desc.shaderDescriptions.vertex.srcPathRelative = "materialVoxelization.vert";
+
+		ShaderDescription geometryShaderDesc;
+		geometryShaderDesc.srcPathRelative = "materialVoxelization.geom";
+		desc.shaderDescriptions.geometry = geometryShaderDesc;
+
+		desc.shaderDescriptions.fragment.srcPathRelative = "materialVoxelization.frag";
+		desc.attachments = { dummyAttachment };
+		desc.depthTest.function = DepthFunction::Always;
+		desc.depthTest.write = false;
+		desc.rasterization.cullMode = CullMode::None;
+		desc.rasterization.mode = RasterizationeMode::Fill;
+		desc.rasterization.conservative = true;
+		desc.blending = BlendState::None;
+		desc.vertexFormat = VertexFormat::Full;
+
+		m_materialVoxelizationPass = gRenderBackend.createGraphicPass(desc);
+	}
+
+	//material voxelization buffer to image pass
+	{
+		ComputePassDescription desc;
+		desc.name = "Material voxelization to image";
+		desc.shaderDescription.srcPathRelative = "materialVoxelizationToImage.comp";
+		m_materialVoxelizationToImagePass = gRenderBackend.createComputePass(desc);
+	}
 }
 
 ShaderDescription RenderFrontend::createDepthPyramidShaderDescription(uint32_t* outThreadgroupCount) {

@@ -248,6 +248,7 @@ private:
     ImageHandle m_lastFrameLuminance;
     ImageHandle m_sceneSDF;
 	ImageHandle m_sceneMaterialVoxelTexture;
+	ImageHandle m_materialVoxelizationDummyTexture;	//currently rendering without attachments not supported, use dummy
 
     std::vector<ImageHandle> m_noiseTextures;
     uint32_t m_noiseTextureIndex = 0;
@@ -265,6 +266,7 @@ private:
 
     FramebufferHandle m_shadowCascadeFramebuffers[4];
     FramebufferHandle m_skyShadowFramebuffer;
+	FramebufferHandle m_materialVoxelizationFramebuffer;
 
     FrameRenderTargets m_frameRenderTargets[2];
 
