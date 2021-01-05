@@ -1,6 +1,6 @@
 #pragma once
 #include "pch.h"
-#include "BoundingBox.h"
+#include "AABB.h"
 
 //using vec4s because of gpu buffer padding
 struct VolumeInfo {

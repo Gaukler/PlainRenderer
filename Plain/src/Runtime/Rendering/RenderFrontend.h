@@ -4,7 +4,7 @@
 #include "Backend/RenderBackend.h"
 #include "RenderHandles.h"
 #include "Camera.h"
-#include "BoundingBox.h"
+#include "AABB.h"
 #include "ViewFrustum.h"
 
 struct GLFWwindow;

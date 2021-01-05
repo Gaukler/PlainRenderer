@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "BoundingBox.h"
+#include "AABB.h"
 
 AxisAlignedBoundingBox axisAlignedBoundingBoxFromPositions(const std::vector<glm::vec3>& positions) {
     AxisAlignedBoundingBox bb;

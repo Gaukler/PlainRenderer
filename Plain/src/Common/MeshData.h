@@ -1,7 +1,7 @@
 #pragma once
 #include "pch.h"
 #include <glm/common.hpp>
-#include "BoundingBox.h"
+#include "AABB.h"
 
 struct TexturePaths {
     std::filesystem::path albedoTexturePath;
