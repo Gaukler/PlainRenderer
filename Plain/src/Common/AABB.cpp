@@ -156,3 +156,13 @@ glm::mat4 viewProjectionMatrixAroundBB(const AxisAlignedBoundingBox& bb, const g
 
     return coordinateSystemCorrection * P * V;
 }
+
+bool isPointInAABB(const glm::vec3 p, const glm::vec3 min, const glm::vec3 max) {
+	return
+		p.x <= max.x &&
+		p.x >= min.x &&
+		p.y <= max.y &&
+		p.y >= min.y &&
+		p.z <= max.z &&
+		p.z >= min.z;
+};

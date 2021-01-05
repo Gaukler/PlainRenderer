@@ -64,3 +64,7 @@ float radicalInverseBase3(const uint32_t in) {
     return reversedDigits * inverseBasePowerN;          //we multiply only once at the end with the inverse base
                                                         //by the previous 'lifting' this provides the correct weight per digit
 }
+
+float dot2(const glm::vec3& v) {
+	return glm::dot(v, v);
+};

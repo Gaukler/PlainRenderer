@@ -10,3 +10,6 @@ glm::vec2 hammersley2D(const uint32_t index);
 uint32_t reverse32Bit(const uint32_t in);
 float radicalInverseBase2(const uint32_t in);
 float radicalInverseBase3(const uint32_t in);
+
+//returns dot product with itself
+float dot2(const glm::vec3& v);

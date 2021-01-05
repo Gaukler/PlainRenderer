@@ -24,3 +24,5 @@ void axisAlignedBoundingBoxToLineMesh(const AxisAlignedBoundingBox& bb,
 //used for shadow rendering around area
 //for fitting to camera frustum the exact frustum should be used, not the bounding box
 glm::mat4 viewProjectionMatrixAroundBB(const AxisAlignedBoundingBox& bb, const glm::vec3& viewDirection);
+
+bool isPointInAABB(const glm::vec3 p, const glm::vec3 min, const glm::vec3 max);
