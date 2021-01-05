@@ -46,12 +46,11 @@ bool isPointInAABB(vec3 p, vec3 aabbMin, vec3 aabbMax){
 }
 
 //binary shadowing function
+//aabb min and max are min and max of sdf aabb, used to determine if shadow ray left scene
 //returns factor to be multiplied with light
 //soft shadows would require a higher resolution sdf
 //might revisit if sdf quality is improved
-float shadowRay(vec3 startPosWorld, float sdfThreshold){
-	vec3 sdfMin = sdfVolumeOffset.xyz - sdfVolumeExtends.xyz * 0.5f;
-	vec3 sdfMax = sdfVolumeOffset.xyz + sdfVolumeExtends.xyz * 0.5f;
+float shadowRay(vec3 startPosWorld, float sdfThreshold, vec3 aabbMin, vec3 aabbMax){
 	int sampleCount = 80;
 
 	vec3 samplePosWorld = startPosWorld;
@@ -59,21 +58,80 @@ float shadowRay(vec3 startPosWorld, float sdfThreshold){
 	for(int i = 0; i < sampleCount; i++){
 		vec3 samplePos = worldPositionToVolume(samplePosWorld, sdfVolumeOffset.xyz, sdfVolumeExtends.xyz);
 
-		float sdf = texture(sampler3D(sceneSDF, g_sampler_linearClamp), samplePos).r;
-		bool hit = sdf < sdfThreshold;
+		float d = sampleSDF(samplePos);
+		bool hit = d < sdfThreshold;
 
 		if(hit){
 			return 0.f;
 		}
 
-		float stepSize = sdf;
+		float stepSize = d;
 		samplePosWorld += g_sunDirection.xyz * stepSize;
 
-		if(!isPointInAABB(samplePosWorld, sdfMin, sdfMax)){
+		if(!isPointInAABB(samplePosWorld, aabbMin, aabbMax)){
 			1.f;
 		}
 	}
+	//not enough samples, assume lit
 	return 1.f;	
+}
+
+vec3 calculateViewDirectionFromPixel(vec2 pixelCoor){
+	vec3 V = -g_cameraForward.xyz;
+	V += g_cameraUp.xyz * g_cameraTanFovHalf * pixelCoor.y;
+	V += g_cameraRight.xyz * g_cameraTanFovHalf * g_cameraAspectRatio * pixelCoor.x;
+	return normalize(V);
+}
+
+struct HitResult{
+	bool hit;
+	float t;	//hit = origin + direction * t
+};
+
+HitResult rayAABBIntersection(vec3 rayOrigin, vec3 rayDirection, vec3 aabbMin, vec3 aabbMax){
+
+	HitResult result;
+	result.hit = false;
+	result.t = 100000;	//will be replaced by min
+
+	//search for bounding box intersection
+	float intersection =  rayOrigin.x < sdfVolumeOffset.x ? aabbMin.x : aabbMax.x;
+	
+	float tx = (intersection - rayOrigin.x) / rayDirection.x;
+	vec3 planeIntersection = rayOrigin + tx * rayDirection;
+	if(	tx > 0 && 
+		planeIntersection.y >= aabbMin.y && 
+		planeIntersection.y <= aabbMax.y &&
+		planeIntersection.z >= aabbMin.z && 
+		planeIntersection.z <= aabbMax.z){
+		result.t = min(result.t, tx);
+		result.hit = true;
+	}
+
+	intersection =  rayOrigin.y < sdfVolumeOffset.y ? aabbMin.y : aabbMax.y;
+	float ty = (intersection - rayOrigin.y) / rayDirection.y;
+	planeIntersection = rayOrigin + ty * rayDirection;
+	if(	ty > 0 && 
+		planeIntersection.x >= aabbMin.x && 
+		planeIntersection.x <= aabbMax.x &&
+		planeIntersection.z >= aabbMin.z && 
+		planeIntersection.z <= aabbMax.z){
+		result.t = min(result.t, ty);
+		result.hit = true;
+	}
+
+	intersection =  rayOrigin.z < sdfVolumeOffset.z ? aabbMin.z : aabbMax.z;
+	float tz = (intersection - rayOrigin.z) / rayDirection.z;
+	planeIntersection = rayOrigin + tz * rayDirection;
+	if(	tz > 0 && 
+		planeIntersection.x >= aabbMin.x && 
+		planeIntersection.x <= aabbMax.x &&
+		planeIntersection.y >= aabbMin.y && 
+		planeIntersection.y <= aabbMax.y){
+		result.t = min(result.t, tz);
+		result.hit = true;
+	}
+	return result;
 }
 
 void main(){
@@ -81,95 +139,47 @@ void main(){
 
 	vec2 pixelCoor = (vec2(uv.xy) / g_screenResolution - 0.5) * 2;
 	pixelCoor.y *= -1;
-
-	vec3 V = -g_cameraForward.xyz;
-	V += g_cameraUp.xyz * g_cameraTanFovHalf * pixelCoor.y;
-	V += g_cameraRight.xyz * g_cameraTanFovHalf * g_cameraAspectRatio * pixelCoor.x;
-	V = normalize(V);
+	vec3 V = calculateViewDirectionFromPixel(pixelCoor);
 
 	vec3 samplePosWorld = g_cameraPosition.xyz + g_nearPlane * V;	//in range [0, 1]
 
 	vec3 sdfMin = sdfVolumeOffset.xyz - sdfVolumeExtends.xyz * 0.5f;
 	vec3 sdfMax = sdfVolumeOffset.xyz + sdfVolumeExtends.xyz * 0.5f;
 
+	//check if ray is outside of scene AABB
     if(!isPointInAABB(samplePosWorld, sdfMin, sdfMax)){
-
-		bool hitAABB = false;
-
-		//search for bounding box intersection
-		float intersection =  samplePosWorld.x < sdfVolumeOffset.x ? sdfMin.x : sdfMax.x;
-		float t = 100000;	//will be replaced by min
-		float tx = (intersection - samplePosWorld.x) / V.x;
-		vec3 planeIntersection = samplePosWorld + tx * V;
-		if(	tx > 0 && 
-			planeIntersection.y >= sdfMin.y && 
-			planeIntersection.y <= sdfMax.y &&
-			planeIntersection.z >= sdfMin.z && 
-			planeIntersection.z <= sdfMax.z){
-			t = min(t, tx);
-			hitAABB = true;
-		}
-
-		intersection =  samplePosWorld.y < sdfVolumeOffset.y ? sdfMin.y : sdfMax.y;
-		float ty = (intersection - samplePosWorld.y) / V.y;
-		planeIntersection = samplePosWorld + ty * V;
-		if(	ty > 0 && 
-			planeIntersection.x >= sdfMin.x && 
-			planeIntersection.x <= sdfMax.x &&
-			planeIntersection.z >= sdfMin.z && 
-			planeIntersection.z <= sdfMax.z){
-			t = min(t, ty);
-			hitAABB = true;
-		}
-
-		intersection =  samplePosWorld.z < sdfVolumeOffset.z ? sdfMin.z : sdfMax.z;
-		float tz = (intersection - samplePosWorld.z) / V.z;
-		planeIntersection = samplePosWorld + tz * V;
-		if(	tz > 0 && 
-			planeIntersection.x >= sdfMin.x && 
-			planeIntersection.x <= sdfMax.x &&
-			planeIntersection.y >= sdfMin.y && 
-			planeIntersection.y <= sdfMax.y){
-			t = min(t, tz);
-			hitAABB = true;
-		}
-
-		if(hitAABB){
-			samplePosWorld += t * V;
+		HitResult aabbHit = rayAABBIntersection(samplePosWorld, V, sdfMin, sdfMax);
+		
+		if(aabbHit.hit){
+			//move sample point to intersection
+			samplePosWorld += aabbHit.t * V;
 		}
 		else{
-			//early out
+			//ray missed AABB
 			imageStore(imageOut, uv, vec4(0));
 			return;
 		}
 	}
-
-	float steps = 0;
-	float sampleCount = 45.f;
+	
 	bool hit = false;
+	float d = 0.f;		//distance to surface
+	float dLast = 0.f;	//last step distance
 
-	ivec3 sdfResolution = textureSize(sampler3D(sceneSDF, g_sampler_linearClamp), 0);
+	int sampleCount = 45;
 	float sdfThreshold = 0.12f;
-	const float minStepSize = 0.f;//sdfThreshold;
-
-	float sdf = 0.f;
-	float sdfLast = 0.f;
 
 	for(int i = 0; i < sampleCount; i++){
 		vec3 samplePos = worldPositionToVolume(samplePosWorld, sdfVolumeOffset.xyz, sdfVolumeExtends.xyz);
 
-		sdfLast = sdf;
-		sdf = texture(sampler3D(sceneSDF, g_sampler_linearClamp), samplePos).r;
+		dLast = d;
+		d = sampleSDF(samplePos);
 
-		hit = sdf < sdfThreshold;
+		hit = d < sdfThreshold;
 		
 		if(hit){
 			break;
 		}
-
-		float stepSize = max(abs(sdf), minStepSize);
-		samplePosWorld += V * stepSize;
-		steps++;
+		samplePosWorld += V * abs(d);
 	}
 
 	vec3 originalHitPos = samplePosWorld;
@@ -182,7 +192,7 @@ void main(){
 
 	//assume surface is planar and calculate hit using geometric series
 	//see: "GPU-based clay simulation and ray-tracing tech in Claybook", page 25
-	float lastStepSize = sdf / (1.f - (sdf - sdfLast));
+	float lastStepSize = d / (1.f - (d - dLast));
 	vec3 modifiedHitPos = originalHitPos + V * lastStepSize;
 	vec3 hitModifiedNormalized = worldPositionToVolume(modifiedHitPos, sdfVolumeOffset.xyz, sdfVolumeExtends.xyz);
 
@@ -191,7 +201,9 @@ void main(){
 	vec3 albedo = albedoTexel.rgb / max(albedoTexel.a, 0.00001);
 
 	//shadow ray origin is offset into normal direction to avoid self intersection
-	float shadow = shadowRay(originalHitPos + N * sdfThreshold, sdfThreshold);
+	vec3 shadowRayOrigin = originalHitPos + N * sdfThreshold;
+	float shadow = shadowRay(shadowRayOrigin, sdfThreshold, sdfMin, sdfMax);
+
 	vec3 sunLight = shadow * dot(N, g_sunDirection.xyz) * lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
 	vec3 ambient = vec3(0.1);
 	vec3 color = albedo * (sunLight + ambient);
