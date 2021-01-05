@@ -116,7 +116,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
     const auto startTime = std::chrono::system_clock::now();
 
     const AxisAlignedBoundingBox sceneBB = combineAxisAlignedBoundingBoxes(AABBList);
-	const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(sceneBB, resolution);
+	const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(sceneBB);
 
     const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(sceneBBPadded);
     
