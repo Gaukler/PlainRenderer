@@ -2698,6 +2698,8 @@ void RenderFrontend::drawUi() {
 
     ImGui::Begin("Rendering");
 
+	ImGui::Checkbox("SDF debug", &m_renderSDFDebug);
+
     //Temporal filter Settings
     if(ImGui::CollapsingHeader("Temporal filter settings")){
 
@@ -2718,9 +2720,6 @@ void RenderFrontend::drawUi() {
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Tonemap temporal supersample input", &m_temporalFilterSettings.filterUseTonemapping);
         ImGui::Checkbox("Use mip bias", &m_temporalFilterSettings.useMipBias);
     }
-
-    ImGui::Checkbox("SDF debug", &m_renderSDFDebug);
-
     //lighting settings
     if(ImGui::CollapsingHeader("Lighting settings")){
         ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
@@ -2728,7 +2727,6 @@ void RenderFrontend::drawUi() {
         ImGui::DragFloat("Adaption speed EV/s", &m_globalShaderInfo.exposureAdaptionSpeedEvPerSec, 0.1f, 0.f);
         ImGui::InputFloat("Sun Illuminance Lux", &m_globalShaderInfo.sunIlluminanceLux);
     }
-    
     //shading settings
     if (ImGui::CollapsingHeader("Shading settings")) {
         m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Indirect Multiscatter BRDF", &m_shadingConfig.useIndirectMultiscatter);
