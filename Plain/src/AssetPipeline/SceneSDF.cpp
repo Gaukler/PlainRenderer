@@ -18,7 +18,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 	const std::vector<AxisAlignedBoundingBox>& AABBList, const std::vector<MeshData>& meshes);
 
 int flattenGridIndex(const glm::ivec3& index3D, const glm::ivec3& resolution);
-glm::ivec3 pointToCellIndex(const glm::vec3& p, const AxisAlignedBoundingBox& aabb, const glm::ivec3 resolution);
+glm::uvec3 pointToCellIndex(const glm::vec3& p, const AxisAlignedBoundingBox& aabb, const glm::ivec3 resolution);
 glm::vec3 volumeIndexToCellCenter(const glm::ivec3& index, const glm::ivec3& resolution, const VolumeInfo& volume);
 
 //the uniform grid contains triangle info directly instead of indices
@@ -129,7 +129,7 @@ int flattenGridIndex(const glm::ivec3& index3D, const glm::ivec3& resolution) {
 	return index3D.x + index3D.y * resolution.x + index3D.z * resolution.x * resolution.y;
 };
 
-glm::ivec3 pointToCellIndex(const glm::vec3& p, const AxisAlignedBoundingBox& aabb, const glm::ivec3 resolution) {
+glm::uvec3 pointToCellIndex(const glm::vec3& p, const AxisAlignedBoundingBox& aabb, const glm::ivec3 resolution) {
 	const glm::vec3 pRelative = p - aabb.min;							//range [0:max-min]
 	glm::vec3 normalized = pRelative / (aabb.max - aabb.min);		//range [0:1]
 	normalized = glm::clamp(normalized, glm::vec3(0.f), glm::vec3(0.999f)); //do not allow 1, otherwise it would not be floored and be exactly resoltuin, exceeding max index
@@ -146,11 +146,11 @@ glm::vec3 volumeIndexToCellCenter(const glm::ivec3& index, const glm::ivec3& res
 };
 
 std::vector<std::vector<TriangleInfo>> buildUniformGrid(const std::vector<MeshData>& meshes, const VolumeInfo& sdfVolumeInfo, 
-	const AxisAlignedBoundingBox& sceneBB, const glm::ivec3& uniformGridResolution) {
+	const AxisAlignedBoundingBox& sceneBB, const glm::uvec3& uniformGridResolution) {
 
 	const glm::vec3 uniformGridCellSize = glm::vec3(sdfVolumeInfo.extends) / glm::vec3(uniformGridResolution);
 
-	const size_t uniformGridCellCount = uniformGridResolution.x * uniformGridResolution.y * uniformGridResolution.z;
+	const uint32_t uniformGridCellCount = uniformGridResolution.x * uniformGridResolution.y * uniformGridResolution.z;
 	std::vector<std::vector<TriangleInfo>> uniformGrid(uniformGridCellCount); //for every cell contains list of triangles
 
 	for (size_t meshIndex = 0; meshIndex < meshes.size(); meshIndex++) {
@@ -202,26 +202,26 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
     const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(sceneBBPadded);
 	
 	//build uniform grid
-	const glm::ivec3 uniformGridResolution = glm::ivec3(32);
+	const glm::uvec3 uniformGridResolution = glm::ivec3(32);
 	const std::vector<std::vector<TriangleInfo>> uniformGrid = buildUniformGrid(meshes, sdfVolumeInfo, sceneBBPadded, uniformGridResolution);
 	std::cout << "Built uniform grid\n";
 
 	const glm::vec3 uniformGridCellSize = glm::vec3(sdfVolumeInfo.extends) / glm::vec3(uniformGridResolution);
 
 	//calculate SDF
-    const size_t pixelCount = resolution.x * resolution.y * resolution.z;
-    const size_t bytePerPixel = 2; //distance stored as 16 bit float
-    const size_t byteCount = pixelCount * bytePerPixel;
+    const uint32_t pixelCount = resolution.x * resolution.y * resolution.z;
+    const uint32_t bytePerPixel = 2; //distance stored as 16 bit float
+    const uint32_t byteCount = pixelCount * bytePerPixel;
     std::vector<uint8_t> byteData(byteCount);
 
 	//for every texel
-    for (size_t z = 0; z < resolution.z; z++) {
+    for (uint32_t z = 0; z < resolution.z; z++) {
 		std::cout << z << std::endl;
-        for (size_t y = 0; y < resolution.y; y++) {
-            for (size_t x = 0; x < resolution.x; x++) {
+        for (uint32_t y = 0; y < resolution.y; y++) {
+            for (uint32_t x = 0; x < resolution.x; x++) {
 
-				const size_t index = flattenGridIndex(glm::ivec3(x, y, z), glm::ivec3(resolution));
-                const size_t byteIndex = index * bytePerPixel;
+				const uint32_t index = flattenGridIndex(glm::ivec3(x, y, z), glm::ivec3(resolution));
+                const uint32_t byteIndex = index * bytePerPixel;
 
                 //ray triangle intersection
                 //scratch a pixel has a sign error in computation of t
@@ -232,7 +232,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 
                 const int sampleCount1D = 15;
 
-                size_t backHitCounter = 0;
+				uint32_t backHitCounter = 0;
 				//for every ray, parametrized by angles theta and phi
 				for (int sampleIndexX = 0; sampleIndexX < sampleCount1D; sampleIndexX++) {
                     for (int sampleIndexY = 0; sampleIndexY < sampleCount1D; sampleIndexY++) {
@@ -252,7 +252,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 						bool rayIsInBoundingBox = true;
 
 						//start index
-						glm::ivec3 uniformGridIndex = pointToCellIndex(rayOrigin, sceneBBPadded, uniformGridResolution);
+						glm::uvec3 uniformGridIndex = pointToCellIndex(rayOrigin, sceneBBPadded, uniformGridResolution);
 						
 						glm::vec3 currentRayPosition = rayOrigin;
 
@@ -332,7 +332,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 								float distanceToNextCellIntersection = std::numeric_limits<float>::max();
 
 								//check x,y,z
-								int intersectedComponent;
+								int intersectedComponent = 0;
 								for (int component = 0; component < 3; component++) {
 									if (rayDirection[component] == 0.f) {
 										//parallel, ignore
@@ -390,7 +390,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 
                 uint16_t half = glm::packHalf(glm::vec1(closestHitTotal))[0];	//distance is stored as 16 bit float
                 byteData[byteIndex] = ((uint8_t*)&half)[0];
-                byteData[byteIndex + 1] = ((uint8_t*)&half)[1];
+                byteData[size_t(byteIndex) + 1] = ((uint8_t*)&half)[1];
             }
         }
     }
