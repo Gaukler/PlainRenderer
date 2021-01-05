@@ -150,11 +150,11 @@ std::vector<MeshBinary> meshesToBinary(const std::vector<MeshData>& meshes, cons
     std::vector<MeshBinary> meshesBinary;
     meshesBinary.reserve(meshes.size());
 
-    for (size_t i = 0; i < meshes.size(); i++) {
-        const MeshData& meshData = meshes[i];
+    for (size_t meshIndex = 0; meshIndex < meshes.size(); meshIndex++) {
+        const MeshData& meshData = meshes[meshIndex];
         MeshBinary meshBinary;
         meshBinary.texturePaths = meshData.texturePaths;
-        meshBinary.boundingBox = AABBList[i];
+        meshBinary.boundingBox = AABBList[meshIndex];
 
         //index buffer
         meshBinary.indexCount = (uint32_t)meshData.indices.size();

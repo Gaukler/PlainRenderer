@@ -36,7 +36,7 @@ ComputeShaderHandle ShaderFileManager::addComputeShader(const ShaderDescription&
     addGLSLIncludesFileIndicesToSet(shaderPathAbsolute, &srcInfo.includeFileIndices);
 
     //save info and return handle
-    ComputeShaderHandle shaderHandle = { m_computeShaderSourceInfos.size() };
+    ComputeShaderHandle shaderHandle = { uint32_t(m_computeShaderSourceInfos.size()) };
     m_computeShaderSourceInfos.push_back(srcInfo);
     return shaderHandle;
 }
@@ -75,7 +75,7 @@ GraphicShadersHandle ShaderFileManager::addGraphicShaders(const GraphicPassShade
     }
 
     //save info and return handle
-    GraphicShadersHandle shaderHandle = { m_graphicShaderSourceInfos.size() };
+    GraphicShadersHandle shaderHandle = { uint32_t(m_graphicShaderSourceInfos.size()) };
     m_graphicShaderSourceInfos.push_back(srcInfo);
     return shaderHandle;
 }

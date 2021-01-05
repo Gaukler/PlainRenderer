@@ -174,7 +174,7 @@ std::array<float, 9> computeTaaResolveWeights(const glm::vec2 cameraJitterInPixe
             const float d = glm::length(cameraJitterInPixels - glm::vec2(x, y));
             //gaussian fit to blackman-Harris 3.3
             //reference: "High Quality Temporal Supersampling", page 23
-            const float w = glm::exp(-2.29 * d*d);
+            const float w = glm::exp(-2.29f * d*d);
             weights[index] = w;
             totalWeight += w;
             index++;
@@ -2032,7 +2032,11 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 	//material voxelization counter buffer
 	{
 		StorageBufferDescription desc;
-		const size_t pixelCount = sceneMaterialVoxelTextureResolution.x * sceneMaterialVoxelTextureResolution.y * sceneMaterialVoxelTextureResolution.z;
+		const size_t pixelCount = 
+			size_t(sceneMaterialVoxelTextureResolution.x) * 
+			size_t(sceneMaterialVoxelTextureResolution.y) * 
+			size_t(sceneMaterialVoxelTextureResolution.z);
+
 		const size_t channels = 4;	//storing rgb and counter per cell
 		desc.size = pixelCount * channels * sizeof(uint32_t);
 

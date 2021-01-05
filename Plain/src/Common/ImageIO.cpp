@@ -158,7 +158,7 @@ struct DDS_header {
     uint32_t        reserved2;
 };
 
-typedef enum DXGI_FORMAT {
+enum DXGI_FORMAT {
     DXGI_FORMAT_UNKNOWN,
     DXGI_FORMAT_R32G32B32A32_TYPELESS,
     DXGI_FORMAT_R32G32B32A32_FLOAT,
@@ -283,7 +283,7 @@ typedef enum DXGI_FORMAT {
     DXGI_FORMAT_FORCE_UINT
 };
 
-typedef enum D3D10_RESOURCE_DIMENSION {
+enum D3D10_RESOURCE_DIMENSION {
     D3D10_RESOURCE_DIMENSION_UNKNOWN,
     D3D10_RESOURCE_DIMENSION_BUFFER,
     D3D10_RESOURCE_DIMENSION_TEXTURE1D,
@@ -486,8 +486,6 @@ void writeDDSFile(const std::filesystem::path& pathAbsolute, const ImageDescript
         header.height = imageDescription.height;
         header.width = imageDescription.width;
 
-        //division by eight because going from byte to bit
-        const uint32_t bitPerPixel = getImageFormatBytePerPixel(imageDescription.format) / 8;
         header.pitchOrLinearSize = 0; //not supported currently, accordingly flag is not set
         header.depth = imageDescription.depth;
 
