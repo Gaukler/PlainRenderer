@@ -68,6 +68,8 @@ layout(set=1, binding = 14, std140) uniform occlusionData{
     float weight;
 };
 
+layout(set=1, binding = 15) uniform texture2D indirectDiffuseTexture;
+
 layout(set=2, binding = 0) uniform texture2D colorTexture;
 layout(set=2, binding = 1) uniform texture2D normalTexture;
 layout(set=2, binding = 2) uniform texture2D specularTexture;
@@ -273,6 +275,7 @@ void main(){
     else{
         irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), N).rgb;
     }
+	irradiance = texture(sampler2D(indirectDiffuseTexture, g_sampler_linearRepeat), gl_FragCoord.xy / g_screenResolution).rgb;
     
     vec3 diffuseIndirect;
     vec3 specularIndirect;
@@ -299,13 +302,13 @@ void main(){
     }
     
     if(useSkyOcclusion){
-        diffuseIndirect *= skyOcclusion.factor;
+        //diffuseIndirect *= skyOcclusion.factor;
         
         float specularOcclusion = computeSpecularOcclusion(R, skyOcclusion.unoccludedDirection, r, skyOcclusion.factor);
         specularIndirect *= specularOcclusion;
     }
     
-    vec3 lightingIndirect = diffuseIndirect + specularIndirect;
+    vec3 lightingIndirect = diffuseIndirect;// + specularIndirect;
     
     //direct specular
 	const float D = D_GGX(NoH, r);
@@ -345,6 +348,7 @@ void main(){
         multiScatteringLobe = vec3(0.f);
     }
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
-    
+
     color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
+	//color = irradiance;
 }

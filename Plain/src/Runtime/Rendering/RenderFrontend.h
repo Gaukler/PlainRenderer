@@ -36,6 +36,7 @@ struct ShadingConfig {
 };
 
 enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2, Bicubic5Tap=3, Bicubic1Tap=4 };
+enum class SDFDebugMode : int { None=0, VisualizeSDF=1, VisualizeIndirectDiffuse=2 };
 
 struct TemporalFilterSettings {
     bool enabled = true;
@@ -85,7 +86,7 @@ struct FrameRenderTargets {
     ImageHandle motionBuffer;
     ImageHandle depthBuffer;
     FramebufferHandle colorFramebuffer;
-    FramebufferHandle motionFramebuffer;
+    FramebufferHandle prepassFramebuffer;
 };
 
 class RenderFrontend {
@@ -128,6 +129,7 @@ private:
     void renderDepthPrepass(const FramebufferHandle framebuffer) const;
     void computeDepthPyramid(const ImageHandle depthBuffer) const;
     void computeSunLightMatrices() const;
+	void diffuseSDFTrace(const int sceneRenderTargetIndex) const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const;
     void copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const; //input must be R11G11B10
     void computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
@@ -197,7 +199,7 @@ private:
     ShadingConfig m_shadingConfig;
     TemporalFilterSettings m_temporalFilterSettings;
     AtmosphereSettings m_atmosphereSettings;
-    bool m_renderSDFDebug = false;
+	SDFDebugMode m_sdfDebugMode = SDFDebugMode::None;
 
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
@@ -229,6 +231,7 @@ private:
     RenderPassHandle m_sdfDebugPass;
 	RenderPassHandle m_materialVoxelizationPass;
 	RenderPassHandle m_materialVoxelizationToImagePass;
+	RenderPassHandle m_diffuseSDFTracePass;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -249,6 +252,8 @@ private:
     ImageHandle m_sceneSDF;
 	ImageHandle m_sceneMaterialVoxelTexture;
 	ImageHandle m_materialVoxelizationDummyTexture;	//currently rendering without attachments not supported, use dummy
+	ImageHandle m_indirectDiffuseBuffer;
+	ImageHandle m_worldSpaceNormalBuffer;
 
     std::vector<ImageHandle> m_noiseTextures;
     uint32_t m_noiseTextureIndex = 0;
@@ -263,6 +268,7 @@ private:
     SamplerHandle m_sampler_linearClamp;
     SamplerHandle m_sampler_nearestClamp;
     SamplerHandle m_sampler_linearWhiteBorder;
+	SamplerHandle m_sampler_nearestRepeat;
 
     FramebufferHandle m_shadowCascadeFramebuffers[4];
     FramebufferHandle m_skyShadowFramebuffer;

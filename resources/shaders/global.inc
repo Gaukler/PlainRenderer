@@ -26,7 +26,8 @@ layout(set=0, binding = 3) uniform sampler g_sampler_linearRepeat;
 layout(set=0, binding = 4) uniform sampler g_sampler_linearClamp;
 layout(set=0, binding = 5) uniform sampler g_sampler_nearestClamp;
 layout(set=0, binding = 6) uniform sampler g_sampler_linearWhiteBorder;
+layout(set=0, binding = 7) uniform sampler g_sampler_nearestRepeat;
 
-layout(set=0, binding = 7) uniform texture2D g_noiseTexture;
+layout(set=0, binding = 8) uniform texture2D g_noiseTexture;
 
 float pi = 3.1415926535f;

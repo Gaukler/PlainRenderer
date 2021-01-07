@@ -62,7 +62,8 @@ const uint32_t globalSamplerLinearRepeatBinding         = 3;
 const uint32_t globalSamplerLinearClampBinding          = 4;
 const uint32_t globalSamplerNearestClampBinding         = 5;
 const uint32_t globalSamplerLinearWhiteBorderBinding    = 6;
-const uint32_t globalNoiseTextureBindingBinding         = 7;
+const uint32_t globalSamplerNearestRepeatBinding		= 7;
+const uint32_t globalNoiseTextureBindingBinding         = 8;
 
 const glm::uvec3 sceneMaterialVoxelTextureResolution = glm::uvec3(64);
 
@@ -237,9 +238,11 @@ void RenderFrontend::prepareNewFrame() {
             m_historyBuffers[0],
             m_historyBuffers[1],
             m_sceneLuminance,
-            m_lastFrameLuminance}, 
+            m_lastFrameLuminance,
+			m_indirectDiffuseBuffer,
+			m_worldSpaceNormalBuffer},
             m_screenWidth, m_screenHeight);
-        gRenderBackend.resizeImages({ m_minMaxDepthPyramid}, m_screenWidth / 2, m_screenHeight / 2);
+        gRenderBackend.resizeImages({ m_minMaxDepthPyramid }, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
 
         uint32_t threadgroupCount = 0;
@@ -297,6 +300,7 @@ void RenderFrontend::setupGlobalShaderInfo() {
     globalLayout.samplerBindings.push_back(globalSamplerLinearClampBinding);
     globalLayout.samplerBindings.push_back(globalSamplerNearestClampBinding);
     globalLayout.samplerBindings.push_back(globalSamplerLinearWhiteBorderBinding);
+	globalLayout.samplerBindings.push_back(globalSamplerNearestRepeatBinding);
     
     gRenderBackend.setGlobalDescriptorSetLayout(globalLayout);
 }
@@ -320,9 +324,10 @@ void RenderFrontend::prepareRenderpasses(){
     renderSunShadowCascades();
     computeColorBufferHistogram(lastRenderTarget.colorBuffer);
     computeExposure();
-    renderDepthPrepass(currentRenderTarget.motionFramebuffer);
+    renderDepthPrepass(currentRenderTarget.prepassFramebuffer);
     computeDepthPyramid(currentRenderTarget.depthBuffer);
     computeSunLightMatrices();
+	diffuseSDFTrace(sceneRenderTargetIndex);
     renderForwardShading(preparationPasses, currentRenderTarget.colorFramebuffer);
 
     const bool drawDebugPass =
@@ -362,16 +367,18 @@ void RenderFrontend::prepareRenderpasses(){
         currentSrc = m_postProcessBuffers[1];        
     }
 
-    if (m_renderSDFDebug) {
+    if (m_sdfDebugMode == SDFDebugMode::VisualizeSDF) {
         const ImageResource targetImageResource(m_postProcessBuffers[0], 0, 0);
-        const ImageResource sdfImageResource(m_sceneSDF, 0, 1);
+        const ImageResource srcImageResource(m_sceneSDF, 0, 1);
         const UniformBufferResource sdfInfoBufferResource(m_sdfVolumeInfoBuffer, 2);
 		const ImageResource materialTextureResource(m_sceneMaterialVoxelTexture, 0, 3);
 
         RenderPassExecution exe;
         exe.handle = m_sdfDebugPass;
         exe.resources.storageImages = { targetImageResource };
-        exe.resources.sampledImages = { sdfImageResource, materialTextureResource };
+		exe.resources.sampledImages = { srcImageResource, materialTextureResource,
+			ImageResource(m_skyLut, 0, 5)
+		};
         exe.resources.uniformBuffers = { sdfInfoBufferResource };
 		exe.resources.storageBuffers = {
 			StorageBufferResource(m_lightBuffer, true, 4)
@@ -386,6 +393,10 @@ void RenderFrontend::prepareRenderpasses(){
         currentPass = m_sdfDebugPass;
         currentSrc = m_postProcessBuffers[0];
     }
+	else if (m_sdfDebugMode == SDFDebugMode::VisualizeIndirectDiffuse) {
+		currentPass = m_diffuseSDFTracePass;
+		currentSrc = m_indirectDiffuseBuffer;
+	}
 
     computeTonemapping(currentPass, currentSrc);
 }
@@ -863,6 +874,36 @@ void RenderFrontend::computeSunLightMatrices() const{
     gRenderBackend.setRenderPassExecution(exe);
 }
 
+void RenderFrontend::diffuseSDFTrace(const int sceneRenderTargetIndex) const {
+
+	RenderPassExecution exe;
+	exe.handle = m_diffuseSDFTracePass;
+	exe.resources.storageImages = {
+		ImageResource(m_indirectDiffuseBuffer, 0, 0)
+	};
+	exe.resources.sampledImages = {
+		ImageResource(m_sceneSDF, 0, 1),
+		ImageResource(m_sceneMaterialVoxelTexture, 0, 2),
+		ImageResource(m_frameRenderTargets[sceneRenderTargetIndex].depthBuffer, 0, 3),
+		ImageResource(m_worldSpaceNormalBuffer, 0, 4),
+		ImageResource(m_skyLut, 0, 7)
+	};
+	exe.resources.uniformBuffers = {
+		UniformBufferResource(m_sdfVolumeInfoBuffer, 5)
+	};
+	exe.resources.storageBuffers = {
+		StorageBufferResource(m_lightBuffer, true, 6)
+	};
+
+	const float localThreadSize = 8.f;
+	const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(glm::vec2(m_screenWidth, m_screenHeight) / localThreadSize));
+	exe.dispatchCount[0] = dispatchCount.x;
+	exe.dispatchCount[1] = dispatchCount.y;
+	exe.dispatchCount[2] = 1;
+
+	gRenderBackend.setRenderPassExecution(exe);
+}
+
 void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const {
     const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 1);
     const auto brdfLutResource = ImageResource(m_brdfLut, 0, 3);
@@ -877,7 +918,8 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     mainPassExecution.handle = m_mainPass;
     mainPassExecution.framebuffer = framebuffer;
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
-    mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource };
+    mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource,
+		ImageResource(m_indirectDiffuseBuffer, 0, 15)};
     mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
 
     //add shadow map cascade resources
@@ -886,7 +928,7 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
         mainPassExecution.resources.sampledImages.push_back(shadowMapResource);
     }
 
-    mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass, m_skyDiffuseConvolutionPass };
+    mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass, m_skyDiffuseConvolutionPass, m_diffuseSDFTracePass };
     mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
     mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_skySpecularConvolutionPerMipPasses.begin(), m_skySpecularConvolutionPerMipPasses.end());
     mainPassExecution.parents.insert(mainPassExecution.parents.begin(), externalDependencies.begin(), externalDependencies.end());
@@ -1478,7 +1520,8 @@ void RenderFrontend::updateGlobalShaderInfo() {
         SamplerResource(m_sampler_linearRepeat,         globalSamplerLinearRepeatBinding),
         SamplerResource(m_sampler_linearClamp,          globalSamplerLinearClampBinding),
         SamplerResource(m_sampler_nearestClamp,         globalSamplerNearestClampBinding),
-        SamplerResource(m_sampler_linearWhiteBorder,    globalSamplerLinearWhiteBorderBinding)
+        SamplerResource(m_sampler_linearWhiteBorder,    globalSamplerLinearWhiteBorderBinding),
+		SamplerResource(m_sampler_nearestRepeat,		globalSamplerNearestRepeatBinding),
     };
     globalResources.sampledImages = { ImageResource(m_noiseTextures[m_noiseTextureIndex], 0, globalNoiseTextureBindingBinding) };
     gRenderBackend.setGlobalDescriptorSetResources(globalResources);
@@ -1755,6 +1798,36 @@ void RenderFrontend::initImages() {
 
 		m_materialVoxelizationDummyTexture = gRenderBackend.createImage(desc);
 	}
+	//indirect diffuse buffer
+	{
+		ImageDescription desc;
+		desc.width = m_screenWidth;
+		desc.height = m_screenHeight;
+		desc.depth = 1;
+		desc.type = ImageType::Type2D;
+		desc.format = ImageFormat::R11G11B10_uFloat;
+		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+		desc.mipCount = MipCount::One;
+		desc.manualMipCount = 1;
+		desc.autoCreateMips = false;
+
+		m_indirectDiffuseBuffer = gRenderBackend.createImage(desc);
+	}
+	//world space normal buffer
+	{
+		ImageDescription desc;
+		desc.width = m_screenWidth;
+		desc.height = m_screenHeight;
+		desc.depth = 1;
+		desc.type = ImageType::Type2D;
+		desc.format = ImageFormat::RGBA8;
+		desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
+		desc.mipCount = MipCount::One;
+		desc.manualMipCount = 1;
+		desc.autoCreateMips = false;
+
+		m_worldSpaceNormalBuffer = gRenderBackend.createImage(desc);
+	}
 }
 
 void RenderFrontend::initSamplers(){
@@ -1831,6 +1904,17 @@ void RenderFrontend::initSamplers(){
 
         m_sampler_linearWhiteBorder = gRenderBackend.createSampler(desc);
     }
+	//nearest repeat
+	{
+		SamplerDescription desc;
+		desc.interpolation = SamplerInterpolation::Nearest;
+		desc.maxMip = 20;
+		desc.useAnisotropy = false;
+		desc.wrapping = SamplerWrapping::Repeat;
+		desc.borderColor = SamplerBorderColor::Black;
+
+		m_sampler_nearestRepeat = gRenderBackend.createSampler(desc);
+	}
 }
 
 void RenderFrontend::initFramebuffers() {
@@ -1943,15 +2027,19 @@ void RenderFrontend::initRenderTargets() {
             motionTarget.image = m_frameRenderTargets[i].motionBuffer;
             motionTarget.mipLevel = 0;
 
+			FramebufferTarget normalTarget;
+			normalTarget.image = m_worldSpaceNormalBuffer;
+			normalTarget.mipLevel = 0;
+
             FramebufferTarget depthTarget;
             depthTarget.image = m_frameRenderTargets[i].depthBuffer;
             depthTarget.mipLevel = 0;
 
             FramebufferDescription desc;
             desc.compatibleRenderpass = m_depthPrePass;
-            desc.targets = { motionTarget, depthTarget };
+            desc.targets = { motionTarget, normalTarget, depthTarget };
 
-            m_frameRenderTargets[i].motionFramebuffer = gRenderBackend.createFramebuffer(desc);
+            m_frameRenderTargets[i].prepassFramebuffer = gRenderBackend.createFramebuffer(desc);
         }
     }
 }
@@ -2460,9 +2548,10 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     {
         Attachment depthAttachment(ImageFormat::Depth32, AttachmentLoadOp::Clear);
         Attachment velocityAttachment(ImageFormat::RG16_sNorm, AttachmentLoadOp::Clear);
+		Attachment normalAttachment(ImageFormat::RGBA8, AttachmentLoadOp::Clear);
 
         GraphicPassDescription desc;
-        desc.attachments = { velocityAttachment, depthAttachment };
+        desc.attachments = { velocityAttachment, normalAttachment, depthAttachment };
         desc.blending = BlendState::None;
         desc.depthTest.function = DepthFunction::GreaterEqual;
         desc.depthTest.write = true;
@@ -2585,13 +2674,19 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
 		m_materialVoxelizationPass = gRenderBackend.createGraphicPass(desc);
 	}
-
 	//material voxelization buffer to image pass
 	{
 		ComputePassDescription desc;
 		desc.name = "Material voxelization to image";
 		desc.shaderDescription.srcPathRelative = "materialVoxelizationToImage.comp";
 		m_materialVoxelizationToImagePass = gRenderBackend.createComputePass(desc);
+	}
+	//sdf indirect lighting
+	{
+		ComputePassDescription desc;
+		desc.name = "Indirect SDF lighting";
+		desc.shaderDescription.srcPathRelative = "sdfDiffuseTrace.comp";
+		m_diffuseSDFTracePass = gRenderBackend.createComputePass(desc);
 	}
 }
 
@@ -2702,7 +2797,8 @@ void RenderFrontend::drawUi() {
 
     ImGui::Begin("Rendering");
 
-	ImGui::Checkbox("SDF debug", &m_renderSDFDebug);
+	const char* sdfDebugOptions[] = { "None", "Visualize SDF", "Indirect diffuse" };
+	ImGui::Combo("SDF debug mode", (int*)&m_sdfDebugMode, sdfDebugOptions, 3);
 
     //Temporal filter Settings
     if(ImGui::CollapsingHeader("Temporal filter settings")){

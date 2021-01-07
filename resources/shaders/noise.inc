@@ -1,8 +1,8 @@
 //from: "Next Generation Post Processing in Call Of Duty Advanced Warfare" slide page 123
-//float interleavedGradientNoise(vec2 uv){
-//    vec3 magic = vec3(0.06711056, 0.00583715, 62.9829189);
-//    return fract(magic.z * fract(dot(uv, magic.xy)));
-//}
+float interleavedGradientNoise(vec2 uv){
+    vec3 magic = vec3(0.06711056, 0.00583715, 62.9829189);
+    return fract(magic.z * fract(dot(uv, magic.xy)));
+}
 
 //from: https://www.shadertoy.com/view/XdGfRR, by David Hoskins
 //recommended in https://www.shadertoy.com/view/Xt3cDn, as a fast but low quality hash

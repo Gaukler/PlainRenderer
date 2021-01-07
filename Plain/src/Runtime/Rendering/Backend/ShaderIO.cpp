@@ -6,7 +6,9 @@
 bool loadShader(const std::filesystem::path pathAbsolute, std::vector<uint32_t>* outSpirV) {
     std::vector<char> shaderGLSL;
     bool success = loadTextFile(pathAbsolute, &shaderGLSL);
-    success &= compileGLSLToSPIRV(shaderGLSL, pathAbsolute, outSpirV);
+	if (success) {
+		success &= compileGLSLToSPIRV(shaderGLSL, pathAbsolute, outSpirV);
+	}
     if (!success) {
         return false;
     }

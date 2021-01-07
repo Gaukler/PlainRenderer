@@ -113,3 +113,9 @@ vec2 computeLutUV(float height, float atmoshphereHeight, vec3 up, vec3 direction
     lutUV.y = dot(up, direction) * 0.5 + 0.5;
     return lutUV;
 }
+
+vec3 sampleSkyLut(vec3 V, texture2D skyLut){
+	vec2 uv = toSkyLut(V);
+    uv.y = clamp(uv.y, 0.005f, 0.995); //avoid wrapping artifact at extreme angles
+    return texture(sampler2D(skyLut, g_sampler_linearRepeat), uv).rgb;
+}
