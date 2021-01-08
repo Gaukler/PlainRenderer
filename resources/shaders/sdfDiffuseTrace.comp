@@ -64,7 +64,7 @@ void main(){
 
 	int samples = 24;
 	for(int i = 0; i < samples; i++){
-        vec2 xi = hammersley2d(4, samples);
+        vec2 xi = hammersley2d(i, samples);
 		vec3 L = importanceSampleCosineRotated(xi, N, noise);
 
 		SDFTrace trace = sdfTrace(rayOrigin, L, sdfInfo, sdfTexture, sdfThreshold, sdfMin, sdfMax);
