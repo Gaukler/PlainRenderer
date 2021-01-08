@@ -48,8 +48,13 @@ void main(){
 	vec3 sdfMin = sdfInfo.offset.xyz - sdfInfo.extends.xyz * 0.5f;
 	vec3 sdfMax = sdfInfo.offset.xyz + sdfInfo.extends.xyz * 0.5f;
 
-	vec3 rayOrigin = pWorld + N * sdfThreshold;
-	//rayOrigin = pWorld + normalFromSDF(worldPositionToVolume(pWorld, sdfInfo.offset.xyz, sdfInfo.extends.xyz), sdfInfo, sdfTexture) * sdfThreshold;
+	vec3 rayOrigin = pWorld + N * 0.2;
+	if(sampleSDF(worldPositionToVolume(rayOrigin, sdfInfo.offset.xyz, sdfInfo.extends.xyz), sdfTexture) < sdfThreshold){
+		//bias not enough to move point out of mesh
+		//ignore
+		imageStore(imageOut, imageCoordinate, vec4(vec3(0, 0, 0), 1.f));
+		return;
+	}
 
 	vec3 color = vec3(0.f);
 	
@@ -57,9 +62,9 @@ void main(){
 	float noise = texture(sampler2D(g_noiseTexture, g_sampler_nearestRepeat), noiseUV).r; 
 	noise *= 2 * pi;
 
-	int samples = 6;
+	int samples = 24;
 	for(int i = 0; i < samples; i++){
-        vec2 xi = hammersley2d(i, samples);
+        vec2 xi = hammersley2d(4, samples);
 		vec3 L = importanceSampleCosineRotated(xi, N, noise);
 
 		SDFTrace trace = sdfTrace(rayOrigin, L, sdfInfo, sdfTexture, sdfThreshold, sdfMin, sdfMax);

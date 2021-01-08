@@ -119,8 +119,6 @@ struct SDFTrace{
 };
 
 SDFTrace sdfTrace(vec3 rayOrigin, vec3 rayDirection, VolumeInfo sdfInfo, texture3D sdfTexture, float sdfThreshold, vec3 sdfMin, vec3 sdfMax){
-	
-	bool leftSurface = false;
 
 	SDFTrace result;
 	result.hit = false;
@@ -143,8 +141,6 @@ SDFTrace sdfTrace(vec3 rayOrigin, vec3 rayDirection, VolumeInfo sdfInfo, texture
 		d = sampleSDF(samplePos, sdfTexture);
 
 		result.hit = d < sdfThreshold;
-		leftSurface = leftSurface || !result.hit;
-		result.hit = result.hit && leftSurface;
 		
 		if(result.hit){
 			break;

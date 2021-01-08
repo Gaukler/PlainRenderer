@@ -22,11 +22,12 @@ vec3 importanceSampleGGX(vec2 xi, float r, vec3 N){
 
 vec3 importanceSampleCosine(vec2 xi, vec3 N){
     
-    float sinTheta = sqrt(xi.x);
-    float phi = 2.f * pi * xi.y;
-    
-    vec3 sampleHemisphere = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, sqrt(1.f - xi.x));
-    
+	float phi = 2.f * pi * xi.y;
+
+	float cosTheta = sqrt(xi.x);
+	float sinTheta = sqrt(1 - xi.x);
+	vec3 sampleHemisphere = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+
     /*
 	orient sample into world space
 	*/
@@ -44,22 +45,21 @@ vec3 importanceSampleCosine(vec2 xi, vec3 N){
 
 //basis rotation must be between 0 and 2 * pi
 vec3 importanceSampleCosineRotated(vec2 xi, vec3 N, float basisRotation){
-    
-    float sinTheta = sqrt(xi.x);
-    float phi = 2.f * pi * xi.y;
-    
-    vec3 sampleHemisphere = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, sqrt(1.f - xi.x));
+
+    float phi = 2.f * pi * xi.y + basisRotation;
+
+	float cosTheta = sqrt(xi.x);
+	float sinTheta = sqrt(1 - xi.x);
+
+	vec3 sampleHemisphere = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
     
     /*
 	orient sample into world space
 	*/
-    vec3 up = abs(N.z) < 0.999 ? vec3(0.f, 0.f, 1.f) : vec3(1.f, 0.f, 0.f);
-	vec3 tangentBasis = normalize(cross(up, N));
-	vec3 bitangentBasis = cross(N, tangentBasis);
+    vec3 up = abs(N.z) < 0.999 ? vec3(0.f, 0.f, 1.f) : vec3(1.f, 0.f, 0.f);    
+	vec3 tangent = normalize(cross(up, N));
+	vec3 bitangent = cross(N, tangent);
 
-	vec3 tangent	= cos(basisRotation) * tangentBasis + sin(basisRotation) * bitangentBasis;
-	vec3 bitangent	= sin(basisRotation) * tangentBasis + cos(basisRotation) * bitangentBasis;
-    
     vec3 sampleWorld = vec3(0);
 	sampleWorld += sampleHemisphere.x * tangent;
 	sampleWorld += sampleHemisphere.y * bitangent;
