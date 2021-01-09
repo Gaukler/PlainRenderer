@@ -130,6 +130,7 @@ private:
     void computeDepthPyramid(const ImageHandle depthBuffer) const;
     void computeSunLightMatrices() const;
 	void diffuseSDFTrace(const int sceneRenderTargetIndex) const;
+	void filterIndirectDiffuse(const int sceneRenderTargetIndex) const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const;
     void copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const; //input must be R11G11B10
     void computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
@@ -232,6 +233,7 @@ private:
 	RenderPassHandle m_materialVoxelizationPass;
 	RenderPassHandle m_materialVoxelizationToImagePass;
 	RenderPassHandle m_diffuseSDFTracePass;
+	RenderPassHandle m_indirectDiffuseFilterPass;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -252,8 +254,9 @@ private:
     ImageHandle m_sceneSDF;
 	ImageHandle m_sceneMaterialVoxelTexture;
 	ImageHandle m_materialVoxelizationDummyTexture;	//currently rendering without attachments not supported, use dummy
-	ImageHandle m_indirectDiffuseBuffer;
-	ImageHandle m_worldSpaceNormalBuffer;
+	ImageHandle m_indirectDiffuseImage;
+	ImageHandle m_indirectDiffuseFilteredImage;
+	ImageHandle m_worldSpaceNormalImage;
 
     std::vector<ImageHandle> m_noiseTextures;
     uint32_t m_noiseTextureIndex = 0;

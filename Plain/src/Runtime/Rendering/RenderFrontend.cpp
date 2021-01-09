@@ -239,8 +239,9 @@ void RenderFrontend::prepareNewFrame() {
             m_historyBuffers[1],
             m_sceneLuminance,
             m_lastFrameLuminance,
-			m_indirectDiffuseBuffer,
-			m_worldSpaceNormalBuffer},
+			m_indirectDiffuseImage,
+			m_indirectDiffuseFilteredImage,
+			m_worldSpaceNormalImage},
             m_screenWidth, m_screenHeight);
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid }, m_screenWidth / 2, m_screenHeight / 2);
         m_didResolutionChange = false;
@@ -328,6 +329,7 @@ void RenderFrontend::prepareRenderpasses(){
     computeDepthPyramid(currentRenderTarget.depthBuffer);
     computeSunLightMatrices();
 	diffuseSDFTrace(sceneRenderTargetIndex);
+	filterIndirectDiffuse(sceneRenderTargetIndex);
     renderForwardShading(preparationPasses, currentRenderTarget.colorFramebuffer);
 
     const bool drawDebugPass =
@@ -395,7 +397,7 @@ void RenderFrontend::prepareRenderpasses(){
     }
 	else if (m_sdfDebugMode == SDFDebugMode::VisualizeIndirectDiffuse) {
 		currentPass = m_diffuseSDFTracePass;
-		currentSrc = m_indirectDiffuseBuffer;
+		currentSrc = m_indirectDiffuseFilteredImage;
 	}
 
     computeTonemapping(currentPass, currentSrc);
@@ -879,13 +881,13 @@ void RenderFrontend::diffuseSDFTrace(const int sceneRenderTargetIndex) const {
 	RenderPassExecution exe;
 	exe.handle = m_diffuseSDFTracePass;
 	exe.resources.storageImages = {
-		ImageResource(m_indirectDiffuseBuffer, 0, 0)
+		ImageResource(m_indirectDiffuseImage, 0, 0)
 	};
 	exe.resources.sampledImages = {
 		ImageResource(m_sceneSDF, 0, 1),
 		ImageResource(m_sceneMaterialVoxelTexture, 0, 2),
 		ImageResource(m_frameRenderTargets[sceneRenderTargetIndex].depthBuffer, 0, 3),
-		ImageResource(m_worldSpaceNormalBuffer, 0, 4),
+		ImageResource(m_worldSpaceNormalImage, 0, 4),
 		ImageResource(m_skyLut, 0, 7)
 	};
 	exe.resources.uniformBuffers = {
@@ -893,6 +895,27 @@ void RenderFrontend::diffuseSDFTrace(const int sceneRenderTargetIndex) const {
 	};
 	exe.resources.storageBuffers = {
 		StorageBufferResource(m_lightBuffer, true, 6)
+	};
+
+	const float localThreadSize = 8.f;
+	const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(glm::vec2(m_screenWidth, m_screenHeight) / localThreadSize));
+	exe.dispatchCount[0] = dispatchCount.x;
+	exe.dispatchCount[1] = dispatchCount.y;
+	exe.dispatchCount[2] = 1;
+
+	gRenderBackend.setRenderPassExecution(exe);
+}
+
+void RenderFrontend::filterIndirectDiffuse(const int sceneRenderTargetIndex) const {
+	RenderPassExecution exe;
+	exe.handle = m_indirectDiffuseFilterPass;
+
+	exe.resources.storageImages = {
+		ImageResource(m_indirectDiffuseFilteredImage, 0, 0)
+	};
+	exe.resources.sampledImages = {
+		ImageResource(m_indirectDiffuseImage, 0, 1),
+		ImageResource(m_frameRenderTargets[sceneRenderTargetIndex].depthBuffer, 0, 2)
 	};
 
 	const float localThreadSize = 8.f;
@@ -919,7 +942,7 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     mainPassExecution.framebuffer = framebuffer;
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
     mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource,
-		ImageResource(m_indirectDiffuseBuffer, 0, 15)};
+		ImageResource(m_indirectDiffuseFilteredImage, 0, 15)};
     mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
 
     //add shadow map cascade resources
@@ -1798,7 +1821,7 @@ void RenderFrontend::initImages() {
 
 		m_materialVoxelizationDummyTexture = gRenderBackend.createImage(desc);
 	}
-	//indirect diffuse buffer
+	//indirect diffuse buffer and filtered version
 	{
 		ImageDescription desc;
 		desc.width = m_screenWidth;
@@ -1811,7 +1834,8 @@ void RenderFrontend::initImages() {
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_indirectDiffuseBuffer = gRenderBackend.createImage(desc);
+		m_indirectDiffuseImage = gRenderBackend.createImage(desc);
+		m_indirectDiffuseFilteredImage = gRenderBackend.createImage(desc);
 	}
 	//world space normal buffer
 	{
@@ -1826,7 +1850,7 @@ void RenderFrontend::initImages() {
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_worldSpaceNormalBuffer = gRenderBackend.createImage(desc);
+		m_worldSpaceNormalImage = gRenderBackend.createImage(desc);
 	}
 }
 
@@ -2028,7 +2052,7 @@ void RenderFrontend::initRenderTargets() {
             motionTarget.mipLevel = 0;
 
 			FramebufferTarget normalTarget;
-			normalTarget.image = m_worldSpaceNormalBuffer;
+			normalTarget.image = m_worldSpaceNormalImage;
 			normalTarget.mipLevel = 0;
 
             FramebufferTarget depthTarget;
@@ -2687,6 +2711,13 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 		desc.name = "Indirect SDF lighting";
 		desc.shaderDescription.srcPathRelative = "sdfDiffuseTrace.comp";
 		m_diffuseSDFTracePass = gRenderBackend.createComputePass(desc);
+	}
+	//indirect diffuse filter
+	{
+		ComputePassDescription desc;
+		desc.name = "Indirect diffuse filter";
+		desc.shaderDescription.srcPathRelative = "filterIndirectDiffuse.comp";
+		m_indirectDiffuseFilterPass = gRenderBackend.createComputePass(desc);
 	}
 }
 

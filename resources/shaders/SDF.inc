@@ -12,7 +12,7 @@ float sampleSDF(vec3 uv, texture3D sdfTexture){
 vec3 normalFromSDF(vec3 uv, VolumeInfo sdfInfo, texture3D sdfTexture){
 	float extendsMax = max(sdfInfo.extends.x, max(sdfInfo.extends.y, sdfInfo.extends.z));
 	vec3 extendsNormalized = sdfInfo.extends.xyz / extendsMax;
-	vec3 epsilon = vec3(0.1f) / textureSize(sampler3D(sdfTexture, g_sampler_linearClamp), 0) / extendsNormalized; //voxels are anisotropic so epsilon must be scaled per axis
+	vec3 epsilon = vec3(0.8f) / textureSize(sampler3D(sdfTexture, g_sampler_linearClamp), 0) / extendsNormalized; //voxels are anisotropic so epsilon must be scaled per axis
 	return normalize(vec3(
 		sampleSDF(uv + vec3(epsilon.x, 0, 0), sdfTexture) - sampleSDF(uv - vec3(epsilon.x, 0, 0), sdfTexture),
 		sampleSDF(uv + vec3(0, epsilon.y, 0), sdfTexture) - sampleSDF(uv - vec3(0, epsilon.y, 0), sdfTexture),
