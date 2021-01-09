@@ -3,12 +3,24 @@
 #extension GL_GOOGLE_include_directive : enable
 
 #include "global.inc"
+#include "linearDepth.inc"
+#include "screenToWorld.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 0, r11f_g11f_b10f) 	uniform image2D		imageOut;
 layout(set=1, binding = 1) 	                uniform texture2D	textureIn;
 layout(set=1, binding = 2) 	                uniform texture2D	depthTexture;
+
+vec3 pixelToWorld(vec2 uv){
+	float depth = texture(sampler2D(depthTexture, g_sampler_linearRepeat), uv).r;
+	float depthLinear = linearizeDepth(depth, g_nearPlane, g_farPlane);
+
+	vec2 pixelNDC = uv * 2 - 1;
+	pixelNDC.y *= -1;
+	vec3 V = calculateViewDirectionFromPixel(pixelNDC, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
+	return g_cameraPosition.xyz + V / dot(V, -g_cameraForward.xyz) * depthLinear;
+}
 
 void main(){
 	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
@@ -17,28 +29,63 @@ void main(){
 	vec2 uv = (vec2(iUV) + 0.5f) * texelSize;
 	vec3 color = vec3(0.f);
 
+	vec3 pCenter = pixelToWorld(uv);
+	vec3 pRight = pixelToWorld(uv + vec2(1, 0) * texelSize);
+	vec3 pUp	= pixelToWorld(uv + vec2(0, 1) * texelSize);
+
+	vec3 tangent	= normalize(pCenter - pRight);
+	vec3 bitangent	= normalize(pCenter - pUp);
+	vec3 N = normalize(cross(bitangent, tangent));
+
 	int sampleCount = 16;
 
-	float radius = 10.f;
+	//per pixel noise used for rotation
+	//costs a lot of performance due to worse texture cache hit rate
+	//might remove later
+	//discussed in "Exploring the Ray Traced Future in Metro Exodus"
+	vec2 noiseUV = vec2(iUV) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
+	float noise = texture(sampler2D(g_noiseTexture, g_sampler_nearestRepeat), noiseUV).r; 
+	noise *= 2 * pi;
+
+	float weightTotal = 0.f;
+
+	float radiusWorld = 0.1f;
 	for(int i = 0; i < sampleCount; i++){
 		float d = (i + 0.5f) / sampleCount;
 		d = sqrt(d);
-		float angle = 2 * pi * i / sampleCount;
+		float angle = 2 * pi * i / float(sampleCount) + noise;
 		vec2 offset = vec2(cos(angle), sin(angle));
-		offset *= radius * texelSize;
 
-		vec2 sampleUV = uv + offset;
+		//samples taken in world space
+		//see "Exploring the Ray Traced Future in Metro Exodus"
+		vec3 sampleWorld = pCenter + radiusWorld * d * (offset.x * tangent + offset.y * bitangent);
+		vec4 sampleProjected = g_viewProjection * vec4(sampleWorld, 1);
+
+		vec2 sampleUV = sampleProjected.xy / sampleProjected.w;
+		sampleUV = sampleUV * 0.5 + 0.5;
+
+		//uncomment to filter in screen space with 10 pixel radius
+		//sampleUV = uv + offset * texelSize * 10;
+
 		//mirror uv at borders
 		sampleUV.x = sampleUV.x < 0.f ? uv.x - offset.x : sampleUV.x;
 		sampleUV.y = sampleUV.y < 0.f ? uv.y - offset.y : sampleUV.y;
 		sampleUV.x = sampleUV.x > 1.f ? uv.x - offset.x : sampleUV.x;
 		sampleUV.y = sampleUV.y > 1.f ? uv.y - offset.y : sampleUV.y;
 
-		color += texture(sampler2D(textureIn, g_sampler_linearRepeat), sampleUV).rgb;
-	}
+		//sample are weighed with distance from tangent plane
+		//this avoids bleeding light from foreground/background
+		//see "Exploring the Ray Traced Future in Metro Exodus"
+		vec3 pixelWorld = pixelToWorld(sampleUV);
+		float distanceToTangentPlane = abs(dot(N, pixelWorld - pCenter));
+		float maxDistance = 0.1f;
+		float weight = clamp(maxDistance / max(distanceToTangentPlane, 0.0001f), 0, 1);
+		weight *= weight;	//squared falloff
+		weightTotal += weight;
 
-	color /= sampleCount;
-	//color = texture(sampler2D(textureIn, g_sampler_linearRepeat), uv).rgb;
-	//color = texture(sampler2D(depthTexture, g_sampler_linearRepeat), uv).rrr * 10;
+		color += weight * texture(sampler2D(textureIn, g_sampler_linearRepeat), sampleUV).rgb;
+	}
+	color /= weightTotal;
+
 	imageStore(imageOut, iUV, vec4(color, 1.f));
 }

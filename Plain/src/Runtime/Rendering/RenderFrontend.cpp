@@ -445,6 +445,8 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
         m_viewProjectionMatrix = projectionMatrix * viewMatrix;
     }
 
+	m_globalShaderInfo.viewProjection = m_viewProjectionMatrix;
+
     if (!m_freezeAndDrawCameraFrustum) {
         updateCameraFrustum();
     }

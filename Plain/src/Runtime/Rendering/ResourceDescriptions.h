@@ -158,6 +158,7 @@ struct SamplerDescription {
 };
 
 struct GlobalShaderInfo {
+	glm::mat4 viewProjection = glm::mat4(0.f);
     glm::vec4 sunDirection  = glm::vec4(0.f, -1.f, 0.f, 0.f);
     glm::vec4 cameraPos     = glm::vec4(0.f);
     glm::vec4 cameraRight   = glm::vec4(1.f, 0.f, 0.f, 0.f);
