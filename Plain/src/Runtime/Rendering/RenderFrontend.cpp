@@ -310,13 +310,22 @@ void RenderFrontend::setupGlobalShaderInfo() {
 
 void RenderFrontend::prepareRenderpasses(){
 
-    std::vector<RenderPassHandle> preparationPasses;
+    std::vector<RenderPassHandle> forwardShadingDependencies;
 
     if (m_isBRDFLutShaderDescriptionStale) {
         computeBRDFLut();
-        preparationPasses.push_back(m_brdfLutPass);
+        forwardShadingDependencies.push_back(m_brdfLutPass);
         m_isBRDFLutShaderDescriptionStale = false;
     }
+
+	if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SDFTrace) {
+		forwardShadingDependencies.push_back(m_diffuseSDFTracePass);
+		forwardShadingDependencies.push_back(m_indirectDiffuseFilterPass);
+	}
+	else if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SkyProbe) {
+		forwardShadingDependencies.push_back(m_skyDiffuseConvolutionPass);
+		forwardShadingDependencies.insert(forwardShadingDependencies.end(), m_skySpecularConvolutionPerMipPasses.begin(), m_skySpecularConvolutionPerMipPasses.end());
+	}
 
     static int sceneRenderTargetIndex;
     const FrameRenderTargets lastRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
@@ -330,9 +339,11 @@ void RenderFrontend::prepareRenderpasses(){
     renderDepthPrepass(currentRenderTarget.prepassFramebuffer);
     computeDepthPyramid(currentRenderTarget.depthBuffer);
     computeSunLightMatrices();
-	diffuseSDFTrace(sceneRenderTargetIndex);
-	filterIndirectDiffuse(sceneRenderTargetIndex);
-    renderForwardShading(preparationPasses, currentRenderTarget.colorFramebuffer);
+	if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SDFTrace) {
+		diffuseSDFTrace(sceneRenderTargetIndex);
+		filterIndirectDiffuse(sceneRenderTargetIndex);
+	}
+    renderForwardShading(forwardShadingDependencies, currentRenderTarget.colorFramebuffer);
 
     const bool drawDebugPass =
         m_freezeAndDrawCameraFrustum ||
@@ -344,8 +355,10 @@ void RenderFrontend::prepareRenderpasses(){
         renderDebugGeometry(currentRenderTarget.colorFramebuffer);
     }
     renderSky(drawDebugPass, currentRenderTarget.colorFramebuffer);
-    skyIBLConvolution();
 
+	if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SkyProbe) {
+		skyIBLConvolution();
+	}
     
     RenderPassHandle currentPass = m_sunSpritePass;
     ImageHandle currentSrc = currentRenderTarget.colorBuffer;
@@ -912,6 +925,7 @@ void RenderFrontend::diffuseSDFTrace(const int sceneRenderTargetIndex) const {
 void RenderFrontend::filterIndirectDiffuse(const int sceneRenderTargetIndex) const {
 	RenderPassExecution exe;
 	exe.handle = m_indirectDiffuseFilterPass;
+	exe.parents = { m_diffuseSDFTracePass };
 
 	exe.resources.storageImages = {
 		ImageResource(m_indirectDiffuseFiltered_Y_SH, 0, 0),
@@ -958,9 +972,8 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
         mainPassExecution.resources.sampledImages.push_back(shadowMapResource);
     }
 
-    mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass, m_skyDiffuseConvolutionPass, m_diffuseSDFTracePass };
+    mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
     mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
-    mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_skySpecularConvolutionPerMipPasses.begin(), m_skySpecularConvolutionPerMipPasses.end());
     mainPassExecution.parents.insert(mainPassExecution.parents.begin(), externalDependencies.begin(), externalDependencies.end());
 
     gRenderBackend.setRenderPassExecution(mainPassExecution);
