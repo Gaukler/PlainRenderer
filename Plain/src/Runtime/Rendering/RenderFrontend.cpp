@@ -920,7 +920,8 @@ void RenderFrontend::filterIndirectDiffuse(const int sceneRenderTargetIndex) con
 	exe.resources.sampledImages = {
 		ImageResource(m_indirectDiffuse_Y_SH, 0, 2),
 		ImageResource(m_indirectDiffuse_CoCg, 0, 3),
-		ImageResource(m_frameRenderTargets[sceneRenderTargetIndex].depthBuffer, 0, 4)
+		ImageResource(m_frameRenderTargets[sceneRenderTargetIndex].depthBuffer, 0, 4),
+		ImageResource(m_worldSpaceNormalImage, 0, 5),
 	};
 
 	const float localThreadSize = 8.f;

@@ -10,9 +10,10 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 0, rgba16f) 	uniform image2D imageOut_Y_SH;
 layout(set=1, binding = 1, rg16f) 		uniform image2D imageOut_CoCg;
-layout(set=1, binding = 2) 				uniform texture2D	texture_Y_SH;
-layout(set=1, binding = 3) 				uniform texture2D	texture_CoCg;
-layout(set=1, binding = 4) 	            uniform texture2D	depthTexture;
+layout(set=1, binding = 2) 				uniform texture2D texture_Y_SH;
+layout(set=1, binding = 3) 				uniform texture2D texture_CoCg;
+layout(set=1, binding = 4) 	            uniform texture2D depthTexture;
+layout(set=1, binding = 5) 	            uniform texture2D normalTexture;
 
 vec3 pixelToWorld(vec2 uv){
 	float depth = texture(sampler2D(depthTexture, g_sampler_linearRepeat), uv).r;
@@ -37,6 +38,7 @@ void main(){
 	vec3 tangent	= normalize(pCenter - pRight);
 	vec3 bitangent	= normalize(pCenter - pUp);
 	vec3 N = normalize(cross(bitangent, tangent));
+	N = 2 * texture(sampler2D(normalTexture, g_sampler_linearRepeat), uv).rgb - 1;
 
 	int sampleCount = 16;
 
@@ -86,6 +88,9 @@ void main(){
 		float weight = clamp(maxDistance / max(distanceToTangentPlane, 0.0001f), 0, 1);
 		weight *= weight;	//squared falloff
 		weightTotal += weight;
+
+		vec3 sampleN = 2 * texture(sampler2D(normalTexture, g_sampler_linearRepeat), sampleUV).rgb - 1;
+		weight *= max(dot(N, sampleN), 0);
 
 		result_Y_SH += weight * texture(sampler2D(texture_Y_SH, g_sampler_linearRepeat), sampleUV);
 		result_CoCg += weight * texture(sampler2D(texture_CoCg, g_sampler_linearRepeat), sampleUV).rg;
