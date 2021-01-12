@@ -25,14 +25,16 @@ struct HistogramSettings {
 //these enumb values must correspond to the shader values
 enum class DiffuseBRDF : int { Lambert = 0, Disney = 1, CoDWWII = 2, Titanfall2 = 3};
 enum class DirectSpecularMultiscattering : int { McAuley = 0, Simplified = 1, ScaledGGX = 2, None = 3};
+enum class IndirectLightingTech : int { SDFTrace, SkyProbe };
 
 struct ShadingConfig {
     DiffuseBRDF diffuseBRDF = DiffuseBRDF::CoDWWII;
     DirectSpecularMultiscattering directMultiscatter = DirectSpecularMultiscattering::McAuley;
+	IndirectLightingTech indirectLightingTech;
     bool useIndirectMultiscatter = true;
     bool useGeometryAA = true;
-    bool useSkyOcclusion = true;
-    bool useSkyOcclusionDirection = true;
+    bool skyProbeUseOcclusion = true;
+    bool skyProbeUseOcclusionDirection = true;
 };
 
 enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2, Bicubic5Tap=3, Bicubic1Tap=4 };

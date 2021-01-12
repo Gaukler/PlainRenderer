@@ -1435,18 +1435,23 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
             });
         //specular probe mip count
         constants.push_back({
-            4,                                                                                  //location
-            dataToCharArray((void*)&m_specularSkyProbeMipCount, sizeof(m_specularSkyProbeMipCount))   //value
+            4,																							//location
+            dataToCharArray((void*)&m_specularSkyProbeMipCount, sizeof(m_specularSkyProbeMipCount))		//value
             });
-        //sky occlusion
+		//indirect lighting tech
+		constants.push_back({
+				5,																											//location
+				dataToCharArray((void*)&m_shadingConfig.indirectLightingTech, sizeof(m_shadingConfig.indirectLightingTech)) //value
+			});
+        //sky probe occlusion
         constants.push_back({
-            5,                                                                              //location
-            dataToCharArray((void*)&config.useSkyOcclusion, sizeof(config.useSkyOcclusion)) //value
+            6,                                                                              //location
+            dataToCharArray((void*)&config.skyProbeUseOcclusion, sizeof(config.skyProbeUseOcclusion)) //value
             });
-        //sky occlusion direction
+        //sky probe occlusion direction
         constants.push_back({
-            6,                                                                                                  //location
-            dataToCharArray((void*)&config.useSkyOcclusionDirection, sizeof(config.useSkyOcclusionDirection))   //value
+            7,                                                                                                  //location
+            dataToCharArray((void*)&config.skyProbeUseOcclusionDirection, sizeof(config.skyProbeUseOcclusionDirection))   //value
             });
     }
 
@@ -2899,9 +2904,15 @@ void RenderFrontend::drawUi() {
             (int*)&m_shadingConfig.directMultiscatter,
             directMultiscatterBRDFOptions, 4);
 
+		const char* indirectLightingLabels[] = { "SDF trace", "Sky probe" };
+		m_isMainPassShaderDescriptionStale |= ImGui::Combo("Indirect lighting tech", (int*)&m_shadingConfig.indirectLightingTech,
+			indirectLightingLabels, 2);
+
         m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Geometric AA", &m_shadingConfig.useGeometryAA);
-        m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion", &m_shadingConfig.useSkyOcclusion);
-        m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion direction", &m_shadingConfig.useSkyOcclusionDirection);
+		if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SkyProbe) {
+			m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion", &m_shadingConfig.skyProbeUseOcclusion);
+			m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion direction", &m_shadingConfig.skyProbeUseOcclusionDirection);
+		}
     }
     //camera settings
     if (ImGui::CollapsingHeader("Camera settings")) {

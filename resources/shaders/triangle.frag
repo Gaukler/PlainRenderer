@@ -30,14 +30,15 @@ layout(constant_id = 0) const int diffuseBRDF = 0;
 layout(constant_id = 1) const int directMultiscatterBRDF = 0;
 
 layout(constant_id = 2) const bool indirectMultiscatterBRDF = false;
-
-//0: disabled
-//1: enabled
 layout(constant_id = 3) const bool geometricAA = false;
-
 layout(constant_id = 4) const uint specularProbeMipCount = 0;
-layout(constant_id = 5) const bool useSkyOcclusion = false;
-layout(constant_id = 6) const bool useSkyOcclusionDirection = false;
+
+//0: traced into textures
+//1: sky probes using occlusion volume
+layout(constant_id = 5) const int indirectLightingTech = 0;
+
+layout(constant_id = 6) const bool skyProbeUseOcclusion = false;
+layout(constant_id = 7) const bool skyProbeUseSkyOcclusionDirection = false;
 
 layout(set=1, binding = 1) 	uniform textureCube	diffuseProbe;
 
@@ -217,34 +218,49 @@ void main(){
         skyOcclusion = sampleSkyOcclusion(aoSamplePoint);
     }
     
-    //indirect specular
-    float probeLoD = specularProbeMipCount * r;
-    vec3 environmentSample = textureLod(samplerCube(specularProbe, g_sampler_linearClamp), R, probeLoD).rgb;
     vec3 fresnelAverage = f0 + (1-f0) / 21.f;
 
     vec3 irradiance;
-    if(useSkyOcclusionDirection){
-        irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), skyOcclusion.unoccludedDirection).rgb;
-    }
-    else{
-        irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), N).rgb;
-    }
+	vec3 environmentSample;
+	float r_indirect = r;	//roughness for indirect lighting might be modified to approximate look of more ambient light
 
-	vec2 screenUV = gl_FragCoord.xy / g_screenResolution;
-	vec4 irradiance_Y_SH = texture(sampler2D(indirectDiffuse_Y_SH, g_sampler_linearRepeat), screenUV);
-	float irradiance_Y = dot(irradiance_Y_SH, directionToSH_L1(N));
-	vec2 irradiance_CoCg = texture(sampler2D(indirectDiffuse_CoCg, g_sampler_linearRepeat), screenUV).rg;
+	//indirect lighting is traced into texture
+	if(indirectLightingTech == 0){
+		//diffuse
+		vec2 screenUV = gl_FragCoord.xy / g_screenResolution;
+		vec4 irradiance_Y_SH = texture(sampler2D(indirectDiffuse_Y_SH, g_sampler_linearRepeat), screenUV);
+		float irradiance_Y = dot(irradiance_Y_SH, directionToSH_L1(N));
+		vec2 irradiance_CoCg = texture(sampler2D(indirectDiffuse_CoCg, g_sampler_linearRepeat), screenUV).rg;
+		irradiance = YCoCgToLinear(vec3(irradiance_Y, irradiance_CoCg));
 
-	irradiance = YCoCgToLinear(vec3(irradiance_Y, irradiance_CoCg));
-
-	float r_indirect = r;
-	{
+		//specular
 		float SHDirectionLength = length(irradiance_Y_SH.wyz);
 		vec3 SHDirection = irradiance_Y_SH.wyz / SHDirectionLength;
 		SHDirectionLength = clamp(SHDirectionLength, 0.01, 1);
 		r_indirect = mix(r, 1, sqrt(SHDirectionLength));
 		
 		environmentSample = YCoCgToLinear(vec3(max(dot(directionToSH_L1(R), irradiance_Y_SH), 0), irradiance_CoCg));
+	}
+	else if(indirectLightingTech == 1){
+		//diffuse
+		if(skyProbeUseSkyOcclusionDirection){
+			irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), skyOcclusion.unoccludedDirection).rgb;
+		}
+		else{
+			irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), N).rgb;
+		}
+
+		//specular
+		//indirect specular
+		float probeLoD = specularProbeMipCount * r;
+		environmentSample = textureLod(samplerCube(specularProbe, g_sampler_linearClamp), R, probeLoD).rgb;
+
+		if(skyProbeUseOcclusion){
+			irradiance *= skyOcclusion.factor;
+        
+			float specularOcclusion = computeSpecularOcclusion(R, skyOcclusion.unoccludedDirection, r, skyOcclusion.factor);
+			environmentSample *= specularOcclusion;
+		}
 	}
 
 	vec3 brdfLut = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r_indirect, NoV)).rgb;
@@ -316,13 +332,6 @@ void main(){
         vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y);
         diffuseIndirect = irradiance * diffuseColor * diffuseBRDFIntegral;
         specularIndirect = singleScattering * environmentSample;
-    }
-    
-    if(useSkyOcclusion){
-        //diffuseIndirect *= skyOcclusion.factor;
-        
-        float specularOcclusion = computeSpecularOcclusion(R, skyOcclusion.unoccludedDirection, r, skyOcclusion.factor);
-        //specularIndirect *= specularOcclusion;
     }
 
     vec3 lightingIndirect = diffuseIndirect + specularIndirect;
