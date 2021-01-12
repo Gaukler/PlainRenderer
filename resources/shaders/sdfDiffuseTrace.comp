@@ -67,10 +67,15 @@ void main(){
 	float noise = texture(sampler2D(g_noiseTexture, g_sampler_nearestRepeat), noiseUV).r; 
 	noise *= 2 * pi;
 
+	uint globalInvocationIndex = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * 8;
+	uint rngState = wang_hash(globalInvocationIndex * g_frameIndex);
+
 	int samples = 1;
 	for(int i = 0; i < samples; i++){
         vec2 xi = hammersley2d(i, samples);
-		vec3 L = importanceSampleCosineRotated(xi, N, noise);
+		xi = vec2(rand(rngState), rand(rngState));
+
+		vec3 L = importanceSampleCosine(xi, N);
 
 		SDFTrace trace = sdfTrace(rayOrigin, L, sdfInfo, sdfTexture, sdfThreshold, sdfMin, sdfMax);
 

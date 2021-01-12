@@ -43,31 +43,6 @@ vec3 importanceSampleCosine(vec2 xi, vec3 N){
 	return sampleWorld;
 }
 
-//basis rotation must be between 0 and 2 * pi
-vec3 importanceSampleCosineRotated(vec2 xi, vec3 N, float basisRotation){
-
-    float phi = 2.f * pi * xi.y + basisRotation;
-
-	float cosTheta = sqrt(xi.x);
-	float sinTheta = sqrt(1 - xi.x);
-
-	vec3 sampleHemisphere = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
-    
-    /*
-	orient sample into world space
-	*/
-    vec3 up = abs(N.z) < 0.999 ? vec3(0.f, 0.f, 1.f) : vec3(1.f, 0.f, 0.f);    
-	vec3 tangent = normalize(cross(up, N));
-	vec3 bitangent = cross(N, tangent);
-
-    vec3 sampleWorld = vec3(0);
-	sampleWorld += sampleHemisphere.x * tangent;
-	sampleWorld += sampleHemisphere.y * bitangent;
-	sampleWorld += sampleHemisphere.z * N;
-	
-	return sampleWorld;
-}
-
 float radicalInverse_VdC(uint bits) {
      bits = (bits << 16u) | (bits >> 16u);
      bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);

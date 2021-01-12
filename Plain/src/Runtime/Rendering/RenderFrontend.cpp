@@ -641,6 +641,8 @@ void RenderFrontend::renderFrame() {
     if (m_minimized) {
         return;
     }
+	m_globalShaderInfo.frameIndex++;
+
     issueSkyDrawcalls();
     gRenderBackend.renderFrame(true);
 

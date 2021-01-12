@@ -19,3 +19,33 @@ vec3 hash32(vec2 q)
 	n = (n.x ^ n.y ^ n.z) * UI3;
 	return vec3(n) * UIF;
 }
+
+//from: http://www.reedbeta.com/blog/quick-and-easy-gpu-random-numbers-in-d3d11/
+//see: https://en.wikipedia.org/wiki/Xorshift#Example_implementation
+uint xorshift32(inout uint state)
+{
+    // Xorshift algorithm from George Marsaglia's paper
+    state ^= (state << 13);
+    state ^= (state >> 17);
+    state ^= (state << 5);
+    return state;
+}
+
+//from: http://www.reedbeta.com/blog/quick-and-easy-gpu-random-numbers-in-d3d11/
+uint wang_hash(uint seed)
+{
+    seed = (seed ^ 61) ^ (seed >> 16);
+    seed *= 9;
+    seed = seed ^ (seed >> 4);
+    seed *= 0x27d4eb2d;
+    seed = seed ^ (seed >> 15);
+    return seed;
+}
+
+//from Criver on the Graphics Programming Discord
+float rand(inout uint state)
+{
+    uint x = xorshift32(state);
+    state = x;
+    return float(x)*uintBitsToFloat(0x2f800004u);
+}

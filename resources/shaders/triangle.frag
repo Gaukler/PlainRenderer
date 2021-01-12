@@ -358,5 +358,5 @@ void main(){
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
 
     color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
-	color = irradiance / pi;
+	//color = irradiance / pi;
 }

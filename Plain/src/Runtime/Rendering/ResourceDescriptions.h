@@ -178,6 +178,7 @@ struct GlobalShaderInfo {
     float time = 0.f;
     float mipBias = 0.f;
     bool cameraCut = false;
+	uint32_t frameIndex = 0;
 };
 
 struct Material {
