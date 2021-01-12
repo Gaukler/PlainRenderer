@@ -72,8 +72,7 @@ void main(){
 
 	int samples = 1;
 	for(int i = 0; i < samples; i++){
-        vec2 xi = hammersley2d(i, samples);
-		xi = vec2(rand(rngState), rand(rngState));
+		vec2 xi = vec2(rand(rngState), rand(rngState));
 
 		vec3 L = importanceSampleCosine(xi, N);
 

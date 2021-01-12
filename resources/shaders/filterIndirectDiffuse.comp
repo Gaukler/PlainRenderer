@@ -90,6 +90,8 @@ void main(){
 			result_CoCg += weight * texture(sampler2D(texture_CoCg, g_sampler_linearRepeat), sampleUV).rg;
 		}
 	}
+	weightTotal = max(weightTotal, 0.00001f);
+
 	result_Y_SH /= weightTotal;
 	result_CoCg /= weightTotal;
 
