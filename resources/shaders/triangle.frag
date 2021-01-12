@@ -174,7 +174,7 @@ void main(){
     }
     
 	const float NoH = max(dot(N, H), 0);
-	const float NoL = max(dot(N, L), 0);
+	const float NoL = clamp(dot(N, L), 0, 1);
 	const float VoH = abs(dot(V, H));
     const float LoV = max(dot(L, V), 0.f);
     
@@ -292,7 +292,7 @@ void main(){
     }
     //need to account for incoming and outgoing fresnel effect
     //see: https://seblagarde.wordpress.com/2011/08/17/hello-world/#comment-2405
-    diffuseDirect *= (1.f - F_Schlick(f0, vec3(1.f), NoV)) * (1.f - F_Schlick(f0, vec3(1.f), NoL));
+    diffuseDirect *= (1.f - F_Schlick(f0, vec3(1.f), NoV)) * (1.f - (F_Schlick(f0, vec3(1.f), NoL)));
 
     vec3 diffuseIndirect;
     vec3 specularIndirect;
@@ -367,5 +367,6 @@ void main(){
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
 
     color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
+	color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
 	//color = irradiance / pi;
 }
