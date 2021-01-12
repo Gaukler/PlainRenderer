@@ -91,7 +91,7 @@ void main(){
 		}
 		vec3 YCoCg = linearToYCoCg(hitColor);
 
-		result_Y_SH += YCoCg.x * directionToSH_L1(N);
+		result_Y_SH += YCoCg.x * directionToSH_L1(L);
 		result_CoCg += YCoCg.yz;
 	}
 	result_Y_SH /= float(samples);

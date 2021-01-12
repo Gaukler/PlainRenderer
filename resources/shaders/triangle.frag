@@ -204,14 +204,55 @@ void main(){
         sunShadow = calcShadow(passPos, LoV, shadowMapCascade3, lightMatrices[cascadeIndex], 3);
     }
 	vec3 directLighting = max(dot(N, L), 0.f) * sunShadow * lightBuffer.sunColor;
-
-    //direct diffuse
-    vec3 diffuseColor = (1.f - metalic) * albedo;
+	
+    //sky occlusion
+    SkyOcclusion skyOcclusion;
+    {
+        vec3 geoN = normalize(passTBN[2]);
+        float normalOffset = 0.5f;
+        
+        vec3 aoSamplePoint = passPos;
+        aoSamplePoint += normalOffset * geoN;   
+        
+        skyOcclusion = sampleSkyOcclusion(aoSamplePoint);
+    }
     
+    //indirect specular
+    float probeLoD = specularProbeMipCount * r;
+    vec3 environmentSample = textureLod(samplerCube(specularProbe, g_sampler_linearClamp), R, probeLoD).rgb;
+    vec3 fresnelAverage = f0 + (1-f0) / 21.f;
+
+    vec3 irradiance;
+    if(useSkyOcclusionDirection){
+        irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), skyOcclusion.unoccludedDirection).rgb;
+    }
+    else{
+        irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), N).rgb;
+    }
+
+	vec2 screenUV = gl_FragCoord.xy / g_screenResolution;
+	vec4 irradiance_Y_SH = texture(sampler2D(indirectDiffuse_Y_SH, g_sampler_linearRepeat), screenUV);
+	float irradiance_Y = dot(irradiance_Y_SH, directionToSH_L1(N));
+	vec2 irradiance_CoCg = texture(sampler2D(indirectDiffuse_CoCg, g_sampler_linearRepeat), screenUV).rg;
+
+	irradiance = YCoCgToLinear(vec3(irradiance_Y, irradiance_CoCg));
+
+	float r_indirect = r;
+	{
+		float SHDirectionLength = length(irradiance_Y_SH.wyz);
+		vec3 SHDirection = irradiance_Y_SH.wyz / SHDirectionLength;
+		SHDirectionLength = clamp(SHDirectionLength, 0.01, 1);
+		r_indirect = mix(r, 1, sqrt(SHDirectionLength));
+		
+		environmentSample = YCoCgToLinear(vec3(max(dot(directionToSH_L1(R), irradiance_Y_SH), 0), irradiance_CoCg));
+	}
+
+	vec3 brdfLut = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r_indirect, NoV)).rgb;
+
+	//direct diffuse    
+	vec3 diffuseColor = (1.f - metalic) * albedo;
     vec3 diffuseDirect;
     vec3 diffuseBRDFIntegral = vec3(1.f);
-    
-    vec3 brdfLut = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r, NoV)).rgb;
     
     //lambert
     if(diffuseBRDF == 0){
@@ -252,38 +293,6 @@ void main(){
     //need to account for incoming and outgoing fresnel effect
     //see: https://seblagarde.wordpress.com/2011/08/17/hello-world/#comment-2405
     diffuseDirect *= (1.f - F_Schlick(f0, vec3(1.f), NoV)) * (1.f - F_Schlick(f0, vec3(1.f), NoL));
-	
-    //sky occlusion
-    SkyOcclusion skyOcclusion;
-    {
-        vec3 geoN = normalize(passTBN[2]);
-        float normalOffset = 0.5f;
-        
-        vec3 aoSamplePoint = passPos;
-        aoSamplePoint += normalOffset * geoN;   
-        
-        skyOcclusion = sampleSkyOcclusion(aoSamplePoint);
-    }
-    
-    //indirect specular
-    float probeLoD = specularProbeMipCount * r;
-    vec3 environmentSample = textureLod(samplerCube(specularProbe, g_sampler_linearClamp), R, probeLoD).rgb;
-    vec3 fresnelAverage = f0 + (1-f0) / 21.f;
-    
-    vec3 irradiance;
-    if(useSkyOcclusionDirection){
-        irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), skyOcclusion.unoccludedDirection).rgb;
-    }
-    else{
-        irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), N).rgb;
-    }
-
-	vec2 screenUV = gl_FragCoord.xy / g_screenResolution;
-	vec4 irradiance_Y_SH = texture(sampler2D(indirectDiffuse_Y_SH, g_sampler_linearRepeat), screenUV);
-	float irradiance_Y = dot(irradiance_Y_SH, directionToSH_L1(N));
-	vec2 irradiance_CoCg = texture(sampler2D(indirectDiffuse_CoCg, g_sampler_linearRepeat), screenUV).rg;
-
-	irradiance = YCoCgToLinear(vec3(irradiance_Y, irradiance_CoCg));
 
     vec3 diffuseIndirect;
     vec3 specularIndirect;
@@ -313,11 +322,11 @@ void main(){
         //diffuseIndirect *= skyOcclusion.factor;
         
         float specularOcclusion = computeSpecularOcclusion(R, skyOcclusion.unoccludedDirection, r, skyOcclusion.factor);
-        specularIndirect *= specularOcclusion;
+        //specularIndirect *= specularOcclusion;
     }
-    
-    vec3 lightingIndirect = diffuseIndirect;// + specularIndirect;
-    
+
+    vec3 lightingIndirect = diffuseIndirect + specularIndirect;
+
     //direct specular
 	const float D = D_GGX(NoH, r);
 	const float Vis = Visibility(NoV, NoL, r);
