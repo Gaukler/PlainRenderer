@@ -36,7 +36,7 @@ struct ShadingConfig {
 };
 
 enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2, Bicubic5Tap=3, Bicubic1Tap=4 };
-enum class SDFDebugMode : int { None=0, VisualizeSDF=1, VisualizeIndirectDiffuse=2 };
+enum class SDFDebugMode : int { None=0, VisualizeSDF=1 };
 
 struct TemporalFilterSettings {
     bool enabled = true;
@@ -254,8 +254,10 @@ private:
     ImageHandle m_sceneSDF;
 	ImageHandle m_sceneMaterialVoxelTexture;
 	ImageHandle m_materialVoxelizationDummyTexture;	//currently rendering without attachments not supported, use dummy
-	ImageHandle m_indirectDiffuseImage;
-	ImageHandle m_indirectDiffuseFilteredImage;
+	ImageHandle m_indirectDiffuse_Y_SH;			//Y component of YCoCg color space as spherical harmonics
+	ImageHandle m_indirectDiffuse_CoCg;			//CoCg component of YCoCg color space
+	ImageHandle m_indirectDiffuseFiltered_Y_SH;	//Y component of YCoCg color space as spherical harmonics
+	ImageHandle m_indirectDiffuseFiltered_CoCg;	//CoCg component of YCoCg color space
 	ImageHandle m_worldSpaceNormalImage;
 
     std::vector<ImageHandle> m_noiseTextures;

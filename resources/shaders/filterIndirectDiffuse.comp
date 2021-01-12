@@ -8,9 +8,11 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set=1, binding = 0, r11f_g11f_b10f) 	uniform image2D		imageOut;
-layout(set=1, binding = 1) 	                uniform texture2D	textureIn;
-layout(set=1, binding = 2) 	                uniform texture2D	depthTexture;
+layout(set=1, binding = 0, rgba16f) 	uniform image2D imageOut_Y_SH;
+layout(set=1, binding = 1, rg16f) 		uniform image2D imageOut_CoCg;
+layout(set=1, binding = 2) 				uniform texture2D	texture_Y_SH;
+layout(set=1, binding = 3) 				uniform texture2D	texture_CoCg;
+layout(set=1, binding = 4) 	            uniform texture2D	depthTexture;
 
 vec3 pixelToWorld(vec2 uv){
 	float depth = texture(sampler2D(depthTexture, g_sampler_linearRepeat), uv).r;
@@ -27,7 +29,6 @@ void main(){
 
 	vec2 texelSize = 1.f / g_screenResolution;
 	vec2 uv = (vec2(iUV) + 0.5f) * texelSize;
-	vec3 color = vec3(0.f);
 
 	vec3 pCenter = pixelToWorld(uv);
 	vec3 pRight = pixelToWorld(uv + vec2(1, 0) * texelSize);
@@ -47,6 +48,9 @@ void main(){
 	float noise = texture(sampler2D(g_noiseTexture, g_sampler_nearestRepeat), noiseUV).r; 
 	noise *= 2 * pi;
 
+	vec4 result_Y_SH = vec4(0);
+	vec2 result_CoCg = vec2(0);
+	
 	float weightTotal = 0.f;
 
 	float radiusWorld = 0.1f;
@@ -83,9 +87,12 @@ void main(){
 		weight *= weight;	//squared falloff
 		weightTotal += weight;
 
-		color += weight * texture(sampler2D(textureIn, g_sampler_linearRepeat), sampleUV).rgb;
+		result_Y_SH += weight * texture(sampler2D(texture_Y_SH, g_sampler_linearRepeat), sampleUV);
+		result_CoCg += weight * texture(sampler2D(texture_CoCg, g_sampler_linearRepeat), sampleUV).rg;
 	}
-	color /= weightTotal;
+	result_Y_SH /= weightTotal;
+	result_CoCg /= weightTotal;
 
-	imageStore(imageOut, iUV, vec4(color, 1.f));
+	imageStore(imageOut_Y_SH, iUV, result_Y_SH);
+	imageStore(imageOut_CoCg, iUV, vec4(result_CoCg, 0, 0));
 }

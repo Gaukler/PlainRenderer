@@ -11,6 +11,7 @@
 #include "specularOcclusion.inc"
 #include "lightBuffer.inc"
 #include "volume.inc"
+#include "SphericalHarmonics.inc"
 
 /*
 specialisation constants
@@ -68,7 +69,8 @@ layout(set=1, binding = 14, std140) uniform occlusionData{
     float weight;
 };
 
-layout(set=1, binding = 15) uniform texture2D indirectDiffuseTexture;
+layout(set=1, binding = 15) uniform texture2D indirectDiffuse_Y_SH;
+layout(set=1, binding = 16) uniform texture2D indirectDiffuse_CoCg;
 
 layout(set=2, binding = 0) uniform texture2D colorTexture;
 layout(set=2, binding = 1) uniform texture2D normalTexture;
@@ -275,8 +277,14 @@ void main(){
     else{
         irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), N).rgb;
     }
-	irradiance = texture(sampler2D(indirectDiffuseTexture, g_sampler_linearRepeat), gl_FragCoord.xy / g_screenResolution).rgb;
-    
+
+	vec2 screenUV = gl_FragCoord.xy / g_screenResolution;
+	vec4 irradiance_Y_SH = texture(sampler2D(indirectDiffuse_Y_SH, g_sampler_linearRepeat), screenUV);
+	float irradiance_Y = dot(irradiance_Y_SH, directionToSH_L1(N));
+	vec2 irradiance_CoCg = texture(sampler2D(indirectDiffuse_CoCg, g_sampler_linearRepeat), screenUV).rg;
+
+	irradiance = YCoCgToLinear(vec3(irradiance_Y, irradiance_CoCg));
+
     vec3 diffuseIndirect;
     vec3 specularIndirect;
     if(indirectMultiscatterBRDF){
@@ -350,5 +358,5 @@ void main(){
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
 
     color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
-	//color = irradiance;
+	color = irradiance / pi;
 }

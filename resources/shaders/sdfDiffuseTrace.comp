@@ -10,24 +10,27 @@
 #include "sky.inc"
 #include "sampling.inc"
 #include "noise.inc"
+#include "SphericalHarmonics.inc"
+#include "colorConversion.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set=1, binding = 0, r11f_g11f_b10f) 	uniform image2D imageOut;
-layout(set=1, binding = 1) 	                uniform texture3D sdfTexture;
-layout(set=1, binding = 2) 	                uniform texture3D materialTexture;
-layout(set=1, binding = 3) 	                uniform texture2D depthTexture;
-layout(set=1, binding = 4) 	                uniform texture2D normalTexture;
+layout(set=1, binding = 0, rgba16f) 	uniform image2D imageOut_Y_SH;
+layout(set=1, binding = 1, rg16f) 		uniform image2D imageOut_CoCg;
+layout(set=1, binding = 2) 	            uniform texture3D sdfTexture;
+layout(set=1, binding = 3) 	            uniform texture3D materialTexture;
+layout(set=1, binding = 4) 	            uniform texture2D depthTexture;
+layout(set=1, binding = 5) 	            uniform texture2D normalTexture;
 
-layout(set=1, binding = 5, std140)			uniform sdfVolumeData{
+layout(set=1, binding = 6, std140)		uniform sdfVolumeData{
     VolumeInfo sdfInfo;
 };
 
-layout(set=1, binding = 6, std430) buffer lightStorageBuffer{
+layout(set=1, binding = 7, std430) buffer lightStorageBuffer{
     LightBuffer lightBuffer;
 };
 
-layout(set=1, binding = 7) uniform texture2D skyLut;
+layout(set=1, binding = 8) uniform texture2D skyLut;
 
 void main(){
 	ivec2 imageCoordinate = ivec2(gl_GlobalInvocationID.xy);
@@ -52,11 +55,13 @@ void main(){
 	if(sampleSDF(worldPositionToVolume(rayOrigin, sdfInfo.offset.xyz, sdfInfo.extends.xyz), sdfTexture) < sdfThreshold){
 		//bias not enough to move point out of mesh
 		//ignore
-		imageStore(imageOut, imageCoordinate, vec4(vec3(0, 0, 0), 1.f));
+		imageStore(imageOut_Y_SH, imageCoordinate, vec4(0));
+		imageStore(imageOut_CoCg, imageCoordinate, vec4(0));
 		return;
 	}
 
-	vec3 color = vec3(0.f);
+	vec4 result_Y_SH = vec4(0.f);
+	vec2 result_CoCg = vec2(0.f);
 	
 	vec2 noiseUV = vec2(imageCoordinate) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
 	float noise = texture(sampler2D(g_noiseTexture, g_sampler_nearestRepeat), noiseUV).r; 
@@ -69,19 +74,30 @@ void main(){
 
 		SDFTrace trace = sdfTrace(rayOrigin, L, sdfInfo, sdfTexture, sdfThreshold, sdfMin, sdfMax);
 
+		vec3 hitColor;
+
 		if(trace.hit){
 			vec3 ambient = vec3(0.f);
-			color += shadeHit(trace, sdfInfo, sdfTexture, materialTexture, sdfThreshold, ambient, sdfMin, sdfMax, 
+			hitColor = shadeHit(trace, sdfInfo, sdfTexture, materialTexture, sdfThreshold, ambient, sdfMin, sdfMax, 
 				lightBuffer.sunColor, lightBuffer.sunStrengthExposed);
 		}
 		else{
-			color += sampleSkyLut(L, skyLut);
+			hitColor = sampleSkyLut(L, skyLut);
 		}
+		vec3 YCoCg = linearToYCoCg(hitColor);
+
+		result_Y_SH += YCoCg.x * directionToSH_L1(N);
+		result_CoCg += YCoCg.yz;
 	}
-	color /= float(samples);
+	result_Y_SH /= float(samples);
+	result_CoCg /= float(samples);
+
 	//multiplication by pi because PDF = NoL / pi
 	//division by PDF is multiplication with pi / NoL
 	//NoL is reduced with NoL from rendering equation 
-	color *= pi;
-	imageStore(imageOut, imageCoordinate, vec4(vec3(color), 1.f));
+	result_Y_SH *= pi;
+	result_CoCg *= pi;
+
+	imageStore(imageOut_Y_SH, imageCoordinate, result_Y_SH);
+	imageStore(imageOut_CoCg, imageCoordinate, vec4(result_CoCg, vec2(0.f)));
 }

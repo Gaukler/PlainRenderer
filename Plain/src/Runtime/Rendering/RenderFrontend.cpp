@@ -239,8 +239,10 @@ void RenderFrontend::prepareNewFrame() {
             m_historyBuffers[1],
             m_sceneLuminance,
             m_lastFrameLuminance,
-			m_indirectDiffuseImage,
-			m_indirectDiffuseFilteredImage,
+			m_indirectDiffuse_Y_SH,
+			m_indirectDiffuse_CoCg,
+			m_indirectDiffuseFiltered_Y_SH,
+			m_indirectDiffuseFiltered_CoCg,
 			m_worldSpaceNormalImage},
             m_screenWidth, m_screenHeight);
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid }, m_screenWidth / 2, m_screenHeight / 2);
@@ -395,10 +397,6 @@ void RenderFrontend::prepareRenderpasses(){
         currentPass = m_sdfDebugPass;
         currentSrc = m_postProcessBuffers[0];
     }
-	else if (m_sdfDebugMode == SDFDebugMode::VisualizeIndirectDiffuse) {
-		currentPass = m_diffuseSDFTracePass;
-		currentSrc = m_indirectDiffuseFilteredImage;
-	}
 
     computeTonemapping(currentPass, currentSrc);
 }
@@ -883,20 +881,21 @@ void RenderFrontend::diffuseSDFTrace(const int sceneRenderTargetIndex) const {
 	RenderPassExecution exe;
 	exe.handle = m_diffuseSDFTracePass;
 	exe.resources.storageImages = {
-		ImageResource(m_indirectDiffuseImage, 0, 0)
+		ImageResource(m_indirectDiffuse_Y_SH, 0, 0),
+		ImageResource(m_indirectDiffuse_CoCg, 0, 1)
 	};
 	exe.resources.sampledImages = {
-		ImageResource(m_sceneSDF, 0, 1),
-		ImageResource(m_sceneMaterialVoxelTexture, 0, 2),
-		ImageResource(m_frameRenderTargets[sceneRenderTargetIndex].depthBuffer, 0, 3),
-		ImageResource(m_worldSpaceNormalImage, 0, 4),
-		ImageResource(m_skyLut, 0, 7)
+		ImageResource(m_sceneSDF, 0, 2),
+		ImageResource(m_sceneMaterialVoxelTexture, 0, 3),
+		ImageResource(m_frameRenderTargets[sceneRenderTargetIndex].depthBuffer, 0, 4),
+		ImageResource(m_worldSpaceNormalImage, 0, 5),
+		ImageResource(m_skyLut, 0, 8)
 	};
 	exe.resources.uniformBuffers = {
-		UniformBufferResource(m_sdfVolumeInfoBuffer, 5)
+		UniformBufferResource(m_sdfVolumeInfoBuffer, 6)
 	};
 	exe.resources.storageBuffers = {
-		StorageBufferResource(m_lightBuffer, true, 6)
+		StorageBufferResource(m_lightBuffer, true, 7)
 	};
 
 	const float localThreadSize = 8.f;
@@ -913,11 +912,13 @@ void RenderFrontend::filterIndirectDiffuse(const int sceneRenderTargetIndex) con
 	exe.handle = m_indirectDiffuseFilterPass;
 
 	exe.resources.storageImages = {
-		ImageResource(m_indirectDiffuseFilteredImage, 0, 0)
+		ImageResource(m_indirectDiffuseFiltered_Y_SH, 0, 0),
+		ImageResource(m_indirectDiffuseFiltered_CoCg, 0, 1)
 	};
 	exe.resources.sampledImages = {
-		ImageResource(m_indirectDiffuseImage, 0, 1),
-		ImageResource(m_frameRenderTargets[sceneRenderTargetIndex].depthBuffer, 0, 2)
+		ImageResource(m_indirectDiffuse_Y_SH, 0, 2),
+		ImageResource(m_indirectDiffuse_CoCg, 0, 3),
+		ImageResource(m_frameRenderTargets[sceneRenderTargetIndex].depthBuffer, 0, 4)
 	};
 
 	const float localThreadSize = 8.f;
@@ -943,8 +944,9 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     mainPassExecution.handle = m_mainPass;
     mainPassExecution.framebuffer = framebuffer;
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
-    mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource,
-		ImageResource(m_indirectDiffuseFilteredImage, 0, 15)};
+	mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource,
+		ImageResource(m_indirectDiffuseFiltered_Y_SH, 0, 15),
+		ImageResource(m_indirectDiffuseFiltered_CoCg, 0, 16) };
     mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
 
     //add shadow map cascade resources
@@ -1823,21 +1825,37 @@ void RenderFrontend::initImages() {
 
 		m_materialVoxelizationDummyTexture = gRenderBackend.createImage(desc);
 	}
-	//indirect diffuse buffer and filtered version
+	//indirect diffuse Y component spherical harmonics
 	{
 		ImageDescription desc;
 		desc.width = m_screenWidth;
 		desc.height = m_screenHeight;
 		desc.depth = 1;
 		desc.type = ImageType::Type2D;
-		desc.format = ImageFormat::R11G11B10_uFloat;
+		desc.format = ImageFormat::RGBA16_sFloat;
 		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
 		desc.mipCount = MipCount::One;
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_indirectDiffuseImage = gRenderBackend.createImage(desc);
-		m_indirectDiffuseFilteredImage = gRenderBackend.createImage(desc);
+		m_indirectDiffuse_Y_SH = gRenderBackend.createImage(desc);
+		m_indirectDiffuseFiltered_Y_SH = gRenderBackend.createImage(desc);
+	}
+	//indirect diffuse CoCg component spherical harmonics
+	{
+		ImageDescription desc;
+		desc.width = m_screenWidth;
+		desc.height = m_screenHeight;
+		desc.depth = 1;
+		desc.type = ImageType::Type2D;
+		desc.format = ImageFormat::RG16_sFloat;
+		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+		desc.mipCount = MipCount::One;
+		desc.manualMipCount = 1;
+		desc.autoCreateMips = false;
+
+		m_indirectDiffuse_CoCg = gRenderBackend.createImage(desc);
+		m_indirectDiffuseFiltered_CoCg = gRenderBackend.createImage(desc);
 	}
 	//world space normal buffer
 	{
@@ -2830,8 +2848,8 @@ void RenderFrontend::drawUi() {
 
     ImGui::Begin("Rendering");
 
-	const char* sdfDebugOptions[] = { "None", "Visualize SDF", "Indirect diffuse" };
-	ImGui::Combo("SDF debug mode", (int*)&m_sdfDebugMode, sdfDebugOptions, 3);
+	const char* sdfDebugOptions[] = { "None", "Visualize SDF" };
+	ImGui::Combo("SDF debug mode", (int*)&m_sdfDebugMode, sdfDebugOptions, 2);
 
     //Temporal filter Settings
     if(ImGui::CollapsingHeader("Temporal filter settings")){
