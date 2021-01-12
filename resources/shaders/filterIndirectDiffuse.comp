@@ -5,6 +5,7 @@
 #include "global.inc"
 #include "linearDepth.inc"
 #include "screenToWorld.inc"
+#include "noise.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -40,15 +41,7 @@ void main(){
 	vec3 N = normalize(cross(bitangent, tangent));
 	N = 2 * texture(sampler2D(normalTexture, g_sampler_linearRepeat), uv).rgb - 1;
 
-	int sampleCount = 16;
-
-	//per pixel noise used for rotation
-	//costs a lot of performance due to worse texture cache hit rate
-	//might remove later
-	//discussed in "Exploring the Ray Traced Future in Metro Exodus"
-	vec2 noiseUV = vec2(iUV) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
-	float noise = texture(sampler2D(g_noiseTexture, g_sampler_nearestRepeat), noiseUV).r; 
-	noise *= 2 * pi;
+	int sampleCount = 24;
 
 	vec4 result_Y_SH = vec4(0);
 	vec2 result_CoCg = vec2(0);
@@ -59,7 +52,7 @@ void main(){
 	for(int i = 0; i < sampleCount; i++){
 		float d = (i + 0.5f) / sampleCount;
 		d = sqrt(d);
-		float angle = 2 * pi * i / float(sampleCount) + noise;
+		float angle = 2 * pi * i / float(sampleCount);
 		vec2 offset = vec2(cos(angle), sin(angle));
 
 		//samples taken in world space
