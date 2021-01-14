@@ -132,7 +132,7 @@ private:
     void computeDepthPyramid(const ImageHandle depthBuffer) const;
     void computeSunLightMatrices() const;
 	void diffuseSDFTrace(const int sceneRenderTargetIndex) const;
-	void filterIndirectDiffuse(const int sceneRenderTargetIndex) const;
+	void filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame) const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const;
     void copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const; //input must be R11G11B10
     void computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
@@ -229,13 +229,15 @@ private:
     RenderPassHandle m_temporalFilterPass;
     RenderPassHandle m_skyShadowPass;
     RenderPassHandle m_skyOcclusionGatherPass;  //gathers visibility from sky shadow map
-    RenderPassHandle m_hdrImageCopyPass;    //input must be R11G11B10
+    RenderPassHandle m_hdrImageCopyPass;		//input must be R11G11B10
     RenderPassHandle m_colorToLuminancePass;
     RenderPassHandle m_sdfDebugPass;
 	RenderPassHandle m_materialVoxelizationPass;
 	RenderPassHandle m_materialVoxelizationToImagePass;
 	RenderPassHandle m_diffuseSDFTracePass;
-	RenderPassHandle m_indirectDiffuseFilterPass;
+	RenderPassHandle m_indirectDiffuseFilterSpatialPass;
+	RenderPassHandle m_indirectDiffuseFilterTemporalPass;
+	
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -256,10 +258,10 @@ private:
     ImageHandle m_sceneSDF;
 	ImageHandle m_sceneMaterialVoxelTexture;
 	ImageHandle m_materialVoxelizationDummyTexture;	//currently rendering without attachments not supported, use dummy
-	ImageHandle m_indirectDiffuse_Y_SH;			//Y component of YCoCg color space as spherical harmonics
-	ImageHandle m_indirectDiffuse_CoCg;			//CoCg component of YCoCg color space
-	ImageHandle m_indirectDiffuseFiltered_Y_SH;	//Y component of YCoCg color space as spherical harmonics
-	ImageHandle m_indirectDiffuseFiltered_CoCg;	//CoCg component of YCoCg color space
+	ImageHandle m_indirectDiffuse_Y_SH[2];			//ping pong buffers for filtering, Y component of YCoCg color space as spherical harmonics		
+	ImageHandle m_indirectDiffuse_CoCg[2];			//ping pong buffers for filtering, CoCg component of YCoCg color space
+	ImageHandle m_indirectDiffuseHistory_Y_SH[2];	//Y component of YCoCg color space as spherical harmonics
+	ImageHandle m_indirectDiffuseHistory_CoCg[2];	//CoCg component of YCoCg color space
 	ImageHandle m_worldSpaceNormalImage;
 
     std::vector<ImageHandle> m_noiseTextures;

@@ -239,10 +239,14 @@ void RenderFrontend::prepareNewFrame() {
             m_historyBuffers[1],
             m_sceneLuminance,
             m_lastFrameLuminance,
-			m_indirectDiffuse_Y_SH,
-			m_indirectDiffuse_CoCg,
-			m_indirectDiffuseFiltered_Y_SH,
-			m_indirectDiffuseFiltered_CoCg,
+			m_indirectDiffuse_Y_SH[0],
+			m_indirectDiffuse_Y_SH[1],
+			m_indirectDiffuse_CoCg[0],
+			m_indirectDiffuse_CoCg[1],
+			m_indirectDiffuseHistory_Y_SH[0],
+			m_indirectDiffuseHistory_Y_SH[1],
+			m_indirectDiffuseHistory_CoCg[0],
+			m_indirectDiffuseHistory_CoCg[1],
 			m_worldSpaceNormalImage},
             m_screenWidth, m_screenHeight);
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid }, m_screenWidth / 2, m_screenHeight / 2);
@@ -320,7 +324,8 @@ void RenderFrontend::prepareRenderpasses(){
 
 	if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SDFTrace) {
 		forwardShadingDependencies.push_back(m_diffuseSDFTracePass);
-		forwardShadingDependencies.push_back(m_indirectDiffuseFilterPass);
+		forwardShadingDependencies.push_back(m_indirectDiffuseFilterSpatialPass);
+		forwardShadingDependencies.push_back(m_indirectDiffuseFilterTemporalPass);
 	}
 	else if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SkyProbe) {
 		forwardShadingDependencies.push_back(m_skyDiffuseConvolutionPass);
@@ -341,7 +346,7 @@ void RenderFrontend::prepareRenderpasses(){
     computeSunLightMatrices();
 	if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SDFTrace) {
 		diffuseSDFTrace(sceneRenderTargetIndex);
-		filterIndirectDiffuse(sceneRenderTargetIndex);
+		filterIndirectDiffuse(currentRenderTarget, lastRenderTarget);
 	}
     renderForwardShading(forwardShadingDependencies, currentRenderTarget.colorFramebuffer);
 
@@ -896,8 +901,8 @@ void RenderFrontend::diffuseSDFTrace(const int sceneRenderTargetIndex) const {
 	RenderPassExecution exe;
 	exe.handle = m_diffuseSDFTracePass;
 	exe.resources.storageImages = {
-		ImageResource(m_indirectDiffuse_Y_SH, 0, 0),
-		ImageResource(m_indirectDiffuse_CoCg, 0, 1)
+		ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
+		ImageResource(m_indirectDiffuse_CoCg[0], 0, 1)
 	};
 	exe.resources.sampledImages = {
 		ImageResource(m_sceneSDF, 0, 2),
@@ -922,29 +927,64 @@ void RenderFrontend::diffuseSDFTrace(const int sceneRenderTargetIndex) const {
 	gRenderBackend.setRenderPassExecution(exe);
 }
 
-void RenderFrontend::filterIndirectDiffuse(const int sceneRenderTargetIndex) const {
-	RenderPassExecution exe;
-	exe.handle = m_indirectDiffuseFilterPass;
-	exe.parents = { m_diffuseSDFTracePass };
+void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame) const {
+	//spatial filter
+	{
+		RenderPassExecution exe;
+		exe.handle = m_indirectDiffuseFilterSpatialPass;
+		exe.parents = { m_diffuseSDFTracePass };
 
-	exe.resources.storageImages = {
-		ImageResource(m_indirectDiffuseFiltered_Y_SH, 0, 0),
-		ImageResource(m_indirectDiffuseFiltered_CoCg, 0, 1)
-	};
-	exe.resources.sampledImages = {
-		ImageResource(m_indirectDiffuse_Y_SH, 0, 2),
-		ImageResource(m_indirectDiffuse_CoCg, 0, 3),
-		ImageResource(m_frameRenderTargets[sceneRenderTargetIndex].depthBuffer, 0, 4),
-		ImageResource(m_worldSpaceNormalImage, 0, 5),
-	};
+		exe.resources.storageImages = {
+			ImageResource(m_indirectDiffuse_Y_SH[1], 0, 0),
+			ImageResource(m_indirectDiffuse_CoCg[1], 0, 1)
+		};
+		exe.resources.sampledImages = {
+			ImageResource(m_indirectDiffuse_Y_SH[0], 0, 2),
+			ImageResource(m_indirectDiffuse_CoCg[0], 0, 3),
+			ImageResource(currentFrame.depthBuffer, 0, 4),
+			ImageResource(m_worldSpaceNormalImage, 0, 5),
+		};
 
-	const float localThreadSize = 8.f;
-	const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(glm::vec2(m_screenWidth, m_screenHeight) / localThreadSize));
-	exe.dispatchCount[0] = dispatchCount.x;
-	exe.dispatchCount[1] = dispatchCount.y;
-	exe.dispatchCount[2] = 1;
+		const float localThreadSize = 8.f;
+		const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(glm::vec2(m_screenWidth, m_screenHeight) / localThreadSize));
+		exe.dispatchCount[0] = dispatchCount.x;
+		exe.dispatchCount[1] = dispatchCount.y;
+		exe.dispatchCount[2] = 1;
 
-	gRenderBackend.setRenderPassExecution(exe);
+		gRenderBackend.setRenderPassExecution(exe);
+	}
+	//temporal filter
+	{
+		RenderPassExecution exe;
+		exe.handle = m_indirectDiffuseFilterTemporalPass;
+		exe.parents = { m_indirectDiffuseFilterSpatialPass };
+
+		const uint32_t historySrcIndex = m_globalShaderInfo.frameIndex % 2;
+		const uint32_t historyDstIndex = historySrcIndex == 0 ? 1 : 0;
+
+		exe.resources.storageImages = {
+			ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
+			ImageResource(m_indirectDiffuse_CoCg[0], 0, 1),
+			ImageResource(m_indirectDiffuseHistory_Y_SH[historyDstIndex], 0, 2),
+			ImageResource(m_indirectDiffuseHistory_CoCg[historyDstIndex], 0, 3)
+		};
+		exe.resources.sampledImages = {
+			ImageResource(m_indirectDiffuse_Y_SH[1], 0, 4),
+			ImageResource(m_indirectDiffuse_CoCg[1], 0, 5),
+			ImageResource(m_indirectDiffuseHistory_Y_SH[historySrcIndex], 0, 6),
+			ImageResource(m_indirectDiffuseHistory_CoCg[historySrcIndex], 0, 7),
+			ImageResource(currentFrame.motionBuffer, 0, 8),
+			ImageResource(lastFrame.motionBuffer, 0, 9)
+		};
+
+		const float localThreadSize = 8.f;
+		const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(glm::vec2(m_screenWidth, m_screenHeight) / localThreadSize));
+		exe.dispatchCount[0] = dispatchCount.x;
+		exe.dispatchCount[1] = dispatchCount.y;
+		exe.dispatchCount[2] = 1;
+
+		gRenderBackend.setRenderPassExecution(exe);
+	}
 }
 
 void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const {
@@ -962,8 +1002,8 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     mainPassExecution.framebuffer = framebuffer;
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
 	mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource,
-		ImageResource(m_indirectDiffuseFiltered_Y_SH, 0, 15),
-		ImageResource(m_indirectDiffuseFiltered_CoCg, 0, 16) };
+		ImageResource(m_indirectDiffuse_Y_SH[0], 0, 15),
+		ImageResource(m_indirectDiffuse_CoCg[0], 0, 16) };
     mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
 
     //add shadow map cascade resources
@@ -1859,10 +1899,12 @@ void RenderFrontend::initImages() {
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_indirectDiffuse_Y_SH = gRenderBackend.createImage(desc);
-		m_indirectDiffuseFiltered_Y_SH = gRenderBackend.createImage(desc);
+		m_indirectDiffuse_Y_SH[0] = gRenderBackend.createImage(desc);
+		m_indirectDiffuse_Y_SH[1] = gRenderBackend.createImage(desc);
+		m_indirectDiffuseHistory_Y_SH[0] = gRenderBackend.createImage(desc);
+		m_indirectDiffuseHistory_Y_SH[1] = gRenderBackend.createImage(desc);
 	}
-	//indirect diffuse CoCg component spherical harmonics
+	//indirect diffuse CoCg component
 	{
 		ImageDescription desc;
 		desc.width = m_screenWidth;
@@ -1875,8 +1917,10 @@ void RenderFrontend::initImages() {
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_indirectDiffuse_CoCg = gRenderBackend.createImage(desc);
-		m_indirectDiffuseFiltered_CoCg = gRenderBackend.createImage(desc);
+		m_indirectDiffuse_CoCg[0] = gRenderBackend.createImage(desc);
+		m_indirectDiffuse_CoCg[1] = gRenderBackend.createImage(desc);
+		m_indirectDiffuseHistory_CoCg[0] = gRenderBackend.createImage(desc);
+		m_indirectDiffuseHistory_CoCg[1] = gRenderBackend.createImage(desc);
 	}
 	//world space normal buffer
 	{
@@ -2753,12 +2797,19 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 		desc.shaderDescription.srcPathRelative = "sdfDiffuseTrace.comp";
 		m_diffuseSDFTracePass = gRenderBackend.createComputePass(desc);
 	}
-	//indirect diffuse filter
+	//indirect diffuse spatial filter
 	{
 		ComputePassDescription desc;
-		desc.name = "Indirect diffuse filter";
-		desc.shaderDescription.srcPathRelative = "filterIndirectDiffuse.comp";
-		m_indirectDiffuseFilterPass = gRenderBackend.createComputePass(desc);
+		desc.name = "Indirect diffuse spatial filter";
+		desc.shaderDescription.srcPathRelative = "filterIndirectDiffuseSpatial.comp";
+		m_indirectDiffuseFilterSpatialPass = gRenderBackend.createComputePass(desc);
+	}
+	//indirect diffuse temporal filter
+	{
+		ComputePassDescription desc;
+		desc.name = "Indirect diffuse temporal filter";
+		desc.shaderDescription.srcPathRelative = "filterIndirectDiffuseTemporal.comp";
+		m_indirectDiffuseFilterTemporalPass = gRenderBackend.createComputePass(desc);
 	}
 }
 
