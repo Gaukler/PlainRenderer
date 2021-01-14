@@ -53,10 +53,11 @@ void main(){
 
 	vec3 rayOrigin = pWorld + N * 0.2;
 	if(sampleSDF(worldPositionToVolume(rayOrigin, sdfInfo.offset.xyz, sdfInfo.extends.xyz), sdfTexture) < sdfThreshold){
-		//bias not enough to move point out of mesh
-		//ignore
-		imageStore(imageOut_Y_SH, imageCoordinate, vec4(0));
-		imageStore(imageOut_CoCg, imageCoordinate, vec4(0));
+		//bias not enough to move point out of mesh, so ignore
+		//create infinity to mark invalid sample
+		//TODO: infinity might be implementation specific, look for more robust way
+		imageStore(imageOut_Y_SH, imageCoordinate, vec4(1.f / 0.f));
+		imageStore(imageOut_CoCg, imageCoordinate, vec4(1.f / 0.f));
 		return;
 	}
 

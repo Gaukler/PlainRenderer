@@ -80,14 +80,23 @@ void main(){
 		float maxDistance = 0.1f;
 		float weight = clamp(maxDistance / max(distanceToTangentPlane, 0.0001f), 0, 1);
 		weight *= weight;	//squared falloff
-		weightTotal += weight;
 
 		vec3 sampleN = 2 * texture(sampler2D(normalTexture, g_sampler_linearRepeat), sampleUV).rgb - 1;
 		weight *= max(dot(N, sampleN), 0);
 
 		if(weight > 0){
-			result_Y_SH += weight * texture(sampler2D(texture_Y_SH, g_sampler_linearRepeat), sampleUV);
-			result_CoCg += weight * texture(sampler2D(texture_CoCg, g_sampler_linearRepeat), sampleUV).rg;
+			vec4 sample_Y_SH = texture(sampler2D(texture_Y_SH, g_sampler_linearRepeat), sampleUV);
+			vec2 sample_CoCg = texture(sampler2D(texture_CoCg, g_sampler_linearRepeat), sampleUV).rg;
+
+			//invalid samples are marked by being set to infinity
+			if(any(isinf(sample_Y_SH)) || any(isinf(sample_CoCg))){
+				//sample is invalid, do nothing
+			}
+			else{
+				result_Y_SH += weight * sample_Y_SH; 
+				result_CoCg += weight * sample_CoCg;
+				weightTotal += weight;
+			}
 		}
 	}
 	weightTotal = max(weightTotal, 0.00001f);
