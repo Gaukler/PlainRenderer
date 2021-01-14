@@ -1906,8 +1906,8 @@ void RenderFrontend::initImages() {
 	//indirect diffuse Y component spherical harmonics
 	{
 		ImageDescription desc;
-		desc.width = m_screenWidth;
-		desc.height = m_screenHeight;
+		desc.width = m_shadingConfig.indirectLightingHalfRes ? m_screenWidth / 2 : m_screenWidth;
+		desc.height = m_shadingConfig.indirectLightingHalfRes ? m_screenHeight / 2 : m_screenHeight;
 		desc.depth = 1;
 		desc.type = ImageType::Type2D;
 		desc.format = ImageFormat::RGBA16_sFloat;
@@ -1924,8 +1924,8 @@ void RenderFrontend::initImages() {
 	//indirect diffuse CoCg component
 	{
 		ImageDescription desc;
-		desc.width = m_screenWidth;
-		desc.height = m_screenHeight;
+		desc.width = m_shadingConfig.indirectLightingHalfRes ? m_screenWidth / 2 : m_screenWidth;
+		desc.height = m_shadingConfig.indirectLightingHalfRes ? m_screenHeight / 2 : m_screenHeight;
 		desc.depth = 1;
 		desc.type = ImageType::Type2D;
 		desc.format = ImageFormat::RG16_sFloat;
