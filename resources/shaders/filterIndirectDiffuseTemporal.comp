@@ -20,7 +20,7 @@ layout(set=1, binding = 9)			uniform texture2D velocityLastFrame;
 void main(){
 
 	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
-	vec2 texelSize = 1.f / g_screenResolution;
+	vec2 texelSize = 1.f / vec2(imageSize(targetOut_Y_SH));
 	vec2 uv = (vec2(iUV) + 0.5f) * texelSize;
 
 	vec4 current_Y_SH = texture(sampler2D(input_Y_SH, g_sampler_linearRepeat), uv);
@@ -51,6 +51,10 @@ void main(){
 	}
 
 	if(any(lessThan(uvReprojected, vec2(0))) || any(greaterThan(uvReprojected, vec2(1)))){
+		alpha = 0;
+	}
+
+	if(g_cameraCut){
 		alpha = 0;
 	}
 

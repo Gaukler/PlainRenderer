@@ -239,17 +239,12 @@ void RenderFrontend::prepareNewFrame() {
             m_historyBuffers[1],
             m_sceneLuminance,
             m_lastFrameLuminance,
-			m_indirectDiffuse_Y_SH[0],
-			m_indirectDiffuse_Y_SH[1],
-			m_indirectDiffuse_CoCg[0],
-			m_indirectDiffuse_CoCg[1],
-			m_indirectDiffuseHistory_Y_SH[0],
-			m_indirectDiffuseHistory_Y_SH[1],
-			m_indirectDiffuseHistory_CoCg[0],
-			m_indirectDiffuseHistory_CoCg[1],
 			m_worldSpaceNormalImage},
             m_screenWidth, m_screenHeight);
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid }, m_screenWidth / 2, m_screenHeight / 2);
+
+		resizeIndirectLightingBuffers();
+
         m_didResolutionChange = false;
 
         uint32_t threadgroupCount = 0;
@@ -918,8 +913,12 @@ void RenderFrontend::diffuseSDFTrace(const int sceneRenderTargetIndex) const {
 		StorageBufferResource(m_lightBuffer, true, 7)
 	};
 
+	const int resolutionDivider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
+
 	const float localThreadSize = 8.f;
-	const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(glm::vec2(m_screenWidth, m_screenHeight) / localThreadSize));
+	const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(glm::vec2(
+		m_screenWidth / resolutionDivider, 
+		m_screenHeight / resolutionDivider) / localThreadSize));
 	exe.dispatchCount[0] = dispatchCount.x;
 	exe.dispatchCount[1] = dispatchCount.y;
 	exe.dispatchCount[2] = 1;
@@ -928,6 +927,10 @@ void RenderFrontend::diffuseSDFTrace(const int sceneRenderTargetIndex) const {
 }
 
 void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame) const {
+
+	const int resolutionDivider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
+	const glm::vec2 workingResolution = glm::vec2(m_screenWidth / resolutionDivider, m_screenHeight / resolutionDivider);
+
 	//spatial filter
 	{
 		RenderPassExecution exe;
@@ -946,7 +949,7 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 		};
 
 		const float localThreadSize = 8.f;
-		const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(glm::vec2(m_screenWidth, m_screenHeight) / localThreadSize));
+		const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(workingResolution / localThreadSize));
 		exe.dispatchCount[0] = dispatchCount.x;
 		exe.dispatchCount[1] = dispatchCount.y;
 		exe.dispatchCount[2] = 1;
@@ -978,7 +981,7 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 		};
 
 		const float localThreadSize = 8.f;
-		const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(glm::vec2(m_screenWidth, m_screenHeight) / localThreadSize));
+		const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(workingResolution / localThreadSize));
 		exe.dispatchCount[0] = dispatchCount.x;
 		exe.dispatchCount[1] = dispatchCount.y;
 		exe.dispatchCount[2] = 1;
@@ -1153,6 +1156,20 @@ void RenderFrontend::updateSceneSDFInfo() {
 	AxisAlignedBoundingBox paddedSceneBB = padSDFBoundingBox(m_sceneBoundingBox);
 	const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(paddedSceneBB);
 	gRenderBackend.setUniformBufferData(m_sdfVolumeInfoBuffer, &sdfVolumeInfo, sizeof(sdfVolumeInfo));
+}
+
+void RenderFrontend::resizeIndirectLightingBuffers() {
+	const uint32_t divider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
+	gRenderBackend.resizeImages({
+		m_indirectDiffuse_Y_SH[0],
+		m_indirectDiffuse_Y_SH[1],
+		m_indirectDiffuse_CoCg[0],
+		m_indirectDiffuse_CoCg[1],
+		m_indirectDiffuseHistory_Y_SH[0],
+		m_indirectDiffuseHistory_Y_SH[1],
+		m_indirectDiffuseHistory_CoCg[0],
+		m_indirectDiffuseHistory_CoCg[1]
+		}, m_screenWidth / divider, m_screenHeight / divider);
 }
 
 bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
@@ -2976,6 +2993,11 @@ void RenderFrontend::drawUi() {
 		if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SkyProbe) {
 			m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion", &m_shadingConfig.skyProbeUseOcclusion);
 			m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion direction", &m_shadingConfig.skyProbeUseOcclusionDirection);
+		}
+
+		if (ImGui::Checkbox("Indirect lighting half resolution", &m_shadingConfig.indirectLightingHalfRes)) {
+			resizeIndirectLightingBuffers();
+			m_globalShaderInfo.cameraCut = true;
 		}
     }
     //camera settings

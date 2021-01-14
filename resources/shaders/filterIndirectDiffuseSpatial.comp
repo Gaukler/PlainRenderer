@@ -29,7 +29,7 @@ vec3 pixelToWorld(vec2 uv){
 void main(){
 	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
 
-	vec2 texelSize = 1.f / g_screenResolution;
+	vec2 texelSize = 1.f / vec2(imageSize(imageOut_Y_SH));
 	vec2 uv = (vec2(iUV) + 0.5f) * texelSize;
 
 	vec3 pCenter = pixelToWorld(uv);

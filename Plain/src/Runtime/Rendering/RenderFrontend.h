@@ -35,6 +35,7 @@ struct ShadingConfig {
     bool useGeometryAA = true;
     bool skyProbeUseOcclusion = true;
     bool skyProbeUseOcclusionDirection = true;
+	bool indirectLightingHalfRes = true;
 };
 
 enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2, Bicubic5Tap=3, Bicubic1Tap=4 };
@@ -144,6 +145,8 @@ private:
     void issueSkyDrawcalls();
 
 	void updateSceneSDFInfo();
+
+	void resizeIndirectLightingBuffers();
 
     //checks a map of all loaded images if it is avaible, returns existing image if possible    
     bool loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);

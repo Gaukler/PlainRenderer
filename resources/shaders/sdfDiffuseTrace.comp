@@ -34,7 +34,7 @@ layout(set=1, binding = 8) uniform texture2D skyLut;
 
 void main(){
 	ivec2 imageCoordinate = ivec2(gl_GlobalInvocationID.xy);
-	vec2 uv = imageCoordinate / vec2(g_screenResolution);
+	vec2 uv = imageCoordinate / vec2(imageSize(imageOut_Y_SH));
 	float depth = texture(sampler2D(depthTexture, g_sampler_linearRepeat), uv).r;
 	float depthLinear = linearizeDepth(depth, g_nearPlane, g_farPlane);
 
