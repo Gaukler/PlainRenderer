@@ -48,11 +48,14 @@ void main(){
 	
 	float weightTotal = 0.f;
 
+	uint rngState = wang_hash(g_frameIndex);
+
 	float radiusWorld = 0.5f;
 	for(int i = 0; i < sampleCount; i++){
-		float d = (i + 0.5f) / sampleCount;
-		d = sqrt(d);
-		float angle = 2 * pi * i / float(sampleCount);
+
+		float d = sqrt(rand(rngState));
+		float angle = 2 * pi * rand(rngState);
+
 		vec2 offset = vec2(cos(angle), sin(angle));
 
 		//samples taken in world space
