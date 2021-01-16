@@ -240,7 +240,9 @@ private:
 	RenderPassHandle m_diffuseSDFTracePass;
 	RenderPassHandle m_indirectDiffuseFilterSpatialPass;
 	RenderPassHandle m_indirectDiffuseFilterTemporalPass;
-	
+	RenderPassHandle m_indirectDiffuseMipPass;
+	RenderPassHandle m_edgeDetectionPass;
+	RenderPassHandle m_edgeMipPass;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -266,6 +268,7 @@ private:
 	ImageHandle m_indirectDiffuseHistory_Y_SH[2];	//Y component of YCoCg color space as spherical harmonics
 	ImageHandle m_indirectDiffuseHistory_CoCg[2];	//CoCg component of YCoCg color space
 	ImageHandle m_worldSpaceNormalImage;
+	ImageHandle m_edgeImage;
 
     std::vector<ImageHandle> m_noiseTextures;
     uint32_t m_noiseTextureIndex = 0;
@@ -312,6 +315,8 @@ private:
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
     ShaderDescription createTemporalFilterShaderDescription();
     ShaderDescription createTemporalSupersamplingShaderDescription();
+	ShaderDescription createIndirectLightingMipCreationShaderDescription();
+	ShaderDescription createEdgeMipCreationShaderDescription();
 
     bool m_isMainPassShaderDescriptionStale = false;
     bool m_isBRDFLutShaderDescriptionStale = false;

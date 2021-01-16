@@ -38,7 +38,8 @@ void main(){
 	float K = 120;
 	float motionDifferenceFactor = clamp(motionDifference * K, 0, 1);
 
-	float alphaDefault = 0.8;
+	float alphaDefault = 0.93;
+	//alphaDefault = 0;
 	float alpha = mix(alphaDefault, 0, motionDifferenceFactor);
 
 	//don't blend if current or previous pixel moves too fast
@@ -56,6 +57,15 @@ void main(){
 
 	if(g_cameraCut){
 		alpha = 0;
+	}
+	if(any(isnan(current_Y_SH)) || any(isnan(current_CoCg))){
+		alpha = 1;
+		if(any(isnan(history_Y_SH))){
+			history_Y_SH = vec4(0);
+		}
+		if(any(isnan(history_CoCg))){
+			history_CoCg = vec2(0);
+		}
 	}
 
 	vec4 result_Y_SH = mix(current_Y_SH, history_Y_SH, alpha);

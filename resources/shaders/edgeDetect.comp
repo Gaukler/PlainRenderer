@@ -1,0 +1,37 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "global.inc"
+#include "linearDepth.inc"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+
+layout(set=1, binding = 0, r8)	uniform image2D outImage;
+layout(set=1, binding = 1)		uniform texture2D depthTexture;
+
+void main(){
+	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
+
+	vec2 texelSize = 1.f / g_screenResolution;
+	vec2 uv = (iUV + 0.5f) * texelSize;
+
+	float depthCenter = texture(sampler2D(depthTexture, g_sampler_nearestClamp), uv).r;
+	depthCenter = linearizeDepth(depthCenter, g_nearPlane, g_farPlane);
+
+	float maxDepthDifference = 0;
+	for(int x = -1; x <= 1; x++){
+		for(int y = -1; y <= 1; y++) {
+			if(!(x == 0 && y == 0)){
+				float depthSample = texture(sampler2D(depthTexture, g_sampler_nearestClamp), uv + texelSize * vec2(x, y)).r;
+				depthSample = linearizeDepth(depthSample, g_nearPlane, g_farPlane);
+				float depthDifference = abs(depthSample - depthCenter);
+				maxDepthDifference = max(maxDepthDifference, depthDifference);
+			}
+		}
+	}
+	float edge = clamp(maxDepthDifference, 0, 1);
+
+	imageStore(outImage, iUV, vec4(edge, 0, 0, 0));
+}

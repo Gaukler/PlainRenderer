@@ -15,6 +15,7 @@ layout(set=1, binding = 2) 				uniform texture2D texture_Y_SH;
 layout(set=1, binding = 3) 				uniform texture2D texture_CoCg;
 layout(set=1, binding = 4) 	            uniform texture2D depthTexture;
 layout(set=1, binding = 5) 	            uniform texture2D normalTexture;
+layout(set=1, binding = 6) 	            uniform texture2D edgeTexture;
 
 vec3 pixelToWorld(vec2 uv){
 	float depth = texture(sampler2D(depthTexture, g_sampler_linearRepeat), uv).r;
@@ -50,7 +51,10 @@ void main(){
 
 	uint rngState = wang_hash(g_frameIndex);
 
-	float radiusWorld = 0.5f;
+	float depth = texture(sampler2D(depthTexture, g_sampler_linearRepeat), uv).r;
+	float depthLinear = linearizeDepth(depth, g_nearPlane, g_farPlane);
+
+	float radiusWorld = 0.3f;
 	for(int i = 0; i < sampleCount; i++){
 
 		float d = sqrt(rand(rngState));
@@ -85,14 +89,22 @@ void main(){
 		weight *= weight;	//squared falloff
 
 		vec3 sampleN = 2 * texture(sampler2D(normalTexture, g_sampler_linearRepeat), sampleUV).rgb - 1;
-		weight *= max(dot(N, sampleN), 0);
+		float NoN = max(dot(N, sampleN), 0);
+		weight *= NoN;
 
 		if(weight > 0){
-			vec4 sample_Y_SH = texture(sampler2D(texture_Y_SH, g_sampler_linearRepeat), sampleUV);
+
+			float edgeLod = 5;
+			float edgeStrength = textureLod(sampler2D(edgeTexture, g_sampler_linearRepeat), sampleUV, edgeLod).r;
+			float lodFactor = clamp(1 - sqrt(edgeStrength)*1.5f, 0, 1);
+
+			float lodMax = 3.5;
+			float lod = mix(0, lodMax, lodFactor);
+			vec4 sample_Y_SH = textureLod(sampler2D(texture_Y_SH, g_sampler_linearRepeat), sampleUV, lod);
 			vec2 sample_CoCg = texture(sampler2D(texture_CoCg, g_sampler_linearRepeat), sampleUV).rg;
 
 			//invalid samples are marked by being set to infinity
-			if(any(isinf(sample_Y_SH)) || any(isinf(sample_CoCg))){
+			if(any(isnan(sample_Y_SH)) || any(isnan(sample_CoCg))){
 				//sample is invalid, do nothing
 			}
 			else{

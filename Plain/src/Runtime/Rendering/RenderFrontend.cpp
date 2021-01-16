@@ -65,6 +65,10 @@ const uint32_t globalSamplerLinearWhiteBorderBinding    = 6;
 const uint32_t globalSamplerNearestRepeatBinding		= 7;
 const uint32_t globalNoiseTextureBindingBinding         = 8;
 
+//some SPD shaders avoids annyoing extra logic for low mips, which are never used anyways
+const uint32_t indirectLightingMaxMipCount = 7;	
+const uint32_t edgeMaxMipCount = 7;
+
 const glm::uvec3 sceneMaterialVoxelTextureResolution = glm::uvec3(64);
 
 //currently rendering without attachment is not supported, so a small dummy is used
@@ -239,7 +243,8 @@ void RenderFrontend::prepareNewFrame() {
             m_historyBuffers[1],
             m_sceneLuminance,
             m_lastFrameLuminance,
-			m_worldSpaceNormalImage},
+			m_worldSpaceNormalImage,
+			m_edgeImage },
             m_screenWidth, m_screenHeight);
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid }, m_screenWidth / 2, m_screenHeight / 2);
 
@@ -931,21 +936,74 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 	const int resolutionDivider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
 	const glm::vec2 workingResolution = glm::vec2(m_screenWidth / resolutionDivider, m_screenHeight / resolutionDivider);
 
+	//mip mapping
+	{
+		RenderPassExecution exe;
+		exe.handle = m_indirectDiffuseMipPass;
+		exe.parents = { m_indirectDiffuseFilterTemporalPass };
+		const uint32_t pixelsPerGroup = 32;
+		exe.dispatchCount[0] = uint32_t(glm::ceil(workingResolution.x / pixelsPerGroup));
+		exe.dispatchCount[1] = uint32_t(glm::ceil(workingResolution.y / pixelsPerGroup));
+		exe.dispatchCount[2] = 1;
+
+		exe.resources.sampledImages = { ImageResource(m_indirectDiffuse_Y_SH[1], 0, 0) };
+
+		const uint32_t mipCount = glm::min(mipCountFromResolution(workingResolution.x, workingResolution.y, 1), indirectLightingMaxMipCount);
+		for (uint32_t i = 1; i <= 6; i++) {
+			exe.resources.storageImages.push_back(ImageResource(m_indirectDiffuse_Y_SH[1], glm::min(i, mipCount-1), i));
+		}
+
+		gRenderBackend.setRenderPassExecution(exe);
+	}
+	//edge detect
+	{
+		RenderPassExecution exe;
+		exe.handle = m_edgeDetectionPass;
+		exe.parents = { m_depthPrePass };
+		const uint32_t workGroupSize = 8;
+		exe.dispatchCount[0] = uint32_t(glm::ceil(m_screenWidth  / float(workGroupSize)));
+		exe.dispatchCount[1] = uint32_t(glm::ceil(m_screenHeight / float(workGroupSize)));
+		exe.dispatchCount[2] = 1;
+
+		exe.resources.storageImages.push_back(ImageResource(m_edgeImage, 0, 0));
+		exe.resources.sampledImages = { ImageResource(currentFrame.depthBuffer, 0, 1) };
+
+		gRenderBackend.setRenderPassExecution(exe);
+	}
+	//mip edge
+	{
+		RenderPassExecution exe;
+		exe.handle = m_edgeMipPass;
+		exe.parents = { m_edgeDetectionPass };
+		const uint32_t pixelsPerGroup = 32;
+		exe.dispatchCount[0] = uint32_t(glm::ceil(m_screenWidth  / float(pixelsPerGroup)));
+		exe.dispatchCount[1] = uint32_t(glm::ceil(m_screenHeight / float(pixelsPerGroup)));
+		exe.dispatchCount[2] = 1;
+
+		const uint32_t mipCount = glm::min(mipCountFromResolution(m_screenWidth, m_screenHeight, 1), indirectLightingMaxMipCount);
+		for (uint32_t i = 1; i <= 6; i++) {
+			exe.resources.storageImages.push_back(ImageResource(m_edgeImage, glm::min(i, mipCount - 1), i));
+		}
+		exe.resources.sampledImages = { ImageResource(m_edgeImage, 0, 0) };
+
+		gRenderBackend.setRenderPassExecution(exe);
+	}
 	//spatial filter
 	{
 		RenderPassExecution exe;
 		exe.handle = m_indirectDiffuseFilterSpatialPass;
-		exe.parents = { m_diffuseSDFTracePass };
+		exe.parents = { m_indirectDiffuseMipPass, m_edgeMipPass, m_indirectDiffuseFilterTemporalPass };
 
 		exe.resources.storageImages = {
-			ImageResource(m_indirectDiffuse_Y_SH[1], 0, 0),
-			ImageResource(m_indirectDiffuse_CoCg[1], 0, 1)
+			ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
+			ImageResource(m_indirectDiffuse_CoCg[0], 0, 1)
 		};
 		exe.resources.sampledImages = {
-			ImageResource(m_indirectDiffuse_Y_SH[0], 0, 2),
-			ImageResource(m_indirectDiffuse_CoCg[0], 0, 3),
+			ImageResource(m_indirectDiffuse_Y_SH[1], 0, 2),
+			ImageResource(m_indirectDiffuse_CoCg[1], 0, 3),
 			ImageResource(currentFrame.depthBuffer, 0, 4),
 			ImageResource(m_worldSpaceNormalImage, 0, 5),
+			ImageResource(m_edgeImage, 0, 6)
 		};
 
 		const float localThreadSize = 8.f;
@@ -960,20 +1018,20 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 	{
 		RenderPassExecution exe;
 		exe.handle = m_indirectDiffuseFilterTemporalPass;
-		exe.parents = { m_indirectDiffuseFilterSpatialPass };
+		exe.parents = { m_diffuseSDFTracePass };
 
 		const uint32_t historySrcIndex = m_globalShaderInfo.frameIndex % 2;
 		const uint32_t historyDstIndex = historySrcIndex == 0 ? 1 : 0;
 
 		exe.resources.storageImages = {
-			ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
-			ImageResource(m_indirectDiffuse_CoCg[0], 0, 1),
+			ImageResource(m_indirectDiffuse_Y_SH[1], 0, 0),
+			ImageResource(m_indirectDiffuse_CoCg[1], 0, 1),
 			ImageResource(m_indirectDiffuseHistory_Y_SH[historyDstIndex], 0, 2),
 			ImageResource(m_indirectDiffuseHistory_CoCg[historyDstIndex], 0, 3)
 		};
 		exe.resources.sampledImages = {
-			ImageResource(m_indirectDiffuse_Y_SH[1], 0, 4),
-			ImageResource(m_indirectDiffuse_CoCg[1], 0, 5),
+			ImageResource(m_indirectDiffuse_Y_SH[0], 0, 4),
+			ImageResource(m_indirectDiffuse_CoCg[0], 0, 5),
 			ImageResource(m_indirectDiffuseHistory_Y_SH[historySrcIndex], 0, 6),
 			ImageResource(m_indirectDiffuseHistory_CoCg[historySrcIndex], 0, 7),
 			ImageResource(currentFrame.motionBuffer, 0, 8),
@@ -1006,7 +1064,8 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
 	mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource,
 		ImageResource(m_indirectDiffuse_Y_SH[0], 0, 15),
-		ImageResource(m_indirectDiffuse_CoCg[0], 0, 16) };
+		ImageResource(m_indirectDiffuse_CoCg[0], 0, 16),
+		ImageResource(m_edgeImage, 0, 17)};
     mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
 
     //add shadow map cascade resources
@@ -1170,6 +1229,8 @@ void RenderFrontend::resizeIndirectLightingBuffers() {
 		m_indirectDiffuseHistory_CoCg[0],
 		m_indirectDiffuseHistory_CoCg[1]
 		}, m_screenWidth / divider, m_screenHeight / divider);
+
+	gRenderBackend.updateComputePassShaderDescription(m_indirectDiffuseMipPass, createIndirectLightingMipCreationShaderDescription());
 }
 
 bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
@@ -1589,6 +1650,39 @@ ShaderDescription RenderFrontend::createTemporalSupersamplingShaderDescription()
     return desc;
 }
 
+ShaderDescription RenderFrontend::createIndirectLightingMipCreationShaderDescription() {
+	ShaderDescription desc;
+	desc.srcPathRelative = "colorMip_rgba16f.comp";
+
+	const int resolutionDivider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
+	const uint32_t srcWidth = m_screenWidth / resolutionDivider;
+	const uint32_t srcHeight = m_screenHeight / resolutionDivider;
+	const uint32_t mipCount = glm::min(mipCountFromResolution(srcWidth, srcHeight, 1), indirectLightingMaxMipCount);
+
+	//mip count
+	desc.specialisationConstants.push_back({
+			0,                                                  //location
+			dataToCharArray((void*)&mipCount, sizeof(mipCount)) //value
+		});
+
+	return desc;
+}
+
+ShaderDescription RenderFrontend::createEdgeMipCreationShaderDescription() {
+	ShaderDescription desc;
+	desc.srcPathRelative = "colorMip_r8.comp";
+
+	const uint32_t mipCount = glm::min(mipCountFromResolution(m_screenWidth, m_screenHeight, 1), edgeMaxMipCount);
+
+	//mip count
+	desc.specialisationConstants.push_back({
+			0,                                                  //location
+			dataToCharArray((void*)&mipCount, sizeof(mipCount)) //value
+		});
+
+	return desc;
+}
+
 void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.sunDirection = glm::vec4(directionToVector(m_sunDirection), 0.f);
     m_globalShaderInfo.cameraPos = glm::vec4(m_camera.extrinsic.position, 1.f); 
@@ -1917,9 +2011,11 @@ void RenderFrontend::initImages() {
 		desc.autoCreateMips = false;
 
 		m_indirectDiffuse_Y_SH[0] = gRenderBackend.createImage(desc);
-		m_indirectDiffuse_Y_SH[1] = gRenderBackend.createImage(desc);
 		m_indirectDiffuseHistory_Y_SH[0] = gRenderBackend.createImage(desc);
 		m_indirectDiffuseHistory_Y_SH[1] = gRenderBackend.createImage(desc);
+
+		desc.mipCount = MipCount::FullChain;
+		m_indirectDiffuse_Y_SH[1] = gRenderBackend.createImage(desc);
 	}
 	//indirect diffuse CoCg component
 	{
@@ -1953,6 +2049,20 @@ void RenderFrontend::initImages() {
 		desc.autoCreateMips = false;
 
 		m_worldSpaceNormalImage = gRenderBackend.createImage(desc);
+	}
+	//edge image
+	{
+		ImageDescription desc;
+		desc.width = m_screenWidth;
+		desc.height = m_screenHeight;
+		desc.depth = 1;
+		desc.type = ImageType::Type2D;
+		desc.format = ImageFormat::R8;
+		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+		desc.mipCount = MipCount::FullChain;
+		desc.autoCreateMips = false;
+
+		m_edgeImage = gRenderBackend.createImage(desc);
 	}
 }
 
@@ -2259,7 +2369,7 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 		desc.initialData = zerosBuffer.data(); 
 
 		m_materialVoxelizationBuffer = gRenderBackend.createStorageBuffer(desc);
-	}
+	}	
 }
 
 void RenderFrontend::initMeshs() {
@@ -2827,6 +2937,27 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 		desc.name = "Indirect diffuse temporal filter";
 		desc.shaderDescription.srcPathRelative = "filterIndirectDiffuseTemporal.comp";
 		m_indirectDiffuseFilterTemporalPass = gRenderBackend.createComputePass(desc);
+	}
+	//single pass mip chain shader
+	{
+		ComputePassDescription desc;
+		desc.name = "Indirect diffuse mip mapping";
+		desc.shaderDescription = createIndirectLightingMipCreationShaderDescription();
+		m_indirectDiffuseMipPass = gRenderBackend.createComputePass(desc);
+	}
+	//edge detection
+	{
+		ComputePassDescription desc;
+		desc.name = "Edge detection";
+		desc.shaderDescription.srcPathRelative = "edgeDetect.comp";
+		m_edgeDetectionPass = gRenderBackend.createComputePass(desc);
+	}
+	//edge mip
+	{
+		ComputePassDescription desc;
+		desc.name = "Edge mip chain";
+		desc.shaderDescription = createEdgeMipCreationShaderDescription();
+		m_edgeMipPass = gRenderBackend.createComputePass(desc);
 	}
 }
 

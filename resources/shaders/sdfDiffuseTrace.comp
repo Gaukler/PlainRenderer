@@ -56,8 +56,8 @@ void main(){
 		//bias not enough to move point out of mesh, so ignore
 		//create infinity to mark invalid sample
 		//TODO: infinity might be implementation specific, look for more robust way
-		imageStore(imageOut_Y_SH, imageCoordinate, vec4(1.f / 0.f));
-		imageStore(imageOut_CoCg, imageCoordinate, vec4(1.f / 0.f));
+		imageStore(imageOut_Y_SH, imageCoordinate, vec4(0.f / 0.f));
+		imageStore(imageOut_CoCg, imageCoordinate, vec4(0.f / 0.f));
 		return;
 	}
 
@@ -69,7 +69,7 @@ void main(){
 	noise *= 2 * pi;
 
 	uint globalInvocationIndex = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * 8;
-	uint rngState = wang_hash(globalInvocationIndex * g_frameIndex);
+	uint rngState = wang_hash(globalInvocationIndex * (g_frameIndex));
 
 	int samples = 1;
 	for(int i = 0; i < samples; i++){
