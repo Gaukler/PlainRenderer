@@ -56,20 +56,16 @@ void main(){
 		//bias not enough to move point out of mesh, so ignore
 		//create infinity to mark invalid sample
 		//TODO: infinity might be implementation specific, look for more robust way
-		imageStore(imageOut_Y_SH, imageCoordinate, vec4(0.f / 0.f));
-		imageStore(imageOut_CoCg, imageCoordinate, vec4(0.f / 0.f));
+		imageStore(imageOut_Y_SH, imageCoordinate, vec4(0.f / 1.f));
+		imageStore(imageOut_CoCg, imageCoordinate, vec4(0.f / 1.f));
 		return;
 	}
 
 	vec4 result_Y_SH = vec4(0.f);
 	vec2 result_CoCg = vec2(0.f);
-	
-	vec2 noiseUV = vec2(imageCoordinate) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
-	float noise = texture(sampler2D(g_noiseTexture, g_sampler_nearestRepeat), noiseUV).r; 
-	noise *= 2 * pi;
 
 	uint globalInvocationIndex = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * 8;
-	uint rngState = wang_hash(globalInvocationIndex * (g_frameIndex));
+	uint rngState = wang_hash(globalInvocationIndex /* * g_frameIndex*/);
 
 	int samples = 1;
 	for(int i = 0; i < samples; i++){

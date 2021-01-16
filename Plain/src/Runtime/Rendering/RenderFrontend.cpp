@@ -946,11 +946,11 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 		exe.dispatchCount[1] = uint32_t(glm::ceil(workingResolution.y / pixelsPerGroup));
 		exe.dispatchCount[2] = 1;
 
-		exe.resources.sampledImages = { ImageResource(m_indirectDiffuse_Y_SH[1], 0, 0) };
+		exe.resources.sampledImages = { ImageResource(m_indirectDiffuseHistory_Y_SH[1], 0, 0) };
 
 		const uint32_t mipCount = glm::min(mipCountFromResolution(workingResolution.x, workingResolution.y, 1), indirectLightingMaxMipCount);
 		for (uint32_t i = 1; i <= 6; i++) {
-			exe.resources.storageImages.push_back(ImageResource(m_indirectDiffuse_Y_SH[1], glm::min(i, mipCount-1), i));
+			exe.resources.storageImages.push_back(ImageResource(m_indirectDiffuseHistory_Y_SH[1], glm::min(i, mipCount-1), i));
 		}
 
 		gRenderBackend.setRenderPassExecution(exe);
@@ -995,12 +995,12 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 		exe.parents = { m_indirectDiffuseMipPass, m_edgeMipPass, m_indirectDiffuseFilterTemporalPass };
 
 		exe.resources.storageImages = {
-			ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
-			ImageResource(m_indirectDiffuse_CoCg[0], 0, 1)
+			ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 0),
+			ImageResource(m_indirectDiffuseHistory_CoCg[0], 0, 1)
 		};
 		exe.resources.sampledImages = {
-			ImageResource(m_indirectDiffuse_Y_SH[1], 0, 2),
-			ImageResource(m_indirectDiffuse_CoCg[1], 0, 3),
+			ImageResource(m_indirectDiffuseHistory_Y_SH[1], 0, 2),
+			ImageResource(m_indirectDiffuseHistory_CoCg[1], 0, 3),
 			ImageResource(currentFrame.depthBuffer, 0, 4),
 			ImageResource(m_worldSpaceNormalImage, 0, 5),
 			ImageResource(m_edgeImage, 0, 6)
@@ -1026,14 +1026,14 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 		exe.resources.storageImages = {
 			ImageResource(m_indirectDiffuse_Y_SH[1], 0, 0),
 			ImageResource(m_indirectDiffuse_CoCg[1], 0, 1),
-			ImageResource(m_indirectDiffuseHistory_Y_SH[historyDstIndex], 0, 2),
-			ImageResource(m_indirectDiffuseHistory_CoCg[historyDstIndex], 0, 3)
+			ImageResource(m_indirectDiffuseHistory_Y_SH[1], 0, 2),
+			ImageResource(m_indirectDiffuseHistory_CoCg[1], 0, 3)
 		};
 		exe.resources.sampledImages = {
 			ImageResource(m_indirectDiffuse_Y_SH[0], 0, 4),
 			ImageResource(m_indirectDiffuse_CoCg[0], 0, 5),
-			ImageResource(m_indirectDiffuseHistory_Y_SH[historySrcIndex], 0, 6),
-			ImageResource(m_indirectDiffuseHistory_CoCg[historySrcIndex], 0, 7),
+			ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 6),
+			ImageResource(m_indirectDiffuseHistory_CoCg[0], 0, 7),
 			ImageResource(currentFrame.motionBuffer, 0, 8),
 			ImageResource(lastFrame.motionBuffer, 0, 9)
 		};
@@ -1063,8 +1063,8 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     mainPassExecution.framebuffer = framebuffer;
     mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
 	mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource,
-		ImageResource(m_indirectDiffuse_Y_SH[0], 0, 15),
-		ImageResource(m_indirectDiffuse_CoCg[0], 0, 16),
+		ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 15),
+		ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 16),
 		ImageResource(m_edgeImage, 0, 17)};
     mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
 
@@ -2012,10 +2012,10 @@ void RenderFrontend::initImages() {
 
 		m_indirectDiffuse_Y_SH[0] = gRenderBackend.createImage(desc);
 		m_indirectDiffuseHistory_Y_SH[0] = gRenderBackend.createImage(desc);
-		m_indirectDiffuseHistory_Y_SH[1] = gRenderBackend.createImage(desc);
+		m_indirectDiffuse_Y_SH[1] = gRenderBackend.createImage(desc);
 
 		desc.mipCount = MipCount::FullChain;
-		m_indirectDiffuse_Y_SH[1] = gRenderBackend.createImage(desc);
+		m_indirectDiffuseHistory_Y_SH[1] = gRenderBackend.createImage(desc);
 	}
 	//indirect diffuse CoCg component
 	{

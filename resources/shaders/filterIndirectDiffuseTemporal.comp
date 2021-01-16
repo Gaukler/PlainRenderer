@@ -38,7 +38,7 @@ void main(){
 	float K = 120;
 	float motionDifferenceFactor = clamp(motionDifference * K, 0, 1);
 
-	float alphaDefault = 0.93;
+	float alphaDefault = 0.95;
 	//alphaDefault = 0;
 	float alpha = mix(alphaDefault, 0, motionDifferenceFactor);
 
@@ -67,7 +67,6 @@ void main(){
 			history_CoCg = vec2(0);
 		}
 	}
-
 	vec4 result_Y_SH = mix(current_Y_SH, history_Y_SH, alpha);
 	vec2 result_CoCg = mix(current_CoCg, history_CoCg, alpha);
 

@@ -45,7 +45,7 @@ float computeMip(ivec2 upperLeft, int srcMipLevel, ivec2 srcRes, bool extraRow, 
     for(int texel = 0; texel < 4; texel++){
         vec2 uv = upperLeftUV + offsets[texel] * texelSize;
         float sampleValue = textureLod(sampler2D(colorTexture, g_sampler_nearestClamp), uv, srcMipLevel).r;
-		v += sampleValue;
+		v = max(v, sampleValue);
 		sampleCount++;
     }
 
@@ -54,7 +54,7 @@ float computeMip(ivec2 upperLeft, int srcMipLevel, ivec2 srcRes, bool extraRow, 
         for(int texel = 0; texel < 2; texel++){
             vec2 uv = upperLeftUV + extraRowOffsets[texel] * texelSize;
             float sampleValue = textureLod(sampler2D(colorTexture, g_sampler_nearestClamp), uv, srcMipLevel).r;
-			v += sampleValue;
+			v = max(v, sampleValue);
 			sampleCount++;
         }
     }
@@ -64,7 +64,7 @@ float computeMip(ivec2 upperLeft, int srcMipLevel, ivec2 srcRes, bool extraRow, 
         for(int texel = 0; texel < 2; texel++){
             vec2 uv = upperLeftUV + extraColumnOffsets[texel] * texelSize;
             float sampleValue = textureLod(sampler2D(colorTexture, g_sampler_nearestClamp), uv, srcMipLevel).r;
-			v += sampleValue;
+			v = max(v, sampleValue);
 			sampleCount++;
         }
     }
@@ -72,10 +72,10 @@ float computeMip(ivec2 upperLeft, int srcMipLevel, ivec2 srcRes, bool extraRow, 
     if(extraRow && extraColumn){
         vec2 uv = upperLeftUV + ivec2(2, 2) * texelSize;
         float sampleValue = textureLod(sampler2D(colorTexture, g_sampler_nearestClamp), uv, srcMipLevel).r;
-		v += sampleValue;
+		v = max(v, sampleValue);
 		sampleCount++;
     }
-    return v / float(sampleCount);
+    return v;
 } 
 
 //single pass downscaling reference: https://github.com/GPUOpen-Effects/FidelityFX-SPD/tree/master/docs
