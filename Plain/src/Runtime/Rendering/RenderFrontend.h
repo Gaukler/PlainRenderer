@@ -132,8 +132,9 @@ private:
     void renderDepthPrepass(const FramebufferHandle framebuffer) const;
     void computeDepthPyramid(const ImageHandle depthBuffer) const;
     void computeSunLightMatrices() const;
-	void diffuseSDFTrace(const int sceneRenderTargetIndex) const;
+	void diffuseSDFTrace(const FrameRenderTargets& currentTarget) const;
 	void filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame) const;
+	void downscaleDepth(const FrameRenderTargets& currentTarget) const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const;
     void copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const; //input must be R11G11B10
     void computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
@@ -238,11 +239,10 @@ private:
 	RenderPassHandle m_materialVoxelizationPass;
 	RenderPassHandle m_materialVoxelizationToImagePass;
 	RenderPassHandle m_diffuseSDFTracePass;
-	RenderPassHandle m_indirectDiffuseFilterSpatialPass;
+	RenderPassHandle m_indirectDiffuseFilterSpatialPass[2];
 	RenderPassHandle m_indirectDiffuseFilterTemporalPass;
-	RenderPassHandle m_indirectDiffuseMipPass;
-	RenderPassHandle m_edgeDetectionPass;
-	RenderPassHandle m_edgeMipPass;
+	RenderPassHandle m_depthDownscalePass;
+	RenderPassHandle m_indirectLightingUpscale;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -268,7 +268,9 @@ private:
 	ImageHandle m_indirectDiffuseHistory_Y_SH[2];	//Y component of YCoCg color space as spherical harmonics
 	ImageHandle m_indirectDiffuseHistory_CoCg[2];	//CoCg component of YCoCg color space
 	ImageHandle m_worldSpaceNormalImage;
-	ImageHandle m_edgeImage;
+	ImageHandle m_depthHalfRes;
+	ImageHandle m_indirectLightingFullRes_Y_SH;
+	ImageHandle m_indirectLightingFullRes_CoCg;
 
     std::vector<ImageHandle> m_noiseTextures;
     uint32_t m_noiseTextureIndex = 0;

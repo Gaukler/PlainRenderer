@@ -183,6 +183,7 @@ void ShaderFileManager::updateFileLastChangeTimes() {
 
 std::vector<ComputePassShaderReloadInfo> ShaderFileManager::reloadOutOfDateComputeShaders() {
     std::vector<ComputePassShaderReloadInfo> reloadList;
+	std::set<size_t> spirvCacheUpdateList;
     //iterate over all compute shaders
     for (ComputeShaderSourceInfo& shaderSrcInfo : m_computeShaderSourceInfos) {
         if (isComputeShaderCacheOutOfDate(shaderSrcInfo)) {
@@ -203,11 +204,18 @@ std::vector<ComputePassShaderReloadInfo> ShaderFileManager::reloadOutOfDateCompu
                 shaderSrcInfo.includeFileIndices.clear();
                 addGLSLIncludesFileIndicesToSet(shaderPathAbsolute, &shaderSrcInfo.includeFileIndices);
             }
-            //update latest cache update point
-            //even if load/compilation is not succesfull we don't want to keep failing every frame before problem is solved
-            m_fileLastChanges[shaderSrcInfo.loadInfo.spirvCacheFileIndex] = fs::_File_time_clock::now();
+			//update latest cache update point
+			//even if load/compilation is not succesfull we don't want to keep failing every frame before problem is solved
+			//update is deferred because the same cache might be used multiple shaders
+			spirvCacheUpdateList.insert(shaderSrcInfo.loadInfo.spirvCacheFileIndex);          
         }
     }
+
+	//deferred update of cache files last change times
+	for (const size_t index : spirvCacheUpdateList) {
+		m_fileLastChanges[index] = fs::_File_time_clock::now();
+	}
+	
     return reloadList;
 }
 

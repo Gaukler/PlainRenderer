@@ -73,8 +73,6 @@ layout(set=1, binding = 14, std140) uniform occlusionData{
 layout(set=1, binding = 15) uniform texture2D indirectDiffuse_Y_SH;
 layout(set=1, binding = 16) uniform texture2D indirectDiffuse_CoCg;
 
-layout(set=1, binding = 17) uniform texture2D testEdge;
-
 layout(set=2, binding = 0) uniform texture2D colorTexture;
 layout(set=2, binding = 1) uniform texture2D normalTexture;
 layout(set=2, binding = 2) uniform texture2D specularTexture;
@@ -233,8 +231,6 @@ void main(){
 		vec4 irradiance_Y_SH = texture(sampler2D(indirectDiffuse_Y_SH, g_sampler_linearRepeat), screenUV);
 		float irradiance_Y = dot(irradiance_Y_SH, directionToSH_L1(N));
 		vec2 irradiance_CoCg = texture(sampler2D(indirectDiffuse_CoCg, g_sampler_linearRepeat), screenUV).rg;
-				
-		irradiance_CoCg = vec2(0);
 		irradiance = YCoCgToLinear(vec3(irradiance_Y, irradiance_CoCg));
 
 		//specular
@@ -381,9 +377,5 @@ void main(){
 
     color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
 	color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
-	color = irradiance / pi;
-
-	vec2 screenUV = gl_FragCoord.xy / g_screenResolution;
-	float lod = 0;
-	//color = textureLod(sampler2D(testEdge, g_sampler_linearRepeat), screenUV, lod).rrr;
+	//color = irradiance / pi;
 }

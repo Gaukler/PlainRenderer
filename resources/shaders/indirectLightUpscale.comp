@@ -1,0 +1,71 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "global.inc"
+#include "linearDepth.inc"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set=1, binding = 0, rgba16f) 	uniform image2D fullResDst_Y_SH;
+layout(set=1, binding = 1, rg16f) 		uniform image2D fullResDst_CoCg;
+layout(set=1, binding = 2) 	            uniform texture2D halfResSrc_Y_SH;
+layout(set=1, binding = 3) 	            uniform texture2D halfResSrc_CoCg;
+layout(set=1, binding = 4) 	            uniform texture2D fullResDepth;
+layout(set=1, binding = 5) 	            uniform texture2D halfResDepth;
+
+void main(){
+	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
+	vec2 uv = (iUV + 0.5f) / g_screenResolution;
+
+	vec4 result_Y_SH = vec4(0);
+	vec2 result_CoCg = vec2(0);
+
+	float fullResDepth = texture(sampler2D(fullResDepth, g_sampler_nearestClamp), uv).r;
+	fullResDepth = linearizeDepth(fullResDepth, g_nearPlane, g_farPlane);
+
+	vec2 halfResTexelSize = 1.f / textureSize(sampler2D(halfResDepth, g_sampler_nearestClamp), 0);
+
+	vec4 depthSamples = textureGather(sampler2D(halfResDepth, g_sampler_nearestClamp), uv);
+
+	depthSamples.x = linearizeDepth(depthSamples.x, g_nearPlane, g_farPlane);
+	depthSamples.y = linearizeDepth(depthSamples.y, g_nearPlane, g_farPlane);
+	depthSamples.z = linearizeDepth(depthSamples.z, g_nearPlane, g_farPlane);
+	depthSamples.w = linearizeDepth(depthSamples.w, g_nearPlane, g_farPlane);
+
+	float minDepthDiff = 1000;
+	vec2 closestDepthTexel = vec2(0);
+
+	float edgeDepthThreshold = 0.5f;
+	bool isEdge = false;
+
+	vec2 offsets[4] = {
+		vec2(0, 1),
+		vec2(1, 1),
+		vec2(1, 0),
+		vec2(0, 0)
+	};
+
+	for(int i = 0; i < 4; i++){
+		float depthDiff = abs(depthSamples[i] - fullResDepth);
+		isEdge = isEdge || depthDiff > edgeDepthThreshold;
+		if(depthDiff < minDepthDiff){
+			minDepthDiff = depthDiff;
+			closestDepthTexel = offsets[i];
+		}
+	}
+
+	vec2 uvClosestTexel = uv + closestDepthTexel * halfResTexelSize;
+
+	if(isEdge){
+		result_Y_SH = texture(sampler2D(halfResSrc_Y_SH, g_sampler_nearestClamp), uvClosestTexel);
+		result_CoCg = texture(sampler2D(halfResSrc_CoCg, g_sampler_nearestClamp), uvClosestTexel).rg;
+	}
+	else{
+		result_Y_SH = texture(sampler2D(halfResSrc_Y_SH, g_sampler_linearClamp), uv);
+		result_CoCg = texture(sampler2D(halfResSrc_CoCg, g_sampler_linearClamp), uv).rg;
+	}
+
+	imageStore(fullResDst_Y_SH, iUV, result_Y_SH);
+	imageStore(fullResDst_CoCg, iUV, vec4(result_CoCg, vec2(0.f)));
+}

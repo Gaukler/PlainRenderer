@@ -69,6 +69,8 @@ void main(){
     exposureOffset += g_exposureOffset;
     
     float targetEV100 = sceneEV100 - exposureOffset;
+	targetEV100 = max(targetEV100, 10);
+
     float previousEV100 = log2(1.f / (max(lightBuffer.previousFrameExposure, 0.000001f) * 1.2f));
     
     float evDelta = targetEV100 - previousEV100;
