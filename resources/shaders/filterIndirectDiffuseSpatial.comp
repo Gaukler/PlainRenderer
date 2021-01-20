@@ -53,14 +53,16 @@ void main(){
 	float depth = texture(sampler2D(depthTexture, g_sampler_nearestClamp), uv).r;
 	float depthLinear = linearizeDepth(depth, g_nearPlane, g_farPlane);
 
-	float radiusWorld = 0.3f;
+	float radiusWorld = 1.f;
 
 	vec2 noiseUV = vec2(iUV) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
 	float test = texture(sampler2D(g_noiseTexture, g_sampler_linearRepeat), noiseUV).r;
 
+	float lengthModifier = 1.f;
+
 	for(int i = 0; i < sampleCount; i++){
 
-		float d = sqrt(rand(rngState));
+		float d = sqrt(rand(rngState)) * lengthModifier;
 		float angle = 2 * pi * rand(rngState);
 
 		vec2 offset = vec2(cos(angle), sin(angle)) * d;
@@ -93,11 +95,15 @@ void main(){
 
 		if(any(lessThan(sampleUV, vec2(0))) || any(greaterThan(sampleUV, vec2(1)))){
 			weight = 0;
+			//reduce sampling radius when landing offscreen
+			//this avoids close pixels and pixels near screen border being unfiltered
+			lengthModifier *= 0.8f;
 		}
 
 		vec3 sampleN = 2 * texture(sampler2D(normalTexture, g_sampler_nearestClamp), sampleUV).rgb - 1;
 		float NoN = max(dot(N, sampleN), 0);
-		weight *= NoN;
+		//no normal weight for now, leads to underfiltering in high fidelity areas
+		//weight *= NoN;
 
 		if(weight > 0){
 
