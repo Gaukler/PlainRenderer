@@ -2,7 +2,7 @@
 #include "pch.h"
 
 std::vector<uint8_t> generateWhiteNoiseTexture(const glm::ivec2& resolution);
-std::vector<uint8_t> generateBlueNoiseTexture(const glm::ivec2& resolution);
+std::vector<uint8_t> generateBlueNoiseTexture(const glm::ivec2& resolution, const size_t channelCount);
 
 //generate blue noise samples in range [0:1]
 //currently discretized to 64x64 grid, because of this should only be used for samller sample counts

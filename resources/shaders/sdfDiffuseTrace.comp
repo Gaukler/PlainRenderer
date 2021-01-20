@@ -33,8 +33,8 @@ layout(set=1, binding = 7, std430) buffer lightStorageBuffer{
 layout(set=1, binding = 8) uniform texture2D skyLut;
 
 void main(){
-	ivec2 imageCoordinate = ivec2(gl_GlobalInvocationID.xy);
-	vec2 uv = imageCoordinate / vec2(imageSize(imageOut_Y_SH));
+	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
+	vec2 uv = iUV / vec2(imageSize(imageOut_Y_SH));
 	float depth = texture(sampler2D(depthTexture, g_sampler_nearestClamp), uv).r;
 	float depthLinear = linearizeDepth(depth, g_nearPlane, g_farPlane);
 
@@ -56,8 +56,8 @@ void main(){
 		//bias not enough to move point out of mesh, so ignore
 		//create infinity to mark invalid sample
 		//TODO: infinity might be implementation specific, look for more robust way
-		imageStore(imageOut_Y_SH, imageCoordinate, vec4(0.f / 1.f));
-		imageStore(imageOut_CoCg, imageCoordinate, vec4(0.f / 1.f));
+		imageStore(imageOut_Y_SH, iUV, vec4(0.f / 1.f));
+		imageStore(imageOut_CoCg, iUV, vec4(0.f / 1.f));
 		return;
 	}
 
@@ -65,34 +65,28 @@ void main(){
 	vec2 result_CoCg = vec2(0.f);
 
 	uint globalInvocationIndex = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * 8;
-	uint rngState = wang_hash(globalInvocationIndex * (g_frameIndex % 4 + 1));
-	//rngState = wang_hash(globalInvocationIndex);
-	
-	int samples = 1;
-	for(int i = 0; i < samples; i++){
-		vec2 xi = vec2(rand(rngState), rand(rngState));
 
-		vec3 L = importanceSampleCosine(xi, N);
+	vec2 noiseUV = vec2(iUV) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
+	vec2 xi = texture(sampler2D(g_noiseTexture, g_sampler_linearRepeat), noiseUV).rg;
 
-		SDFTrace trace = sdfTrace(rayOrigin, L, sdfInfo, sdfTexture, sdfThreshold, sdfMin, sdfMax);
+	vec3 L = importanceSampleCosine(xi, N);
 
-		vec3 hitColor;
+	SDFTrace trace = sdfTrace(rayOrigin, L, sdfInfo, sdfTexture, sdfThreshold, sdfMin, sdfMax);
 
-		if(trace.hit){
-			vec3 ambient = vec3(0.f);
-			hitColor = shadeHit(trace, sdfInfo, sdfTexture, materialTexture, sdfThreshold, ambient, sdfMin, sdfMax, 
-				lightBuffer.sunColor, lightBuffer.sunStrengthExposed);
-		}
-		else{
-			hitColor = sampleSkyLut(L, skyLut);
-		}
-		vec3 YCoCg = linearToYCoCg(hitColor);
+	vec3 hitColor;
 
-		result_Y_SH += YCoCg.x * directionToSH_L1(L);
-		result_CoCg += YCoCg.yz;
+	if(trace.hit){
+		vec3 ambient = vec3(0.f);
+		hitColor = shadeHit(trace, sdfInfo, sdfTexture, materialTexture, sdfThreshold, ambient, sdfMin, sdfMax, 
+			lightBuffer.sunColor, lightBuffer.sunStrengthExposed);
 	}
-	result_Y_SH /= float(samples);
-	result_CoCg /= float(samples);
+	else{
+		hitColor = sampleSkyLut(L, skyLut);
+	}
+	vec3 YCoCg = linearToYCoCg(hitColor);
+
+	result_Y_SH += YCoCg.x * directionToSH_L1(L);
+	result_CoCg += YCoCg.yz;
 
 	//multiplication by pi because PDF = NoL / pi
 	//division by PDF is multiplication with pi / NoL
@@ -100,6 +94,6 @@ void main(){
 	result_Y_SH *= pi;
 	result_CoCg *= pi;
 
-	imageStore(imageOut_Y_SH, imageCoordinate, result_Y_SH);
-	imageStore(imageOut_CoCg, imageCoordinate, vec4(result_CoCg, vec2(0.f)));
+	imageStore(imageOut_Y_SH, iUV, result_Y_SH);
+	imageStore(imageOut_CoCg, iUV, vec4(result_CoCg, vec2(0.f)));
 }

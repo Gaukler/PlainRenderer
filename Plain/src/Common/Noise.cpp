@@ -216,63 +216,74 @@ namespace VoidAndClusterFunctions {
 
 //reference: "The void-and-cluster method for dither array generation"
 //reference: https://blog.demofox.org/2019/06/25/generating-blue-noise-textures-with-void-and-cluster/
-std::vector<uint8_t> generateBlueNoiseTexture(const glm::ivec2& resolution) {
+std::vector<uint8_t> generateBlueNoiseTexture(const glm::ivec2& resolution, const size_t channelCount) {
     using namespace VoidAndClusterFunctions;
-    const size_t pixelCount = size_t(resolution.x) * size_t(resolution.y);
 
-    const std::vector<bool> prototypeBinaryPattern = createPrototypeBinaryPattern(resolution, uint32_t(pixelCount * 0.1f));
-    const std::vector<float> initialLut = calculateFilterLut(prototypeBinaryPattern, resolution);
+	const size_t pixelCount = size_t(resolution.x) * size_t(resolution.y);
+	const size_t byteCount = pixelCount * channelCount;
 
-    std::vector<bool> binaryPattern = prototypeBinaryPattern;
-    std::vector<float> lut = initialLut;
-    std::vector<uint32_t> rankMatrix(pixelCount, 0);
+	std::vector<uint8_t> texture;
+	texture.resize(byteCount);
 
-    int onesCount = 0;
-    for (const auto isMinorityPixel : binaryPattern) {
-        onesCount += isMinorityPixel ? 1 : 0;
-    }
-    int rank = onesCount - 1;
+	for (size_t channel = 0; channel < channelCount; channel++) {
+		const std::vector<bool> prototypeBinaryPattern = createPrototypeBinaryPattern(resolution, uint32_t(pixelCount * 0.1f));
+		const std::vector<float> initialLut = calculateFilterLut(prototypeBinaryPattern, resolution);
 
-    //remove tightest clusters and enter corresponding rank
-    while (rank >= 0) {
-        const size_t removedPixelIndex = findTightestCluster(lut, binaryPattern);
-        binaryPattern[removedPixelIndex] = false;
-        
-        const glm::ivec2 removedPixelCoordinates = indexToCoordinate(removedPixelIndex, resolution);
-        const std::vector<float> removedPixelInfluence = calculatePixelInfluence(removedPixelCoordinates, resolution);
-        lut = subtractInfluenceVectors(lut, removedPixelInfluence);
-    
-        rankMatrix[removedPixelIndex] = rank;
-        rank--;
-    }
+		std::vector<bool> binaryPattern = prototypeBinaryPattern;
+		std::vector<float> lut = initialLut;
+		std::vector<uint32_t> rankMatrix(pixelCount, 0);
 
-    //reset rank, binary pattern and lut
-    rank = onesCount;
-    binaryPattern = prototypeBinaryPattern;
-    lut = initialLut;
+		int onesCount = 0;
+		for (const auto isMinorityPixel : binaryPattern) {
+			onesCount += isMinorityPixel ? 1 : 0;
+		}
+		int rank = onesCount - 1;
 
-    //fill up biggest voids
-    //in the paper this is split into two phases because the meaning of majority and minority changes after half
-    //however this is only semantic and does not have to be implemented in the code
-    while (rank < pixelCount) {
-        const size_t addedPixelIndex = findBiggestVoid(lut, binaryPattern);
-        binaryPattern[addedPixelIndex] = true;
-    
-        const glm::ivec2 addedPixelCoordinates = indexToCoordinate(addedPixelIndex, resolution);
-        const std::vector<float> addedPixelInfluence = calculatePixelInfluence(addedPixelCoordinates, resolution);
-        lut = addInfluenceVectors(lut, addedPixelInfluence);
-    
-        rankMatrix[addedPixelIndex] = rank;
-        rank++;
-    }
+		//remove tightest clusters and enter corresponding rank
+		while (rank >= 0) {
+			const size_t removedPixelIndex = findTightestCluster(lut, binaryPattern);
+			binaryPattern[removedPixelIndex] = false;
 
-    //normalize rank matrix for use as blue noise
-    std::vector<uint8_t> blueNoise(pixelCount);
-    for (size_t i = 0; i < blueNoise.size(); i++) {
-        blueNoise[i] = uint8_t((rankMatrix[i] + 0.5f) / pixelCount * 255.f);
-    }
+			const glm::ivec2 removedPixelCoordinates = indexToCoordinate(removedPixelIndex, resolution);
+			const std::vector<float> removedPixelInfluence = calculatePixelInfluence(removedPixelCoordinates, resolution);
+			lut = subtractInfluenceVectors(lut, removedPixelInfluence);
 
-    return blueNoise;
+			rankMatrix[removedPixelIndex] = rank;
+			rank--;
+		}
+
+		//reset rank, binary pattern and lut
+		rank = onesCount;
+		binaryPattern = prototypeBinaryPattern;
+		lut = initialLut;
+
+		//fill up biggest voids
+		//in the paper this is split into two phases because the meaning of majority and minority changes after half
+		//however this is only semantic and does not have to be implemented in the code
+		while (rank < pixelCount) {
+			const size_t addedPixelIndex = findBiggestVoid(lut, binaryPattern);
+			binaryPattern[addedPixelIndex] = true;
+
+			const glm::ivec2 addedPixelCoordinates = indexToCoordinate(addedPixelIndex, resolution);
+			const std::vector<float> addedPixelInfluence = calculatePixelInfluence(addedPixelCoordinates, resolution);
+			lut = addInfluenceVectors(lut, addedPixelInfluence);
+
+			rankMatrix[addedPixelIndex] = rank;
+			rank++;
+		}
+
+		//normalize rank matrix for use as blue noise
+		std::vector<uint8_t> blueNoise(pixelCount);
+		for (size_t i = 0; i < blueNoise.size(); i++) {
+			blueNoise[i] = uint8_t((rankMatrix[i] + 0.5f) / pixelCount * 255.f);
+		}
+
+		//write into texture
+		for (size_t i = 0; i < blueNoise.size(); i++) {
+			texture[i * channelCount + channel] = blueNoise[i];
+		}
+	}
+    return texture;
 }
 
 std::vector<glm::vec2> generateBlueNoiseSampleSequence(const uint32_t count) {

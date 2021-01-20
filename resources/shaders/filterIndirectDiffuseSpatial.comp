@@ -48,15 +48,15 @@ void main(){
 	vec2 result_CoCg = vec2(0);
 	
 	float weightTotal = 0.f;
-
-	uint rngState = wang_hash(g_frameIndex);
-	rngState = wang_hash(g_frameIndex % 4);
-	//rngState = wang_hash(1);
+	uint rngState = wang_hash(g_frameIndex % 4);
 
 	float depth = texture(sampler2D(depthTexture, g_sampler_nearestClamp), uv).r;
 	float depthLinear = linearizeDepth(depth, g_nearPlane, g_farPlane);
 
-	float radiusWorld = 0.5f;
+	float radiusWorld = 0.3f;
+
+	vec2 noiseUV = vec2(iUV) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
+	float test = texture(sampler2D(g_noiseTexture, g_sampler_linearRepeat), noiseUV).r;
 
 	for(int i = 0; i < sampleCount; i++){
 
@@ -87,7 +87,7 @@ void main(){
 		//see "Exploring the Ray Traced Future in Metro Exodus"
 		vec3 pixelWorld = pixelToWorld(sampleUV);
 		float distanceToTangentPlane = abs(dot(N, pixelWorld - pCenter));
-		float maxDistance = 0.1f;
+		float maxDistance = 0.25f;
 		float weight = clamp(maxDistance / max(distanceToTangentPlane, 0.0001f), 0, 1);
 		weight *= weight;	//squared falloff
 
@@ -104,7 +104,7 @@ void main(){
 			vec4 sample_Y_SH = texture(sampler2D(texture_Y_SH, g_sampler_nearestClamp), sampleUV);
 			vec2 sample_CoCg = texture(sampler2D(texture_CoCg, g_sampler_nearestClamp), sampleUV).rg;
 
-			//invalid samples are marked by being set to infinity
+			//after resizing framebuffers nan values can occur
 			if(any(isnan(sample_Y_SH)) || any(isnan(sample_CoCg))){
 				//sample is invalid, do nothing
 			}

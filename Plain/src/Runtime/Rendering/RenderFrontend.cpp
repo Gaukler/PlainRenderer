@@ -1985,11 +1985,13 @@ void RenderFrontend::initImages() {
         desc.height = noiseTextureHeight;
         desc.depth = 1;
         desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::R8;
+        desc.format = ImageFormat::RG8;
         desc.usageFlags = ImageUsageFlags::Sampled;
         desc.mipCount = MipCount::One;
         desc.autoCreateMips = false;
-        desc.initialData = generateBlueNoiseTexture(glm::ivec2(noiseTextureWidth, noiseTextureHeight));
+
+		const size_t channelCount = 2;
+		desc.initialData = generateBlueNoiseTexture(glm::ivec2(noiseTextureWidth, noiseTextureHeight), channelCount);
 
         m_noiseTextures.push_back(gRenderBackend.createImage(desc));
     }
