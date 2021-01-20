@@ -64,8 +64,6 @@ void main(){
 	vec4 result_Y_SH = vec4(0.f);
 	vec2 result_CoCg = vec2(0.f);
 
-	uint globalInvocationIndex = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * 8;
-
 	vec2 noiseUV = vec2(iUV) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
 	vec2 xi = texture(sampler2D(g_noiseTexture, g_sampler_linearRepeat), noiseUV).rg;
 
