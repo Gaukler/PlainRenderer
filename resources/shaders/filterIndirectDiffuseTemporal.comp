@@ -35,10 +35,10 @@ void main(){
 	//motion difference metric from SMAA paper
 	vec2 motionLastFrame = texture(sampler2D(velocityLastFrame, g_sampler_linearRepeat), uvReprojected).rg;
 	float motionDifference = sqrt(abs(length(motion) - length(motionLastFrame)));
-	float K = 30;
+	float K = 10;
 	float motionDifferenceFactor = clamp(motionDifference * K, 0, 1);
 
-	float alphaDefault = 0.8f;
+	float alphaDefault = 0.85f;
 	//alphaDefault = 0;
 	float alpha = mix(alphaDefault, 0, motionDifferenceFactor);
 	

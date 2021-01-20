@@ -2991,11 +2991,18 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 	}
 	//indirect diffuse spatial filter
 	{
-		ComputePassDescription desc;
-		desc.name = "Indirect diffuse spatial filter";
-		desc.shaderDescription.srcPathRelative = "filterIndirectDiffuseSpatial.comp";
-		m_indirectDiffuseFilterSpatialPass[0] = gRenderBackend.createComputePass(desc);
-		m_indirectDiffuseFilterSpatialPass[1] = gRenderBackend.createComputePass(desc);
+		for (int i = 0; i < 2; i++) {
+			ComputePassDescription desc;
+			desc.name = "Indirect diffuse spatial filter";
+			desc.shaderDescription.srcPathRelative = "filterIndirectDiffuseSpatial.comp";
+
+			//index constant
+			desc.shaderDescription.specialisationConstants.push_back({
+			0,										//location
+			dataToCharArray((void*)&i, sizeof(i))   //value
+			});
+			m_indirectDiffuseFilterSpatialPass[i] = gRenderBackend.createComputePass(desc);
+		}
 	}
 	//indirect diffuse temporal filter
 	{
