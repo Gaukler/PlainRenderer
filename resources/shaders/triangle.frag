@@ -228,9 +228,9 @@ void main(){
 	if(indirectLightingTech == 0){
 		//diffuse
 		vec2 screenUV = gl_FragCoord.xy / g_screenResolution;
-		vec4 irradiance_Y_SH = texture(sampler2D(indirectDiffuse_Y_SH, g_sampler_linearRepeat), screenUV);
+		vec4 irradiance_Y_SH = texture(sampler2D(indirectDiffuse_Y_SH, g_sampler_nearestClamp), screenUV);
 		float irradiance_Y = dot(irradiance_Y_SH, directionToSH_L1(N));
-		vec2 irradiance_CoCg = texture(sampler2D(indirectDiffuse_CoCg, g_sampler_linearRepeat), screenUV).rg;
+		vec2 irradiance_CoCg = texture(sampler2D(indirectDiffuse_CoCg, g_sampler_nearestClamp), screenUV).rg;
 		irradiance = YCoCgToLinear(vec3(irradiance_Y, irradiance_CoCg));
 
 		//specular
