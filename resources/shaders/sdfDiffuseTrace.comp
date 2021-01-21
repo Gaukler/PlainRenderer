@@ -65,7 +65,7 @@ void main(){
 	vec2 result_CoCg = vec2(0.f);
 
 	vec2 noiseUV = vec2(iUV) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
-	vec2 xi = texture(sampler2D(g_noiseTexture, g_sampler_linearRepeat), noiseUV).rg;
+	vec2 xi = texture(sampler2D(g_noiseTexture, g_sampler_nearestRepeat), noiseUV).rg;
 
 	vec3 L = importanceSampleCosine(xi, N);
 
