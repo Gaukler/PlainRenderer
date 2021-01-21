@@ -348,6 +348,7 @@ namespace DDS_pixelFormatCompressionCodes {
     const uint32_t DXT4 = 0x34545844;
     const uint32_t DXT5 = 0x35545844;
     const uint32_t DX10 = 0x30315844;
+	const uint32_t BC5	= 0x32495441;
 }
 
 bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outImage) {
@@ -396,6 +397,7 @@ bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outIma
     outImage->usageFlags = ImageUsageFlags::Sampled;
 
     bool isUsingDX10Header = false;
+	const bool isCompressedFormat = header.pixelFormat.flags & DDS_pixelformatFlags::fourCC;
 
     //only limited formats supported at the moment
     //more formats will be added as needed    
@@ -415,12 +417,12 @@ bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outIma
     else if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::DXT1) {
         outImage->format = ImageFormat::BC1;
     }
-    else if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::DXT3) {
+    else if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::DXT5) {
         outImage->format = ImageFormat::BC3;
     }
-    else if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::DXT5) {
-        outImage->format = ImageFormat::BC5;
-    }
+	else if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::BC5) {
+		outImage->format = ImageFormat::BC5;
+	}
     else {
         std::cout << "DDS unsupported texture format: " << filename << std::endl;
         return false;
