@@ -231,7 +231,7 @@ std::vector<MeshBinary> meshesToBinary(const std::vector<MeshData>& meshes, cons
 
             //bitangent stored as 32 bit R10G10B10A2
             {
-                const NormalizedR10G10B10A2 bitangentCompressed = vec3ToNormalizedR10B10G10A2(meshData.tangents[i]);
+                const NormalizedR10G10B10A2 bitangentCompressed = vec3ToNormalizedR10B10G10A2(meshData.bitangents[i]);
 
                 meshBinary.vertexBuffer.push_back(((uint8_t*)&bitangentCompressed)[0]);
                 meshBinary.vertexBuffer.push_back(((uint8_t*)&bitangentCompressed)[1]);

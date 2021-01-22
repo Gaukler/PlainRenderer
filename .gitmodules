@@ -19,3 +19,9 @@
 [submodule "Plain/vendor/glslang"]
 	path = Plain/vendor/glslang
 	url = https://github.com/KhronosGroup/glslang
+[submodule "Plain\\vendor\\tinygltf"]
+	path = Plain\\vendor\\tinygltf
+	url = https://github.com/syoyo/tinygltf
+[submodule "Plain/vendor/tinygltf"]
+	path = Plain/vendor/tinygltf
+	url = https://github.com/syoyo/tinygltf
