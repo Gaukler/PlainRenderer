@@ -32,13 +32,13 @@ int main(const int argc, char* argv[]) {
     DirectoryUtils::init();
 
     std::filesystem::path binaryPathRelative =  settings.modelFilePath;
-    binaryPathRelative.replace_extension("bin");
+    binaryPathRelative.replace_extension("plain");
 
     const std::filesystem::path sdfPathRelative = binaryToSDFPath(binaryPathRelative);
 
     std::vector<MeshData> meshData;
     std::cout << "Input model: " << settings.modelFilePath << "\n";
-    if (loadModelOBJ(settings.modelFilePath, &meshData)) {
+    if (loadModelGLTF(settings.modelFilePath, &meshData)) {
         std::vector<AxisAlignedBoundingBox> AABBList = AABBListFromMeshes(meshData);
         std::vector<MeshBinary> meshesBinary = meshesToBinary(meshData, AABBList);
         std::cout << "Sucessfully converted model to binary format\n";

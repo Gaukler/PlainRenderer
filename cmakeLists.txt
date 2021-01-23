@@ -94,6 +94,16 @@ set(IMGUI_FILES
 target_sources(PlainRuntime PRIVATE ${IMGUI_FILES})
 source_group("ImGui" FILES ${IMGUI_FILES})
 
+#add tinygltf
+include_directories(Plain/vendor/tinygltf)
+set(TINY_GLTF_FILES 
+	Plain/vendor/tinygltf/tiny_gltf.h
+	Plain/vendor/tinygltf/stb_image.h
+	Plain/vendor/tinygltf/stb_image_write.h
+	Plain/vendor/tinygltf/json.hpp)
+target_sources(PlainAssetPipeline PRIVATE ${TINY_GLTF_FILES})
+source_group("tinygltf" FILES ${TINY_GLTF_FILES})
+
 #add vulkan
 find_package(Vulkan REQUIRED)
 target_include_directories(PlainRuntime PRIVATE Vulkan::Vulkan)
