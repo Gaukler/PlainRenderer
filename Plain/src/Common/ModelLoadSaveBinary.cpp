@@ -8,11 +8,15 @@ const uint32_t binaryModelMagicNumber = *(uint32_t*)"PlMB"; //stands for Plain M
 
 struct ModelFileHeader {
     uint32_t magicNumber;   //for verification
+	size_t objectCount;
     size_t meshCount;
 };
 
 //Binary model file structure:
 //ModelFileHeader
+//
+//header.objectCount time the Object struct which contains a 4x4 model matrix and a mesh index
+//
 //header.meshCount times the following data structure:
 //uint32_t indexCount
 //uint32_t vertexCount
@@ -31,33 +35,38 @@ size_t copyToBuffer(const void* src, uint8_t* dst, const size_t copySize, const 
     return offset + copySize;
 }
 
-void saveBinaryMeshData(const std::filesystem::path& filename, const std::vector<MeshBinary>& meshes) {
+void saveBinaryScene(const std::filesystem::path& filename, SceneBinary scene){
     ModelFileHeader header;
     header.magicNumber = binaryModelMagicNumber;
-    header.meshCount = meshes.size();
+	header.objectCount = scene.objects.size();
+    header.meshCount = scene.meshes.size();
 
-    size_t dataSize = 0;
-    for (const MeshBinary& meshBinary : meshes) {
-        dataSize += sizeof(meshBinary.indexCount);
-        dataSize += sizeof(meshBinary.vertexCount);
-        dataSize += sizeof(meshBinary.boundingBox);
-        dataSize += sizeof(uint32_t); //albedo texture path length
-        dataSize += meshBinary.texturePaths.albedoTexturePath.string().size();
-        dataSize += sizeof(uint32_t); //normal texture path length
-        dataSize += meshBinary.texturePaths.normalTexturePath.string().size();
-        dataSize += sizeof(uint32_t); //specular texture path length
-        dataSize += meshBinary.texturePaths.specularTexturePath.string().size();
-        dataSize += sizeof(uint16_t) * meshBinary.indexBuffer.size();
-        dataSize += sizeof(uint8_t) * meshBinary.vertexBuffer.size();
+    size_t meshDataSize = 0;
+
+    for (const MeshBinary& meshBinary : scene.meshes) {
+        meshDataSize += sizeof(meshBinary.indexCount);
+        meshDataSize += sizeof(meshBinary.vertexCount);
+        meshDataSize += sizeof(meshBinary.boundingBox);
+        meshDataSize += sizeof(uint32_t); //albedo texture path length
+        meshDataSize += meshBinary.texturePaths.albedoTexturePath.string().size();
+        meshDataSize += sizeof(uint32_t); //normal texture path length
+        meshDataSize += meshBinary.texturePaths.normalTexturePath.string().size();
+        meshDataSize += sizeof(uint32_t); //specular texture path length
+        meshDataSize += meshBinary.texturePaths.specularTexturePath.string().size();
+        meshDataSize += sizeof(uint16_t) * meshBinary.indexBuffer.size();
+        meshDataSize += sizeof(uint8_t) * meshBinary.vertexBuffer.size();
     }
 
-    const size_t fileSize = dataSize + sizeof(ModelFileHeader);
+	const size_t objectDataSize = sizeof(Object) * scene.objects.size();
+    const size_t fileSize = sizeof(ModelFileHeader) + objectDataSize + meshDataSize;
     uint8_t* fileData = new uint8_t[fileSize];
 
     size_t writePointer = 0;
-    writePointer = copyToBuffer(&header, fileData, sizeof(header), writePointer);
+    writePointer = copyToBuffer(&header, fileData, sizeof(header), writePointer);				//write header
+	writePointer = copyToBuffer(scene.objects.data(), fileData, objectDataSize, writePointer);	//write object data
 
-    for(const MeshBinary& meshBinary : meshes){
+	//write mesh data
+    for(const MeshBinary& meshBinary : scene.meshes){
         writePointer = copyToBuffer(&meshBinary.indexCount, fileData, sizeof(meshBinary.indexCount), writePointer);
         writePointer = copyToBuffer(&meshBinary.vertexCount, fileData, sizeof(meshBinary.vertexCount), writePointer);
         writePointer = copyToBuffer(&meshBinary.boundingBox, fileData, sizeof(meshBinary.boundingBox), writePointer);
@@ -110,7 +119,7 @@ void saveBinaryMeshData(const std::filesystem::path& filename, const std::vector
     file.close();
 }
 
-bool loadBinaryMeshData(const std::filesystem::path& filename, std::vector<MeshBinary>* outMeshes) {
+bool loadBinaryScene(const std::filesystem::path& filename, SceneBinary* outScene) {
     const auto fullPath = DirectoryUtils::getResourceDirectory() / filename;
     std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
@@ -121,6 +130,7 @@ bool loadBinaryMeshData(const std::filesystem::path& filename, std::vector<MeshB
     const size_t fileSize = file.tellg();
     file.seekg(0, file.beg);
 
+	//read header
     ModelFileHeader header;
     file.read((char*)&header, sizeof(header));
 
@@ -130,7 +140,13 @@ bool loadBinaryMeshData(const std::filesystem::path& filename, std::vector<MeshB
         return false;
     }
 
-    outMeshes->reserve(header.meshCount);
+	//read object data
+	outScene->objects.resize(header.objectCount);
+	const size_t objectDataSize = header.objectCount * sizeof(Object);
+	file.read((char*)outScene->objects.data(), objectDataSize);
+
+	//read mesh data
+    outScene->meshes.reserve(header.meshCount);
 
     for (size_t i = 0; i < header.meshCount; i++) {
         MeshBinary mesh;
@@ -178,7 +194,7 @@ bool loadBinaryMeshData(const std::filesystem::path& filename, std::vector<MeshB
         mesh.vertexBuffer.resize(vertexBufferSize);
         file.read((char*)mesh.vertexBuffer.data(), vertexBufferSize);
 
-        outMeshes->push_back(mesh);
+        outScene->meshes.push_back(mesh);
     }
 
     file.close();

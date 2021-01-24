@@ -478,64 +478,59 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     updateShadowFrustum();
 }
 
-void RenderFrontend::addStaticMeshes(const std::vector<MeshBinary>& meshData, const std::vector<glm::mat4>& transforms) {
-
-    assert(meshData.size() == transforms.size());
+void RenderFrontend::addScene(const SceneBinary& scene) {
     
     std::vector<Material> materials;
-    materials.reserve(meshData.size());
+    materials.reserve(scene.meshes.size());
 
-    for (const auto& data : meshData) {
+    for (const auto& mesh : scene.meshes) {
         Material material;
 
-        if (!loadImageFromPath(data.texturePaths.albedoTexturePath, &material.diffuseTexture)) {
+        if (!loadImageFromPath(mesh.texturePaths.albedoTexturePath, &material.diffuseTexture)) {
             material.diffuseTexture = m_defaultTextures.diffuse;
         }
-        if (!loadImageFromPath(data.texturePaths.normalTexturePath, &material.normalTexture)) {
+        if (!loadImageFromPath(mesh.texturePaths.normalTexturePath, &material.normalTexture)) {
             material.normalTexture = m_defaultTextures.normal;
         }
-        if (!loadImageFromPath(data.texturePaths.specularTexturePath, &material.specularTexture)) {
+        if (!loadImageFromPath(mesh.texturePaths.specularTexturePath, &material.specularTexture)) {
             material.specularTexture = m_defaultTextures.specular;
         }
 
         materials.push_back(material);
     }
-    const auto backendHandles = gRenderBackend.createMeshes(meshData, materials);
-       
-    const uint32_t meshCount = (uint32_t)glm::min(backendHandles.size(), transforms.size());
 
-    for (uint32_t i = 0; i < meshCount; i++) {
+	//create bounding box debug meshes
+	const std::vector<DynamicMeshHandle> debugMeshes = gRenderBackend.createDynamicMeshes(
+		std::vector<uint32_t>(scene.objects.size(), axisAlignedBoundingBoxPositionsPerMesh),
+		std::vector<uint32_t>(scene.objects.size(), axisAlignedBoundingBoxIndicesPerMesh));
+
+	//append to existing
+	m_staticMeshesBBDebugMeshes.insert(m_staticMeshesBBDebugMeshes.end(), debugMeshes.begin(), debugMeshes.end());
+
+	std::vector<std::vector<glm::vec3>> positionsPerMesh;
+	std::vector<std::vector<uint32_t>>  indicesPerMesh;
+
+	positionsPerMesh.reserve(scene.meshes.size());
+	indicesPerMesh.reserve(scene.meshes.size());
+
+    const std::vector<MeshHandle> meshBackendHandles = gRenderBackend.createMeshes(scene.meshes, materials);
+
+    for (const Object& obj : scene.objects) {
 
         StaticMesh staticMesh;
-        staticMesh.backendHandle = backendHandles[i];
-        staticMesh.modelMatrix = transforms[i];
-        staticMesh.bbWorldSpace = axisAlignedBoundingBoxTransformed(meshData[i].boundingBox, staticMesh.modelMatrix);
+        staticMesh.backendHandle = meshBackendHandles[obj.meshIndex];
+        staticMesh.modelMatrix = obj.modelMatrix;
+        staticMesh.bbWorldSpace = axisAlignedBoundingBoxTransformed(scene.meshes[obj.meshIndex].boundingBox, staticMesh.modelMatrix);
 
         m_staticMeshes.push_back(staticMesh);
-    }
 
-    //create bounding box debug meshes
-    const std::vector<DynamicMeshHandle> debugMeshes = gRenderBackend.createDynamicMeshes(
-        std::vector<uint32_t> (meshCount, axisAlignedBoundingBoxPositionsPerMesh), 
-        std::vector<uint32_t> (meshCount, axisAlignedBoundingBoxIndicesPerMesh));
+		//bounding box
+		std::vector<glm::vec3> vertices;
+		std::vector<uint32_t> indices;
+		axisAlignedBoundingBoxToLineMesh(staticMesh.bbWorldSpace, &vertices, &indices);
 
-    //append to existing
-    m_staticMeshesBBDebugMeshes.insert(m_staticMeshesBBDebugMeshes.end(), debugMeshes.begin(), debugMeshes.end());
-
-    //compute bounding boxes
-    std::vector<std::vector<glm::vec3>> positionsPerMesh;
-    std::vector<std::vector<uint32_t>>  indicesPerMesh;
-
-    positionsPerMesh.reserve(meshCount);
-    indicesPerMesh.reserve(meshCount);
-    for (const auto& mesh : meshData) {
-        std::vector<glm::vec3> vertices;
-        std::vector<uint32_t> indices;
-
-        axisAlignedBoundingBoxToLineMesh(mesh.boundingBox, &vertices, &indices);
-
-        positionsPerMesh.push_back(vertices);
-        indicesPerMesh.push_back(indices);
+		positionsPerMesh.push_back(vertices);
+		indicesPerMesh.push_back(indices);
     }
 
     gRenderBackend.updateDynamicMeshes(debugMeshes, positionsPerMesh, indicesPerMesh);

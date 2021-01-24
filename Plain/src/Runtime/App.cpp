@@ -7,6 +7,7 @@
 #include "Utilities/MathUtils.h"
 #include "Common/sdfUtilities.h"
 #include "ImageIO.h"
+#include "Scene.h"
 
 App::App() {
     
@@ -15,11 +16,10 @@ App::App() {
 void App::setup(const std::string& sceneFilePath) {
     //load static scene
     {
-        std::vector<MeshBinary> meshesBinary;
+        SceneBinary scene;
         std::cout << "Loading scene file: " << sceneFilePath << "\n";
-        loadBinaryMeshData(sceneFilePath, &meshesBinary);
-        std::vector<glm::mat4> transforms(meshesBinary.size(), glm::mat4(1.f));
-        gRenderFrontend.addStaticMeshes(meshesBinary, transforms);
+        loadBinaryScene(sceneFilePath, &scene);
+        gRenderFrontend.addScene(scene);
 
         const std::filesystem::path sceneSDFPathRelative = binaryToSDFPath(sceneFilePath);
         std::cout << "Loading scene sdf: " << sceneSDFPathRelative << "\n";

@@ -36,17 +36,19 @@ int main(const int argc, char* argv[]) {
 
     const std::filesystem::path sdfPathRelative = binaryToSDFPath(binaryPathRelative);
 
-    std::vector<MeshData> meshData;
+    Scene scene;
     std::cout << "Input model: " << settings.modelFilePath << "\n";
-    if (loadModelGLTF(settings.modelFilePath, &meshData)) {
-        std::vector<AxisAlignedBoundingBox> AABBList = AABBListFromMeshes(meshData);
-        std::vector<MeshBinary> meshesBinary = meshesToBinary(meshData, AABBList);
+    if (loadModelGLTF(settings.modelFilePath, &scene)) {
+        std::vector<AxisAlignedBoundingBox> AABBList = AABBListFromMeshes(scene.meshes);
+		SceneBinary sceneBinary;
+		sceneBinary.objects = scene.objects;
+		sceneBinary.meshes = meshesToBinary(scene.meshes, AABBList);
         std::cout << "Sucessfully converted model to binary format\n";
-        saveBinaryMeshData(binaryPathRelative, meshesBinary);
+        saveBinaryScene(binaryPathRelative, sceneBinary);
         std::cout << "Saved binary file: " << binaryPathRelative << "\n";
 
         std::cout << "Computing signed distance field...\n";
-        const ImageDescription sceneSDFTexture = ComputeSceneSDFTexture(meshData, AABBList);
+        const ImageDescription sceneSDFTexture = ComputeSceneSDFTexture(scene.meshes, AABBList);
 
         writeDDSFile(DirectoryUtils::getResourceDirectory() / sdfPathRelative, sceneSDFTexture);
         std::cout << "Saved SDF texture: " << sdfPathRelative << "\n";

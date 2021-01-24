@@ -12,6 +12,14 @@
 #include "Utilities/DirectoryUtils.h"
 #include "Common/MeshProcessing.h"
 
+//---- private function declarations ----
+bool getGltfAttributeIndex(const std::map<std::string, int> attributeMap, const std::string attribute, int* outIndex);
+std::vector<char> loadGltfAttribute(const tinygltf::Model& model, const int attributeIndex,
+	const size_t typeSize, const int tinyGltfExpectedType, const int tinyGltfExpectedComponentType);
+glm::mat4 computeNodeMatrix(const tinygltf::Node& node);
+
+//---- implementation ----
+
 bool loadModelOBJ(const std::filesystem::path& filename, std::vector<MeshData>* outData) {
 
     const std::filesystem::path fullPath = DirectoryUtils::getResourceDirectory() / filename;
@@ -137,7 +145,7 @@ bool loadModelOBJ(const std::filesystem::path& filename, std::vector<MeshData>* 
     return true;
 }
 
-bool retrieveGltfAttribute(const std::map<std::string, int> attributeMap, const std::string attribute, int* outIndex) {
+bool getGltfAttributeIndex(const std::map<std::string, int> attributeMap, const std::string attribute, int* outIndex) {
 	if (attributeMap.find(attribute) == attributeMap.end()) {
 		std::cout << "Primitive missing attribute: " << attribute << "\n";
 		return false;
@@ -166,14 +174,27 @@ std::vector<char> loadGltfAttribute(const tinygltf::Model& model, const int attr
 	return byteData;
 }
 
-void coordinateSystemCorrection(std::vector<glm::vec3>* outData) {
-	for (glm::vec3& v : *outData) {
-		v.y *= -1;
-		v.z *= -1;
+glm::mat4 computeNodeMatrix(const tinygltf::Node& node) {
+	glm::mat4 rotation(1.f);
+	glm::mat4 translation(1.f);
+	glm::mat4 scale(1.f);
+	if (node.rotation.size() == 4) {
+		//gltf stores quaternion  (x, y, z, w)
+		//glm constructor expects (w, x, y, z)
+		glm::quat q(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]);
+		rotation = glm::toMat4(q);
 	}
+	if (node.translation.size() == 3) {
+		translation = glm::translate(glm::mat4(1.f), glm::vec3(node.translation[0], node.translation[1], node.translation[2]));
+
+	}
+	if (node.scale.size() == 3) {
+		scale = glm::scale(glm::mat4(1.f), glm::vec3(node.scale[0], node.scale[1], node.scale[2]));
+	}
+	return translation * rotation * scale;
 }
 
-bool loadModelGLTF(const std::filesystem::path& filename, std::vector<MeshData>* outData) {
+bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 	tinygltf::Model model;
 	tinygltf::TinyGLTF loader;
 	std::string error;
@@ -196,6 +217,7 @@ bool loadModelGLTF(const std::filesystem::path& filename, std::vector<MeshData>*
 		return false;
 	}
 
+	//load meshes
 	for (const tinygltf::Mesh& mesh : model.meshes) {
 		for (const tinygltf::Primitive primitive : mesh.primitives) {
 
@@ -204,13 +226,14 @@ bool loadModelGLTF(const std::filesystem::path& filename, std::vector<MeshData>*
 			int tangentIndex;
 			int uvIndex;
 
-			bool hasAllAttributes =	retrieveGltfAttribute(primitive.attributes, "POSITION", &positionIndex);
-			hasAllAttributes &=		retrieveGltfAttribute(primitive.attributes, "NORMAL", &normalIndex);
-			hasAllAttributes &=		retrieveGltfAttribute(primitive.attributes, "TANGENT", &tangentIndex);
-			hasAllAttributes &=		retrieveGltfAttribute(primitive.attributes, "TEXCOORD_0", &uvIndex);
+			bool hasAllAttributes =	getGltfAttributeIndex(primitive.attributes, "POSITION", &positionIndex);
+			hasAllAttributes &=		getGltfAttributeIndex(primitive.attributes, "NORMAL", &normalIndex);
+			hasAllAttributes &=		getGltfAttributeIndex(primitive.attributes, "TANGENT", &tangentIndex);
+			hasAllAttributes &=		getGltfAttributeIndex(primitive.attributes, "TEXCOORD_0", &uvIndex);
 
 			if (!hasAllAttributes) {
-				continue;
+				std::cout << "File contains meshes with missing attributes: " << filename << "\n";
+				return false;
 			}
 
 			const std::vector<char> positionBytes	= loadGltfAttribute(model, positionIndex, sizeof(glm::vec3), TINYGLTF_TYPE_VEC3, TINYGLTF_COMPONENT_TYPE_FLOAT);
@@ -223,19 +246,16 @@ bool loadModelGLTF(const std::filesystem::path& filename, std::vector<MeshData>*
 			//position
 			data.positions.resize(positionBytes.size() / sizeof(glm::vec3));
 			memcpy(data.positions.data(), positionBytes.data(), positionBytes.size());
-			coordinateSystemCorrection(&data.positions);
 
 			//normal
 			data.normals.resize(normalBytes.size() / sizeof(glm::vec3));
 			memcpy(data.normals.data(), normalBytes.data(), normalBytes.size());
-			coordinateSystemCorrection(&data.normals);
 
 			//tangents
 			data.tangents.reserve(tangentBytes.size() / sizeof(glm::vec4));
 			for (int i = 0; i < tangentBytes.size(); i += sizeof(glm::vec4)) {
 				data.tangents.push_back(*reinterpret_cast<const glm::vec3*>(tangentBytes.data() + i));
 			}
-			coordinateSystemCorrection(&data.tangents);
 
 			//bitangent
 			assert(data.tangents.size() == data.normals.size());
@@ -262,7 +282,51 @@ bool loadModelGLTF(const std::filesystem::path& filename, std::vector<MeshData>*
 			data.texturePaths.specularTexturePath	= modelDirectory / model.images[model.textures[material.pbrMetallicRoughness.metallicRoughnessTexture.index].source].uri;
 			data.texturePaths.normalTexturePath		= modelDirectory / model.images[model.textures[material.normalTexture.index].source].uri;
 
-			outData->push_back(data);
+			outScene->meshes.push_back(data);
+		}
+	}
+
+	//load objects
+	for (const tinygltf::Scene& scene : model.scenes) {
+		//nodes in scene.nodes must be root nodes
+		std::vector<int> nodesToProcess = scene.nodes;
+		glm::mat4 initialMatrix = glm::mat4(1.f);
+		std::vector<glm::mat4> parentMatrices(nodesToProcess.size(), initialMatrix);
+
+		while (nodesToProcess.size() != 0) {
+
+			//process and remove last node
+			const int currentNodeIndex = nodesToProcess[nodesToProcess.size() - 1];
+			nodesToProcess.pop_back();
+
+			const glm::mat4 parentMatrix = parentMatrices[parentMatrices.size() - 1];
+			parentMatrices.pop_back();
+
+			tinygltf::Node node = model.nodes[currentNodeIndex];
+			const glm::mat4 modelMatrix = computeNodeMatrix(node) * parentMatrix;
+
+			//add children to process stack
+			for (const int childIndex : node.children) {
+				nodesToProcess.push_back(childIndex);
+				parentMatrices.push_back(modelMatrix);
+			}
+
+			//skip nodes without mesh
+			if (node.mesh != -1) {
+				Object obj;
+				obj.meshIndex = node.mesh;	//file mesh index matches scene mesh index
+				
+				glm::mat4 correctionMatrix = glm::mat4(1.f);
+				correctionMatrix[1][1] = -1;
+				correctionMatrix[2][2] = -1;
+
+				if (glm::determinant(modelMatrix) < 0) {
+					std::cout << "Negative model matrix determinant will cause winding order problems: " << node.name << "\n";
+				}
+
+				obj.modelMatrix = correctionMatrix * modelMatrix;
+				outScene->objects.push_back(obj);
+			}
 		}
 	}
 	return true;

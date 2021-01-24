@@ -6,6 +6,7 @@
 #include "Camera.h"
 #include "AABB.h"
 #include "ViewFrustum.h"
+#include "Scene.h"
 
 struct GLFWwindow;
 
@@ -101,7 +102,7 @@ public:
     void setResolution(const uint32_t width, const uint32_t height);
     void setCameraExtrinsic(const CameraExtrinsic& extrinsic);
     //static meshes are used for baking and thus cannot be moved
-    void addStaticMeshes(const std::vector<MeshBinary>& meshData, const std::vector<glm::mat4>& transforms);
+    void addScene(const SceneBinary& scene);
     void setSceneSDF(const ImageDescription& desc);
 
     //before call camera settings and such must be set
