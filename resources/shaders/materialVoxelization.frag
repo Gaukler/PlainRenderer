@@ -1,6 +1,7 @@
 #version 460
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
 #include "global.inc"
 #include "volume.inc"
@@ -17,7 +18,13 @@ layout(set=1, binding = 2, std430) buffer sdfVolumeData{
     MaterialCounter counters[];
 };
 
-layout(set=2, binding = 0) uniform texture2D colorTexture;
+layout(set=2, binding = 0) uniform texture2D[] textures;
+
+layout(push_constant) uniform MatrixBlock {
+	mat4 projection;
+	mat4 model;
+	int albedoTextureIndex;
+};
 
 layout(location = 0) in vec3 passPos;
 layout(location = 1) in vec2 passUV;
@@ -30,7 +37,7 @@ void main(){
 	vec3 posNormalized = worldPositionToVolume(passPos, sdfVolumeOffset.xyz, sdfVolumeExtends.xyz);
 	ivec3 texelIndex = ivec3(posNormalized * imageSize(materialVoxelImage));
 
-	vec3 albedoTexel = texture(sampler2D(colorTexture, g_sampler_anisotropicRepeat), passUV).rgb;
+	vec3 albedoTexel = texture(sampler2D(textures[albedoTextureIndex], g_sampler_anisotropicRepeat), passUV).rgb;
 	vec3 albedo = sRGBToLinear(albedoTexel);
 	uvec3 albedoUInt = uvec3(albedo * 255);
 

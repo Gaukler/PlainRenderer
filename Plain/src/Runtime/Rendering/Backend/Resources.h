@@ -46,12 +46,18 @@ struct Buffer {
 #pragma warning( push )
 #pragma warning( disable : 26812) //use of unscoped enum
 
+struct MaterialTextureIndices {
+	size_t albedo;
+	size_t normal;
+	size_t specular;
+};
+
 struct Mesh {
     uint32_t        indexCount = 0;
     Buffer          indexBuffer;
     VkIndexType     indexPrecision = VK_INDEX_TYPE_NONE_KHR;
     Buffer          vertexBuffer;
-    VkDescriptorSet materialDescriptorSet = VK_NULL_HANDLE;
+	MaterialTextureIndices materialTextureIndices;
 };
 
 //reenable warning

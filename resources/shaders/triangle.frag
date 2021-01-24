@@ -1,6 +1,7 @@
 #version 460
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
 #include "global.inc" 
 #include "colorConversion.inc"
@@ -73,9 +74,15 @@ layout(set=1, binding = 14, std140) uniform occlusionData{
 layout(set=1, binding = 15) uniform texture2D indirectDiffuse_Y_SH;
 layout(set=1, binding = 16) uniform texture2D indirectDiffuse_CoCg;
 
-layout(set=2, binding = 0) uniform texture2D colorTexture;
-layout(set=2, binding = 1) uniform texture2D normalTexture;
-layout(set=2, binding = 2) uniform texture2D specularTexture;
+layout(push_constant) uniform MatrixBlock {
+	mat4 mvp;
+	mat4 model;
+	int albedoTextureIndex;
+	int normalTextureIndex;
+	int specularTextureIndex;
+};
+
+layout(set=2, binding = 0) uniform texture2D[] textures;
 
 layout(location = 0) in vec2 passUV;
 layout(location = 1) in vec3 passPos;
@@ -147,9 +154,9 @@ SkyOcclusion sampleSkyOcclusion(vec3 worldPos){
 }
 
 void main(){
-	vec3 albedoTexel 		= texture(sampler2D(colorTexture, 		g_sampler_anisotropicRepeat), passUV, g_mipBias).rgb;
-	vec3 specularTexel 		= texture(sampler2D(specularTexture, 	g_sampler_anisotropicRepeat), passUV, g_mipBias).rgb;
-	vec2 normalTexel 		= texture(sampler2D(normalTexture, 		g_sampler_anisotropicRepeat), passUV, g_mipBias).rg;
+	vec3 albedoTexel 		= texture(sampler2D(textures[albedoTextureIndex], g_sampler_anisotropicRepeat), passUV, g_mipBias).rgb;
+	vec3 specularTexel 		= texture(sampler2D(textures[specularTextureIndex], g_sampler_anisotropicRepeat), passUV, g_mipBias).rgb;
+	vec2 normalTexel 		= texture(sampler2D(textures[normalTextureIndex], g_sampler_anisotropicRepeat), passUV, g_mipBias).rg;
     vec3 normalTexelReconstructed = vec3(normalTexel, sqrt(1.f - normalTexel.x * normalTexel.x + normalTexel.y + normalTexel.y));
     normalTexelReconstructed = normalTexelReconstructed * 2.f - 1.f;
     

@@ -65,12 +65,6 @@ struct DescriptorPool {
     DescriptorPoolAllocationSizes freeAllocations;
 };
 
-struct MaterialSamplers {
-    SamplerHandle albedoSampler;
-    SamplerHandle specularSampler;
-    SamplerHandle normalSampler;
-};
-
 struct TimestampQuery {
     uint32_t startQuery = 0;
     uint32_t endQuery = 0;
@@ -204,6 +198,19 @@ private:
 
     VkDescriptorSetLayout m_materialDescriporSetLayout = VK_NULL_HANDLE;
     void initMaterialDescriptorSetLayout();
+
+	VkDescriptorSet m_materialDescriptorSet;
+	void initMaterialDescriptorSet();
+
+	VkDescriptorPool m_materialDescriptorPool;
+
+	struct MaterialDescriptorSetTextureInfo {
+		ImageHandle texture;
+		size_t index;
+	};
+	void updateMaterialDescriptorSet(const std::vector<MaterialDescriptorSetTextureInfo>& textureInfos);
+
+	size_t m_materialDescriptorSetTextureCount = 0;
 
     //calculates pass order, updates descritor sets, creates barriers    
     void prepareRenderPasses();

@@ -17,6 +17,9 @@ layout(location = 2) out mat3 passTBN;
 layout(push_constant) uniform MatrixBlock {
 	mat4 mvp;
 	mat4 model;
+	int albedoTextureIndex;
+	int normalTextureIndex;
+	int specularTextureIndex;
 } translation;
 
 void main(){

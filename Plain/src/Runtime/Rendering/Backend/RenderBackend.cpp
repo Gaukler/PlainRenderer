@@ -32,6 +32,8 @@ RenderBackend gRenderBackend;
 //this warning is disabled for this entire file
 #pragma warning( disable : 26812) //C26812: Prefer 'enum class' over 'enum' 
 
+const uint32_t maxTextureCount = 1000;
+
 /*
 ==================
 
@@ -191,6 +193,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_commandBuffers[1] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
 
     initMaterialDescriptorSetLayout();
+	initMaterialDescriptorSet();
     setupImgui(window);
 
     //query pools
@@ -260,6 +263,7 @@ void RenderBackend::shutdown() {
         vkDestroyDescriptorPool(vkContext.device, pool.vkPool, nullptr);
     }
     vkDestroyDescriptorPool(vkContext.device, m_imguiDescriptorPool, nullptr);
+	vkDestroyDescriptorPool(vkContext.device, m_materialDescriptorPool, nullptr);
 
     vkDestroyDescriptorSetLayout(vkContext.device, m_globalDescriptorSetLayout, nullptr);
 
@@ -517,7 +521,7 @@ void RenderBackend::drawMeshes(
         std::cout << "Error: drawMeshes handle and matrix count does not match\n";
     }
 
-	VkShaderStageFlags pushConstantStageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	VkShaderStageFlags pushConstantStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 	if (pass.graphicPassDesc.shaderDescriptions.geometry.has_value()) {
 		pushConstantStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
 	}
@@ -531,18 +535,28 @@ void RenderBackend::drawMeshes(
         vkCmdBindVertexBuffers(pass.meshCommandBuffer, 0, 1, &mesh.vertexBuffer.vulkanHandle, offset);
         vkCmdBindIndexBuffer(pass.meshCommandBuffer, mesh.indexBuffer.vulkanHandle, offset[0], mesh.indexPrecision);
 
+		struct PushConstantBlock {
+			glm::mat4 matrices[2];
+			int32_t indices[3];
+		};
+		PushConstantBlock block;
+		block.matrices[0] = primarySecondaryMatrices[i][0];
+		block.matrices[1] = primarySecondaryMatrices[i][1];
+		block.indices[0] = mesh.materialTextureIndices.albedo;
+		block.indices[1] = mesh.materialTextureIndices.normal;
+		block.indices[2] = mesh.materialTextureIndices.specular;
+
         //update push constants
-        const auto& matrices = primarySecondaryMatrices[i];
         vkCmdPushConstants(
             pass.meshCommandBuffer, 
             pass.pipelineLayout, 
             pushConstantStageFlags, 
             0, 
-            sizeof(matrices),
-            &matrices);
+            sizeof(block),
+            &block);
 
         //materials            
-        VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, mesh.materialDescriptorSet };
+        VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, m_materialDescriptorSet };
         vkCmdBindDescriptorSets(pass.meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
         vkCmdDrawIndexed(pass.meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
@@ -837,30 +851,27 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         fillBuffer(mesh.vertexBuffer, meshData.vertexBuffer.data(), vertexBufferSize);
 
-        //material descriptor set
-        DescriptorPoolAllocationSizes layoutSizes;
-        layoutSizes.imageSampled = 3;
-        mesh.materialDescriptorSet = allocateDescriptorSet(m_materialDescriporSetLayout, layoutSizes);
-
+		//textures
         const Material& material = materials[i];
-        const ImageResource albedoTextureResource(
-            material.diffuseTexture,
-            0,
-            0);
 
-        const ImageResource normalTextureResource(
-            material.normalTexture,
-            0,
-            1);
+		mesh.materialTextureIndices.albedo = m_materialDescriptorSetTextureCount;
+		mesh.materialTextureIndices.normal = m_materialDescriptorSetTextureCount + 1;
+		mesh.materialTextureIndices.specular = m_materialDescriptorSetTextureCount + 2;
+		m_materialDescriptorSetTextureCount += 3;
 
-        const ImageResource specularTextureResource(
-            material.specularTexture,
-            0,
-            2);
+		MaterialDescriptorSetTextureInfo albedoInfo;
+		albedoInfo.texture = material.diffuseTexture;
+		albedoInfo.index = mesh.materialTextureIndices.albedo;
 
-        RenderPassResources resources;
-        resources.sampledImages = { albedoTextureResource, normalTextureResource, specularTextureResource };
-        updateDescriptorSet(mesh.materialDescriptorSet, resources);
+		MaterialDescriptorSetTextureInfo normalInfo;
+		normalInfo.texture = material.normalTexture;
+		normalInfo.index = mesh.materialTextureIndices.normal;
+
+		MaterialDescriptorSetTextureInfo specularInfo;
+		specularInfo.texture = material.specularTexture;
+		specularInfo.index = mesh.materialTextureIndices.specular;
+
+		updateMaterialDescriptorSet({ albedoInfo, normalInfo, specularInfo} );
 
         //store and return handle
         MeshHandle handle = { (uint32_t)m_meshes.size() };
@@ -1630,7 +1641,10 @@ bool RenderBackend::hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDev
 		features.fillModeNonSolid &&
 		features.depthClamp &&
 		features.geometryShader &&
-		features12.hostQueryReset;
+		features12.hostQueryReset &&
+		features12.runtimeDescriptorArray &&
+		features12.descriptorBindingPartiallyBound &&
+		features12.descriptorBindingVariableDescriptorCount;
 
 	//check device extensions
 	uint32_t extensionCount;
@@ -1771,6 +1785,9 @@ void RenderBackend::createLogicalDevice() {
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     features12.pNext = nullptr;
     features12.hostQueryReset = true;
+	features12.runtimeDescriptorArray = true;
+	features12.descriptorBindingPartiallyBound = true;
+	features12.descriptorBindingVariableDescriptorCount = true;
 
     //device info
     VkDeviceCreateInfo deviceInfo = {};
@@ -2813,7 +2830,7 @@ VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout
     VkPushConstantRange matrices = {};
     matrices.stageFlags = stageFlags;
     matrices.offset = 0;
-    matrices.size = 128;
+    matrices.size = 140;
 
     VkDescriptorSetLayout setLayouts[3] = { m_globalDescriptorSetLayout, setLayout, m_materialDescriporSetLayout };
     uint32_t setCount = isGraphicPass ? 3 : 2;
@@ -2872,9 +2889,99 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
 }
 
 void RenderBackend::initMaterialDescriptorSetLayout() {
-    ShaderLayout shaderLayout;
-    shaderLayout.sampledImageBindings = { 0, 1, 2 };
-    m_materialDescriporSetLayout = createDescriptorSetLayout(shaderLayout);
+
+	VkDescriptorSetLayoutBinding textureArrayBinding;
+	textureArrayBinding.binding = 0;
+	textureArrayBinding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+	textureArrayBinding.descriptorCount = maxTextureCount;
+	textureArrayBinding.stageFlags = VK_SHADER_STAGE_ALL;
+	textureArrayBinding.pImmutableSamplers = nullptr;
+
+	const VkDescriptorBindingFlags flags = 
+		VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT |
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+
+	VkDescriptorSetLayoutBindingFlagsCreateInfo flagInfo;
+	flagInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+	flagInfo.pNext = nullptr;
+	flagInfo.bindingCount = 1;
+	flagInfo.pBindingFlags = &flags;
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo;
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.pNext = &flagInfo;
+	layoutInfo.flags = 0;
+	layoutInfo.bindingCount = 1;
+	layoutInfo.pBindings = &textureArrayBinding;
+
+	const VkResult result = vkCreateDescriptorSetLayout(vkContext.device, &layoutInfo, nullptr, &m_materialDescriporSetLayout);
+	checkVulkanResult(result);
+}
+
+void RenderBackend::updateMaterialDescriptorSet(const std::vector<MaterialDescriptorSetTextureInfo>& textureInfos) {
+
+	std::vector<VkDescriptorImageInfo> imageInfos(textureInfos.size());
+	std::vector<VkWriteDescriptorSet> writes;
+
+	for (int i = 0; i < textureInfos.size(); i++) {
+
+		const auto& textureInfo = textureInfos[i];
+
+		imageInfos[i].imageView = m_images[textureInfo.texture.index].viewPerMip[0];
+		imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkWriteDescriptorSet w;
+		w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		w.pNext = nullptr;
+		w.dstSet = m_materialDescriptorSet;
+		w.dstBinding = 0;
+		w.dstArrayElement = textureInfo.index;
+		w.descriptorCount = 1;
+		w.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+		w.pImageInfo = &imageInfos[i];
+		w.pBufferInfo = nullptr;
+		w.pTexelBufferView = nullptr;
+
+		writes.push_back(w);
+	}
+
+	vkUpdateDescriptorSets(vkContext.device, writes.size(), writes.data(), 0, nullptr);
+}
+
+void RenderBackend::initMaterialDescriptorSet() {
+	DescriptorPoolAllocationSizes layoutSizes;
+	layoutSizes.imageSampled = maxTextureCount;
+
+	VkDescriptorPoolSize poolSize;
+	poolSize.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+	poolSize.descriptorCount = maxTextureCount;
+
+	VkDescriptorPoolCreateInfo poolInfo;
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.pNext = nullptr;
+	poolInfo.flags = 0;
+	poolInfo.maxSets = 1;
+	poolInfo.poolSizeCount = 1;
+	poolInfo.pPoolSizes = &poolSize;
+
+	VkResult result = vkCreateDescriptorPool(vkContext.device, &poolInfo, nullptr, &m_materialDescriptorPool);
+	checkVulkanResult(result);
+
+	VkDescriptorSetVariableDescriptorCountAllocateInfo variableDescriptorCountInfo;
+	variableDescriptorCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
+	variableDescriptorCountInfo.pNext = nullptr;
+	variableDescriptorCountInfo.descriptorSetCount = 1;
+	variableDescriptorCountInfo.pDescriptorCounts = &maxTextureCount;
+
+	VkDescriptorSetAllocateInfo setInfo;
+	setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	setInfo.pNext = &variableDescriptorCountInfo;
+	setInfo.descriptorPool = m_materialDescriptorPool;
+	setInfo.descriptorSetCount = 1;
+	setInfo.pSetLayouts = &m_materialDescriporSetLayout;
+
+	result = vkAllocateDescriptorSets(vkContext.device, &setInfo, &m_materialDescriptorSet);
+	checkVulkanResult(result);
 }
 
 GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV) {
@@ -2919,7 +3026,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
             desc.shaderDescriptions.tesselationEvaluation.value().specialisationConstants, &additionalStructs[4]));
     }
 
-	VkShaderStageFlags pipelineLayoutStageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	VkShaderStageFlags pipelineLayoutStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 	if (desc.shaderDescriptions.geometry.has_value()) {
 		pipelineLayoutStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
 	}
