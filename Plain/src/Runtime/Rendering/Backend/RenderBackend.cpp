@@ -556,7 +556,7 @@ void RenderBackend::drawMeshes(
             &block);
 
         //materials            
-        VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, m_materialDescriptorSet };
+        VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, m_globalTextureArrayDescriptorSet };
         vkCmdBindDescriptorSets(pass.meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
         vkCmdDrawIndexed(pass.meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
@@ -1061,9 +1061,9 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
 
 	//add to global texture descriptor array, if image can be sampled
 	if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
-		if (m_materialDescriptorSetFreeTextureIndices.size() > 0) {
-			image.globalDescriptorSetIndex = m_materialDescriptorSetFreeTextureIndices.back();
-			m_materialDescriptorSetFreeTextureIndices.pop_back();
+		if (m_globalTextureArrayDescriptorSetFreeTextureIndices.size() > 0) {
+			image.globalDescriptorSetIndex = m_globalTextureArrayDescriptorSetFreeTextureIndices.back();
+			m_globalTextureArrayDescriptorSetFreeTextureIndices.pop_back();
 		}
 		else {
 			image.globalDescriptorSetIndex = m_globalTextureArrayDescriptorSetTextureCount;
@@ -2924,7 +2924,7 @@ void RenderBackend::setGlobalTextureArrayDescriptorSetTexture(const VkImageView 
 	VkWriteDescriptorSet write;
 	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	write.pNext = nullptr;
-	write.dstSet = m_materialDescriptorSet;
+	write.dstSet = m_globalTextureArrayDescriptorSet;
 	write.dstBinding = 0;
 	write.dstArrayElement = index;
 	write.descriptorCount = 1;
@@ -2968,7 +2968,7 @@ void RenderBackend::initGlobalTextureArrayDescriptorSet() {
 	setInfo.descriptorSetCount = 1;
 	setInfo.pSetLayouts = &m_globalTextureArrayDescriporSetLayout;
 
-	result = vkAllocateDescriptorSets(vkContext.device, &setInfo, &m_materialDescriptorSet);
+	result = vkAllocateDescriptorSets(vkContext.device, &setInfo, &m_globalTextureArrayDescriptorSet);
 	checkVulkanResult(result);
 }
 
@@ -3753,7 +3753,7 @@ void RenderBackend::destroyImage(const ImageHandle handle) {
     const Image image = m_images[handle.index];
 
 	if (bool(image.desc.usageFlags & ImageUsageFlags::Sampled)) {
-		m_materialDescriptorSetFreeTextureIndices.push_back(image.globalDescriptorSetIndex);
+		m_globalTextureArrayDescriptorSetFreeTextureIndices.push_back(image.globalDescriptorSetIndex);
 	}
 	
     for (const auto& view : image.viewPerMip) {

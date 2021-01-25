@@ -199,7 +199,7 @@ private:
     VkDescriptorSetLayout m_globalTextureArrayDescriporSetLayout = VK_NULL_HANDLE;
     void initGlobalTextureArrayDescriptorSetLayout();
 
-	VkDescriptorSet m_materialDescriptorSet;
+	VkDescriptorSet m_globalTextureArrayDescriptorSet;
 	void initGlobalTextureArrayDescriptorSet();
 
 	VkDescriptorPool m_globalTextureArrayDescriptorPool;
@@ -207,7 +207,7 @@ private:
 	void setGlobalTextureArrayDescriptorSetTexture(const VkImageView imageView, const uint32_t index);
 
 	size_t m_globalTextureArrayDescriptorSetTextureCount = 0;
-	std::vector<int32_t> m_materialDescriptorSetFreeTextureIndices;
+	std::vector<int32_t> m_globalTextureArrayDescriptorSetFreeTextureIndices;
 
     //calculates pass order, updates descritor sets, creates barriers    
     void prepareRenderPasses();
