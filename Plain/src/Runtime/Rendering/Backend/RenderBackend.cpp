@@ -526,6 +526,9 @@ void RenderBackend::drawMeshes(
 		pushConstantStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
 	}
 
+	const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, m_globalTextureArrayDescriptorSet };
+	vkCmdBindDescriptorSets(pass.meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
+
     for (uint32_t i = 0; i < std::min(meshHandles.size(), primarySecondaryMatrices.size()); i++) {
 
         const auto mesh = m_meshes[meshHandles[i].index];
@@ -554,10 +557,6 @@ void RenderBackend::drawMeshes(
             0, 
             sizeof(block),
             &block);
-
-        //materials            
-        VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, m_globalTextureArrayDescriptorSet };
-        vkCmdBindDescriptorSets(pass.meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
         vkCmdDrawIndexed(pass.meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
     }
@@ -676,8 +675,7 @@ void RenderBackend::renderFrame(bool presentToScreen) {
 
         m_timestampQueries.push_back(frameQuery);
     }
-    
-    
+            
     for (const auto& execution : m_renderPassInternalExecutions) {
         submitRenderPass(execution, currentCommandBuffer);
     }
@@ -1456,8 +1454,10 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
         barriersCommand(commandBuffer, execution.imageBarriers, execution.memoryBarriers);
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
-        VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet };
+
+        const VkDescriptorSet sets[2] = { m_globalDescriptorSet, pass.descriptorSet };
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 2, sets, 0, nullptr);
+
         vkCmdDispatch(commandBuffer, execution.dispatches[0], execution.dispatches[1], execution.dispatches[2]);
     }
 
