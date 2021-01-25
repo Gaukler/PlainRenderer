@@ -119,7 +119,8 @@ public:
 
 private:
 
-    void setupGlobalShaderInfo();
+    void setupGlobalShaderInfoLayout();
+	void setupGlobalShaderInfoResources();
 
     //declare render passes to backend
     //this has to be done before meshes drawcalls can be issued

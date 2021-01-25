@@ -204,7 +204,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, resizeCallback);
 
-    setupGlobalShaderInfo();
+    setupGlobalShaderInfoLayout();
 
     m_defaultTextures = createDefaultTextures();
     initSamplers();
@@ -216,6 +216,8 @@ void RenderFrontend::setup(GLFWwindow* window) {
     initFramebuffers();
     initRenderTargets();
     initMeshs();
+
+	setupGlobalShaderInfoResources();
 
     gRenderBackend.newFrame();
     computeBRDFLut();
@@ -297,7 +299,7 @@ void RenderFrontend::prepareNewFrame() {
     gRenderBackend.startDrawcallRecording();
 }
 
-void RenderFrontend::setupGlobalShaderInfo() {
+void RenderFrontend::setupGlobalShaderInfoLayout() {
     ShaderLayout globalLayout;
     globalLayout.uniformBufferBindings.push_back(globalUniformBufferBinding);
     globalLayout.sampledImageBindings.push_back(globalNoiseTextureBindingBinding);
@@ -311,6 +313,22 @@ void RenderFrontend::setupGlobalShaderInfo() {
 	globalLayout.samplerBindings.push_back(globalSamplerNearestRepeatBinding);
     
     gRenderBackend.setGlobalDescriptorSetLayout(globalLayout);
+}
+
+void RenderFrontend::setupGlobalShaderInfoResources() {
+	RenderPassResources globalResources;
+	globalResources.uniformBuffers = { UniformBufferResource(m_globalUniformBuffer, globalUniformBufferBinding) };
+	globalResources.samplers = {
+		SamplerResource(m_sampler_anisotropicRepeat,    globalSamplerAnisotropicRepeatBinding),
+		SamplerResource(m_sampler_nearestBlackBorder,   globalSamplerNearestBlackBorderBinding),
+		SamplerResource(m_sampler_linearRepeat,         globalSamplerLinearRepeatBinding),
+		SamplerResource(m_sampler_linearClamp,          globalSamplerLinearClampBinding),
+		SamplerResource(m_sampler_nearestClamp,         globalSamplerNearestClampBinding),
+		SamplerResource(m_sampler_linearWhiteBorder,    globalSamplerLinearWhiteBorderBinding),
+		SamplerResource(m_sampler_nearestRepeat,		globalSamplerNearestRepeatBinding),
+	};
+	globalResources.sampledImages = { ImageResource(m_noiseTextures[m_noiseTextureIndex], 0, globalNoiseTextureBindingBinding) };
+	gRenderBackend.setGlobalDescriptorSetResources(globalResources);
 }
 
 void RenderFrontend::prepareRenderpasses(){
@@ -1744,20 +1762,6 @@ void RenderFrontend::updateGlobalShaderInfo() {
 
     m_noiseTextureIndex++;
     m_noiseTextureIndex = m_noiseTextureIndex % m_noiseTextures.size();
-
-    RenderPassResources globalResources;
-    globalResources.uniformBuffers = { UniformBufferResource(m_globalUniformBuffer, globalUniformBufferBinding) };
-    globalResources.samplers = { 
-        SamplerResource(m_sampler_anisotropicRepeat,    globalSamplerAnisotropicRepeatBinding),
-        SamplerResource(m_sampler_nearestBlackBorder,   globalSamplerNearestBlackBorderBinding),
-        SamplerResource(m_sampler_linearRepeat,         globalSamplerLinearRepeatBinding),
-        SamplerResource(m_sampler_linearClamp,          globalSamplerLinearClampBinding),
-        SamplerResource(m_sampler_nearestClamp,         globalSamplerNearestClampBinding),
-        SamplerResource(m_sampler_linearWhiteBorder,    globalSamplerLinearWhiteBorderBinding),
-		SamplerResource(m_sampler_nearestRepeat,		globalSamplerNearestRepeatBinding),
-    };
-    globalResources.sampledImages = { ImageResource(m_noiseTextures[m_noiseTextureIndex], 0, globalNoiseTextureBindingBinding) };
-    gRenderBackend.setGlobalDescriptorSetResources(globalResources);
 }
 
 void RenderFrontend::initImages() {
