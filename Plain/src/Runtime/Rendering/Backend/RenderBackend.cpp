@@ -854,24 +854,9 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
 		//textures
         const Material& material = materials[i];
 
-		mesh.materialTextureIndices.albedo = m_materialDescriptorSetTextureCount;
-		mesh.materialTextureIndices.normal = m_materialDescriptorSetTextureCount + 1;
-		mesh.materialTextureIndices.specular = m_materialDescriptorSetTextureCount + 2;
-		m_materialDescriptorSetTextureCount += 3;
-
-		MaterialDescriptorSetTextureInfo albedoInfo;
-		albedoInfo.texture = material.diffuseTexture;
-		albedoInfo.index = mesh.materialTextureIndices.albedo;
-
-		MaterialDescriptorSetTextureInfo normalInfo;
-		normalInfo.texture = material.normalTexture;
-		normalInfo.index = mesh.materialTextureIndices.normal;
-
-		MaterialDescriptorSetTextureInfo specularInfo;
-		specularInfo.texture = material.specularTexture;
-		specularInfo.index = mesh.materialTextureIndices.specular;
-
-		updateMaterialDescriptorSet({ albedoInfo, normalInfo, specularInfo} );
+		mesh.materialTextureIndices.albedo = m_images[material.diffuseTexture.index].globalDescriptorSetIndex;
+		mesh.materialTextureIndices.normal = m_images[material.normalTexture.index].globalDescriptorSetIndex;
+		mesh.materialTextureIndices.specular = m_images[material.specularTexture.index].globalDescriptorSetIndex;
 
         //store and return handle
         MeshHandle handle = { (uint32_t)m_meshes.size() };
@@ -941,141 +926,157 @@ void RenderBackend::updateDynamicMeshes(const std::vector<DynamicMeshHandle>& ha
 
 ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
 
-    const VkFormat format = imageFormatToVulkanFormat(desc.format);
-    const VkImageAspectFlagBits aspectFlag = imageFormatToVkAspectFlagBits(desc.format);
+	const VkFormat format = imageFormatToVulkanFormat(desc.format);
+	const VkImageAspectFlagBits aspectFlag = imageFormatToVkAspectFlagBits(desc.format);
 
-    VkImageType type;
-    VkImageViewType viewType;
-    switch (desc.type) {
-    case ImageType::Type1D:     type = VK_IMAGE_TYPE_1D; viewType = VK_IMAGE_VIEW_TYPE_1D; break;
-    case ImageType::Type2D:     type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_2D; break;
-    case ImageType::Type3D:     type = VK_IMAGE_TYPE_3D; viewType = VK_IMAGE_VIEW_TYPE_3D; break;
-    case ImageType::TypeCube:   type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_CUBE; break;
-    default: throw std::runtime_error("Unsuported type enum");
-    }
+	VkImageType type;
+	VkImageViewType viewType;
+	switch (desc.type) {
+	case ImageType::Type1D:     type = VK_IMAGE_TYPE_1D; viewType = VK_IMAGE_VIEW_TYPE_1D; break;
+	case ImageType::Type2D:     type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_2D; break;
+	case ImageType::Type3D:     type = VK_IMAGE_TYPE_3D; viewType = VK_IMAGE_VIEW_TYPE_3D; break;
+	case ImageType::TypeCube:   type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_CUBE; break;
+	default: throw std::runtime_error("Unsuported type enum");
+	}
 
-    uint32_t mipCount;
-    switch (desc.mipCount) {
-    case(MipCount::One): mipCount = 1; break;
-    case(MipCount::Manual): mipCount = desc.manualMipCount; break;
-    case(MipCount::FullChain): mipCount = mipCountFromResolution(desc.width, desc.height, desc.depth); break;
-    default: throw std::runtime_error("Unsuported mipCoun enum");
-    }
+	uint32_t mipCount;
+	switch (desc.mipCount) {
+	case(MipCount::One): mipCount = 1; break;
+	case(MipCount::Manual): mipCount = desc.manualMipCount; break;
+	case(MipCount::FullChain): mipCount = mipCountFromResolution(desc.width, desc.height, desc.depth); break;
+	default: throw std::runtime_error("Unsuported mipCoun enum");
+	}
 
-    VkImageUsageFlags usage = 0;
-    if (bool(desc.usageFlags & ImageUsageFlags::Attachment)) {
-        const VkImageUsageFlagBits attachmentUsage = isDepthFormat(format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        usage |= attachmentUsage;
-    }
-    if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
-        usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    }
-    if (bool(desc.usageFlags & ImageUsageFlags::Storage)) {
-        usage |= VK_IMAGE_USAGE_STORAGE_BIT;
-    }
-    if (desc.initialData.size() > 0) {
-        usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    }
-    if (desc.autoCreateMips) {
-        usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    }
+	VkImageUsageFlags usage = 0;
+	if (bool(desc.usageFlags & ImageUsageFlags::Attachment)) {
+		const VkImageUsageFlagBits attachmentUsage = isDepthFormat(format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+		usage |= attachmentUsage;
+	}
+	if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
+		usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+	}
+	if (bool(desc.usageFlags & ImageUsageFlags::Storage)) {
+		usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+	}
+	if (desc.initialData.size() > 0) {
+		usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	}
+	if (desc.autoCreateMips) {
+		usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	}
 
-    Image image;
-    image.extent.width = desc.width;
-    image.extent.height = desc.height;
-    image.extent.depth = desc.depth;
-    image.desc = desc;
-    image.format = format;
-    image.type = desc.type;
+	Image image;
+	image.extent.width = desc.width;
+	image.extent.height = desc.height;
+	image.extent.depth = desc.depth;
+	image.desc = desc;
+	image.format = format;
+	image.type = desc.type;
 
-    for (uint32_t i = 0; i < mipCount; i++) {
-        image.layoutPerMip.push_back(VK_IMAGE_LAYOUT_UNDEFINED);
-    }
+	for (uint32_t i = 0; i < mipCount; i++) {
+		image.layoutPerMip.push_back(VK_IMAGE_LAYOUT_UNDEFINED);
+	}
 
-    VkImageCreateFlags flags = 0;
-    uint32_t arrayLayers = 1;
-    if (desc.type == ImageType::TypeCube) {
-        flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-        arrayLayers = 6;
-        assert(desc.width == desc.height);
-        assert(desc.depth == 1);
-    }
+	VkImageCreateFlags flags = 0;
+	uint32_t arrayLayers = 1;
+	if (desc.type == ImageType::TypeCube) {
+		flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+		arrayLayers = 6;
+		assert(desc.width == desc.height);
+		assert(desc.depth == 1);
+	}
 
-    VkImageCreateInfo imageInfo = {};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.pNext = nullptr;
-    imageInfo.flags = flags;
-    imageInfo.imageType = type;
-    imageInfo.format = format;
-    imageInfo.extent = image.extent;
-    imageInfo.mipLevels = mipCount;
-    imageInfo.arrayLayers = arrayLayers;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = usage;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.queueFamilyIndexCount = 1;
-    imageInfo.pQueueFamilyIndices = &vkContext.queueFamilies.graphicsQueueIndex;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	VkImageCreateInfo imageInfo = {};
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.pNext = nullptr;
+	imageInfo.flags = flags;
+	imageInfo.imageType = type;
+	imageInfo.format = format;
+	imageInfo.extent = image.extent;
+	imageInfo.mipLevels = mipCount;
+	imageInfo.arrayLayers = arrayLayers;
+	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageInfo.usage = usage;
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	imageInfo.queueFamilyIndexCount = 1;
+	imageInfo.pQueueFamilyIndices = &vkContext.queueFamilies.graphicsQueueIndex;
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    auto res = vkCreateImage(vkContext.device, &imageInfo, nullptr, &image.vulkanHandle);
-    checkVulkanResult(res);
+	auto res = vkCreateImage(vkContext.device, &imageInfo, nullptr, &image.vulkanHandle);
+	checkVulkanResult(res);
 
-    //bind memory
-    VkMemoryRequirements memoryRequirements;
-    vkGetImageMemoryRequirements(vkContext.device, image.vulkanHandle, &memoryRequirements);
-    const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &image.memory)) {
-        throw("Could not allocate image memory");
-    }
-    res = vkBindImageMemory(vkContext.device, image.vulkanHandle, image.memory.vkMemory, image.memory.offset);
-    assert(res == VK_SUCCESS);
+	//bind memory
+	VkMemoryRequirements memoryRequirements;
+	vkGetImageMemoryRequirements(vkContext.device, image.vulkanHandle, &memoryRequirements);
+	const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+	if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &image.memory)) {
+		throw("Could not allocate image memory");
+	}
+	res = vkBindImageMemory(vkContext.device, image.vulkanHandle, image.memory.vkMemory, image.memory.offset);
+	assert(res == VK_SUCCESS);
 
-    //create image view
-    image.viewPerMip.reserve(mipCount);
-    for (uint32_t i = 0; i < mipCount; i++) {
-        const auto view = createImageView(image, viewType, i, mipCount - i, aspectFlag);
-        image.viewPerMip.push_back(view);
-    }
+	//create image view
+	image.viewPerMip.reserve(mipCount);
+	for (uint32_t i = 0; i < mipCount; i++) {
+		const auto view = createImageView(image, viewType, i, mipCount - i, aspectFlag);
+		image.viewPerMip.push_back(view);
+	}
 
-    //fill with data
-    if (desc.initialData.size() != 0) {
-        transferDataIntoImage(image, desc.initialData.data(), desc.initialData.size());
-    }
+	//fill with data
+	if (desc.initialData.size() != 0) {
+		transferDataIntoImage(image, desc.initialData.data(), desc.initialData.size());
+	}
 
-    //generate mipmaps
-    if (desc.autoCreateMips) {
-        generateMipChain(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    }
+	//generate mipmaps
+	if (desc.autoCreateMips) {
+		generateMipChain(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	}
 
-    /*
-    most textures with sampled usage are used by the material system
-    the material systems assumes the read_only_optimal layout
-    if no mips are generated the layout will still be transfer_dst or undefined
-    to avoid issues all sampled images without mip generation are manually transitioned to read_only_optimal
-    */
-    if (bool(desc.usageFlags & ImageUsageFlags::Sampled) && !desc.autoCreateMips) {
-        const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
+	//most textures with sampled usage are used by the material system
+	//the material systems assumes the read_only_optimal layout
+	//if no mips are generated the layout will still be transfer_dst or undefined
+	//to avoid issues all sampled images without mip generation are manually transitioned to read_only_optimal
+	if (bool(desc.usageFlags & ImageUsageFlags::Sampled) && !desc.autoCreateMips) {
+		const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
 
-        const auto newLayoutBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 
-            VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
-        barriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
+		const auto newLayoutBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
+		barriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
 
-        //end recording
-        res = vkEndCommandBuffer(transitionCmdBuffer);
-        assert(res == VK_SUCCESS);
+		//end recording
+		res = vkEndCommandBuffer(transitionCmdBuffer);
+		assert(res == VK_SUCCESS);
 
-        //submit
-        VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
+		//submit
+		VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
 
-        res = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        assert(res == VK_SUCCESS);
+		res = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
+		assert(res == VK_SUCCESS);
 
-        //cleanup
-        vkDestroyFence(vkContext.device, fence, nullptr);
-        vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &transitionCmdBuffer);
-    }
-    
+		//cleanup
+		vkDestroyFence(vkContext.device, fence, nullptr);
+		vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &transitionCmdBuffer);
+	}
+
+	//add to global texture descriptor array, if image can be sampled
+	if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
+		if (m_materialDescriptorSetFreeTextureIndices.size() > 0) {
+			image.globalDescriptorSetIndex = m_materialDescriptorSetFreeTextureIndices.back();
+			m_materialDescriptorSetFreeTextureIndices.pop_back();
+		}
+		else {
+			image.globalDescriptorSetIndex = m_materialDescriptorSetTextureCount;
+			m_materialDescriptorSetTextureCount++;
+		}
+
+		MaterialDescriptorSetTextureInfo descriptorInfo;
+		descriptorInfo.imageView = image.viewPerMip[0];
+		descriptorInfo.index = image.globalDescriptorSetIndex;
+
+		updateMaterialDescriptorSet({ descriptorInfo });
+	}
+	
     //reuse a free image handle or create a new one
     ImageHandle handle;
     if (m_freeImageHandles.size() > 0) {
@@ -2927,7 +2928,7 @@ void RenderBackend::updateMaterialDescriptorSet(const std::vector<MaterialDescri
 
 		const auto& textureInfo = textureInfos[i];
 
-		imageInfos[i].imageView = m_images[textureInfo.texture.index].viewPerMip[0];
+		imageInfos[i].imageView = textureInfo.imageView;
 		imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 		VkWriteDescriptorSet w;
@@ -3762,7 +3763,12 @@ void RenderBackend::destroyImage(const ImageHandle handle) {
 
     m_freeImageHandles.push_back(handle);
 
-    const auto image = m_images[handle.index];
+    const Image image = m_images[handle.index];
+
+	if (bool(image.desc.usageFlags & ImageUsageFlags::Sampled)) {
+		m_materialDescriptorSetFreeTextureIndices.push_back(image.globalDescriptorSetIndex);
+	}
+	
     for (const auto& view : image.viewPerMip) {
         vkDestroyImageView(vkContext.device, view, nullptr);
     }

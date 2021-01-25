@@ -205,12 +205,13 @@ private:
 	VkDescriptorPool m_materialDescriptorPool;
 
 	struct MaterialDescriptorSetTextureInfo {
-		ImageHandle texture;
+		VkImageView imageView;
 		size_t index;
 	};
 	void updateMaterialDescriptorSet(const std::vector<MaterialDescriptorSetTextureInfo>& textureInfos);
 
 	size_t m_materialDescriptorSetTextureCount = 0;
+	std::vector<int32_t> m_materialDescriptorSetFreeTextureIndices;
 
     //calculates pass order, updates descritor sets, creates barriers    
     void prepareRenderPasses();

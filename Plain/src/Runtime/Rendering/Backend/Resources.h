@@ -33,6 +33,7 @@ struct Image {
 
     bool isSwapchainImage = false;
     VulkanAllocation memory;
+	int32_t globalDescriptorSetIndex = -1;
 };
 
 struct Buffer {
