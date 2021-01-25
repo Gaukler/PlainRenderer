@@ -192,8 +192,8 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_commandBuffers[0] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
     m_commandBuffers[1] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
 
-    initMaterialDescriptorSetLayout();
-	initMaterialDescriptorSet();
+    initGlobalTextureArrayDescriptorSetLayout();
+	initGlobalTextureArrayDescriptorSet();
     setupImgui(window);
 
     //query pools
@@ -240,7 +240,7 @@ void RenderBackend::shutdown() {
     for (const auto& framebuffer : m_framebuffers) {
         destroyFramebuffer(framebuffer);
     }
-    vkDestroyDescriptorSetLayout(vkContext.device, m_materialDescriporSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(vkContext.device, m_globalTextureArrayDescriporSetLayout, nullptr);
 
     //destroy swapchain
     vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
@@ -263,7 +263,7 @@ void RenderBackend::shutdown() {
         vkDestroyDescriptorPool(vkContext.device, pool.vkPool, nullptr);
     }
     vkDestroyDescriptorPool(vkContext.device, m_imguiDescriptorPool, nullptr);
-	vkDestroyDescriptorPool(vkContext.device, m_materialDescriptorPool, nullptr);
+	vkDestroyDescriptorPool(vkContext.device, m_globalTextureArrayDescriptorPool, nullptr);
 
     vkDestroyDescriptorSetLayout(vkContext.device, m_globalDescriptorSetLayout, nullptr);
 
@@ -1066,15 +1066,11 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
 			m_materialDescriptorSetFreeTextureIndices.pop_back();
 		}
 		else {
-			image.globalDescriptorSetIndex = m_materialDescriptorSetTextureCount;
-			m_materialDescriptorSetTextureCount++;
+			image.globalDescriptorSetIndex = m_globalTextureArrayDescriptorSetTextureCount;
+			m_globalTextureArrayDescriptorSetTextureCount++;
 		}
 
-		MaterialDescriptorSetTextureInfo descriptorInfo;
-		descriptorInfo.imageView = image.viewPerMip[0];
-		descriptorInfo.index = image.globalDescriptorSetIndex;
-
-		updateMaterialDescriptorSet({ descriptorInfo });
+		setGlobalTextureArrayDescriptorSetTexture(image.viewPerMip[0], image.globalDescriptorSetIndex);
 	}
 	
     //reuse a free image handle or create a new one
@@ -2833,7 +2829,7 @@ VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout
     matrices.offset = 0;
     matrices.size = 140;
 
-    VkDescriptorSetLayout setLayouts[3] = { m_globalDescriptorSetLayout, setLayout, m_materialDescriporSetLayout };
+    VkDescriptorSetLayout setLayouts[3] = { m_globalDescriptorSetLayout, setLayout, m_globalTextureArrayDescriporSetLayout };
     uint32_t setCount = isGraphicPass ? 3 : 2;
 
     VkPipelineLayoutCreateInfo layoutInfo = {};
@@ -2889,7 +2885,7 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     return pass;
 }
 
-void RenderBackend::initMaterialDescriptorSetLayout() {
+void RenderBackend::initGlobalTextureArrayDescriptorSetLayout() {
 
 	VkDescriptorSetLayoutBinding textureArrayBinding;
 	textureArrayBinding.binding = 0;
@@ -2915,41 +2911,32 @@ void RenderBackend::initMaterialDescriptorSetLayout() {
 	layoutInfo.bindingCount = 1;
 	layoutInfo.pBindings = &textureArrayBinding;
 
-	const VkResult result = vkCreateDescriptorSetLayout(vkContext.device, &layoutInfo, nullptr, &m_materialDescriporSetLayout);
+	const VkResult result = vkCreateDescriptorSetLayout(vkContext.device, &layoutInfo, nullptr, &m_globalTextureArrayDescriporSetLayout);
 	checkVulkanResult(result);
 }
 
-void RenderBackend::updateMaterialDescriptorSet(const std::vector<MaterialDescriptorSetTextureInfo>& textureInfos) {
+void RenderBackend::setGlobalTextureArrayDescriptorSetTexture(const VkImageView imageView, const uint32_t index) {
 
-	std::vector<VkDescriptorImageInfo> imageInfos(textureInfos.size());
-	std::vector<VkWriteDescriptorSet> writes;
+	VkDescriptorImageInfo imageInfo;
+	imageInfo.imageView = imageView;
+	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-	for (int i = 0; i < textureInfos.size(); i++) {
+	VkWriteDescriptorSet write;
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.pNext = nullptr;
+	write.dstSet = m_materialDescriptorSet;
+	write.dstBinding = 0;
+	write.dstArrayElement = index;
+	write.descriptorCount = 1;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+	write.pImageInfo = &imageInfo;
+	write.pBufferInfo = nullptr;
+	write.pTexelBufferView = nullptr;
 
-		const auto& textureInfo = textureInfos[i];
-
-		imageInfos[i].imageView = textureInfo.imageView;
-		imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-		VkWriteDescriptorSet w;
-		w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		w.pNext = nullptr;
-		w.dstSet = m_materialDescriptorSet;
-		w.dstBinding = 0;
-		w.dstArrayElement = textureInfo.index;
-		w.descriptorCount = 1;
-		w.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-		w.pImageInfo = &imageInfos[i];
-		w.pBufferInfo = nullptr;
-		w.pTexelBufferView = nullptr;
-
-		writes.push_back(w);
-	}
-
-	vkUpdateDescriptorSets(vkContext.device, writes.size(), writes.data(), 0, nullptr);
+	vkUpdateDescriptorSets(vkContext.device, 1, &write, 0, nullptr);
 }
 
-void RenderBackend::initMaterialDescriptorSet() {
+void RenderBackend::initGlobalTextureArrayDescriptorSet() {
 	DescriptorPoolAllocationSizes layoutSizes;
 	layoutSizes.imageSampled = maxTextureCount;
 
@@ -2965,7 +2952,7 @@ void RenderBackend::initMaterialDescriptorSet() {
 	poolInfo.poolSizeCount = 1;
 	poolInfo.pPoolSizes = &poolSize;
 
-	VkResult result = vkCreateDescriptorPool(vkContext.device, &poolInfo, nullptr, &m_materialDescriptorPool);
+	VkResult result = vkCreateDescriptorPool(vkContext.device, &poolInfo, nullptr, &m_globalTextureArrayDescriptorPool);
 	checkVulkanResult(result);
 
 	VkDescriptorSetVariableDescriptorCountAllocateInfo variableDescriptorCountInfo;
@@ -2977,9 +2964,9 @@ void RenderBackend::initMaterialDescriptorSet() {
 	VkDescriptorSetAllocateInfo setInfo;
 	setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	setInfo.pNext = &variableDescriptorCountInfo;
-	setInfo.descriptorPool = m_materialDescriptorPool;
+	setInfo.descriptorPool = m_globalTextureArrayDescriptorPool;
 	setInfo.descriptorSetCount = 1;
-	setInfo.pSetLayouts = &m_materialDescriporSetLayout;
+	setInfo.pSetLayouts = &m_globalTextureArrayDescriporSetLayout;
 
 	result = vkAllocateDescriptorSets(vkContext.device, &setInfo, &m_materialDescriptorSet);
 	checkVulkanResult(result);

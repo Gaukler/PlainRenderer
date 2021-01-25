@@ -196,21 +196,17 @@ private:
 
     ShaderFileManager m_shaderFileManager;
 
-    VkDescriptorSetLayout m_materialDescriporSetLayout = VK_NULL_HANDLE;
-    void initMaterialDescriptorSetLayout();
+    VkDescriptorSetLayout m_globalTextureArrayDescriporSetLayout = VK_NULL_HANDLE;
+    void initGlobalTextureArrayDescriptorSetLayout();
 
 	VkDescriptorSet m_materialDescriptorSet;
-	void initMaterialDescriptorSet();
+	void initGlobalTextureArrayDescriptorSet();
 
-	VkDescriptorPool m_materialDescriptorPool;
+	VkDescriptorPool m_globalTextureArrayDescriptorPool;
 
-	struct MaterialDescriptorSetTextureInfo {
-		VkImageView imageView;
-		size_t index;
-	};
-	void updateMaterialDescriptorSet(const std::vector<MaterialDescriptorSetTextureInfo>& textureInfos);
+	void setGlobalTextureArrayDescriptorSetTexture(const VkImageView imageView, const uint32_t index);
 
-	size_t m_materialDescriptorSetTextureCount = 0;
+	size_t m_globalTextureArrayDescriptorSetTextureCount = 0;
 	std::vector<int32_t> m_materialDescriptorSetFreeTextureIndices;
 
     //calculates pass order, updates descritor sets, creates barriers    
@@ -407,7 +403,6 @@ private:
     void                    updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources);
     VkDescriptorSetLayout   createDescriptorSetLayout(const ShaderLayout& shaderLayout);
 
-    //materialSetLayout may be VK_NULL_HANDLE, this is the case for compute passes
     //isGraphicsPass controls if the push constant range is setup for the MVP matrix    
     VkPipelineLayout        createPipelineLayout(const VkDescriptorSetLayout setLayout, const bool isGraphicPass, 
 		const VkShaderStageFlags stageFlags);
