@@ -1455,8 +1455,8 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
 
-        const VkDescriptorSet sets[2] = { m_globalDescriptorSet, pass.descriptorSet };
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 2, sets, 0, nullptr);
+        const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, m_globalTextureArrayDescriptorSet };
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
         vkCmdDispatch(commandBuffer, execution.dispatches[0], execution.dispatches[1], execution.dispatches[2]);
     }
@@ -2830,7 +2830,7 @@ VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout
     matrices.size = 140;
 
     VkDescriptorSetLayout setLayouts[3] = { m_globalDescriptorSetLayout, setLayout, m_globalTextureArrayDescriporSetLayout };
-    uint32_t setCount = isGraphicPass ? 3 : 2;
+    uint32_t setCount = 3;
 
     VkPipelineLayoutCreateInfo layoutInfo = {};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
