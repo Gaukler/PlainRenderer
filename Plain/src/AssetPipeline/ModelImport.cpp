@@ -313,7 +313,7 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 
 			//skip nodes without mesh
 			if (node.mesh != -1) {
-				Object obj;
+				ObjectBinary obj;
 				obj.meshIndex = node.mesh;	//file mesh index matches scene mesh index
 				
 				glm::mat4 correctionMatrix = glm::mat4(1.f);

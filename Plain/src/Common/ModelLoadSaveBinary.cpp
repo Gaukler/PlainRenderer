@@ -57,7 +57,7 @@ void saveBinaryScene(const std::filesystem::path& filename, SceneBinary scene){
         meshDataSize += sizeof(uint8_t) * meshBinary.vertexBuffer.size();
     }
 
-	const size_t objectDataSize = sizeof(Object) * scene.objects.size();
+	const size_t objectDataSize = sizeof(ObjectBinary) * scene.objects.size();
     const size_t fileSize = sizeof(ModelFileHeader) + objectDataSize + meshDataSize;
     uint8_t* fileData = new uint8_t[fileSize];
 
@@ -142,7 +142,7 @@ bool loadBinaryScene(const std::filesystem::path& filename, SceneBinary* outScen
 
 	//read object data
 	outScene->objects.resize(header.objectCount);
-	const size_t objectDataSize = header.objectCount * sizeof(Object);
+	const size_t objectDataSize = header.objectCount * sizeof(ObjectBinary);
 	file.read((char*)outScene->objects.data(), objectDataSize);
 
 	//read mesh data

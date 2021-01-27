@@ -375,17 +375,7 @@ void RenderFrontend::prepareRenderpasses(){
 		filterIndirectDiffuse(currentRenderTarget, lastRenderTarget);
 	}
     renderForwardShading(forwardShadingDependencies, currentRenderTarget.colorFramebuffer);
-
-    const bool drawDebugPass =
-        m_freezeAndDrawCameraFrustum ||
-        m_drawShadowFrustum ||
-        m_drawStaticMeshesBBs;
-
-    //debug pass
-    if (drawDebugPass) {
-        renderDebugGeometry(currentRenderTarget.colorFramebuffer);
-    }
-    renderSky(drawDebugPass, currentRenderTarget.colorFramebuffer);
+    renderSky(currentRenderTarget.colorFramebuffer);
 
 	if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SkyProbe) {
 		skyIBLConvolution();
@@ -489,19 +479,16 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
 
 	m_globalShaderInfo.viewProjection = m_viewProjectionMatrix;
 
-    if (!m_freezeAndDrawCameraFrustum) {
-        updateCameraFrustum();
-    }
-
+    updateCameraFrustum();
     updateShadowFrustum();
 }
 
-void RenderFrontend::addScene(const SceneBinary& scene) {
+std::vector<MeshHandle> RenderFrontend::registerMeshes(const std::vector<MeshBinary>& meshes){
     
     std::vector<Material> materials;
-    materials.reserve(scene.meshes.size());
+    materials.reserve(meshes.size());
 
-    for (const auto& mesh : scene.meshes) {
+    for (const MeshBinary& mesh : meshes) {
         Material material;
 
         if (!loadImageFromPath(mesh.texturePaths.albedoTexturePath, &material.diffuseTexture)) {
@@ -517,58 +504,13 @@ void RenderFrontend::addScene(const SceneBinary& scene) {
         materials.push_back(material);
     }
 
-	//create bounding box debug meshes
-	const std::vector<DynamicMeshHandle> debugMeshes = gRenderBackend.createDynamicMeshes(
-		std::vector<uint32_t>(scene.objects.size(), axisAlignedBoundingBoxPositionsPerMesh),
-		std::vector<uint32_t>(scene.objects.size(), axisAlignedBoundingBoxIndicesPerMesh));
-
-	//append to existing
-	m_staticMeshesBBDebugMeshes.insert(m_staticMeshesBBDebugMeshes.end(), debugMeshes.begin(), debugMeshes.end());
-
-	std::vector<std::vector<glm::vec3>> positionsPerMesh;
-	std::vector<std::vector<uint32_t>>  indicesPerMesh;
-
-	positionsPerMesh.reserve(scene.meshes.size());
-	indicesPerMesh.reserve(scene.meshes.size());
-
-    const std::vector<MeshHandle> meshBackendHandles = gRenderBackend.createMeshes(scene.meshes, materials);
-
-    for (const Object& obj : scene.objects) {
-
-        StaticMesh staticMesh;
-        staticMesh.backendHandle = meshBackendHandles[obj.meshIndex];
-        staticMesh.modelMatrix = obj.modelMatrix;
-        staticMesh.bbWorldSpace = axisAlignedBoundingBoxTransformed(scene.meshes[obj.meshIndex].boundingBox, staticMesh.modelMatrix);
-
-        m_staticMeshes.push_back(staticMesh);
-
-		//bounding box
-		std::vector<glm::vec3> vertices;
-		std::vector<uint32_t> indices;
-		axisAlignedBoundingBoxToLineMesh(staticMesh.bbWorldSpace, &vertices, &indices);
-
-		positionsPerMesh.push_back(vertices);
-		indicesPerMesh.push_back(indices);
-    }
-
-    gRenderBackend.updateDynamicMeshes(debugMeshes, positionsPerMesh, indicesPerMesh);
-
-    //update scene bounding box
-    std::vector<AxisAlignedBoundingBox> meshBoundingBoxes;
-    for (const auto& mesh : m_staticMeshes) {
-        meshBoundingBoxes.push_back(mesh.bbWorldSpace);
-    }
-
-    const AxisAlignedBoundingBox addedBBs = combineAxisAlignedBoundingBoxes(meshBoundingBoxes);
-    m_sceneBoundingBox = combineAxisAlignedBoundingBoxes({ m_sceneBoundingBox, addedBBs });
-
-	updateShadowFrustum();
+	return gRenderBackend.createMeshes(meshes, materials);
 }
 
-void RenderFrontend::setSceneSDF(const ImageDescription& desc) {
+void RenderFrontend::setSceneSDF(const ImageDescription& desc, const AxisAlignedBoundingBox& sceneBB) {
     m_sceneSDF = gRenderBackend.createImage(desc);
 	m_sceneSDFResolution = glm::ivec3(desc.width, desc.height, desc.depth);
-	updateSceneSDFInfo();
+	updateSceneSDFInfo(sceneBB);
 }
 
 void RenderFrontend::prepareForDrawcalls() {
@@ -580,7 +522,7 @@ void RenderFrontend::prepareForDrawcalls() {
     updateGlobalShaderInfo();
 }
 
-void RenderFrontend::renderStaticMeshes() {
+void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 
     //if we prepare render commands without consuming them we will save up a huge amount of commands
     //to avoid this commands are not recorded if minmized
@@ -588,44 +530,36 @@ void RenderFrontend::renderStaticMeshes() {
         return;
     }
 
-    m_currentMeshCount += (uint32_t)m_staticMeshes.size();
+    m_currentMeshCount += (uint32_t)scene.size();
 
     //main and prepass
     {
         std::vector<MeshHandle> culledMeshes;
-        std::vector<DynamicMeshHandle> culledBoundingBoxMeshes;
         std::vector<std::array<glm::mat4, 2>> culledTransformsMainPass; //contains MVP and model matrix
         std::vector<std::array<glm::mat4, 2>> culledTransformsPrepass;  //contains MVP and previous mvp
 
         //frustum culling
-        assert(m_staticMeshes.size() == m_staticMeshesBBDebugMeshes.size());
-        for (size_t i = 0; i < m_staticMeshes.size(); i++) {
+        for (const RenderObject& obj : scene) {
 
-            StaticMesh mesh = m_staticMeshes[i];
-            const auto mvp = m_viewProjectionMatrix * mesh.modelMatrix;
+            const glm::mat4 mvp = m_viewProjectionMatrix * obj.modelMatrix;
 
-            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, mesh.bbWorldSpace);
+            const bool isVisible = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, obj.bbWorld);
 
-            if (renderMesh) {
+            if (isVisible) {
                 m_currentMainPassDrawcallCount++;
 
-                culledMeshes.push_back(mesh.backendHandle);
-                culledBoundingBoxMeshes.push_back(m_staticMeshesBBDebugMeshes[i]);
+                culledMeshes.push_back(obj.mesh);
 
-                const std::array<glm::mat4, 2> mainPassTransforms = { mvp, mesh.modelMatrix };
+                const std::array<glm::mat4, 2> mainPassTransforms = { mvp, obj.modelMatrix };
                 culledTransformsMainPass.push_back(mainPassTransforms);
 
-                const glm::mat4 previousMVP = m_previousViewProjectionMatrix * mesh.modelMatrix;
+                const glm::mat4 previousMVP = m_previousViewProjectionMatrix * obj.previousModelMatrix;
                 const std::array<glm::mat4, 2> prePassTransforms = { mvp, previousMVP };
                 culledTransformsPrepass.push_back(prePassTransforms);
             }
         }
         gRenderBackend.drawMeshes(culledMeshes, culledTransformsMainPass, m_mainPass);
         gRenderBackend.drawMeshes(culledMeshes, culledTransformsPrepass, m_depthPrePass);
-        if (m_drawStaticMeshesBBs) {
-            //transform uses only first mvp matrix, so just reuse
-            gRenderBackend.drawDynamicMeshes(culledBoundingBoxMeshes, culledTransformsMainPass, m_debugGeoPass);
-        }
     }
     
     //shadow pass
@@ -646,15 +580,15 @@ void RenderFrontend::renderStaticMeshes() {
 
         //coarse frustum culling for shadow rendering, assuming shadow frustum if fitted to camera frustum
         //actual frustum is fitted tightly to depth buffer values, but that is done on the GPU
-        for (const StaticMesh& mesh : m_staticMeshes) {
+        for (const RenderObject& obj : scene) {
 
-            const std::array<glm::mat4, 2> transforms = { glm::mat4(1.f), mesh.modelMatrix };
-            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_sunShadowFrustum, mesh.bbWorldSpace);
+            const std::array<glm::mat4, 2> transforms = { glm::mat4(1.f), obj.modelMatrix };
+            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_sunShadowFrustum, obj.bbWorld);
 
             if (renderMesh) {
                 m_currentShadowPassDrawcallCount++;
 
-                culledMeshes.push_back(mesh.backendHandle);
+                culledMeshes.push_back(obj.mesh);
                 culledTransforms.push_back(transforms);
             }
         }
@@ -665,14 +599,6 @@ void RenderFrontend::renderStaticMeshes() {
 
     //for sky and debug models, first matrix is mvp with identity model matrix, secondary is unused
     const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
-
-    //update debug geo
-    if (m_freezeAndDrawCameraFrustum) {
-        gRenderBackend.drawDynamicMeshes({ m_cameraFrustumModel }, { defaultTransform }, m_debugGeoPass);
-    }
-    if (m_drawShadowFrustum) {
-        gRenderBackend.drawDynamicMeshes({ m_shadowFrustumModel }, { defaultTransform }, m_debugGeoPass);
-    }
 }
 
 void RenderFrontend::renderFrame() {
@@ -739,7 +665,7 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
     }
 }
    
-void RenderFrontend::renderSky(const bool drewDebugPasses, const FramebufferHandle framebuffer) const {
+void RenderFrontend::renderSky(const FramebufferHandle framebuffer) const {
     gRenderBackend.setUniformBufferData(
         m_atmosphereSettingsBuffer, 
         &m_atmosphereSettings, 
@@ -804,9 +730,6 @@ void RenderFrontend::renderSky(const bool drewDebugPasses, const FramebufferHand
         skyPassExecution.framebuffer = framebuffer;
         skyPassExecution.resources.sampledImages = { skyLutResource };
         skyPassExecution.parents = { m_mainPass,  m_skyLutPass };
-        if (drewDebugPasses) {
-            skyPassExecution.parents.push_back(m_debugGeoPass);
-        }
         gRenderBackend.setRenderPassExecution(skyPassExecution);
     }
     //sun sprite
@@ -1265,8 +1188,8 @@ void RenderFrontend::issueSkyDrawcalls() {
     gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, { { spriteMVP, spriteRotation } }, m_sunSpritePass);
 }
 
-void RenderFrontend::updateSceneSDFInfo() {
-	AxisAlignedBoundingBox paddedSceneBB = padSDFBoundingBox(m_sceneBoundingBox);
+void RenderFrontend::updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB) {
+	AxisAlignedBoundingBox paddedSceneBB = padSDFBoundingBox(sceneBB);
 	const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(paddedSceneBB);
 	gRenderBackend.setUniformBufferData(m_sdfVolumeInfoBuffer, &sdfVolumeInfo, sizeof(sdfVolumeInfo));
 }
@@ -1355,9 +1278,9 @@ void RenderFrontend::computeBRDFLut() {
     gRenderBackend.setRenderPassExecution(brdfLutExecution);
 }
 
-void RenderFrontend::bakeSkyOcclusion() {
+void RenderFrontend::bakeSkyOcclusion(const std::vector<RenderObject>& scene, const AxisAlignedBoundingBox& sceneBB) {
     
-    AxisAlignedBoundingBox paddedSceneBB = m_sceneBoundingBox;
+    AxisAlignedBoundingBox paddedSceneBB = sceneBB;
     
     const float bbBias = 1.f;
     paddedSceneBB.max += bbBias;
@@ -1451,7 +1374,7 @@ void RenderFrontend::bakeSkyOcclusion() {
             occlusionData.sampleDirection = glm::vec4(cos(phi) * sinTheta, cosTheta, sin(phi) * sinTheta, 0.f);
         }
         //compute shadow matrix
-        occlusionData.shadowMatrix = viewProjectionMatrixAroundBB(m_sceneBoundingBox, glm::vec3(occlusionData.sampleDirection));
+        occlusionData.shadowMatrix = viewProjectionMatrixAroundBB(sceneBB, glm::vec3(occlusionData.sampleDirection));
 
         gRenderBackend.newFrame();
         
@@ -1466,13 +1389,13 @@ void RenderFrontend::bakeSkyOcclusion() {
             std::vector<MeshHandle> meshHandles;
             std::vector<std::array<glm::mat4, 2>> transforms;
 
-            for (const StaticMesh& mesh : m_staticMeshes) {
+            for (const RenderObject& obj : scene) {
 
                 const std::array<glm::mat4, 2> t = {
-                    occlusionData.shadowMatrix * mesh.modelMatrix,
+                    occlusionData.shadowMatrix * obj.modelMatrix,
                     glm::mat4(1.f) }; //unused
 
-                meshHandles.push_back(mesh.backendHandle);
+                meshHandles.push_back(obj.mesh);
                 transforms.push_back(t);
             }
             gRenderBackend.drawMeshes(meshHandles, transforms, m_skyShadowPass);
@@ -1482,7 +1405,7 @@ void RenderFrontend::bakeSkyOcclusion() {
     }
 }
 
-void RenderFrontend::bakeSceneMaterialVoxelTexture() {
+void RenderFrontend::bakeSceneMaterialVoxelTexture(const std::vector<RenderObject>& scene, const AxisAlignedBoundingBox& sceneBB) {
 	gRenderBackend.newFrame();
 
 	//scene material voxelization
@@ -1522,7 +1445,7 @@ void RenderFrontend::bakeSceneMaterialVoxelTexture() {
 	}
 	//drawcalls
 	{
-		const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(m_sceneBoundingBox); //sdf uses padded bb
+		const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(sceneBB); //sdf uses padded bb
 
 		const glm::mat4 projectionMatrix = glm::ortho(
 			sceneBBPadded.min.x,	//left
@@ -1536,13 +1459,13 @@ void RenderFrontend::bakeSceneMaterialVoxelTexture() {
 		std::vector<std::array<glm::mat4, 2>> transforms;
 
 		//draw static meshes
-		for (const StaticMesh& mesh : m_staticMeshes) {
+		for (const RenderObject& obj : scene) {
 
 			const std::array<glm::mat4, 2> t = {
 				projectionMatrix,
-				mesh.modelMatrix };
+				obj.modelMatrix };
 
-			meshHandles.push_back(mesh.backendHandle);
+			meshHandles.push_back(obj.mesh);
 			transforms.push_back(t);
 		}
 		gRenderBackend.startDrawcallRecording();
@@ -3201,13 +3124,5 @@ void RenderFrontend::drawUi() {
         ImGui::InputFloat("Near plane", &m_camera.intrinsic.near);
         ImGui::InputFloat("Far plane", &m_camera.intrinsic.far);
     }
-    
-    //debug settings
-    if (ImGui::CollapsingHeader("Debug settings")) {
-        ImGui::Checkbox("Draw static meshes bounding boxes", &m_drawStaticMeshesBBs);
-        ImGui::Checkbox("Freeze and draw camera frustum", &m_freezeAndDrawCameraFrustum);
-        ImGui::Checkbox("Draw shadow frustum", &m_drawShadowFrustum);
-    }    
-
     ImGui::End();
 }

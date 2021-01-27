@@ -6,15 +6,9 @@
 #include "Camera.h"
 #include "AABB.h"
 #include "ViewFrustum.h"
-#include "Scene.h"
+#include "Runtime/RuntimeScene.h"
 
 struct GLFWwindow;
-
-struct StaticMesh {
-    MeshHandle  backendHandle;
-    glm::mat4   modelMatrix = glm::mat4(1.f);
-    AxisAlignedBoundingBox bbWorldSpace;
-};
 
 //settings are passed as specialisation constans, so they need to be encoded as ints
 struct HistogramSettings {
@@ -101,21 +95,21 @@ public:
     void prepareNewFrame();
     void setResolution(const uint32_t width, const uint32_t height);
     void setCameraExtrinsic(const CameraExtrinsic& extrinsic);
-    //static meshes are used for baking and thus cannot be moved
-    void addScene(const SceneBinary& scene);
-    void setSceneSDF(const ImageDescription& desc);
+
+    std::vector<MeshHandle> registerMeshes(const std::vector<MeshBinary>& meshes);
+    void setSceneSDF(const ImageDescription& desc, const AxisAlignedBoundingBox& sceneBB);
 
     //before call camera settings and such must be set
     //after call drawcalls can be made
     void prepareForDrawcalls();
 
-    void renderStaticMeshes();
+    void renderScene(const std::vector<RenderObject>& scene);
     void renderFrame();
 
     //compute sky occlusion for all static meshes
     //must be called between frames as it calls gRenderBackend.newFrame() and gRenderBackend.renderFrame();
-    void bakeSkyOcclusion();
-	void bakeSceneMaterialVoxelTexture();
+    void bakeSkyOcclusion(const std::vector<RenderObject>& scene, const AxisAlignedBoundingBox& sceneBB);
+	void bakeSceneMaterialVoxelTexture(const std::vector<RenderObject>& scene, const AxisAlignedBoundingBox& sceneBB);
 
 private:
 
@@ -128,7 +122,7 @@ private:
 
     //computes image histogram using compute shaders
     void computeColorBufferHistogram(const ImageHandle lastFrameColor) const;
-    void renderSky(const bool drewDebugPasses, const FramebufferHandle framebuffer) const;
+    void renderSky(const FramebufferHandle framebuffer) const;
     void renderSunShadowCascades() const;
     void computeExposure() const;
     void renderDepthPrepass(const FramebufferHandle framebuffer) const;
@@ -147,7 +141,7 @@ private:
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void issueSkyDrawcalls();
 
-	void updateSceneSDFInfo();
+	void updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB);
 
 	void resizeIndirectLightingBuffers();
 
@@ -163,10 +157,6 @@ private:
     uint32_t m_screenWidth = 800;
     uint32_t m_screenHeight = 600;
 
-    //contains meshes created by createMeshes()
-    std::vector<StaticMesh> m_staticMeshes;
-    AxisAlignedBoundingBox m_sceneBoundingBox = {};
-
     //drawcall stats
     uint32_t m_currentMeshCount = 0;                //mesh commands received
     uint32_t m_currentMainPassDrawcallCount = 0;    //executed after camera culling
@@ -181,9 +171,6 @@ private:
 
     bool m_didResolutionChange = false;
     bool m_minimized = false;
-    bool m_drawStaticMeshesBBs = false; //debug rendering of bounding boxes
-    bool m_freezeAndDrawCameraFrustum = false;
-    bool m_drawShadowFrustum = false;
 
     //stored for resizing
     GLFWwindow* m_window = nullptr;
