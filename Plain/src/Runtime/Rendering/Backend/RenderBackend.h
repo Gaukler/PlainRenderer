@@ -142,14 +142,14 @@ public:
     void startDrawcallRecording();
   
     //must be called after startDrawcallRecording
-    void drawMeshes(const std::vector<MeshHandle> meshHandles, 
-        const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle);
+    void drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData, const RenderPassHandle passHandle);
 
     //must be called after startDrawcallRecording
     void drawDynamicMeshes(const std::vector<DynamicMeshHandle> meshHandles, 
         const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, const RenderPassHandle passHandle);
 
     void setUniformBufferData(const UniformBufferHandle buffer, const void* data, const size_t size);
+	void setStorageBufferData(const StorageBufferHandle buffer, const void* data, const size_t size);
 
     //must be set once before creating renderpasses
     void setGlobalDescriptorSetLayout(const ShaderLayout& layout);
@@ -163,12 +163,14 @@ public:
     //actual rendering of frame using commands generated from drawMesh calls
     void renderFrame(bool presentToScreen);    
 
+	uint32_t getImageGlobalTextureArrayIndex(const ImageHandle image);
+
     //the public create pass functions save the descriptions and create the handle, then call 
     //the internal ones for creation of actual API objects    
     RenderPassHandle    createComputePass(const ComputePassDescription& desc);
     RenderPassHandle    createGraphicPass(const GraphicPassDescription& desc);
 
-    std::vector<MeshHandle> createMeshes(const std::vector<MeshBinary>& meshes, const std::vector<Material>& materials);
+    std::vector<MeshHandle> createMeshes(const std::vector<MeshBinary>& meshes);
 
     //dynamic meshes can be updated
     //they use host visible memory which makes the update fast but rendering slow
@@ -404,7 +406,7 @@ private:
     VkDescriptorSetLayout   createDescriptorSetLayout(const ShaderLayout& shaderLayout);
 
     //isGraphicsPass controls if the push constant range is setup for the MVP matrix    
-    VkPipelineLayout        createPipelineLayout(const VkDescriptorSetLayout setLayout, const bool isGraphicPass, 
+    VkPipelineLayout        createPipelineLayout(const VkDescriptorSetLayout setLayout, const size_t pushConstantSize,
 		const VkShaderStageFlags stageFlags);
 
 

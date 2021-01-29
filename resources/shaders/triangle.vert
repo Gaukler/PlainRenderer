@@ -1,7 +1,9 @@
 #version 460
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
+
 #include "global.inc" 
+#include "MainPassMatrices.inc"
 
 layout(location = 0) in vec3 inPos;
 layout(location = 1) in vec2 inUv;
@@ -15,21 +17,24 @@ layout(location = 2) out mat3 passTBN;
 
 
 layout(push_constant) uniform MatrixBlock {
-	mat4 mvp;
-	mat4 model;
-	int albedoTextureIndex;
-	int normalTextureIndex;
-	int specularTextureIndex;
-} translation;
+	uint albedoTextureIndex;
+	uint normalTextureIndex;
+	uint specularTextureIndex;
+	uint transformIndex;
+};
+
+layout(set=1, binding = 17, std430) buffer transformBuffer{
+	MainPassMatrices transforms[];
+};
 
 void main(){
-	gl_Position = translation.mvp * vec4(inPos, 1.f);
+	gl_Position = transforms[transformIndex].mvp * vec4(inPos, 1.f);
 	passUV = inUv;
-	passPos = (translation.model * vec4(inPos, 1.f)).xyz;
+	passPos = (transforms[transformIndex].model * vec4(inPos, 1.f)).xyz;
 
-	vec3 T = normalize(mat3(translation.model) * inTangent);
-    vec3 N = normalize(mat3(translation.model) * inNormal);
-    vec3 B = normalize(mat3(translation.model) * inBitangent);
+	vec3 T = normalize(mat3(transforms[transformIndex].model) * inTangent);
+    vec3 N = normalize(mat3(transforms[transformIndex].model) * inNormal);
+    vec3 B = normalize(mat3(transforms[transformIndex].model) * inBitangent);
 
 	passTBN = mat3(T, B, N);
 }

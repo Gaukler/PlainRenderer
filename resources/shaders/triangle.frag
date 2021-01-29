@@ -75,11 +75,10 @@ layout(set=1, binding = 15) uniform texture2D indirectDiffuse_Y_SH;
 layout(set=1, binding = 16) uniform texture2D indirectDiffuse_CoCg;
 
 layout(push_constant) uniform MatrixBlock {
-	mat4 mvp;
-	mat4 model;
 	int albedoTextureIndex;
 	int normalTextureIndex;
 	int specularTextureIndex;
+	int transformIndex;
 };
 
 layout(set=2, binding = 0) uniform texture2D[] textures;

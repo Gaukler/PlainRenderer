@@ -3,10 +3,14 @@
 
 layout(location = 0) in vec3 inPos;
 
+layout(set=1, binding = 0, std430) buffer transformBuffer{
+	mat4 transforms[];
+};
+
 layout(push_constant) uniform MatrixBlock {
-	mat4 mvp;
-} translation;
+	uint transformIndex;
+};
 
 void main(){
-	gl_Position = translation.mvp * vec4(inPos, 1.f);
+	gl_Position = transforms[transformIndex] * vec4(inPos, 1.f);
 }

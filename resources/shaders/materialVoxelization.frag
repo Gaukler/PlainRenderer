@@ -21,9 +21,8 @@ layout(set=1, binding = 2, std430) buffer sdfVolumeData{
 layout(set=2, binding = 0) uniform texture2D[] textures;
 
 layout(push_constant) uniform MatrixBlock {
-	mat4 projection;
-	mat4 model;
-	int albedoTextureIndex;
+	uint albedoTextureIndex;
+	uint transformIndex;
 };
 
 layout(location = 0) in vec3 passPos;

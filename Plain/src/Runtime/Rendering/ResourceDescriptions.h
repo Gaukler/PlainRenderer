@@ -181,12 +181,6 @@ struct GlobalShaderInfo {
 	uint32_t frameIndex = 0;
 };
 
-struct Material {
-    ImageHandle diffuseTexture;
-    ImageHandle normalTexture;
-    ImageHandle specularTexture;
-};
-
 struct FramebufferTarget {
     ImageHandle image;
     uint32_t mipLevel = 0;

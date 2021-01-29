@@ -511,15 +511,8 @@ void RenderBackend::setRenderPassExecution(const RenderPassExecution& execution)
     m_renderPassExecutions.push_back(execution);
 }
 
-void RenderBackend::drawMeshes(
-    const std::vector<MeshHandle> meshHandles, 
-    const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, 
-    const RenderPassHandle passHandle) {
-    auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-
-    if (meshHandles.size() != primarySecondaryMatrices.size()) {
-        std::cout << "Error: drawMeshes handle and matrix count does not match\n";
-    }
+void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData,const RenderPassHandle passHandle) {
+    const GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
 
 	VkShaderStageFlags pushConstantStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 	if (pass.graphicPassDesc.shaderDescriptions.geometry.has_value()) {
@@ -529,34 +522,25 @@ void RenderBackend::drawMeshes(
 	const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, m_globalTextureArrayDescriptorSet };
 	vkCmdBindDescriptorSets(pass.meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
-    for (uint32_t i = 0; i < std::min(meshHandles.size(), primarySecondaryMatrices.size()); i++) {
+    for (uint32_t i = 0; i < meshHandles.size(); i++) {
 
-        const auto mesh = m_meshes[meshHandles[i].index];
+        const Mesh mesh = m_meshes[meshHandles[i].index];
 
         //vertex/index buffers            
         VkDeviceSize offset[] = { 0 };
         vkCmdBindVertexBuffers(pass.meshCommandBuffer, 0, 1, &mesh.vertexBuffer.vulkanHandle, offset);
         vkCmdBindIndexBuffer(pass.meshCommandBuffer, mesh.indexBuffer.vulkanHandle, offset[0], mesh.indexPrecision);
 
-		struct PushConstantBlock {
-			glm::mat4 matrices[2];
-			int32_t indices[3];
-		};
-		PushConstantBlock block;
-		block.matrices[0] = primarySecondaryMatrices[i][0];
-		block.matrices[1] = primarySecondaryMatrices[i][1];
-		block.indices[0] = mesh.materialTextureIndices.albedo;
-		block.indices[1] = mesh.materialTextureIndices.normal;
-		block.indices[2] = mesh.materialTextureIndices.specular;
-
-        //update push constants
-        vkCmdPushConstants(
-            pass.meshCommandBuffer, 
-            pass.pipelineLayout, 
-            pushConstantStageFlags, 
-            0, 
-            sizeof(block),
-            &block);
+		if (pass.pushConstantSize > 0) {
+			//update push constants
+			vkCmdPushConstants(
+				pass.meshCommandBuffer,
+				pass.pipelineLayout,
+				pushConstantStageFlags,
+				0,
+				pass.pushConstantSize,
+				pushConstantData + i * pass.pushConstantSize);
+		}
 
         vkCmdDrawIndexed(pass.meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
     }
@@ -598,6 +582,10 @@ void RenderBackend::drawDynamicMeshes(
 
 void RenderBackend::setUniformBufferData(const UniformBufferHandle buffer, const void* data, const size_t size) {
     fillBuffer(m_uniformBuffers[buffer.index], data, size);
+}
+
+void RenderBackend::setStorageBufferData(const StorageBufferHandle buffer, const void* data, const size_t size) {
+	fillBuffer(m_storageBuffers[buffer.index], data, size);
 }
 
 void RenderBackend::setGlobalDescriptorSetLayout(const ShaderLayout& layout) {
@@ -777,6 +765,10 @@ void RenderBackend::renderFrame(bool presentToScreen) {
     }
 }
 
+uint32_t RenderBackend::getImageGlobalTextureArrayIndex(const ImageHandle image) {
+	return m_images[image.index].globalDescriptorSetIndex;
+}
+
 RenderPassHandle RenderBackend::createComputePass(const ComputePassDescription& desc) {
 
     const ComputeShaderHandle shaderHandle = m_shaderFileManager.addComputeShader(desc.shaderDescription);
@@ -812,8 +804,7 @@ RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& 
     return passHandle;
 }
 
-std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary>& meshes, const std::vector<Material>& materials) {
-    assert(meshes.size() == materials.size());
+std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary>& meshes) {
 
     std::vector<MeshHandle> handles;
     for (uint32_t i = 0; i < meshes.size(); i++) {
@@ -848,13 +839,6 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         fillBuffer(mesh.vertexBuffer, meshData.vertexBuffer.data(), vertexBufferSize);
-
-		//textures
-        const Material& material = materials[i];
-
-		mesh.materialTextureIndices.albedo = m_images[material.diffuseTexture.index].globalDescriptorSetIndex;
-		mesh.materialTextureIndices.normal = m_images[material.normalTexture.index].globalDescriptorSetIndex;
-		mesh.materialTextureIndices.specular = m_images[material.specularTexture.index].globalDescriptorSetIndex;
 
         //store and return handle
         MeshHandle handle = { (uint32_t)m_meshes.size() };
@@ -1445,6 +1429,7 @@ void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& executio
         vkCmdEndRenderPass(commandBuffer);
     }
     else {
+		//TODO: add push constants for compute passes
         auto& pass = m_renderPasses.getComputePassRefByHandle(execution.handle);
         startDebugLabel(commandBuffer, pass.computePassDesc.name);
 
@@ -2821,13 +2806,8 @@ VkDescriptorSetLayout RenderBackend::createDescriptorSetLayout(const ShaderLayou
     return setLayout;
 }
 
-VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout setLayout, const bool isGraphicPass, 
+VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout setLayout, const size_t pushConstantSize, 
 	const VkShaderStageFlags stageFlags) {
-
-    VkPushConstantRange matrices = {};
-    matrices.stageFlags = stageFlags;
-    matrices.offset = 0;
-    matrices.size = 140;
 
     VkDescriptorSetLayout setLayouts[3] = { m_globalDescriptorSetLayout, setLayout, m_globalTextureArrayDescriporSetLayout };
     uint32_t setCount = 3;
@@ -2838,9 +2818,18 @@ VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout
     layoutInfo.flags = 0;
     layoutInfo.setLayoutCount = setCount;
     layoutInfo.pSetLayouts = setLayouts;
-    layoutInfo.pushConstantRangeCount = isGraphicPass ? 1 : 0;
-    layoutInfo.pPushConstantRanges = isGraphicPass ? &matrices : nullptr;
+    layoutInfo.pushConstantRangeCount = 0;
+	layoutInfo.pPushConstantRanges = nullptr;
 
+	VkPushConstantRange pushConstantRange;
+	if (pushConstantSize > 0) {
+		pushConstantRange.stageFlags = stageFlags;
+		pushConstantRange.offset = 0;
+		pushConstantRange.size = pushConstantSize;
+		layoutInfo.pPushConstantRanges = &pushConstantRange;
+		layoutInfo.pushConstantRangeCount = 1;
+	}
+    
     VkPipelineLayout layout = {};
     auto res = vkCreatePipelineLayout(vkContext.device, &layoutInfo, nullptr, &layout);
     checkVulkanResult(res);
@@ -2854,10 +2843,11 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     pass.computePassDesc = desc;
     VkComputePipelineCreateInfo pipelineInfo;
 
-    VkShaderModule module = createShaderModule(spirV);
-    ShaderReflection reflection = performComputeShaderReflection(spirV);
+    const VkShaderModule module = createShaderModule(spirV);
+    const ShaderReflection reflection = performComputeShaderReflection(spirV);
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
-    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, false, 0);
+    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, reflection.pushConstantByteSize, VK_SHADER_STAGE_COMPUTE_BIT);
+	pass.pushConstantSize = reflection.pushConstantByteSize;
 
     VulkanShaderCreateAdditionalStructs additionalStructs;
 
@@ -2978,8 +2968,8 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pass.graphicPassDesc = desc;
     pass.meshCommandBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 
-    VkShaderModule vertexModule   = createShaderModule(spirV.vertex);
-    VkShaderModule fragmentModule = createShaderModule(spirV.fragment);
+    const VkShaderModule vertexModule   = createShaderModule(spirV.vertex);
+    const VkShaderModule fragmentModule = createShaderModule(spirV.fragment);
 
     VkShaderModule geometryModule = VK_NULL_HANDLE;
     VkShaderModule tesselationControlModule = VK_NULL_HANDLE;
@@ -3019,9 +3009,10 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 		pipelineLayoutStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
 	}
 
-    ShaderReflection reflection = performShaderReflection(spirV);
+    const ShaderReflection reflection = performShaderReflection(spirV);
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
-    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, true, pipelineLayoutStageFlags);
+    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, reflection.pushConstantByteSize, pipelineLayoutStageFlags);
+	pass.pushConstantSize = reflection.pushConstantByteSize;
 
     std::vector<VkVertexInputAttributeDescription> attributes;
     uint32_t currentOffset = 0;

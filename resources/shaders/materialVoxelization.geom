@@ -13,11 +13,6 @@ layout(location = 1) in vec2 passUVIn[3];
 layout(location = 0) out vec3 passPosOut;
 layout(location = 1) out vec2 passUVOut;
 
-layout(push_constant) uniform MatrixBlock {
-	mat4 projection;
-	mat4 model;
-} translation;
-
 layout(set=1, binding = 1, std140) uniform sdfVolumeData{
     vec4 sdfVolumeExtends;
     vec4 sdfVolumeOffset;

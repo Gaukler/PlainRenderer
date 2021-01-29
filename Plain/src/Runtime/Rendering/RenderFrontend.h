@@ -87,6 +87,18 @@ struct FrameRenderTargets {
     FramebufferHandle prepassFramebuffer;
 };
 
+//texture indices for direct use in shader, index into global texture array
+struct Material {
+	uint32_t albedoTextureIndex;
+	uint32_t normalTextureIndex;
+	uint32_t specularTextureIndex;
+};
+
+struct MeshFrontend {
+	MeshHandle	backendHandle;
+	Material	material;
+};
+
 class RenderFrontend {
 public:
     RenderFrontend() {};
@@ -96,7 +108,7 @@ public:
     void setResolution(const uint32_t width, const uint32_t height);
     void setCameraExtrinsic(const CameraExtrinsic& extrinsic);
 
-    std::vector<MeshHandle> registerMeshes(const std::vector<MeshBinary>& meshes);
+    std::vector<MeshHandleFrontend> registerMeshes(const std::vector<MeshBinary>& meshes);
     void setSceneSDF(const ImageDescription& desc, const AxisAlignedBoundingBox& sceneBB);
 
     //before call camera settings and such must be set
@@ -153,6 +165,8 @@ private:
 
     //diffuse and specular convolution of sky lut for image based lighting
     void skyIBLConvolution();
+
+	std::vector<MeshFrontend> m_frontendMeshes;
 
     uint32_t m_screenWidth = 800;
     uint32_t m_screenHeight = 600;
@@ -295,6 +309,8 @@ private:
     StorageBufferHandle m_sunShadowInfoBuffer;  //light matrices and cascade splits
     StorageBufferHandle m_depthPyramidSyncBuffer;
 	StorageBufferHandle m_materialVoxelizationBuffer;
+	StorageBufferHandle m_mainPassTransformsBuffer;
+	StorageBufferHandle m_shadowPassTransformsBuffer;
 
     UniformBufferHandle m_globalUniformBuffer;
     UniformBufferHandle m_skyOcclusionDataBuffer;

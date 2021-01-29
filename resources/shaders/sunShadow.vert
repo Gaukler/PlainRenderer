@@ -12,16 +12,20 @@ layout(location = 1) in vec2 inUv;
 layout(location = 0) out vec2 passUV;
 
 layout(push_constant) uniform MatrixBlock {
-	mat4 unused;
-	mat4 model;
-} translation;
+	uint albedoTextureIndex;
+	uint transformIndex;
+};
 
 layout(set=1, binding = 0, std430) buffer sunShadowInfo{
     vec4 cascadeSplits;
     mat4 lightMatrix[cascadeCount];
 };
 
+layout(set=1, binding = 1, std430) buffer transformBuffer{
+	mat4 transforms[];
+};
+
 void main(){
-	gl_Position = lightMatrix[cascadeIndex] * translation.model * vec4(inPos, 1.f);
+	gl_Position = lightMatrix[cascadeIndex] * transforms[transformIndex] * vec4(inPos, 1.f);
     passUV = inUv;
 }

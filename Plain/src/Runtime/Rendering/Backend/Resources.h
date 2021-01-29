@@ -47,18 +47,11 @@ struct Buffer {
 #pragma warning( push )
 #pragma warning( disable : 26812) //use of unscoped enum
 
-struct MaterialTextureIndices {
-	size_t albedo;
-	size_t normal;
-	size_t specular;
-};
-
 struct Mesh {
     uint32_t        indexCount = 0;
     Buffer          indexBuffer;
     VkIndexType     indexPrecision = VK_INDEX_TYPE_NONE_KHR;
     Buffer          vertexBuffer;
-	MaterialTextureIndices materialTextureIndices;
 };
 
 //reenable warning
@@ -108,6 +101,8 @@ struct GraphicPass {
     //shader path cache to speed up out of date check    
     std::string shaderCachePathAbsolute;
     std::string shaderSrcPathAbsolute;
+
+	size_t pushConstantSize;
 };
 
 struct ComputePass {
@@ -127,6 +122,8 @@ struct ComputePass {
     */
     std::string shaderCachePathAbsolute;
     std::string shaderSrcPathAbsolute;
+
+	size_t pushConstantSize;
 };
 
 //stores all information needed to execute a pass

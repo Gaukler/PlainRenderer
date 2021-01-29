@@ -3,7 +3,6 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-
 #include "global.inc" 
 
 layout(location = 0) in vec2 passUV;
@@ -15,10 +14,10 @@ layout(location = 4) in mat3 passTBN;
 layout(set=2, binding = 0) uniform texture2D[] textures;
 
 layout(push_constant) uniform MatrixBlock {
-	mat4 mvp;
-	mat4 previousMVP;
 	int albedoTextureIndex;
 	int normalTextureIndex;
+	int specularTextureIndex;
+	int transformIndex;
 };
 
 layout(location = 0) out vec2 motion;
@@ -46,5 +45,5 @@ void main(){
 
 	normal = normalize(passTBN * normalTexelReconstructed) * 0.5 + 0.5; 
 
-	normal = normalize(passNormal) * 0.5 + 0.5;
+	normal = normalize(passTBN[2]) * 0.5 + 0.5;
 }

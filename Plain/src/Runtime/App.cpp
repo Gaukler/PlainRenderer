@@ -42,7 +42,7 @@ void App::setup(const std::string& sceneFilePath) {
         SceneBinary scene;
         std::cout << "Loading scene file: " << sceneFilePath << "\n";
         loadBinaryScene(sceneFilePath, &scene);
-        const std::vector<MeshHandle> meshHandles = gRenderFrontend.registerMeshes(scene.meshes);
+        const std::vector<MeshHandleFrontend> meshHandles = gRenderFrontend.registerMeshes(scene.meshes);
 
 		m_scene.reserve(scene.objects.size());
 		for (const ObjectBinary& objectBinary : scene.objects) {

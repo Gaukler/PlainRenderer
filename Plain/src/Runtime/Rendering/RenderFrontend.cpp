@@ -54,6 +54,8 @@ const uint32_t noiseTextureHeight = 32;
 
 const uint32_t shadowSampleCount = 8;
 
+const uint32_t maxObjectCountMainScene = 300;
+
 //bindings of global shader uniforms
 const uint32_t globalUniformBufferBinding               = 0;
 const uint32_t globalSamplerAnisotropicRepeatBinding    = 1;
@@ -73,6 +75,13 @@ const glm::uvec3 sceneMaterialVoxelTextureResolution = glm::uvec3(64);
 
 //currently rendering without attachment is not supported, so a small dummy is used
 const ImageFormat dummyImageFormat = ImageFormat::R8;
+
+//matrices used in the main rendering pass for depth-prepass and forward
+struct MainPassMatrices {
+	glm::mat4 model;
+	glm::mat4 mvp;
+	glm::mat4 mvpPrevious;
+};
 
 void resizeCallback(GLFWwindow* window, int width, int height) {
     RenderFrontend* frontEnd = reinterpret_cast<RenderFrontend*>(glfwGetWindowUserPointer(window));
@@ -483,28 +492,48 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     updateShadowFrustum();
 }
 
-std::vector<MeshHandle> RenderFrontend::registerMeshes(const std::vector<MeshBinary>& meshes){
+std::vector<MeshHandleFrontend> RenderFrontend::registerMeshes(const std::vector<MeshBinary>& meshes){
     
     std::vector<Material> materials;
     materials.reserve(meshes.size());
 
-    for (const MeshBinary& mesh : meshes) {
-        Material material;
+	const std::vector<MeshHandle> backendHandles = gRenderBackend.createMeshes(meshes);
 
-        if (!loadImageFromPath(mesh.texturePaths.albedoTexturePath, &material.diffuseTexture)) {
-            material.diffuseTexture = m_defaultTextures.diffuse;
-        }
-        if (!loadImageFromPath(mesh.texturePaths.normalTexturePath, &material.normalTexture)) {
-            material.normalTexture = m_defaultTextures.normal;
-        }
-        if (!loadImageFromPath(mesh.texturePaths.specularTexturePath, &material.specularTexture)) {
-            material.specularTexture = m_defaultTextures.specular;
-        }
+	std::vector<MeshHandleFrontend> meshHandlesFrontend;
+	meshHandlesFrontend.reserve(backendHandles.size());
+	
+	assert(backendHandles.size() == meshes.size());
+	for (int i = 0; i < backendHandles.size(); i++) {
+		MeshHandleFrontend meshHandleFrontend;
+		meshHandleFrontend.index = m_frontendMeshes.size();
+		meshHandlesFrontend.push_back(meshHandleFrontend);
 
-        materials.push_back(material);
-    }
+		MeshFrontend meshFrontend;
+		meshFrontend.backendHandle = backendHandles[i];
 
-	return gRenderBackend.createMeshes(meshes, materials);
+		const MeshBinary mesh = meshes[i];
+
+		//material
+		ImageHandle albedoHandle;
+		if (!loadImageFromPath(mesh.texturePaths.albedoTexturePath, &albedoHandle)) {
+			albedoHandle = m_defaultTextures.diffuse;
+		}
+		ImageHandle normalHandle;
+		if (!loadImageFromPath(mesh.texturePaths.normalTexturePath, &normalHandle)) {
+			normalHandle = m_defaultTextures.normal;
+		}
+		ImageHandle specularHandle;
+		if (!loadImageFromPath(mesh.texturePaths.specularTexturePath, &specularHandle)) {
+			specularHandle = m_defaultTextures.specular;
+		}
+
+		meshFrontend.material.albedoTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(albedoHandle);
+		meshFrontend.material.normalTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(normalHandle);
+		meshFrontend.material.specularTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(specularHandle);
+
+		m_frontendMeshes.push_back(meshFrontend);
+	}
+	return meshHandlesFrontend;
 }
 
 void RenderFrontend::setSceneSDF(const ImageDescription& desc, const AxisAlignedBoundingBox& sceneBB) {
@@ -534,38 +563,58 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 
     //main and prepass
     {
+		struct MainPassPushConstants {
+			uint32_t albedoTextureIndex;
+			uint32_t normalTextureIndex;
+			uint32_t specularTextureIndex;
+			uint32_t transformIndex;
+		};
+
         std::vector<MeshHandle> culledMeshes;
-        std::vector<std::array<glm::mat4, 2>> culledTransformsMainPass; //contains MVP and model matrix
-        std::vector<std::array<glm::mat4, 2>> culledTransformsPrepass;  //contains MVP and previous mvp
+		std::vector<MainPassPushConstants> pushConstants;
+		std::vector<MainPassMatrices> mainPassMatrices;
 
         //frustum culling
         for (const RenderObject& obj : scene) {
-
-            const glm::mat4 mvp = m_viewProjectionMatrix * obj.modelMatrix;
 
             const bool isVisible = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, obj.bbWorld);
 
             if (isVisible) {
                 m_currentMainPassDrawcallCount++;
+				MeshFrontend meshFrontend = m_frontendMeshes[obj.mesh.index];
+                culledMeshes.push_back(meshFrontend.backendHandle);
 
-                culledMeshes.push_back(obj.mesh);
+				MainPassPushConstants meshPushConstants;
+				meshPushConstants.albedoTextureIndex = meshFrontend.material.albedoTextureIndex;
+				meshPushConstants.normalTextureIndex = meshFrontend.material.normalTextureIndex;
+				meshPushConstants.specularTextureIndex = meshFrontend.material.specularTextureIndex;
+				meshPushConstants.transformIndex = mainPassMatrices.size();
+				pushConstants.push_back(meshPushConstants);
 
-                const std::array<glm::mat4, 2> mainPassTransforms = { mvp, obj.modelMatrix };
-                culledTransformsMainPass.push_back(mainPassTransforms);
-
-                const glm::mat4 previousMVP = m_previousViewProjectionMatrix * obj.previousModelMatrix;
-                const std::array<glm::mat4, 2> prePassTransforms = { mvp, previousMVP };
-                culledTransformsPrepass.push_back(prePassTransforms);
+				MainPassMatrices matrices;
+				matrices.model = obj.modelMatrix;
+				matrices.mvp = m_viewProjectionMatrix * obj.modelMatrix;
+				matrices.mvpPrevious = m_previousViewProjectionMatrix * obj.previousModelMatrix;
+				mainPassMatrices.push_back(matrices);
             }
         }
-        gRenderBackend.drawMeshes(culledMeshes, culledTransformsMainPass, m_mainPass);
-        gRenderBackend.drawMeshes(culledMeshes, culledTransformsPrepass, m_depthPrePass);
+        gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstants.data(), m_mainPass);
+        gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstants.data(), m_depthPrePass);
+
+		gRenderBackend.setStorageBufferData(m_mainPassTransformsBuffer, mainPassMatrices.data(), 
+			sizeof(MainPassMatrices) * mainPassMatrices.size());
     }
     
     //shadow pass
     {
+		struct ShadowPushConstants {
+			uint32_t albedoTextureIndex;
+			uint32_t transformIndex;
+		};
+
         std::vector<MeshHandle> culledMeshes;
-        std::vector<std::array<glm::mat4, 2>> culledTransforms; //model matrix and secondary unused for now 
+		std::vector<glm::mat4> modelMatrices;
+		std::vector<ShadowPushConstants> pushConstantData;
 
         const glm::vec3 sunDirection = directionToVector(m_sunDirection);
         //we must not cull behind the shadow frustum near plane, as objects there cast shadows into the visible area
@@ -582,23 +631,28 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
         //actual frustum is fitted tightly to depth buffer values, but that is done on the GPU
         for (const RenderObject& obj : scene) {
 
-            const std::array<glm::mat4, 2> transforms = { glm::mat4(1.f), obj.modelMatrix };
-            const bool renderMesh = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_sunShadowFrustum, obj.bbWorld);
+            const bool isVisible = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_sunShadowFrustum, obj.bbWorld);
 
-            if (renderMesh) {
+            if (isVisible) {
                 m_currentShadowPassDrawcallCount++;
 
-                culledMeshes.push_back(obj.mesh);
-                culledTransforms.push_back(transforms);
+				const MeshFrontend mesh = m_frontendMeshes[obj.mesh.index];
+                culledMeshes.push_back(mesh.backendHandle);
+
+				ShadowPushConstants pushConstants;
+				pushConstants.albedoTextureIndex = mesh.material.albedoTextureIndex;
+				pushConstants.transformIndex = modelMatrices.size();
+				pushConstantData.push_back(pushConstants);
+
+				modelMatrices.push_back(obj.modelMatrix);
             }
         }
         for (uint32_t shadowPass = 0; shadowPass < m_shadowPasses.size(); shadowPass++) {
-            gRenderBackend.drawMeshes(culledMeshes, culledTransforms, m_shadowPasses[shadowPass]);
+            gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstantData.data(), m_shadowPasses[shadowPass]);
         }
+		gRenderBackend.setStorageBufferData(m_shadowPassTransformsBuffer, modelMatrices.data(),
+			sizeof(glm::mat4) * modelMatrices.size());
     }
-
-    //for sky and debug models, first matrix is mvp with identity model matrix, secondary is unused
-    const std::array<glm::mat4, 2> defaultTransform = { m_viewProjectionMatrix, glm::mat4(1.f) };
 }
 
 void RenderFrontend::renderFrame() {
@@ -753,9 +807,10 @@ void RenderFrontend::renderSunShadowCascades() const {
         shadowPassExecution.handle = m_shadowPasses[i];
         shadowPassExecution.parents = { m_lightMatrixPass };
         shadowPassExecution.framebuffer = m_shadowCascadeFramebuffers[i];
-
-        StorageBufferResource lightMatrixBufferResource(m_sunShadowInfoBuffer, true, 0);
-        shadowPassExecution.resources.storageBuffers = { lightMatrixBufferResource };
+        shadowPassExecution.resources.storageBuffers = { 
+			StorageBufferResource(m_sunShadowInfoBuffer, true, 0),
+			StorageBufferResource(m_shadowPassTransformsBuffer, true, 1)
+		};
 
         gRenderBackend.setRenderPassExecution(shadowPassExecution);
     }
@@ -782,6 +837,7 @@ void RenderFrontend::renderDepthPrepass(const FramebufferHandle framebuffer) con
     RenderPassExecution prepassExe;
     prepassExe.handle = m_depthPrePass;
     prepassExe.framebuffer = framebuffer;
+	prepassExe.resources.storageBuffers = { StorageBufferResource(m_mainPassTransformsBuffer, true, 0) };
     gRenderBackend.setRenderPassExecution(prepassExe);
 }
 
@@ -1031,7 +1087,8 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     RenderPassExecution mainPassExecution;
     mainPassExecution.handle = m_mainPass;
     mainPassExecution.framebuffer = framebuffer;
-    mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer };
+    mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer,
+		StorageBufferResource{m_mainPassTransformsBuffer, true, 17} };
 
 	ImageHandle indirectSrc_Y_SH = m_indirectDiffuseHistory_Y_SH[0];
 	ImageHandle indirectSrc_CoCg = m_indirectDiffuseHistory_CoCg[0];
@@ -1173,7 +1230,7 @@ void RenderFrontend::renderDebugGeometry(const FramebufferHandle framebuffer) co
 }
 
 void RenderFrontend::issueSkyDrawcalls() {
-    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, { { m_viewProjectionMatrix } }, m_skyPass);
+    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, nullptr, m_skyPass);
 
     const float lattitudeOffsetAngle = 90;
     const float longitudeOffsetAngle = -90;
@@ -1182,10 +1239,16 @@ void RenderFrontend::issueSkyDrawcalls() {
     const glm::mat4 spriteScaleMatrix = glm::scale(glm::mat4(1.f), glm::vec3(spriteScale, spriteScale, 1.f));
     const glm::mat4 spriteLattitudeRotation = glm::rotate(glm::mat4(1.f), glm::radians(m_sunDirection.y + lattitudeOffsetAngle), glm::vec3(-1, 0, 0));
     const glm::mat4 spriteLongitudeRotation = glm::rotate(glm::mat4(1.f), glm::radians(m_sunDirection.x + longitudeOffsetAngle), glm::vec3(0, -1, 0));
-    const glm::mat4 spriteRotation = spriteLongitudeRotation * spriteLattitudeRotation * spriteScaleMatrix;
 
-    const glm::mat4 spriteMVP = m_viewProjectionMatrix * spriteRotation;
-    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, { { spriteMVP, spriteRotation } }, m_sunSpritePass);
+	struct SunSpriteMatrices {
+		glm::mat4 model;
+		glm::mat4 mvp;
+	};
+	SunSpriteMatrices sunSpriteMatrices;
+	sunSpriteMatrices.model = spriteLongitudeRotation * spriteLattitudeRotation * spriteScaleMatrix;
+	sunSpriteMatrices.mvp = m_viewProjectionMatrix * sunSpriteMatrices.model;
+
+    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, (char*)&sunSpriteMatrices, m_sunSpritePass);
 }
 
 void RenderFrontend::updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB) {
@@ -1329,11 +1392,9 @@ void RenderFrontend::bakeSkyOcclusion(const std::vector<RenderObject>& scene, co
     }
 
     RenderPassExecution skyShadowExecution;
-    //configure shadow pass
-    {
-        skyShadowExecution.handle = m_skyShadowPass;
-        skyShadowExecution.framebuffer = m_skyShadowFramebuffer;
-    }
+    skyShadowExecution.handle = m_skyShadowPass;
+    skyShadowExecution.framebuffer = m_skyShadowFramebuffer;
+	skyShadowExecution.resources.storageBuffers = { StorageBufferResource(m_shadowPassTransformsBuffer, true, 0) };
 
     RenderPassExecution gatherExecution;
     //configure gather pass
@@ -1387,18 +1448,19 @@ void RenderFrontend::bakeSkyOcclusion(const std::vector<RenderObject>& scene, co
         //sky shadow pass mesh commands
         {
             std::vector<MeshHandle> meshHandles;
-            std::vector<std::array<glm::mat4, 2>> transforms;
+            std::vector<glm::mat4> transforms;
+			std::vector<uint32_t> transformIndices;
 
             for (const RenderObject& obj : scene) {
-
-                const std::array<glm::mat4, 2> t = {
-                    occlusionData.shadowMatrix * obj.modelMatrix,
-                    glm::mat4(1.f) }; //unused
-
-                meshHandles.push_back(obj.mesh);
-                transforms.push_back(t);
+				const MeshFrontend mesh = m_frontendMeshes[obj.mesh.index];
+                meshHandles.push_back(mesh.backendHandle);
+                
+				transformIndices.push_back(transforms.size());
+				transforms.push_back(occlusionData.shadowMatrix * obj.modelMatrix);
             }
-            gRenderBackend.drawMeshes(meshHandles, transforms, m_skyShadowPass);
+            gRenderBackend.drawMeshes(meshHandles, (char*)transformIndices.data(), m_skyShadowPass);
+			gRenderBackend.setStorageBufferData(m_shadowPassTransformsBuffer, transforms.data(), 
+				sizeof(glm::mat4) * transforms.size());
         }
 
         gRenderBackend.renderFrame(false);
@@ -1420,7 +1482,8 @@ void RenderFrontend::bakeSceneMaterialVoxelTexture(const std::vector<RenderObjec
 			UniformBufferResource(m_sdfVolumeInfoBuffer, 1)
 		};
 		materialVoxelizationExecution.resources.storageBuffers = {
-			StorageBufferResource(m_materialVoxelizationBuffer, false, 2)
+			StorageBufferResource(m_materialVoxelizationBuffer, false, 2),
+			StorageBufferResource(m_shadowPassTransformsBuffer, false, 3)
 		};
 
 		gRenderBackend.setRenderPassExecution(materialVoxelizationExecution);
@@ -1456,20 +1519,31 @@ void RenderFrontend::bakeSceneMaterialVoxelTexture(const std::vector<RenderObjec
 			sceneBBPadded.max.z);	//far
 
 		std::vector<MeshHandle> meshHandles;
-		std::vector<std::array<glm::mat4, 2>> transforms;
+		std::vector<glm::mat4> transforms;
+
+		struct MaterialVoxelizationPushConstants {
+			uint32_t albedoTextureIndex;
+			uint32_t transformIndex;
+		};
+		std::vector<MaterialVoxelizationPushConstants> pushConstantData;
 
 		//draw static meshes
 		for (const RenderObject& obj : scene) {
 
-			const std::array<glm::mat4, 2> t = {
-				projectionMatrix,
-				obj.modelMatrix };
+			const MeshFrontend mesh = m_frontendMeshes[obj.mesh.index];
+			meshHandles.push_back(mesh.backendHandle);
 
-			meshHandles.push_back(obj.mesh);
-			transforms.push_back(t);
+			MaterialVoxelizationPushConstants pushConstant;
+			pushConstant.albedoTextureIndex = mesh.material.albedoTextureIndex;
+			pushConstant.transformIndex = transforms.size();
+			pushConstantData.push_back(pushConstant);
+
+			transforms.push_back(obj.modelMatrix);
 		}
 		gRenderBackend.startDrawcallRecording();
-		gRenderBackend.drawMeshes(meshHandles, transforms, m_materialVoxelizationPass);
+		gRenderBackend.drawMeshes(meshHandles, (char*)pushConstantData.data(), m_materialVoxelizationPass);
+		gRenderBackend.setStorageBufferData(m_shadowPassTransformsBuffer, transforms.data(), 
+			sizeof(glm::mat4) * transforms.size());
 	}
 	
 	//execute frame
@@ -2357,6 +2431,18 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 
 		m_materialVoxelizationBuffer = gRenderBackend.createStorageBuffer(desc);
 	}	
+	//main pass transforms buffer
+	{
+		StorageBufferDescription desc;
+		desc.size = sizeof(MainPassMatrices) * maxObjectCountMainScene;
+		m_mainPassTransformsBuffer = gRenderBackend.createStorageBuffer(desc);
+	}
+	//shadow pass transforms buffer
+	{
+		StorageBufferDescription desc;
+		desc.size = sizeof(glm::mat4) * maxObjectCountMainScene;
+		m_shadowPassTransformsBuffer = gRenderBackend.createStorageBuffer(desc);
+	}
 }
 
 void RenderFrontend::initMeshs() {
@@ -2431,12 +2517,7 @@ void RenderFrontend::initMeshs() {
         };
         const std::vector<MeshBinary> cubeBinary = meshesToBinary(std::vector<MeshData>{cubeData}, AABBListFromMeshes({cubeData}));
 
-        Material cubeMaterial;
-        cubeMaterial.diffuseTexture = m_defaultTextures.diffuse;
-        cubeMaterial.normalTexture = m_defaultTextures.normal;
-        cubeMaterial.specularTexture = m_defaultTextures.specular;
-
-        m_skyCube = gRenderBackend.createMeshes(cubeBinary, std::vector<Material> {cubeMaterial}).back();
+        m_skyCube = gRenderBackend.createMeshes(cubeBinary).back();
     }
     //quad 
     {
@@ -2477,12 +2558,7 @@ void RenderFrontend::initMeshs() {
         };
         const std::vector<MeshBinary> quadBinary = meshesToBinary(std::vector<MeshData>{quadData}, AABBListFromMeshes({ quadData }));
 
-        Material cubeMaterial;
-        cubeMaterial.diffuseTexture = m_defaultTextures.diffuse;
-        cubeMaterial.normalTexture = m_defaultTextures.normal;
-        cubeMaterial.specularTexture = m_defaultTextures.specular;
-
-        m_quad = gRenderBackend.createMeshes(quadBinary, std::vector<Material> {cubeMaterial}).back();
+        m_quad = gRenderBackend.createMeshes(quadBinary).back();
     }
 }
 

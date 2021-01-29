@@ -15,6 +15,7 @@ second set is always pass specific, first is global, third is materials
 struct ShaderReflection {
     ShaderLayout        shaderLayout;
     VertexInputFlags    vertexInputFlags = VertexInputFlags(0);
+	size_t				pushConstantByteSize = 0;
 };
 
 /*

@@ -3,14 +3,19 @@
 #include "AABB.h"
 #include "Rendering/RenderHandles.h"
 
+//frontend stores backend handles with material indices
+struct MeshHandleFrontend {
+	uint32_t index;
+};
+
 struct SceneObject {
-	MeshHandle mesh;
+	MeshHandleFrontend mesh;
 	size_t bbIndex;
 	glm::mat4 modelMatrix;
 };
 
 struct RenderObject {
-	MeshHandle mesh;
+	MeshHandleFrontend mesh;
 	AxisAlignedBoundingBox bbWorld;
 	glm::mat4 modelMatrix;
 	glm::mat4 previousModelMatrix;
