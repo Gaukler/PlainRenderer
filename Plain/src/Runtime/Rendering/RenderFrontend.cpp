@@ -273,10 +273,6 @@ void RenderFrontend::prepareNewFrame() {
         return;
     }
 
-    m_currentMeshCount = 0;
-    m_currentMainPassDrawcallCount = 0;
-    m_currentShadowPassDrawcallCount = 0;
-
     if (m_isMainPassShaderDescriptionStale) {
         gRenderBackend.updateGraphicPassShaderDescription(m_mainPass, createForwardPassShaderDescription(m_shadingConfig));
         m_isMainPassShaderDescriptionStale = false;
@@ -306,6 +302,10 @@ void RenderFrontend::prepareNewFrame() {
     drawUi();
     prepareRenderpasses();
     gRenderBackend.startDrawcallRecording();
+
+	m_currentMeshCount = 0;
+	m_currentMainPassDrawcallCount = 0;
+	m_currentShadowPassDrawcallCount = 0;
 }
 
 void RenderFrontend::setupGlobalShaderInfoLayout() {
