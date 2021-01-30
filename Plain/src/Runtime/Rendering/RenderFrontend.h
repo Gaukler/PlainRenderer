@@ -134,7 +134,7 @@ private:
 
     //computes image histogram using compute shaders
     void computeColorBufferHistogram(const ImageHandle lastFrameColor) const;
-    void renderSky(const FramebufferHandle framebuffer) const;
+    void renderSky(const FramebufferHandle framebuffer, const RenderPassHandle parent) const;
     void renderSunShadowCascades() const;
     void computeExposure() const;
     void renderDepthPrepass(const FramebufferHandle framebuffer) const;
@@ -185,6 +185,7 @@ private:
 
     bool m_didResolutionChange = false;
     bool m_minimized = false;
+	bool m_renderBoundingBoxes = false;
 
     //stored for resizing
     GLFWwindow* m_window = nullptr;
@@ -298,6 +299,7 @@ private:
 
     MeshHandle m_skyCube;
     MeshHandle m_quad;
+	MeshHandle m_boundingBoxMesh;
 
     DynamicMeshHandle m_cameraFrustumModel;
     DynamicMeshHandle m_shadowFrustumModel;
@@ -311,6 +313,7 @@ private:
 	StorageBufferHandle m_materialVoxelizationBuffer;
 	StorageBufferHandle m_mainPassTransformsBuffer;
 	StorageBufferHandle m_shadowPassTransformsBuffer;
+	StorageBufferHandle m_boundingBoxDebugRenderMatrices;
 
     UniformBufferHandle m_globalUniformBuffer;
     UniformBufferHandle m_skyOcclusionDataBuffer;

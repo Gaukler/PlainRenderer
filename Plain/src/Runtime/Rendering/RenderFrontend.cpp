@@ -384,7 +384,12 @@ void RenderFrontend::prepareRenderpasses(){
 		filterIndirectDiffuse(currentRenderTarget, lastRenderTarget);
 	}
     renderForwardShading(forwardShadingDependencies, currentRenderTarget.colorFramebuffer);
-    renderSky(currentRenderTarget.colorFramebuffer);
+	RenderPassHandle skyParent = m_mainPass;
+	if (m_renderBoundingBoxes) {
+		renderDebugGeometry(currentRenderTarget.colorFramebuffer);
+		skyParent = m_debugGeoPass;
+	}
+    renderSky(currentRenderTarget.colorFramebuffer, skyParent);
 
 	if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SkyProbe) {
 		skyIBLConvolution();
@@ -653,6 +658,29 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 		gRenderBackend.setStorageBufferData(m_shadowPassTransformsBuffer, modelMatrices.data(),
 			sizeof(glm::mat4) * modelMatrices.size());
     }
+
+	if (m_renderBoundingBoxes) {
+		std::vector<glm::mat4> boundingBoxMatrices;
+		std::vector<MeshHandle> meshHandles;
+		std::vector<uint32_t> pushConstantData; //contains index to matrix
+		for (const RenderObject& obj : scene) {
+			//culling again is repeating work
+			//but keeps code nicely separated and is for debugging only
+			const bool isVisible = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, obj.bbWorld);
+			if (isVisible) {
+				const glm::vec3 offset = (obj.bbWorld.min + obj.bbWorld.max) * 0.5f;
+				const glm::mat4 translationMatrix = glm::translate(glm::mat4(1.f), offset);
+				const glm::mat4 scaleMatrix = glm::scale(glm::mat4(1.f), (obj.bbWorld.max - obj.bbWorld.min) * 0.5f);
+				const glm::mat4 bbMatrix = m_globalShaderInfo.viewProjection * translationMatrix * scaleMatrix;
+				pushConstantData.push_back(boundingBoxMatrices.size());
+				boundingBoxMatrices.push_back(bbMatrix);
+				meshHandles.push_back(m_boundingBoxMesh);
+			}
+		}
+		gRenderBackend.drawMeshes(meshHandles, (char*)pushConstantData.data(), m_debugGeoPass);
+		const size_t bbMatricesSize = boundingBoxMatrices.size() * sizeof(glm::mat4);
+		gRenderBackend.setStorageBufferData(m_boundingBoxDebugRenderMatrices, (char*)boundingBoxMatrices.data(), bbMatricesSize);
+	}
 }
 
 void RenderFrontend::renderFrame() {
@@ -719,7 +747,7 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
     }
 }
    
-void RenderFrontend::renderSky(const FramebufferHandle framebuffer) const {
+void RenderFrontend::renderSky(const FramebufferHandle framebuffer, const RenderPassHandle parent) const {
     gRenderBackend.setUniformBufferData(
         m_atmosphereSettingsBuffer, 
         &m_atmosphereSettings, 
@@ -783,7 +811,7 @@ void RenderFrontend::renderSky(const FramebufferHandle framebuffer) const {
         skyPassExecution.handle = m_skyPass;
         skyPassExecution.framebuffer = framebuffer;
         skyPassExecution.resources.sampledImages = { skyLutResource };
-        skyPassExecution.parents = { m_mainPass,  m_skyLutPass };
+        skyPassExecution.parents = { parent,  m_skyLutPass };
         gRenderBackend.setRenderPassExecution(skyPassExecution);
     }
     //sun sprite
@@ -1226,6 +1254,7 @@ void RenderFrontend::renderDebugGeometry(const FramebufferHandle framebuffer) co
     debugPassExecution.handle = m_debugGeoPass;
     debugPassExecution.framebuffer = framebuffer;
     debugPassExecution.parents = { m_mainPass };
+	debugPassExecution.resources.storageBuffers = { StorageBufferResource(m_boundingBoxDebugRenderMatrices, true, 0) };
     gRenderBackend.setRenderPassExecution(debugPassExecution);
 }
 
@@ -2443,6 +2472,12 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 		desc.size = sizeof(glm::mat4) * maxObjectCountMainScene;
 		m_shadowPassTransformsBuffer = gRenderBackend.createStorageBuffer(desc);
 	}
+	//bounding box debug rendering matrices
+	{
+		StorageBufferDescription desc;
+		desc.size = maxObjectCountMainScene * sizeof(glm::mat4);
+		m_boundingBoxDebugRenderMatrices = gRenderBackend.createStorageBuffer(desc);
+	}
 }
 
 void RenderFrontend::initMeshs() {
@@ -2560,6 +2595,29 @@ void RenderFrontend::initMeshs() {
 
         m_quad = gRenderBackend.createMeshes(quadBinary).back();
     }
+	//bounding box mesh
+	//drawn using lines, so needs different positions than skybox
+	{
+		AxisAlignedBoundingBox normalizedBB;
+		normalizedBB.min = glm::vec3(-1);
+		normalizedBB.max = glm::vec3(1);
+
+		std::vector<glm::vec3> positions;
+		std::vector<uint32_t> indices;
+		axisAlignedBoundingBoxToLineMesh(normalizedBB, &positions, &indices);
+
+		MeshBinary binary;
+		binary.boundingBox = normalizedBB;
+		binary.indexCount = indices.size();
+		binary.vertexCount = positions.size();
+		binary.vertexBuffer.resize(sizeof(glm::vec3) * positions.size());
+		memcpy(binary.vertexBuffer.data(), positions.data(), binary.vertexBuffer.size());
+		for (const uint32_t& index : indices) {
+			binary.indexBuffer.push_back(index);	//conversion to 16 bit index
+		}
+
+		m_boundingBoxMesh = gRenderBackend.createMeshes({ binary }).back();
+	}
 }
 
 void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings) {
@@ -3200,5 +3258,8 @@ void RenderFrontend::drawUi() {
         ImGui::InputFloat("Near plane", &m_camera.intrinsic.near);
         ImGui::InputFloat("Far plane", &m_camera.intrinsic.far);
     }
+	if (ImGui::CollapsingHeader("Debug settings")) {
+		ImGui::Checkbox("Render bounding boxes", &m_renderBoundingBoxes);
+	}
     ImGui::End();
 }
