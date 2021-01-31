@@ -303,7 +303,7 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 			parentMatrices.pop_back();
 
 			tinygltf::Node node = model.nodes[currentNodeIndex];
-			const glm::mat4 modelMatrix = computeNodeMatrix(node) * parentMatrix;
+			const glm::mat4 modelMatrix = parentMatrix * computeNodeMatrix(node);
 
 			//add children to process stack
 			for (const int childIndex : node.children) {
