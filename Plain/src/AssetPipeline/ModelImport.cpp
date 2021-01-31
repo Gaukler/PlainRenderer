@@ -217,8 +217,11 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 		return false;
 	}
 
+	std::vector<std::vector<size_t>> perMeshPrimitives;	//indices into outScene->meshes
+
 	//load meshes
 	for (const tinygltf::Mesh& mesh : model.meshes) {
+		std::vector<size_t> primitiveList;
 		for (const tinygltf::Primitive primitive : mesh.primitives) {
 
 			int positionIndex;
@@ -282,8 +285,10 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 			data.texturePaths.specularTexturePath	= modelDirectory / model.images[model.textures[material.pbrMetallicRoughness.metallicRoughnessTexture.index].source].uri;
 			data.texturePaths.normalTexturePath		= modelDirectory / model.images[model.textures[material.normalTexture.index].source].uri;
 
+			primitiveList.push_back(outScene->meshes.size());
 			outScene->meshes.push_back(data);
 		}
+		perMeshPrimitives.push_back(primitiveList);
 	}
 
 	//load objects
@@ -314,7 +319,6 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 			//skip nodes without mesh
 			if (node.mesh != -1) {
 				ObjectBinary obj;
-				obj.meshIndex = node.mesh;	//file mesh index matches scene mesh index
 				
 				glm::mat4 correctionMatrix = glm::mat4(1.f);
 				correctionMatrix[1][1] = -1;
@@ -325,7 +329,11 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 				}
 
 				obj.modelMatrix = correctionMatrix * modelMatrix;
-				outScene->objects.push_back(obj);
+
+				for (const size_t primitiveIndex : perMeshPrimitives[node.mesh]) {
+					obj.meshIndex = primitiveIndex;
+					outScene->objects.push_back(obj);
+				}
 			}
 		}
 	}
