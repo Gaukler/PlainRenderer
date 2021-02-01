@@ -267,6 +267,16 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 				data.bitangents.push_back(glm::normalize(glm::cross(data.tangents[i], data.normals[i])));
 			}
 
+			//correct coordinate system
+			for (glm::vec3& p : data.positions) {
+				p.y *= -1;
+				p.z *= -1;
+			}
+			for (glm::vec3& n : data.normals) {
+				n.y *= -1;
+				n.z *= -1;
+			}
+
 			//uvs
 			data.uvs.resize(uvBytes.size() / sizeof(glm::vec2));
 			memcpy(data.uvs.data(), uvBytes.data(), uvBytes.size());
@@ -319,16 +329,27 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 			//skip nodes without mesh
 			if (node.mesh != -1) {
 				ObjectBinary obj;
-				
-				glm::mat4 correctionMatrix = glm::mat4(1.f);
-				correctionMatrix[1][1] = -1;
-				correctionMatrix[2][2] = -1;
 
 				if (glm::determinant(modelMatrix) < 0) {
 					std::cout << "Negative model matrix determinant will cause winding order problems: " << node.name << "\n";
 				}
 
-				obj.modelMatrix = correctionMatrix * modelMatrix;
+				glm::mat4 correctionMatrix(1.f);
+				correctionMatrix[1][1] = -1;
+				correctionMatrix[2][2] = -1;
+
+				//to change the coordinate system the correction matrix c has to be applied at the end: 
+				//world = c * m1 * m2 *... * vertex
+				//where does the second c in the code come from:
+				//the vertices are also corrected, so the meshes are correctly displayed when using an identity matrix I
+				//corrected vertex: 
+				//vertex_c = c * vertex
+				//c = c_inverse, so c * c = I
+				//because of this:
+				//c * vertex_c = c * c * vertex = I * vertex = vertex
+				//so final transform is:
+				//world = c * m * c * vertex_c
+				obj.modelMatrix = correctionMatrix * modelMatrix * correctionMatrix;
 
 				for (const size_t primitiveIndex : perMeshPrimitives[node.mesh]) {
 					obj.meshIndex = primitiveIndex;
