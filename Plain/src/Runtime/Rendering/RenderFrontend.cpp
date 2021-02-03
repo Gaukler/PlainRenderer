@@ -376,10 +376,6 @@ void RenderFrontend::prepareRenderpasses(){
 			forwardShadingDependencies.push_back(m_indirectLightingUpscale);
 		}
 	}
-	else if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SkyProbe) {
-		forwardShadingDependencies.push_back(m_skyDiffuseConvolutionPass);
-		forwardShadingDependencies.insert(forwardShadingDependencies.end(), m_skySpecularConvolutionPerMipPasses.begin(), m_skySpecularConvolutionPerMipPasses.end());
-	}
 
     static int sceneRenderTargetIndex;
     const FrameRenderTargets lastRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
@@ -407,10 +403,6 @@ void RenderFrontend::prepareRenderpasses(){
 		skyParent = m_debugGeoPass;
 	}
     renderSky(currentRenderTarget.colorFramebuffer, skyParent);
-
-	if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SkyProbe) {
-		skyIBLConvolution();
-	}
     
     RenderPassHandle currentPass = m_sunSpritePass;
     ImageHandle currentSrc = currentRenderTarget.colorBuffer;
@@ -966,7 +958,7 @@ void RenderFrontend::computeSunLightMatrices() const{
 }
 
 void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) const {
-
+	
 	RenderPassExecution exe;
 	exe.handle = m_diffuseSDFTracePass;
 	if (m_shadingConfig.indirectLightingHalfRes) {
@@ -981,7 +973,6 @@ void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) co
 
 	exe.resources.sampledImages = {
 		ImageResource(m_sceneSDF, 0, 2),
-		ImageResource(m_sceneMaterialVoxelTexture, 0, 3),
 		ImageResource(depthSrc, 0, 4),
 		ImageResource(m_worldSpaceNormalImage, 0, 5),
 		ImageResource(m_skyLut, 0, 8)
@@ -1150,9 +1141,6 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
     const auto lightMatrixBuffer = StorageBufferResource(m_sunShadowInfoBuffer, true, 8);
 
-    const ImageResource occlusionVolumeResource(m_skyOcclusionVolume, 0, 13);
-    const UniformBufferResource skyOcclusionInfoBuffer(m_skyOcclusionDataBuffer, 14);
-
     RenderPassExecution mainPassExecution;
     mainPassExecution.handle = m_mainPass;
     mainPassExecution.framebuffer = framebuffer;
@@ -1166,10 +1154,9 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
 		indirectSrc_CoCg = m_indirectLightingFullRes_CoCg;
 	}
 
-	mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource, occlusionVolumeResource,
+	mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource,
 		ImageResource(indirectSrc_Y_SH, 0, 15),
 		ImageResource(indirectSrc_CoCg, 0, 16) };
-    mainPassExecution.resources.uniformBuffers = { skyOcclusionInfoBuffer };
 
     //add shadow map cascade resources
     for (uint32_t i = 0; i < shadowCascadeCount; i++) {
@@ -1411,215 +1398,6 @@ void RenderFrontend::computeBRDFLut() {
     gRenderBackend.setRenderPassExecution(brdfLutExecution);
 }
 
-void RenderFrontend::bakeSkyOcclusion(const std::vector<RenderObject>& scene, const AxisAlignedBoundingBox& sceneBB) {
-    
-    AxisAlignedBoundingBox paddedSceneBB = sceneBB;
-    
-    const float bbBias = 1.f;
-    paddedSceneBB.max += bbBias;
-    paddedSceneBB.min -= bbBias;
-
-    const VolumeInfo occlusionVolumeInfo = volumeInfoFromBoundingBox(paddedSceneBB);
-
-    SkyOcclusionRenderData occlusionData;
-    occlusionData.offset = occlusionVolumeInfo.offset;
-    occlusionData.extends = occlusionVolumeInfo.extends;
-    occlusionData.weight = 1.f / skyOcclusionSampleCount;
-
-    m_skyOcclusionVolumeRes = glm::ivec3(
-        pow(2, int(std::ceil(log2f(occlusionData.extends.x / skyOcclusionTargetDensity)))),
-        pow(2, int(std::ceil(log2f(occlusionData.extends.y / skyOcclusionTargetDensity)))),
-        pow(2, int(std::ceil(log2f(occlusionData.extends.z / skyOcclusionTargetDensity))))
-    );
-    m_skyOcclusionVolumeRes = glm::min(m_skyOcclusionVolumeRes, glm::ivec3(skyOcclusionVolumeMaxRes));
-
-    std::cout << "\nSky occlusion resolution:\n"
-        << "x-axis: " << std::to_string(m_skyOcclusionVolumeRes.x) << "\n"
-        << "y-axis: " << std::to_string(m_skyOcclusionVolumeRes.y) << "\n"
-        << "z-axis: " << std::to_string(m_skyOcclusionVolumeRes.z) << "\n";
-
-    const glm::vec3 density = glm::vec3(occlusionData.extends) / glm::vec3(m_skyOcclusionVolumeRes);
-
-    std::cout << "\nSky occlusion density:\n" 
-        << "x-axis: " << std::to_string(density.x) << " texel/meter\n"
-        << "y-axis: " << std::to_string(density.y) << " texel/meter\n"
-        << "z-axis: " << std::to_string(density.z) << " texel/meter\n";
-
-    //create sky shadow volume
-    {
-        ImageDescription desc;
-        desc.width = m_skyOcclusionVolumeRes.x;
-        desc.height = m_skyOcclusionVolumeRes.y;
-        desc.depth = m_skyOcclusionVolumeRes.z;
-        desc.type = ImageType::Type3D;
-        desc.format = ImageFormat::RGBA16_sNorm;
-        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        m_skyOcclusionVolume = gRenderBackend.createImage(desc);
-    }
-
-    RenderPassExecution skyShadowExecution;
-    skyShadowExecution.handle = m_skyShadowPass;
-    skyShadowExecution.framebuffer = m_skyShadowFramebuffer;
-	skyShadowExecution.resources.storageBuffers = { StorageBufferResource(m_shadowPassTransformsBuffer, true, 0) };
-
-    RenderPassExecution gatherExecution;
-    //configure gather pass
-    {
-        gatherExecution.handle = m_skyOcclusionGatherPass;
-        gatherExecution.parents = { m_skyShadowPass };
-
-        const uint32_t threadgroupSize = 4;
-        const glm::ivec3 dispatchCount = glm::ivec3(glm::ceil(glm::vec3(m_skyOcclusionVolumeRes) / float(threadgroupSize)));
-
-        gatherExecution.dispatchCount[0] = dispatchCount.x;
-        gatherExecution.dispatchCount[1] = dispatchCount.y;
-        gatherExecution.dispatchCount[2] = dispatchCount.z;
-
-        const ImageResource occlusionVolume(m_skyOcclusionVolume, 0, 0);
-        const ImageResource skyShadowMap(m_skyShadowMap, 0, 1);
-        const UniformBufferResource skyShadowInfo(m_skyOcclusionDataBuffer, 3);
-
-        gatherExecution.resources.storageImages = { occlusionVolume };
-        gatherExecution.resources.sampledImages = { skyShadowMap };
-        gatherExecution.resources.uniformBuffers = { skyShadowInfo };
-    }
-
-    updateGlobalShaderInfo();
-
-    for (int i = 0; i < skyOcclusionSampleCount; i++) {
-        //compute sample
-        {
-            glm::vec2 sample = hammersley2D(i);
-
-            //using uniform distributed samples
-            //AO should use cosine weighing with respect to normal
-            //however the volume is used by surfaces with arbitrary normals, so use uniform distribution instead
-            //reference: http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
-            float cosTheta = 1.f - sample.x;
-            float sinTheta = sqrt(1 - cosTheta * cosTheta);
-            float phi = 2.f * 3.1415f * sample.y;
-            occlusionData.sampleDirection = glm::vec4(cos(phi) * sinTheta, cosTheta, sin(phi) * sinTheta, 0.f);
-        }
-        //compute shadow matrix
-        occlusionData.shadowMatrix = viewProjectionMatrixAroundBB(sceneBB, glm::vec3(occlusionData.sampleDirection));
-
-        gRenderBackend.newFrame();
-        
-        gRenderBackend.setUniformBufferData(m_skyOcclusionDataBuffer, &occlusionData, sizeof(SkyOcclusionRenderData));
-        gRenderBackend.setRenderPassExecution(skyShadowExecution);
-        gRenderBackend.setRenderPassExecution(gatherExecution);
-
-        gRenderBackend.startDrawcallRecording();
-
-        //sky shadow pass mesh commands
-        {
-            std::vector<MeshHandle> meshHandles;
-            std::vector<glm::mat4> transforms;
-			std::vector<uint32_t> transformIndices;
-
-            for (const RenderObject& obj : scene) {
-				const MeshFrontend mesh = m_frontendMeshes[obj.mesh.index];
-                meshHandles.push_back(mesh.backendHandle);
-                
-				transformIndices.push_back(transforms.size());
-				transforms.push_back(occlusionData.shadowMatrix * obj.modelMatrix);
-            }
-            gRenderBackend.drawMeshes(meshHandles, (char*)transformIndices.data(), m_skyShadowPass);
-			gRenderBackend.setStorageBufferData(m_shadowPassTransformsBuffer, transforms.data(), 
-				sizeof(glm::mat4) * transforms.size());
-        }
-
-        gRenderBackend.renderFrame(false);
-    }
-}
-
-void RenderFrontend::bakeSceneMaterialVoxelTexture(const std::vector<RenderObject>& scene, const AxisAlignedBoundingBox& sceneBB) {
-	gRenderBackend.newFrame();
-
-	//scene material voxelization
-	{
-		RenderPassExecution materialVoxelizationExecution;
-		materialVoxelizationExecution.handle = m_materialVoxelizationPass;
-		materialVoxelizationExecution.framebuffer = m_materialVoxelizationFramebuffer;
-		materialVoxelizationExecution.resources.storageImages = {
-			ImageResource(m_sceneMaterialVoxelTexture, 0, 0)
-		};
-		materialVoxelizationExecution.resources.uniformBuffers = {
-			UniformBufferResource(m_sdfVolumeInfoBuffer, 1)
-		};
-		materialVoxelizationExecution.resources.storageBuffers = {
-			StorageBufferResource(m_materialVoxelizationBuffer, false, 2),
-			StorageBufferResource(m_shadowPassTransformsBuffer, false, 3)
-		};
-
-		gRenderBackend.setRenderPassExecution(materialVoxelizationExecution);
-	}
-	//transform from buffer to image
-	{
-		RenderPassExecution toImageExecution;
-		toImageExecution.handle = m_materialVoxelizationToImagePass;
-		const glm::vec3 localThreadSize = glm::vec3(4);
-		const glm::ivec3 dispatchCount = glm::ivec3(glm::ceil(glm::vec3(sceneMaterialVoxelTextureResolution) / localThreadSize));
-		toImageExecution.dispatchCount[0] = dispatchCount.x;
-		toImageExecution.dispatchCount[1] = dispatchCount.y;
-		toImageExecution.dispatchCount[2] = dispatchCount.z;
-		toImageExecution.parents = { m_materialVoxelizationPass };
-		toImageExecution.resources.storageImages = {
-			ImageResource(m_sceneMaterialVoxelTexture, 0, 0)
-		};
-		toImageExecution.resources.storageBuffers = {
-			StorageBufferResource(m_materialVoxelizationBuffer, false, 1)
-		};
-		gRenderBackend.setRenderPassExecution(toImageExecution);
-	}
-	//drawcalls
-	{
-		const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(sceneBB); //sdf uses padded bb
-
-		const glm::mat4 projectionMatrix = glm::ortho(
-			sceneBBPadded.min.x,	//left
-			sceneBBPadded.max.x,	//right
-			sceneBBPadded.min.y,	//bottom
-			sceneBBPadded.max.y,	//top
-			sceneBBPadded.min.z,	//near
-			sceneBBPadded.max.z);	//far
-
-		std::vector<MeshHandle> meshHandles;
-		std::vector<glm::mat4> transforms;
-
-		struct MaterialVoxelizationPushConstants {
-			uint32_t albedoTextureIndex;
-			uint32_t transformIndex;
-		};
-		std::vector<MaterialVoxelizationPushConstants> pushConstantData;
-
-		//draw static meshes
-		for (const RenderObject& obj : scene) {
-
-			const MeshFrontend mesh = m_frontendMeshes[obj.mesh.index];
-			meshHandles.push_back(mesh.backendHandle);
-
-			MaterialVoxelizationPushConstants pushConstant;
-			pushConstant.albedoTextureIndex = mesh.material.albedoTextureIndex;
-			pushConstant.transformIndex = transforms.size();
-			pushConstantData.push_back(pushConstant);
-
-			transforms.push_back(obj.modelMatrix);
-		}
-		gRenderBackend.startDrawcallRecording();
-		gRenderBackend.drawMeshes(meshHandles, (char*)pushConstantData.data(), m_materialVoxelizationPass);
-		gRenderBackend.setStorageBufferData(m_shadowPassTransformsBuffer, transforms.data(), 
-			sizeof(glm::mat4) * transforms.size());
-	}
-	
-	//execute frame
-	gRenderBackend.renderFrame(false);
-}
-
 void RenderFrontend::updateCameraFrustum() {
     m_cameraFrustum = computeViewFrustum(m_camera);
 
@@ -1693,16 +1471,6 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
 				5,																											//location
 				dataToCharArray((void*)&m_shadingConfig.indirectLightingTech, sizeof(m_shadingConfig.indirectLightingTech)) //value
 			});
-        //sky probe occlusion
-        constants.push_back({
-            6,                                                                              //location
-            dataToCharArray((void*)&config.skyProbeUseOcclusion, sizeof(config.skyProbeUseOcclusion)) //value
-            });
-        //sky probe occlusion direction
-        constants.push_back({
-            7,                                                                                                  //location
-            dataToCharArray((void*)&config.skyProbeUseOcclusionDirection, sizeof(config.skyProbeUseOcclusionDirection))   //value
-            });
     }
 
     return shaderDesc;
@@ -2076,34 +1844,6 @@ void RenderFrontend::initImages() {
         desc.initialData = { 0, 0 };
         m_sceneSDF = gRenderBackend.createImage(desc);
     }
-	//scene material voxel texture
-	{
-		ImageDescription desc;
-		desc.width = sceneMaterialVoxelTextureResolution.x;
-		desc.height = sceneMaterialVoxelTextureResolution.y;
-		desc.depth = sceneMaterialVoxelTextureResolution.z;
-		desc.type = ImageType::Type3D;
-		desc.format = ImageFormat::RGBA8;
-		desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-		desc.mipCount = MipCount::One;
-		desc.autoCreateMips = false;
-		m_sceneMaterialVoxelTexture = gRenderBackend.createImage(desc);
-	}
-	//material voxelization dummy image
-	{
-		ImageDescription desc;
-		desc.width = sceneMaterialVoxelTextureResolution.x;
-		desc.height = sceneMaterialVoxelTextureResolution.y;
-		desc.depth = 1;
-		desc.type = ImageType::Type2D;
-		desc.format = dummyImageFormat;
-		desc.usageFlags = ImageUsageFlags::Attachment;
-		desc.mipCount = MipCount::One;
-		desc.manualMipCount = 0;
-		desc.autoCreateMips = false;
-
-		m_materialVoxelizationDummyTexture = gRenderBackend.createImage(desc);
-	}
 	//indirect diffuse Y component spherical harmonics
 	{
 		ImageDescription desc;
@@ -2300,27 +2040,6 @@ void RenderFrontend::initFramebuffers() {
         desc.targets = { depthTarget };
         m_shadowCascadeFramebuffers[i] = gRenderBackend.createFramebuffer(desc);
     }
-    //sky shadow framebuffer
-    {
-        FramebufferTarget depthTarget;
-        depthTarget.image = m_skyShadowMap;
-        depthTarget.mipLevel = 0;
-
-        FramebufferDescription desc;
-        desc.compatibleRenderpass = m_skyShadowPass;
-        desc.targets = { depthTarget };
-
-        m_skyShadowFramebuffer = gRenderBackend.createFramebuffer(desc);
-    }
-	//dummy framebuffer
-	{
-		FramebufferDescription desc;
-		desc.compatibleRenderpass = m_materialVoxelizationPass;
-		FramebufferTarget dummyTarget;
-		dummyTarget.image = m_materialVoxelizationDummyTexture;
-		desc.targets = { dummyTarget };
-		m_materialVoxelizationFramebuffer = gRenderBackend.createFramebuffer(desc);
-	}
 }
 
 void RenderFrontend::initRenderTargets() {
@@ -2454,12 +2173,6 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         desc.size = splitSize + lightMatrixSize + scaleInfoSize;
         m_sunShadowInfoBuffer = gRenderBackend.createStorageBuffer(desc);
     }
-    //sky shadow info buffer
-    {
-        UniformBufferDescription desc;
-        desc.size = sizeof(SkyOcclusionRenderData);
-        m_skyOcclusionDataBuffer = gRenderBackend.createUniformBuffer(desc);
-    }
     //sky atmosphere settings
     {
         UniformBufferDescription desc;
@@ -2484,23 +2197,6 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         desc.size = sizeof(VolumeInfo);
         m_sdfVolumeInfoBuffer = gRenderBackend.createUniformBuffer(desc);
     }
-	//material voxelization counter buffer
-	{
-		StorageBufferDescription desc;
-		const size_t pixelCount = 
-			size_t(sceneMaterialVoxelTextureResolution.x) * 
-			size_t(sceneMaterialVoxelTextureResolution.y) * 
-			size_t(sceneMaterialVoxelTextureResolution.z);
-
-		const size_t channels = 4;	//storing rgb and counter per cell
-		desc.size = pixelCount * channels * sizeof(uint32_t);
-
-		//initialize with zeros
-		std::vector<uint32_t> zerosBuffer(pixelCount * channels, 0);
-		desc.initialData = zerosBuffer.data(); 
-
-		m_materialVoxelizationBuffer = gRenderBackend.createStorageBuffer(desc);
-	}	
 	//main pass transforms buffer
 	{
 		StorageBufferDescription desc;
@@ -3007,32 +2703,6 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.shaderDescription = createTemporalSupersamplingShaderDescription();
         m_temporalSupersamplingPass = gRenderBackend.createComputePass(desc);
     }
-    //sky shadow pass
-    {
-        const Attachment shadowMapAttachment(ImageFormat::Depth16, AttachmentLoadOp::Clear);
-
-        GraphicPassDescription config;
-        config.name = "Sky shadow map";
-        config.attachments = { shadowMapAttachment };
-        config.shaderDescriptions.vertex.srcPathRelative = "depthOnlySimple.vert";
-        config.shaderDescriptions.fragment.srcPathRelative = "depthOnlySimple.frag";
-        config.depthTest.function = DepthFunction::GreaterEqual;
-        config.depthTest.write = true;
-        config.rasterization.cullMode = CullMode::Back;
-        config.rasterization.mode = RasterizationeMode::Fill;
-        config.rasterization.clampDepth = true;
-        config.blending = BlendState::None;
-        config.vertexFormat = VertexFormat::Full;
-
-        m_skyShadowPass = gRenderBackend.createGraphicPass(config);
-    }
-    //sky occlusion pass
-    {
-        ComputePassDescription desc;
-        desc.name = "Sky occlusion gather";
-        desc.shaderDescription.srcPathRelative = "skyOcclusionGather.comp";
-        m_skyOcclusionGatherPass = gRenderBackend.createComputePass(desc);
-    }
     //hdr image copy pass
     {
         ComputePassDescription desc;
@@ -3054,37 +2724,6 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.shaderDescription.srcPathRelative = "SDFDebug.comp";
         m_sdfDebugPass = gRenderBackend.createComputePass(desc);
     }
-	//material voxelization pass
-	{
-		Attachment dummyAttachment(dummyImageFormat, AttachmentLoadOp::DontCare);
-
-		GraphicPassDescription desc;
-		desc.name = "Material voxelization";
-		desc.shaderDescriptions.vertex.srcPathRelative = "materialVoxelization.vert";
-
-		ShaderDescription geometryShaderDesc;
-		geometryShaderDesc.srcPathRelative = "materialVoxelization.geom";
-		desc.shaderDescriptions.geometry = geometryShaderDesc;
-
-		desc.shaderDescriptions.fragment.srcPathRelative = "materialVoxelization.frag";
-		desc.attachments = { dummyAttachment };
-		desc.depthTest.function = DepthFunction::Always;
-		desc.depthTest.write = false;
-		desc.rasterization.cullMode = CullMode::None;
-		desc.rasterization.mode = RasterizationeMode::Fill;
-		desc.rasterization.conservative = true;
-		desc.blending = BlendState::None;
-		desc.vertexFormat = VertexFormat::Full;
-
-		m_materialVoxelizationPass = gRenderBackend.createGraphicPass(desc);
-	}
-	//material voxelization buffer to image pass
-	{
-		ComputePassDescription desc;
-		desc.name = "Material voxelization to image";
-		desc.shaderDescription.srcPathRelative = "materialVoxelizationToImage.comp";
-		m_materialVoxelizationToImagePass = gRenderBackend.createComputePass(desc);
-	}
 	//sdf indirect lighting
 	{
 		ComputePassDescription desc;
@@ -3285,15 +2924,11 @@ void RenderFrontend::drawUi() {
             (int*)&m_shadingConfig.directMultiscatter,
             directMultiscatterBRDFOptions, 4);
 
-		const char* indirectLightingLabels[] = { "SDF trace", "Sky probe" };
+		const char* indirectLightingLabels[] = { "SDF trace", "Constant ambient" };
 		m_isMainPassShaderDescriptionStale |= ImGui::Combo("Indirect lighting tech", (int*)&m_shadingConfig.indirectLightingTech,
 			indirectLightingLabels, 2);
 
         m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Geometric AA", &m_shadingConfig.useGeometryAA);
-		if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SkyProbe) {
-			m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion", &m_shadingConfig.skyProbeUseOcclusion);
-			m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Sky occlusion direction", &m_shadingConfig.skyProbeUseOcclusionDirection);
-		}
 
 		if (ImGui::Checkbox("Indirect lighting half resolution", &m_shadingConfig.indirectLightingHalfRes)) {
 			resizeIndirectLightingBuffers();

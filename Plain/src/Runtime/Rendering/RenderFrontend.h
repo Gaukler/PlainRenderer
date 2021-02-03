@@ -20,16 +20,14 @@ struct HistogramSettings {
 //these enumb values must correspond to the shader values
 enum class DiffuseBRDF : int { Lambert = 0, Disney = 1, CoDWWII = 2, Titanfall2 = 3};
 enum class DirectSpecularMultiscattering : int { McAuley = 0, Simplified = 1, ScaledGGX = 2, None = 3};
-enum class IndirectLightingTech : int { SDFTrace, SkyProbe };
+enum class IndirectLightingTech : int { SDFTrace, ConstantAmbient };
 
 struct ShadingConfig {
     DiffuseBRDF diffuseBRDF = DiffuseBRDF::CoDWWII;
     DirectSpecularMultiscattering directMultiscatter = DirectSpecularMultiscattering::McAuley;
-	IndirectLightingTech indirectLightingTech;
+	IndirectLightingTech indirectLightingTech = IndirectLightingTech::ConstantAmbient;
     bool useIndirectMultiscatter = true;
     bool useGeometryAA = true;
-    bool skyProbeUseOcclusion = true;
-    bool skyProbeUseOcclusionDirection = true;
 	bool indirectLightingHalfRes = true;
 };
 
@@ -45,14 +43,6 @@ struct TemporalFilterSettings {
     bool supersampleUseTonemapping = true;
     bool filterUseTonemapping = true;
     bool useMipBias = true;
-};
-
-struct SkyOcclusionRenderData {
-    glm::mat4 shadowMatrix = glm::mat4(1.f);
-    glm::vec4 extends = glm::vec4(0.f);   //w unused
-    glm::vec4 sampleDirection = glm::vec4(0.f);
-    glm::vec4 offset = glm::vec4(0.f);
-    float weight = 0.f;
 };
 
 //everything in km
@@ -125,11 +115,6 @@ public:
 
     void renderScene(const std::vector<RenderObject>& scene);
     void renderFrame();
-
-    //compute sky occlusion for all static meshes
-    //must be called between frames as it calls gRenderBackend.newFrame() and gRenderBackend.renderFrame();
-    void bakeSkyOcclusion(const std::vector<RenderObject>& scene, const AxisAlignedBoundingBox& sceneBB);
-	void bakeSceneMaterialVoxelTexture(const std::vector<RenderObject>& scene, const AxisAlignedBoundingBox& sceneBB);
 
 private:
 
@@ -208,7 +193,6 @@ private:
     ViewFrustum m_sunShadowFrustum;
 
     float m_exposureOffset = 0.f;
-    glm::ivec3 m_skyOcclusionVolumeRes = glm::ivec3(0);
     
     void updateCameraFrustum();
     void updateShadowFrustum();
@@ -243,13 +227,9 @@ private:
     RenderPassHandle m_tonemappingPass;
     RenderPassHandle m_temporalSupersamplingPass;
     RenderPassHandle m_temporalFilterPass;
-    RenderPassHandle m_skyShadowPass;
-    RenderPassHandle m_skyOcclusionGatherPass;  //gathers visibility from sky shadow map
     RenderPassHandle m_hdrImageCopyPass;		//input must be R11G11B10
     RenderPassHandle m_colorToLuminancePass;
     RenderPassHandle m_sdfDebugPass;
-	RenderPassHandle m_materialVoxelizationPass;
-	RenderPassHandle m_materialVoxelizationToImagePass;
 	RenderPassHandle m_diffuseSDFTracePass;
 	RenderPassHandle m_indirectDiffuseFilterSpatialPass[2];
 	RenderPassHandle m_indirectDiffuseFilterTemporalPass;
@@ -269,12 +249,9 @@ private:
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
     ImageHandle m_skyShadowMap;
-    ImageHandle m_skyOcclusionVolume;
     ImageHandle m_sceneLuminance;
     ImageHandle m_lastFrameLuminance;
     ImageHandle m_sceneSDF;
-	ImageHandle m_sceneMaterialVoxelTexture;
-	ImageHandle m_materialVoxelizationDummyTexture;	//currently rendering without attachments not supported, use dummy
 	ImageHandle m_indirectDiffuse_Y_SH[2];			//ping pong buffers for filtering, Y component of YCoCg color space as spherical harmonics		
 	ImageHandle m_indirectDiffuse_CoCg[2];			//ping pong buffers for filtering, CoCg component of YCoCg color space
 	ImageHandle m_indirectDiffuseHistory_Y_SH[2];	//Y component of YCoCg color space as spherical harmonics
@@ -299,11 +276,8 @@ private:
     SamplerHandle m_sampler_linearWhiteBorder;
 	SamplerHandle m_sampler_nearestRepeat;
 
-    FramebufferHandle m_shadowCascadeFramebuffers[4];
-    FramebufferHandle m_skyShadowFramebuffer;
-	FramebufferHandle m_materialVoxelizationFramebuffer;
-
-    FrameRenderTargets m_frameRenderTargets[2];
+    FramebufferHandle	m_shadowCascadeFramebuffers[4];
+    FrameRenderTargets	m_frameRenderTargets[2];
 
     MeshHandle m_skyCube;
     MeshHandle m_quad;
@@ -311,21 +285,18 @@ private:
 
     DynamicMeshHandle m_cameraFrustumModel;
     DynamicMeshHandle m_shadowFrustumModel;
-    std::vector<DynamicMeshHandle> m_staticMeshesBBDebugMeshes;   //bounding box debug meshes
 
     StorageBufferHandle m_histogramPerTileBuffer;
     StorageBufferHandle m_histogramBuffer;
     StorageBufferHandle m_lightBuffer;          //previous exposure and exposured light values
     StorageBufferHandle m_sunShadowInfoBuffer;  //light matrices and cascade splits
     StorageBufferHandle m_depthPyramidSyncBuffer;
-	StorageBufferHandle m_materialVoxelizationBuffer;
 	StorageBufferHandle m_mainPassTransformsBuffer;
 	StorageBufferHandle m_shadowPassTransformsBuffer;
 	StorageBufferHandle m_boundingBoxDebugRenderMatrices;
 	StorageBufferHandle m_sdfInstanceBuffer;
 
     UniformBufferHandle m_globalUniformBuffer;
-    UniformBufferHandle m_skyOcclusionDataBuffer;
     UniformBufferHandle m_atmosphereSettingsBuffer;
     UniformBufferHandle m_taaResolveWeightBuffer;
     UniformBufferHandle m_sdfVolumeInfoBuffer;

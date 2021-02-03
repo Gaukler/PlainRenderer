@@ -18,7 +18,6 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(set=1, binding = 0, rgba16f) 	uniform image2D imageOut_Y_SH;
 layout(set=1, binding = 1, rg16f) 		uniform image2D imageOut_CoCg;
 layout(set=1, binding = 2) 	            uniform texture3D sdfTexture;
-layout(set=1, binding = 3) 	            uniform texture3D materialTexture;
 layout(set=1, binding = 4) 	            uniform texture2D depthTexture;
 layout(set=1, binding = 5) 	            uniform texture2D normalTexture;
 
@@ -75,7 +74,7 @@ void main(){
 
 	if(trace.hit){
 		vec3 ambient = vec3(0.f);
-		hitColor = shadeHit(trace, sdfInfo, sdfTexture, materialTexture, sdfThreshold, ambient, sdfMin, sdfMax, 
+		hitColor = shadeHit(trace, sdfInfo, sdfTexture, sdfThreshold, ambient, sdfMin, sdfMax, 
 			lightBuffer.sunColor, lightBuffer.sunStrengthExposed);
 	}
 	else{

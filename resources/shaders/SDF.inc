@@ -159,7 +159,7 @@ SDFTrace sdfTrace(vec3 rayOrigin, vec3 rayDirection, VolumeInfo sdfInfo, texture
 	return result;
 }
 
-vec3 shadeHit(SDFTrace trace, VolumeInfo sdfInfo, texture3D sdfTexture, texture3D materialTexture, float sdfThreshold, 
+vec3 shadeHit(SDFTrace trace, VolumeInfo sdfInfo, texture3D sdfTexture, float sdfThreshold, 
 	vec3 ambient, vec3 sdfMin, vec3 sdfMax, vec3 sunColor, float sunStrengthExposed){
 
 	//normal calculation is based on original position
@@ -170,7 +170,7 @@ vec3 shadeHit(SDFTrace trace, VolumeInfo sdfInfo, texture3D sdfTexture, texture3
 
 	//material lookup uses the modified position as it is more accurate
 	vec3 hitModifiedNormalized = worldPositionToVolume(trace.hitPosCalculated, sdfInfo.offset.xyz, sdfInfo.extends.xyz);
-	vec4 albedoTexel = texture(sampler3D(materialTexture, g_sampler_linearClamp), hitModifiedNormalized);
+	vec4 albedoTexel = vec4(1);
 	vec3 albedo = albedoTexel.rgb / max(albedoTexel.a, 0.00001);
 
 	//shadow ray origin is offset into normal direction to avoid self intersection

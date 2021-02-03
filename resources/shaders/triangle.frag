@@ -9,9 +9,7 @@
 #include "GeometricAA.inc"
 #include "shadowCascadeConstants.inc"
 #include "linearDepth.inc"
-#include "specularOcclusion.inc"
 #include "lightBuffer.inc"
-#include "volume.inc"
 #include "SphericalHarmonics.inc"
 
 /*
@@ -35,11 +33,8 @@ layout(constant_id = 3) const bool geometricAA = false;
 layout(constant_id = 4) const uint specularProbeMipCount = 0;
 
 //0: traced into textures
-//1: sky probes using occlusion volume
+//1: constant ambient
 layout(constant_id = 5) const int indirectLightingTech = 0;
-
-layout(constant_id = 6) const bool skyProbeUseOcclusion = false;
-layout(constant_id = 7) const bool skyProbeUseSkyOcclusionDirection = false;
 
 layout(set=1, binding = 1) 	uniform textureCube	diffuseProbe;
 
@@ -60,16 +55,6 @@ layout(set=1, binding = 9)  uniform texture2D shadowMapCascade0;
 layout(set=1, binding = 10) uniform texture2D shadowMapCascade1;
 layout(set=1, binding = 11) uniform texture2D shadowMapCascade2;
 layout(set=1, binding = 12) uniform texture2D shadowMapCascade3;
-
-layout(set=1, binding = 13) uniform texture3D skyOcclusionVolume;
-
-layout(set=1, binding = 14, std140) uniform occlusionData{
-	mat4 skyShadowMatrix;
-    vec4 occlusionVolumeExtends;
-    vec4 sampleDirection;
-    vec4 occlusionVolumeOffset;
-    float weight;
-};
 
 layout(set=1, binding = 15) uniform texture2D indirectDiffuse_Y_SH;
 layout(set=1, binding = 16) uniform texture2D indirectDiffuse_CoCg;
@@ -136,22 +121,6 @@ float EnergyAverage(float roughness){
 
 }
 
-struct SkyOcclusion{
-    vec3 unoccludedDirection;
-    float factor;
-};
-
-SkyOcclusion sampleSkyOcclusion(vec3 worldPos){
-
-	vec3 samplePos = worldPositionToVolume(worldPos, occlusionVolumeOffset.xyz, occlusionVolumeExtends.xyz);    
-    vec4 occlusionTexel = texture(sampler3D(skyOcclusionVolume, g_sampler_linearWhiteBorder), samplePos);
-    SkyOcclusion occlusion;
-    occlusion.unoccludedDirection = normalize(occlusionTexel.rgb);
-    occlusion.factor = occlusionTexel.a;
-    
-    return occlusion;
-}
-
 void main(){
 	vec3 albedoTexel 		= texture(sampler2D(textures[albedoTextureIndex], g_sampler_anisotropicRepeat), passUV, g_mipBias).rgb;
 	vec3 specularTexel 		= texture(sampler2D(textures[specularTextureIndex], g_sampler_anisotropicRepeat), passUV, g_mipBias).rgb;
@@ -211,18 +180,6 @@ void main(){
         sunShadow = calcShadow(passPos, LoV, shadowMapCascade3, lightMatrices[cascadeIndex], 3);
     }
 	vec3 directLighting = max(dot(N, L), 0.f) * sunShadow * lightBuffer.sunColor;
-	
-    //sky occlusion
-    SkyOcclusion skyOcclusion;
-    {
-        vec3 geoN = normalize(passTBN[2]);
-        float normalOffset = 0.5f;
-        
-        vec3 aoSamplePoint = passPos;
-        aoSamplePoint += normalOffset * geoN;   
-        
-        skyOcclusion = sampleSkyOcclusion(aoSamplePoint);
-    }
     
     vec3 fresnelAverage = f0 + (1-f0) / 21.f;
 
@@ -247,26 +204,9 @@ void main(){
 
 		environmentSample = YCoCgToLinear(vec3(max(dot(directionToSH_L1(R), irradiance_Y_SH), 0), irradiance_CoCg));
 	}
-	else if(indirectLightingTech == 1){
-		//diffuse
-		if(skyProbeUseSkyOcclusionDirection){
-			irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), skyOcclusion.unoccludedDirection).rgb;
-		}
-		else{
-			irradiance = texture(samplerCube(diffuseProbe, g_sampler_linearRepeat), N).rgb;
-		}
-
-		//specular
-		//indirect specular
-		float probeLoD = specularProbeMipCount * r;
-		environmentSample = textureLod(samplerCube(specularProbe, g_sampler_linearClamp), R, probeLoD).rgb;
-
-		if(skyProbeUseOcclusion){
-			irradiance *= skyOcclusion.factor;
-        
-			float specularOcclusion = computeSpecularOcclusion(R, skyOcclusion.unoccludedDirection, r, skyOcclusion.factor);
-			environmentSample *= specularOcclusion;
-		}
+	else {
+		irradiance			= vec3(0.05f) * lightBuffer.sunStrengthExposed;
+		environmentSample	= vec3(0.05f)  * lightBuffer.sunStrengthExposed;
 	}
 
 	vec3 brdfLut = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r_indirect, NoV)).rgb;

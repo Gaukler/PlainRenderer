@@ -60,9 +60,6 @@ void App::setup(const std::string& sceneFilePath) {
     }
     
 	const std::vector<RenderObject> renderScene = extractRenderObjectFromScene(m_scene, m_bbs);
-
-    gRenderFrontend.bakeSkyOcclusion(renderScene, sceneBB);
-	gRenderFrontend.bakeSceneMaterialVoxelTexture(renderScene, sceneBB);
 }
 
 void App::runUpdate() {
