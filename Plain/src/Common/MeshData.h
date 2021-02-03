@@ -20,6 +20,7 @@ struct MeshData {
     std::vector<glm::vec2> uvs;
 
     TexturePaths texturePaths;
+	glm::vec3 meanAlbedo;
 };
 
 //formated to be consumed directly by render backend
@@ -28,6 +29,7 @@ struct MeshBinary {
     uint32_t                vertexCount = 0;
     AxisAlignedBoundingBox  boundingBox;
     TexturePaths            texturePaths;
+	glm::vec3				meanAlbedo;
     std::vector<uint16_t>   indexBuffer;    //stored as 16 or 32 bit unsigned int
     std::vector<uint8_t>    vertexBuffer;
 };

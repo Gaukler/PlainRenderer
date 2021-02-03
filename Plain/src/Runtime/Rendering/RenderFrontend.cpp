@@ -523,6 +523,7 @@ std::vector<MeshHandleFrontend> RenderFrontend::registerMeshes(const std::vector
 		const MeshBinary mesh = meshes[i];
 
 		meshFrontend.localBB = mesh.boundingBox;
+		meshFrontend.meanAlbedo = mesh.meanAlbedo;
 
 		//material
 		ImageHandle albedoHandle;
@@ -698,6 +699,7 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 
 			const AxisAlignedBoundingBox paddedBB = padSDFBoundingBox(mesh.localBB);
 			instance.localExtends = paddedBB.max - paddedBB.min;
+			instance.meanAlbedo = mesh.meanAlbedo;
 
 			const glm::vec3 bbOffset = (paddedBB.min + paddedBB.max) * 0.5f;
 

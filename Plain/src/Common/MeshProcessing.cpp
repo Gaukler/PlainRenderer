@@ -21,6 +21,7 @@ std::vector<MeshBinary> meshesToBinary(const std::vector<MeshData>& meshes, cons
         MeshBinary meshBinary;
         meshBinary.texturePaths = meshData.texturePaths;
         meshBinary.boundingBox = AABBList[meshIndex];
+		meshBinary.meanAlbedo = meshData.meanAlbedo;
 
         //index buffer
         meshBinary.indexCount = (uint32_t)meshData.indices.size();

@@ -88,6 +88,7 @@ struct Material {
 struct MeshFrontend {
 	MeshHandle				backendHandle;
 	uint32_t				sdfTextureIndex;
+	glm::vec3				meanAlbedo;
 	Material				material;
 	AxisAlignedBoundingBox	localBB;
 };
@@ -95,6 +96,8 @@ struct MeshFrontend {
 struct SDFInstance {
 	glm::vec3 localExtends;
 	uint32_t sdfTextureIndex;	//indexes into global texture descriptor array
+	glm::vec3 meanAlbedo;
+	float padding;
 	glm::mat4x4 worldToLocal;
 };
 

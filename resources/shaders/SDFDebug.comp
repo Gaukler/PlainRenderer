@@ -14,6 +14,8 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 struct SDFInstance{
 	vec3	localExtends;
 	uint	sdfTextureIndex;
+	vec3	meanAlbedo;
+	float	padding;
 	mat4x4	worldToLocal;
 };
 
@@ -47,6 +49,7 @@ void main(){
 	bool hit = false;
 	float closestHitDistance = 10000.f;
 	vec3 N;
+	vec3 albedo;
 
 	for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
 		SDFInstance instance = sdfInstances[instanceIndex];
@@ -111,6 +114,7 @@ void main(){
 					sampleUV = localSamplePos / instance.localExtends + 0.5;
 
 					N = normalFromSDF(sampleUV, instance.localExtends, textures[instance.sdfTextureIndex]);
+					albedo = instance.meanAlbedo;
 				}
 				break;
 			}
@@ -124,7 +128,7 @@ void main(){
 		vec3 color = vec3(hitCount / 128.f + 0.1);
 		//color = vec3(1, 0, 0);
 		color = N*0.5+0.5;
-		color = vec3(clamp(dot(N, g_sunDirection.xyz), 0, 1));
+		color = albedo * clamp(dot(N, g_sunDirection.xyz), 0, 1);
 		imageStore(imageOut, uv, vec4(color, 1.f));
 	}
 	else{

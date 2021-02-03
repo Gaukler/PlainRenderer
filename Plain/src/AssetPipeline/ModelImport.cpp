@@ -5,7 +5,7 @@
 #include <tiny_obj_loader.h>
 
 #define TINYGLTF_IMPLEMENTATION
-#define TINYGLTF_NO_EXTERNAL_IMAGE
+//#define TINYGLTF_NO_EXTERNAL_IMAGE
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #include "tiny_gltf.h"
 
@@ -67,6 +67,42 @@ glm::mat4 computeNodeMatrix(const tinygltf::Node& node) {
 		scale = glm::scale(glm::mat4(1.f), glm::vec3(node.scale[0], node.scale[1], node.scale[2]));
 	}
 	return translation * rotation * scale;
+}
+
+glm::vec3 computeMeanAlbedo(const tinygltf::Image& image) {
+	if (image.component != 4) {
+		std::cout << "computeMeanAlbedo: expecting four component image\n";
+		return glm::vec3(1.f, 0.f, 0.f);
+	}
+	if (image.bits != 8) {
+		std::cout << "computeMeanAlbedo: expecting 8 bit image\n";
+		return glm::vec3(1.f, 0.f, 0.f);
+	}
+
+	size_t redTotal		= 0;
+	size_t greenTotal	= 0;
+	size_t blueTotal	= 0;
+
+	const float maxValue = 255.f; //8 bit chars
+
+	//advance one pixel (four bytes) at a time
+	for (size_t i = 0; i < image.image.size(); i += 4) {
+		const size_t red   = image.image[i];
+		const size_t green  = image.image[i+1];
+		const size_t blue = image.image[i+2];
+		const float alpha = image.image[i+3] / maxValue;
+
+		redTotal	+= red	 * alpha;
+		greenTotal	+= green * alpha;
+		blueTotal	+= blue	 * alpha;
+	}
+
+	const size_t pixelCount = image.image.size() / 4;
+
+	return glm::vec3(
+		redTotal   / maxValue / pixelCount, 
+		greenTotal / maxValue / pixelCount, 
+		blueTotal  / maxValue / pixelCount);
 }
 
 bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
@@ -167,7 +203,11 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 			const std::filesystem::path modelDirectory = fullPath.parent_path();
 			const tinygltf::Material material = model.materials[primitive.material];
 
-			data.texturePaths.albedoTexturePath		= modelDirectory / model.images[model.textures[material.pbrMetallicRoughness.baseColorTexture.index].source].uri;
+			const tinygltf::Image albedoImage = model.images[model.textures[material.pbrMetallicRoughness.baseColorTexture.index].source];
+			
+			data.meanAlbedo = computeMeanAlbedo(albedoImage);
+
+			data.texturePaths.albedoTexturePath		= modelDirectory / albedoImage.uri;
 			data.texturePaths.specularTexturePath	= modelDirectory / model.images[model.textures[material.pbrMetallicRoughness.metallicRoughnessTexture.index].source].uri;
 			data.texturePaths.normalTexturePath		= modelDirectory / model.images[model.textures[material.normalTexture.index].source].uri;
 
