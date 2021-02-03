@@ -288,12 +288,20 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 				data.indices.push_back(*reinterpret_cast<const glm::uint16_t*>(&indexBytes[i]));
 			}
 
+			//material textures
 			const std::filesystem::path modelDirectory = fullPath.parent_path();
 			const tinygltf::Material material = model.materials[primitive.material];
 
 			data.texturePaths.albedoTexturePath		= modelDirectory / model.images[model.textures[material.pbrMetallicRoughness.baseColorTexture.index].source].uri;
 			data.texturePaths.specularTexturePath	= modelDirectory / model.images[model.textures[material.pbrMetallicRoughness.metallicRoughnessTexture.index].source].uri;
 			data.texturePaths.normalTexturePath		= modelDirectory / model.images[model.textures[material.normalTexture.index].source].uri;
+
+			//sdf texture path
+			const size_t primitiveIndex = primitiveList.size();
+			std::string primitiveName = mesh.name;
+			primitiveName += primitiveIndex > 0 ? "_" + std::to_string(primitiveIndex) : "";
+			data.texturePaths.sdfTexturePath = modelDirectory / "sdfTextures" / primitiveName;
+			data.texturePaths.sdfTexturePath += ".dds";
 
 			primitiveList.push_back(outScene->meshes.size());
 			outScene->meshes.push_back(data);

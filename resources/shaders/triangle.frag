@@ -384,4 +384,5 @@ void main(){
     color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
 	color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
 	//color = irradiance / pi;
+	//color = N*0.5+0.5;
 }

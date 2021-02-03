@@ -154,6 +154,23 @@ DefaultTextures createDefaultTextures() {
 
         defaultTextures.sky = gRenderBackend.createImage(defaultCubemapDesc);
     }
+	//sdf
+	{
+		ImageDescription defaultSdfDesc;
+		defaultSdfDesc.autoCreateMips = false;
+		defaultSdfDesc.depth = 1;
+		defaultSdfDesc.format = ImageFormat::R16_sFloat;
+		defaultSdfDesc.initialData = { 0, 0 };
+		defaultSdfDesc.manualMipCount = 1;
+		defaultSdfDesc.mipCount = MipCount::One;
+		defaultSdfDesc.type = ImageType::Type3D;
+		defaultSdfDesc.usageFlags = ImageUsageFlags::Sampled;
+		defaultSdfDesc.width = 1;
+		defaultSdfDesc.height = 1;
+		defaultSdfDesc.depth = 1;
+
+		defaultTextures.sdf = gRenderBackend.createImage(defaultSdfDesc);
+	}
     return defaultTextures;
 }
 
@@ -420,20 +437,15 @@ void RenderFrontend::prepareRenderpasses(){
     }
 
     if (m_sdfDebugMode == SDFDebugMode::VisualizeSDF) {
-        const ImageResource targetImageResource(m_postProcessBuffers[0], 0, 0);
-        const ImageResource srcImageResource(m_sceneSDF, 0, 1);
-        const UniformBufferResource sdfInfoBufferResource(m_sdfVolumeInfoBuffer, 2);
-		const ImageResource materialTextureResource(m_sceneMaterialVoxelTexture, 0, 3);
 
         RenderPassExecution exe;
         exe.handle = m_sdfDebugPass;
-        exe.resources.storageImages = { targetImageResource };
-		exe.resources.sampledImages = { srcImageResource, materialTextureResource,
-			ImageResource(m_skyLut, 0, 5)
+        exe.resources.storageImages = { ImageResource(m_postProcessBuffers[0], 0, 0) };
+		exe.resources.sampledImages = {	ImageResource(m_skyLut, 0, 2)
 		};
-        exe.resources.uniformBuffers = { sdfInfoBufferResource };
 		exe.resources.storageBuffers = {
-			StorageBufferResource(m_lightBuffer, true, 4)
+			StorageBufferResource(m_lightBuffer, true, 1),
+			StorageBufferResource(m_sdfInstanceBuffer, true, 3)
 		};
         exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
         exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
@@ -518,6 +530,8 @@ std::vector<MeshHandleFrontend> RenderFrontend::registerMeshes(const std::vector
 
 		const MeshBinary mesh = meshes[i];
 
+		meshFrontend.localBB = mesh.boundingBox;
+
 		//material
 		ImageHandle albedoHandle;
 		if (!loadImageFromPath(mesh.texturePaths.albedoTexturePath, &albedoHandle)) {
@@ -531,20 +545,19 @@ std::vector<MeshHandleFrontend> RenderFrontend::registerMeshes(const std::vector
 		if (!loadImageFromPath(mesh.texturePaths.specularTexturePath, &specularHandle)) {
 			specularHandle = m_defaultTextures.specular;
 		}
+		ImageHandle sdfHandle;
+		if (!loadImageFromPath(mesh.texturePaths.sdfTexturePath, &sdfHandle)) {
+			sdfHandle = m_defaultTextures.sdf;
+		}
 
 		meshFrontend.material.albedoTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(albedoHandle);
 		meshFrontend.material.normalTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(normalHandle);
 		meshFrontend.material.specularTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(specularHandle);
+		meshFrontend.sdfTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(sdfHandle);
 
 		m_frontendMeshes.push_back(meshFrontend);
 	}
 	return meshHandlesFrontend;
-}
-
-void RenderFrontend::setSceneSDF(const ImageDescription& desc, const AxisAlignedBoundingBox& sceneBB) {
-    m_sceneSDF = gRenderBackend.createImage(desc);
-	m_sceneSDFResolution = glm::ivec3(desc.width, desc.height, desc.depth);
-	updateSceneSDFInfo(sceneBB);
 }
 
 void RenderFrontend::prepareForDrawcalls() {
@@ -680,6 +693,34 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 		gRenderBackend.drawMeshes(meshHandles, (char*)pushConstantData.data(), m_debugGeoPass);
 		const size_t bbMatricesSize = boundingBoxMatrices.size() * sizeof(glm::mat4);
 		gRenderBackend.setStorageBufferData(m_boundingBoxDebugRenderMatrices, (char*)boundingBoxMatrices.data(), bbMatricesSize);
+	}
+
+	//sdf scene
+	{
+		std::vector<SDFInstance> instanceData;
+		instanceData.reserve(scene.size());
+		for (const RenderObject obj : scene) {
+			SDFInstance instance;
+			const MeshFrontend& mesh = m_frontendMeshes[obj.mesh.index];
+			instance.sdfTextureIndex = mesh.sdfTextureIndex;
+
+			const AxisAlignedBoundingBox paddedBB = padSDFBoundingBox(mesh.localBB);
+			instance.localExtends = paddedBB.max - paddedBB.min;
+
+			const glm::vec3 bbOffset = (paddedBB.min + paddedBB.max) * 0.5f;
+
+			glm::mat4 bbT = glm::translate(glm::mat4x4(1.f), bbOffset);
+
+			instance.worldToLocal = glm::inverse(obj.modelMatrix * bbT);
+			instanceData.push_back(instance);
+		}
+		std::vector<uint8_t> bufferData(sizeof(SDFInstance) * instanceData.size() + sizeof(uint32_t) * 4);
+		const uint32_t objectCount = instanceData.size();
+		uint32_t padding[3];
+		memcpy(bufferData.data(), &objectCount, sizeof(uint32_t));
+		memcpy(bufferData.data() + sizeof(uint32_t), &padding, sizeof(uint32_t) * 3);
+		memcpy(bufferData.data() + sizeof(uint32_t) * 4, instanceData.data(), sizeof(SDFInstance) * instanceData.size());
+		gRenderBackend.setStorageBufferData(m_sdfInstanceBuffer, bufferData.data(), bufferData.size());
 	}
 }
 
@@ -2477,6 +2518,12 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 		StorageBufferDescription desc;
 		desc.size = maxObjectCountMainScene * sizeof(glm::mat4);
 		m_boundingBoxDebugRenderMatrices = gRenderBackend.createStorageBuffer(desc);
+	}
+	//sdf instance buffer
+	{
+		StorageBufferDescription desc;
+		desc.size = maxObjectCountMainScene * sizeof(SDFInstance) + sizeof(uint32_t) * 4; //extra uint for object count with padding to 16 byte
+		m_sdfInstanceBuffer = gRenderBackend.createStorageBuffer(desc);
 	}
 }
 

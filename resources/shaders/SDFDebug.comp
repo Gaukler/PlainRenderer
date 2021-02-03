@@ -1,6 +1,7 @@
 #version 460
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
 #include "global.inc"
 #include "screenToWorld.inc"
@@ -10,17 +11,26 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set=1, binding = 0, r11f_g11f_b10f)	uniform image2D imageOut;
-layout(set=1, binding = 1)					uniform texture3D sceneSDF;
-layout(set=1, binding = 2, std140)			uniform sdfVolumeData{
-    VolumeInfo sdfInfo;
+struct SDFInstance{
+	vec3	localExtends;
+	uint	sdfTextureIndex;
+	mat4x4	worldToLocal;
 };
-layout(set=1, binding = 3)					uniform texture3D materialTexture;
 
-layout(set=1, binding = 4, std430) buffer lightStorageBuffer{
+layout(set=1, binding = 0, r11f_g11f_b10f)	uniform image2D imageOut;
+layout(set=1, binding = 1, std430) buffer lightStorageBuffer{
     LightBuffer lightBuffer;
 };
-layout(set=1, binding = 5) uniform texture2D skyLut;
+layout(set=1, binding = 2) uniform texture2D skyLut;
+layout(set=1, binding = 3, std430) buffer sdfInstanceBuffer{
+    uint instanceCount;
+	uint padding1;
+	uint padding2;
+	uint padding3;
+	SDFInstance sdfInstances[];
+};
+
+layout(set=2, binding = 0) uniform texture3D[] textures;
 
 void main(){
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
@@ -29,38 +39,97 @@ void main(){
 	pixelCoor.y *= -1;
 	vec3 V = calculateViewDirectionFromPixel(pixelCoor, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 
-	vec3 rayOrigin = g_cameraPosition.xyz + g_nearPlane * V;	//in range [0, 1]
+	vec3 rayStart = g_cameraPosition.xyz + g_nearPlane * V;	//in range [0, 1]
+	vec3 rayEnd = rayStart + g_farPlane * V;
 
-	vec3 sdfMin = sdfInfo.offset.xyz - sdfInfo.extends.xyz * 0.5f;
-	vec3 sdfMax = sdfInfo.offset.xyz + sdfInfo.extends.xyz * 0.5f;
+	int hitCount = 0;
 
-	//check if ray is outside of scene AABB
-    if(!isPointInAABB(rayOrigin, sdfMin, sdfMax)){
-		HitResult aabbHit = rayAABBIntersection(rayOrigin, V, sdfMin, sdfMax, sdfInfo);
+	bool hit = false;
+	float closestHitDistance = 10000.f;
+	vec3 N;
+
+	for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
+		SDFInstance instance = sdfInstances[instanceIndex];
+		vec3 rayStartLocal	= (instance.worldToLocal * vec4(rayStart, 1)).xyz;
+		vec3 rayEndLocal	= (instance.worldToLocal * vec4(rayEnd, 1)).xyz;
+
+		vec3 rayDirection = rayEndLocal - rayStartLocal;
+		rayDirection /= length(rayDirection);
+
+		vec3 sdfMaxLocal = instance.localExtends * 0.5;
+		vec3 sdfMinLocal = -sdfMaxLocal;
+
+		float hitDistance = 0.f;
+
+		if(!isPointInAABB(rayStartLocal, sdfMinLocal, sdfMaxLocal)){
+			HitResult aabbHit = rayAABBIntersection(rayStartLocal, rayDirection, sdfMinLocal, sdfMaxLocal);
 		
-		if(aabbHit.hit){
-			//move sample point to intersection
-			rayOrigin += aabbHit.t * V;
+			if(aabbHit.hit){
+				//move sample point to intersection
+				rayStartLocal += (aabbHit.t) * rayDirection;
+				hitDistance = aabbHit.t;
+			}
+			else{
+				//ray missed AABB
+				continue;
+			}
 		}
-		else{
-			//ray missed AABB
-			vec3 color = sampleSkyLut(V, skyLut);
-			imageStore(imageOut, uv, vec4(color, 0));
-			return;
-		}
-	}
-	
-	float sdfThreshold = 0.12f;
 
-	SDFTrace trace = sdfTrace(rayOrigin, V, sdfInfo, sceneSDF, sdfThreshold, sdfMin, sdfMax);
-	vec3 color;
-	if(trace.hit){
-		vec3 ambient = vec3(0.1);
-		color = shadeHit(trace, sdfInfo, sceneSDF, materialTexture, sdfThreshold, ambient, sdfMin, sdfMax, 
-			lightBuffer.sunColor, lightBuffer.sunStrengthExposed);
-	}	
-	else{
-		color = sampleSkyLut(V, skyLut);
+		vec3 localSamplePos = rayStartLocal;
+
+		float distanceThreshold = 0.1f;
+		ivec3 sdfResolution = textureSize(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), 0);
+		distanceThreshold = length(instance.localExtends / sdfResolution) * 0.25;
+
+		float dLast = 0.f;	//last step distance
+		float d = 0.f;
+
+		for(int i = 0; i < 128; i++){
+
+			vec3 localExtendsHalf = instance.localExtends * 0.5;
+			localExtendsHalf += 0.01; //bias
+			if(any(greaterThan(localSamplePos, localExtendsHalf)) || any(lessThan(localSamplePos, -localExtendsHalf))){
+				break;
+			}
+
+			vec3 sampleUV = localSamplePos / instance.localExtends + 0.5;
+			
+			dLast = d;
+			d = texture(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), sampleUV).r; 
+
+			if(d < distanceThreshold){
+				hit = true;
+				if(hitDistance < closestHitDistance){
+					closestHitDistance = hitDistance;
+					hitCount = i;
+
+					float lastStepSize = d / (1.f - (d - dLast));
+
+					//assume surface is planar and calculate hit using geometric series
+					//see: "GPU-based clay simulation and ray-tracing tech in Claybook", page 25
+					localSamplePos += rayDirection * lastStepSize;
+					sampleUV = localSamplePos / instance.localExtends + 0.5;
+
+					N = normalFromSDF(sampleUV, instance.localExtends, textures[instance.sdfTextureIndex]);
+				}
+				break;
+			}
+			hitCount = i;
+			localSamplePos += rayDirection * abs(d);
+			hitDistance += abs(d);
+		}
 	}
-	imageStore(imageOut, uv, vec4(color, 1.f));
+
+	if(hit){
+		vec3 color = vec3(hitCount / 128.f + 0.1);
+		//color = vec3(1, 0, 0);
+		color = N*0.5+0.5;
+		color = vec3(clamp(dot(N, g_sunDirection.xyz), 0, 1));
+		imageStore(imageOut, uv, vec4(color, 1.f));
+	}
+	else{
+		vec3 color = sampleSkyLut(V, skyLut);
+		//color = vec3(hitCount / 128.f);
+		imageStore(imageOut, uv, vec4(color, 0));
+	}
 }

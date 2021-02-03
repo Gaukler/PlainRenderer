@@ -53,6 +53,8 @@ void saveBinaryScene(const std::filesystem::path& filename, SceneBinary scene){
         meshDataSize += meshBinary.texturePaths.normalTexturePath.string().size();
         meshDataSize += sizeof(uint32_t); //specular texture path length
         meshDataSize += meshBinary.texturePaths.specularTexturePath.string().size();
+		meshDataSize += sizeof(uint32_t); //sdf texture path length
+		meshDataSize += meshBinary.texturePaths.sdfTexturePath.string().size();
         meshDataSize += sizeof(uint16_t) * meshBinary.indexBuffer.size();
         meshDataSize += sizeof(uint8_t) * meshBinary.vertexBuffer.size();
     }
@@ -97,6 +99,15 @@ void saveBinaryScene(const std::filesystem::path& filename, SceneBinary scene){
             fileData,
             meshBinary.texturePaths.specularTexturePath.string().size() * sizeof(char),
             writePointer);
+
+		const uint32_t sdfPathLength = (uint32_t)meshBinary.texturePaths.sdfTexturePath.string().size();
+		writePointer = copyToBuffer(&sdfPathLength, fileData, sizeof(sdfPathLength), writePointer);
+
+		writePointer = copyToBuffer(
+			meshBinary.texturePaths.sdfTexturePath.string().c_str(),
+			fileData,
+			meshBinary.texturePaths.sdfTexturePath.string().size() * sizeof(char),
+			writePointer);
 
         writePointer = copyToBuffer(
             meshBinary.indexBuffer.data(),
@@ -174,6 +185,13 @@ bool loadBinaryScene(const std::filesystem::path& filename, SceneBinary* outScen
         specularPathString.resize(specularPathLength);
         file.read(specularPathString.data(), specularPathLength * sizeof(char));
         mesh.texturePaths.specularTexturePath = specularPathString;
+
+		uint32_t sdfPathLength;
+		file.read((char*)&sdfPathLength, sizeof(sdfPathLength));
+		std::string sdfPathString;
+		sdfPathString.resize(sdfPathLength);
+		file.read(sdfPathString.data(), sdfPathLength * sizeof(char));
+		mesh.texturePaths.sdfTexturePath = sdfPathString;
 
         size_t halfPerIndex;
         size_t bytePerIndex;

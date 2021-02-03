@@ -6,7 +6,6 @@
 #include "Common/sdfUtilities.h"
 
 // ---- private function declarations ----
-ImageDescription ComputeSceneSDFTexture(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList);
 
 bool isAxisSeparating(const glm::vec3& axis, const glm::vec3 bbHalfVector,
 	const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2);
@@ -14,8 +13,7 @@ bool isAxisSeparating(const glm::vec3& axis, const glm::vec3 bbHalfVector,
 bool doTriangleAABBOverlap(const glm::vec3& bbCenter, const glm::vec3& bbExtends,
 	const glm::vec3& v0In, const glm::vec3& v1In, const glm::vec3& v2In, const glm::vec3& N);
 
-std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
-	const std::vector<AxisAlignedBoundingBox>& AABBList, const std::vector<MeshData>& meshes);
+std::vector<uint8_t> computeSDF(const glm::uvec3& resolution, const AxisAlignedBoundingBox& aabb, const MeshData& mesh);
 
 int flattenGridIndex(const glm::ivec3& index3D, const glm::ivec3& resolution);
 glm::uvec3 pointToCellIndex(const glm::vec3& p, const AxisAlignedBoundingBox& aabb, const glm::ivec3 resolution);
@@ -31,24 +29,109 @@ struct TriangleInfo {
 };
 
 //uniform grid is used as acceleration structure for raytracing of SDF creation
-std::vector<std::vector<TriangleInfo>> buildUniformGrid(const std::vector<MeshData>& meshes, const VolumeInfo& sdfVolumeInfo,
-	const AxisAlignedBoundingBox& sceneBB, const glm::ivec3& uniformGridResolution);
+std::vector<std::vector<TriangleInfo>> buildUniformGrid(const MeshData& mesh, const VolumeInfo& sdfVolumeInfo,
+	const AxisAlignedBoundingBox& AABB, const glm::ivec3& uniformGridResolution);
+
+uint32_t nextPowerOfTwo(const uint32_t in);
+float computePointTrianglesClosestDistance(const glm::vec3 p, const std::vector<TriangleInfo>& triangles);
 
 // ---- implementation ----
 
-ImageDescription ComputeSceneSDFTexture(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList) {
-    const uint32_t sdfRes = 64;
-    ImageDescription desc;
-    desc.width = sdfRes;
-    desc.height = sdfRes;
-    desc.depth = sdfRes;
-    desc.type = ImageType::Type3D;
-    desc.format = ImageFormat::R16_sFloat;
-    desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-    desc.mipCount = MipCount::One;
-    desc.autoCreateMips = false;
-    desc.initialData = computeSDF(glm::uvec3(desc.width, desc.height, desc.depth), AABBList, meshes);
-    return desc;
+//see: http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+uint32_t nextPowerOfTwo(const uint32_t in) {
+	uint32_t out = in;
+	out--;
+	out |= out >> 1;
+	out |= out >> 2;
+	out |= out >> 4;
+	out |= out >> 8;
+	out |= out >> 16;
+	out++;
+	return out;
+}
+
+//reference: https://www.iquilezles.org/www/articles/triangledistance/triangledistance.htm
+float computePointTrianglesClosestDistance(const glm::vec3 p, const std::vector<TriangleInfo>& triangles) {
+
+	float closestD = std::numeric_limits<float>::max();
+	for (const TriangleInfo& t : triangles) {
+
+		const glm::vec3 v1ToP = p - t.v0;
+		const glm::vec3 v2ToP = p - t.v1;
+		const glm::vec3 v3ToP = p - t.v2;
+
+		const glm::vec3 v0ToV1 = t.v1 - t.v0;
+		const glm::vec3 v1ToV2 = t.v2 - t.v1;
+		const glm::vec3 v2ToV0 = t.v0 - t.v2;
+
+		const glm::vec3 eN0 = glm::cross(v0ToV1, t.N);
+		const glm::vec3 eN1 = glm::cross(v1ToV2, t.N);
+		const glm::vec3 eN2 = glm::cross(v2ToV0, t.N);
+
+		const float s1 = glm::sign(glm::dot(eN0, -v1ToP));
+		const float s2 = glm::sign(glm::dot(eN1, -v2ToP));
+		const float s3 = glm::sign(glm::dot(eN2, -v3ToP));
+
+		const bool onEdge =
+			s1 +
+			s2 +
+			s3 < 2.f;
+
+		const float c1 = glm::clamp(glm::dot(v1ToP, v0ToV1) / dot2(v0ToV1), 0.f, 1.f);
+		const float c2 = glm::clamp(glm::dot(v2ToP, v1ToV2) / dot2(v1ToV2), 0.f, 1.f);
+		const float c3 = glm::clamp(glm::dot(v3ToP, v2ToV0) / dot2(v2ToV0), 0.f, 1.f);
+
+		float l1 = dot2(p - (t.v0 + v0ToV1 * c1));
+		float l2 = dot2(p - (t.v1 + v1ToV2 * c2));
+		float l3 = dot2(p - (t.v2 + v2ToV0 * c3));
+
+		float d = onEdge ? glm::min(glm::min(l1, l2), l3) : abs(glm::dot(t.N, v1ToP) * glm::dot(t.N, v1ToP));
+		d = abs(d);
+
+		closestD = glm::min(closestD, d);
+	}
+	return sqrt(abs(closestD));
+}
+
+std::vector<ImageDescription> computeSceneSDFTextures(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList) {
+
+	std::vector<ImageDescription> result;
+	result.reserve(meshes.size());
+
+	assert(meshes.size() == AABBList.size());
+	for (size_t i = 0; i < meshes.size(); i++) {
+
+		const MeshData& mesh = meshes[i];
+		const AxisAlignedBoundingBox meshBB = AABBList[i];
+
+		const uint32_t maxSdfRes = 64;
+		const uint32_t minSdfRes = 16;
+		const float targetTexelPerMeter = 0.25f;
+
+		glm::uvec3 sdfRes;
+		const glm::vec3 bbExtents = meshBB.max - meshBB.min;
+		for (int component = 0; component < 3; component++) {
+			const float targetRes = bbExtents[component] / targetTexelPerMeter;
+
+			sdfRes[component] = nextPowerOfTwo((uint32_t)targetRes);
+			sdfRes[component] = glm::clamp(sdfRes[component], minSdfRes, maxSdfRes);
+		}
+
+		ImageDescription sdfTexture;
+		sdfTexture.width	= sdfRes[0];
+		sdfTexture.height	= sdfRes[1];
+		sdfTexture.depth	= sdfRes[2];
+		sdfTexture.type = ImageType::Type3D;
+		sdfTexture.format = ImageFormat::R16_sFloat;
+		sdfTexture.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+		sdfTexture.mipCount = MipCount::One;
+		sdfTexture.autoCreateMips = false;
+		sdfTexture.initialData = computeSDF(glm::uvec3(sdfTexture.width, sdfTexture.height, sdfTexture.depth), meshBB, mesh);
+
+		result.push_back(sdfTexture);
+	}
+    
+    return result;
 }
 
 //helper function for doTriangleAABBOverlap
@@ -145,44 +228,41 @@ glm::vec3 volumeIndexToCellCenter(const glm::ivec3& index, const glm::ivec3& res
 	return cellCenter;
 };
 
-std::vector<std::vector<TriangleInfo>> buildUniformGrid(const std::vector<MeshData>& meshes, const VolumeInfo& sdfVolumeInfo, 
-	const AxisAlignedBoundingBox& sceneBB, const glm::uvec3& uniformGridResolution) {
+std::vector<std::vector<TriangleInfo>> buildUniformGrid(const MeshData& mesh, const VolumeInfo& sdfVolumeInfo,
+	const AxisAlignedBoundingBox& AABB, const glm::ivec3& uniformGridResolution) {
 
 	const glm::vec3 uniformGridCellSize = glm::vec3(sdfVolumeInfo.extends) / glm::vec3(uniformGridResolution);
 
 	const uint32_t uniformGridCellCount = uniformGridResolution.x * uniformGridResolution.y * uniformGridResolution.z;
 	std::vector<std::vector<TriangleInfo>> uniformGrid(uniformGridCellCount); //for every cell contains list of triangles
 
-	for (size_t meshIndex = 0; meshIndex < meshes.size(); meshIndex++) {
-		const MeshData mesh = meshes[meshIndex];
-		for (size_t i = 0; i < mesh.indices.size(); i += 3) {
+	for (size_t i = 0; i < mesh.indices.size(); i += 3) {
 
-			const size_t i0 = mesh.indices[i];
-			const size_t i1 = mesh.indices[i + 1];
-			const size_t i2 = mesh.indices[i + 2];
+		const size_t i0 = mesh.indices[i];
+		const size_t i1 = mesh.indices[i + 1];
+		const size_t i2 = mesh.indices[i + 2];
 
-			TriangleInfo triangle;
-			triangle.v0 = mesh.positions[i0];
-			triangle.v1 = mesh.positions[i1];
-			triangle.v2 = mesh.positions[i2];
+		TriangleInfo triangle;
+		triangle.v0 = mesh.positions[i0];
+		triangle.v1 = mesh.positions[i1];
+		triangle.v2 = mesh.positions[i2];
 
-			triangle.N = glm::normalize(cross(triangle.v0 - triangle.v1, triangle.v0 - triangle.v2));
+		triangle.N = glm::normalize(cross(triangle.v0 - triangle.v1, triangle.v0 - triangle.v2));
 
-			const glm::vec3 triangleMin = glm::min(glm::min(triangle.v0, triangle.v1), triangle.v2);
-			const glm::vec3 triangleMax = glm::max(glm::max(triangle.v0, triangle.v1), triangle.v2);
+		const glm::vec3 triangleMin = glm::min(glm::min(triangle.v0, triangle.v1), triangle.v2);
+		const glm::vec3 triangleMax = glm::max(glm::max(triangle.v0, triangle.v1), triangle.v2);
 
-			const glm::ivec3 minIndex = pointToCellIndex(triangleMin, sceneBB, uniformGridResolution);
-			const glm::ivec3 maxIndex = pointToCellIndex(triangleMax, sceneBB, uniformGridResolution);
+		const glm::ivec3 minIndex = pointToCellIndex(triangleMin, AABB, uniformGridResolution);
+		const glm::ivec3 maxIndex = pointToCellIndex(triangleMax, AABB, uniformGridResolution);
 
-			//iterate over cells within triangles bounding box
-			for (int x = minIndex.x; x <= maxIndex.x; x++) {
-				for (int y = minIndex.y; y <= maxIndex.y; y++) {
-					for (int z = minIndex.z; z <= maxIndex.z; z++) {
-						const glm::vec3 cellCenter = volumeIndexToCellCenter(glm::ivec3(x, y, z), uniformGridResolution, sdfVolumeInfo);
-						if (doTriangleAABBOverlap(cellCenter, uniformGridCellSize, triangle.v0, triangle.v1, triangle.v2, triangle.N)) {
-							const size_t cellIndex = flattenGridIndex(glm::ivec3(x, y, z), uniformGridResolution);
-							uniformGrid[cellIndex].push_back(triangle);
-						}
+		//iterate over cells within triangles bounding box
+		for (int x = minIndex.x; x <= maxIndex.x; x++) {
+			for (int y = minIndex.y; y <= maxIndex.y; y++) {
+				for (int z = minIndex.z; z <= maxIndex.z; z++) {
+					const glm::vec3 cellCenter = volumeIndexToCellCenter(glm::ivec3(x, y, z), uniformGridResolution, sdfVolumeInfo);
+					if (doTriangleAABBOverlap(cellCenter, uniformGridCellSize, triangle.v0, triangle.v1, triangle.v2, triangle.N)) {
+						const size_t cellIndex = flattenGridIndex(glm::ivec3(x, y, z), uniformGridResolution);
+						uniformGrid[cellIndex].push_back(triangle);
 					}
 				}
 			}
@@ -191,20 +271,35 @@ std::vector<std::vector<TriangleInfo>> buildUniformGrid(const std::vector<MeshDa
 	return uniformGrid;
 }
 
-std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
-    const std::vector<AxisAlignedBoundingBox>& AABBList, const std::vector<MeshData>& meshes) {
+std::vector<uint8_t> computeSDF(const glm::uvec3& resolution, const AxisAlignedBoundingBox& aabb, const MeshData& mesh) {
 
     const auto startTime = std::chrono::system_clock::now();
 
-    const AxisAlignedBoundingBox sceneBB = combineAxisAlignedBoundingBoxes(AABBList);
-	const AxisAlignedBoundingBox sceneBBPadded = padSDFBoundingBox(sceneBB);
+	const AxisAlignedBoundingBox AABBPadded = padSDFBoundingBox(aabb);
 
-    const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(sceneBBPadded);
+    const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(AABBPadded);
 	
 	//build uniform grid
-	const glm::uvec3 uniformGridResolution = glm::ivec3(32);
-	const std::vector<std::vector<TriangleInfo>> uniformGrid = buildUniformGrid(meshes, sdfVolumeInfo, sceneBBPadded, uniformGridResolution);
+	const glm::uvec3 uniformGridResolution = glm::ivec3(16);
+	const std::vector<std::vector<TriangleInfo>> uniformGrid = buildUniformGrid(mesh, sdfVolumeInfo, AABBPadded, uniformGridResolution);
 	std::cout << "Built uniform grid\n";
+
+	//if no rays hit, distance to closest triangle is computed
+	//for this a vector of all triangles is prepared
+	std::vector<TriangleInfo> totalMeshTriangles;
+	totalMeshTriangles.reserve(mesh.indices.size() / 3);
+	for (size_t i = 0; i < mesh.indices.size(); i += 3) {
+		TriangleInfo t;
+		const uint32_t i0 = mesh.indices[i];
+		const uint32_t i1 = mesh.indices[i+1];
+		const uint32_t i2 = mesh.indices[i+2];
+		t.v0 = mesh.positions[i0];
+		t.v1 = mesh.positions[i1];
+		t.v2 = mesh.positions[i2];
+		t.N = glm::normalize(glm::cross(t.v0 - t.v1, t.v0 - t.v2));
+
+		totalMeshTriangles.push_back(t);
+	}
 
 	const glm::vec3 uniformGridCellSize = glm::vec3(sdfVolumeInfo.extends) / glm::vec3(uniformGridResolution);
 
@@ -252,7 +347,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 						bool rayIsInBoundingBox = true;
 
 						//start index
-						glm::uvec3 uniformGridIndex = pointToCellIndex(rayOrigin, sceneBBPadded, uniformGridResolution);
+						glm::uvec3 uniformGridIndex = pointToCellIndex(rayOrigin, AABBPadded, uniformGridResolution);
 						
 						glm::vec3 currentRayPosition = rayOrigin;
 
@@ -260,7 +355,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
 						while (rayIsInBoundingBox) {
 							const size_t cellIndex = flattenGridIndex(uniformGridIndex, uniformGridResolution);
 
-							const glm::vec3 cellMin = sceneBBPadded.min + glm::vec3(uniformGridIndex) / glm::vec3(uniformGridResolution) * glm::vec3(sdfVolumeInfo.extends);
+							const glm::vec3 cellMin = AABBPadded.min + glm::vec3(uniformGridIndex) / glm::vec3(uniformGridResolution) * glm::vec3(sdfVolumeInfo.extends);
 							const glm::vec3 cellMax = cellMin + uniformGridCellSize;
 
 							bool hitTriangle = false;
@@ -380,13 +475,16 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution,
                         closestHitTotal = glm::min(closestHitTotal, rayClosestHit);
                     }
                 }
-				assert(closestHitTotal != std::numeric_limits<float>::max());	//indicates no hits
-
                 //using sign heuristic from "Dynamic Occlusion with Signed Distance Fields", page 22
                 //assuming negative sign when more than half rays hit backface
                 const size_t hitsTotal = sampleCount1D * sampleCount1D;
                 const float backHitPercentage = backHitCounter / (float)hitsTotal;
                 closestHitTotal *= backHitPercentage > 0.5f ? -1 : 1;
+
+				if (closestHitTotal == std::numeric_limits<float>::max()) {
+					//indicates no hits, in this case assume that point is outside of mesh and compute distance to closest triangle
+					closestHitTotal = computePointTrianglesClosestDistance(rayOrigin, totalMeshTriangles);
+				}
 
                 uint16_t half = glm::packHalf(glm::vec1(closestHitTotal))[0];	//distance is stored as 16 bit float
                 byteData[byteIndex] = ((uint8_t*)&half)[0];

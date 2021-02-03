@@ -3,4 +3,4 @@
 #include "Common/MeshData.h"
 #include "ImageDescription.h"
 
-ImageDescription ComputeSceneSDFTexture(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList);
+std::vector<ImageDescription> computeSceneSDFTextures(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList);

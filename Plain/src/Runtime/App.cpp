@@ -57,19 +57,6 @@ void App::setup(const std::string& sceneFilePath) {
 		for (const MeshBinary& mesh : scene.meshes) {
 			m_bbs.push_back(mesh.boundingBox);
 		}
-
-        const std::filesystem::path sceneSDFPathRelative = binaryToSDFPath(sceneFilePath);
-        std::cout << "Loading scene sdf: " << sceneSDFPathRelative << "\n";
-
-		sceneBB = combineAxisAlignedBoundingBoxes(m_bbs);
-
-        ImageDescription sceneSDF;
-        if (loadDDSFile(DirectoryUtils::getResourceDirectory() / sceneSDFPathRelative, &sceneSDF)) {
-            gRenderFrontend.setSceneSDF(sceneSDF, sceneBB);
-        }
-        else {
-            std::cout << "Failed to load scene sdf\n";
-        }
     }
     
 	const std::vector<RenderObject> renderScene = extractRenderObjectFromScene(m_scene, m_bbs);

@@ -34,8 +34,6 @@ int main(const int argc, char* argv[]) {
     std::filesystem::path binaryPathRelative =  settings.modelFilePath;
     binaryPathRelative.replace_extension("plain");
 
-    const std::filesystem::path sdfPathRelative = binaryToSDFPath(binaryPathRelative);
-
     Scene scene;
     std::cout << "Input model: " << settings.modelFilePath << "\n";
     if (loadModelGLTF(settings.modelFilePath, &scene)) {
@@ -47,12 +45,17 @@ int main(const int argc, char* argv[]) {
         saveBinaryScene(binaryPathRelative, sceneBinary);
         std::cout << "Saved binary file: " << binaryPathRelative << "\n";
 
-        std::cout << "Computing signed distance field...\n";
-        const ImageDescription sceneSDFTexture = ComputeSceneSDFTexture(scene.meshes, AABBList);
+        std::cout << "Computing signed distance fields...\n";
+        const std::vector<ImageDescription> sceneSDFTextures = computeSceneSDFTextures(scene.meshes, AABBList);
 
-        writeDDSFile(DirectoryUtils::getResourceDirectory() / sdfPathRelative, sceneSDFTexture);
-        std::cout << "Saved SDF texture: " << sdfPathRelative << "\n";
-
+		assert(sceneSDFTextures.size() == scene.meshes.size());
+		for (size_t i = 0; i < sceneSDFTextures.size(); i++) {
+			const ImageDescription sdfTexture = sceneSDFTextures[i];
+			const std::filesystem::path sdfTexturePath = scene.meshes[i].texturePaths.sdfTexturePath;
+			//FIXME: writing fails if target folder ("sdfTextures") does not exist
+			writeDDSFile(sdfTexturePath, sdfTexture);
+			std::cout << "Saved SDF texture: "<< sdfTexturePath << "\n";
+		}
     }
     return 0;
 }

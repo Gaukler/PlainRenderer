@@ -7,6 +7,7 @@ struct TexturePaths {
     std::filesystem::path albedoTexturePath;
     std::filesystem::path normalTexturePath;
     std::filesystem::path specularTexturePath;
+	std::filesystem::path sdfTexturePath;
 };
 
 struct MeshData {

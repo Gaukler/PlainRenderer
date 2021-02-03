@@ -74,6 +74,7 @@ struct DefaultTextures {
     ImageHandle specular;
     ImageHandle normal;
     ImageHandle sky;
+	ImageHandle sdf;
 };
 
 //simple wrapper to keep all images and framebuffers used in a frame in one place
@@ -95,8 +96,16 @@ struct Material {
 };
 
 struct MeshFrontend {
-	MeshHandle	backendHandle;
-	Material	material;
+	MeshHandle				backendHandle;
+	uint32_t				sdfTextureIndex;
+	Material				material;
+	AxisAlignedBoundingBox	localBB;
+};
+
+struct SDFInstance {
+	glm::vec3 localExtends;
+	uint32_t sdfTextureIndex;	//indexes into global texture descriptor array
+	glm::mat4x4 worldToLocal;
 };
 
 class RenderFrontend {
@@ -109,7 +118,6 @@ public:
     void setCameraExtrinsic(const CameraExtrinsic& extrinsic);
 
     std::vector<MeshHandleFrontend> registerMeshes(const std::vector<MeshBinary>& meshes);
-    void setSceneSDF(const ImageDescription& desc, const AxisAlignedBoundingBox& sceneBB);
 
     //before call camera settings and such must be set
     //after call drawcalls can be made
@@ -314,6 +322,7 @@ private:
 	StorageBufferHandle m_mainPassTransformsBuffer;
 	StorageBufferHandle m_shadowPassTransformsBuffer;
 	StorageBufferHandle m_boundingBoxDebugRenderMatrices;
+	StorageBufferHandle m_sdfInstanceBuffer;
 
     UniformBufferHandle m_globalUniformBuffer;
     UniformBufferHandle m_skyOcclusionDataBuffer;

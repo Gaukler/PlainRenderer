@@ -9,10 +9,10 @@ float sampleSDF(vec3 uv, texture3D sdfTexture){
 	return texture(sampler3D(sdfTexture, g_sampler_linearClamp), uv).r;
 }
 
-vec3 normalFromSDF(vec3 uv, VolumeInfo sdfInfo, texture3D sdfTexture){
-	float extendsMax = max(sdfInfo.extends.x, max(sdfInfo.extends.y, sdfInfo.extends.z));
-	vec3 extendsNormalized = sdfInfo.extends.xyz / extendsMax;
-	vec3 epsilon = vec3(0.05f) / textureSize(sampler3D(sdfTexture, g_sampler_linearClamp), 0) / extendsNormalized;	//voxels are anisotropic so epsilon must be scaled per axis
+vec3 normalFromSDF(vec3 uv, vec3 extends, texture3D sdfTexture){
+	float extendsMax = max(extends.x, max(extends.y, extends.z));
+	vec3 extendsNormalized = extends.xyz / extendsMax;
+	vec3 epsilon = vec3(0.5f) / textureSize(sampler3D(sdfTexture, g_sampler_linearClamp), 0) / extendsNormalized;	//voxels are anisotropic so epsilon must be scaled per axis
 	return normalize(vec3(
 		sampleSDF(uv + vec3(epsilon.x, 0, 0), sdfTexture) - sampleSDF(uv - vec3(epsilon.x, 0, 0), sdfTexture),
 		sampleSDF(uv + vec3(0, epsilon.y, 0), sdfTexture) - sampleSDF(uv - vec3(0, epsilon.y, 0), sdfTexture),
@@ -66,14 +66,14 @@ struct HitResult{
 	float t;	//hit = origin + direction * t
 };
 
-HitResult rayAABBIntersection(vec3 rayOrigin, vec3 rayDirection, vec3 aabbMin, vec3 aabbMax, VolumeInfo volumeInfo){
+HitResult rayAABBIntersection(vec3 rayOrigin, vec3 rayDirection, vec3 aabbMin, vec3 aabbMax){
 
 	HitResult result;
 	result.hit = false;
 	result.t = 100000;	//will be replaced by min
 
 	//search for bounding box intersection
-	float intersection =  rayOrigin.x < volumeInfo.offset.x ? aabbMin.x : aabbMax.x;
+	float intersection =  rayOrigin.x < 0 ? aabbMin.x : aabbMax.x;
 	
 	float tx = (intersection - rayOrigin.x) / rayDirection.x;
 	vec3 planeIntersection = rayOrigin + tx * rayDirection;
@@ -86,7 +86,7 @@ HitResult rayAABBIntersection(vec3 rayOrigin, vec3 rayDirection, vec3 aabbMin, v
 		result.hit = true;
 	}
 
-	intersection =  rayOrigin.y < volumeInfo.offset.y ? aabbMin.y : aabbMax.y;
+	intersection =  rayOrigin.y < 0 ? aabbMin.y : aabbMax.y;
 	float ty = (intersection - rayOrigin.y) / rayDirection.y;
 	planeIntersection = rayOrigin + ty * rayDirection;
 	if(	ty > 0 && 
@@ -98,7 +98,7 @@ HitResult rayAABBIntersection(vec3 rayOrigin, vec3 rayDirection, vec3 aabbMin, v
 		result.hit = true;
 	}
 
-	intersection =  rayOrigin.z < volumeInfo.offset.z ? aabbMin.z : aabbMax.z;
+	intersection =  rayOrigin.z < 0 ? aabbMin.z : aabbMax.z;
 	float tz = (intersection - rayOrigin.z) / rayDirection.z;
 	planeIntersection = rayOrigin + tz * rayDirection;
 	if(	tz > 0 && 
@@ -166,7 +166,7 @@ vec3 shadeHit(SDFTrace trace, VolumeInfo sdfInfo, texture3D sdfTexture, texture3
 	//the modified position is more accurate but on thin objects the modification might push the position to the other side
 	//because of this normals are more consistent when using the original position
 	vec3 hitOriginalNormalized = worldPositionToVolume(trace.hitPosOriginal, sdfInfo.offset.xyz, sdfInfo.extends.xyz);
-	vec3 N = normalFromSDF(hitOriginalNormalized, sdfInfo, sdfTexture);
+	vec3 N = normalFromSDF(hitOriginalNormalized, sdfInfo.extends.xyz, sdfTexture);
 
 	//material lookup uses the modified position as it is more accurate
 	vec3 hitModifiedNormalized = worldPositionToVolume(trace.hitPosCalculated, sdfInfo.offset.xyz, sdfInfo.extends.xyz);

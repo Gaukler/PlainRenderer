@@ -49,9 +49,12 @@ bool loadBinaryFile(const std::filesystem::path& absolutePath, std::vector<uint3
 }
 
 void writeBinaryFile(const std::filesystem::path absolutePath, const std::vector<uint32_t>& data) {
-    std::ofstream spirVFile;
-    spirVFile.open(absolutePath, std::ios::out | std::ios::binary);
-    assert(spirVFile.is_open());
-    spirVFile.write(reinterpret_cast<const char*>(data.data()), data.size() * sizeof(uint32_t));
-    spirVFile.close();
+    std::ofstream binaryFile;
+    binaryFile.open(absolutePath, std::ios::out | std::ios::binary);
+	if (!binaryFile.is_open()) {
+		std::cout << "Failed to write binary file: " << absolutePath << "\n";
+		return;
+	}
+    binaryFile.write(reinterpret_cast<const char*>(data.data()), data.size() * sizeof(uint32_t));
+    binaryFile.close();
 }
