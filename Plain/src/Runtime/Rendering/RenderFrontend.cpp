@@ -429,25 +429,9 @@ void RenderFrontend::prepareRenderpasses(){
     }
 
     if (m_sdfDebugMode == SDFDebugMode::VisualizeSDF) {
-
-        RenderPassExecution exe;
-        exe.handle = m_sdfDebugPass;
-        exe.resources.storageImages = { ImageResource(m_postProcessBuffers[0], 0, 0) };
-		exe.resources.sampledImages = {	ImageResource(m_skyLut, 0, 2)
-		};
-		exe.resources.storageBuffers = {
-			StorageBufferResource(m_lightBuffer, true, 1),
-			StorageBufferResource(m_sdfInstanceBuffer, true, 3)
-		};
-        exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-        exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-        exe.dispatchCount[2] = 1;
-        exe.parents = { currentPass };
-
-        gRenderBackend.setRenderPassExecution(exe);
-
-        currentPass = m_sdfDebugPass;
-        currentSrc = m_postProcessBuffers[0];
+		renderSDFDebug({ currentPass });
+		currentPass = m_sdfDebugPass;
+		currentSrc = m_postProcessBuffers[0];
     }
 
     computeTonemapping(currentPass, currentSrc);
@@ -690,9 +674,23 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 
 	//sdf scene
 	{
+		struct GPUBoundingBox {
+			glm::vec3 min; 
+			float padding1 = 0.f;
+			glm::vec3 max;
+			float padding2 = 0.f;
+		};
+		std::vector<GPUBoundingBox> instanceWorldBBs;
 		std::vector<SDFInstance> instanceData;
 		instanceData.reserve(scene.size());
-		for (const RenderObject obj : scene) {
+		instanceWorldBBs.reserve(scene.size());
+		for (const RenderObject& obj : scene) {
+
+			GPUBoundingBox worldBB;
+			worldBB.min = obj.bbWorld.min;
+			worldBB.max = obj.bbWorld.max;
+			instanceWorldBBs.push_back(worldBB);
+
 			SDFInstance instance;
 			const MeshFrontend& mesh = m_frontendMeshes[obj.mesh.index];
 			instance.sdfTextureIndex = mesh.sdfTextureIndex;
@@ -709,12 +707,15 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 			instanceData.push_back(instance);
 		}
 		std::vector<uint8_t> bufferData(sizeof(SDFInstance) * instanceData.size() + sizeof(uint32_t) * 4);
-		const uint32_t objectCount = instanceData.size();
+		m_currentSDFInstanceCount = instanceData.size();
 		uint32_t padding[3];
-		memcpy(bufferData.data(), &objectCount, sizeof(uint32_t));
+		memcpy(bufferData.data(), &m_currentSDFInstanceCount, sizeof(uint32_t));
 		memcpy(bufferData.data() + sizeof(uint32_t), &padding, sizeof(uint32_t) * 3);
 		memcpy(bufferData.data() + sizeof(uint32_t) * 4, instanceData.data(), sizeof(SDFInstance) * instanceData.size());
 		gRenderBackend.setStorageBufferData(m_sdfInstanceBuffer, bufferData.data(), bufferData.size());
+
+		gRenderBackend.setStorageBufferData(m_sdfInstanceWorldBBBuffer, instanceWorldBBs.data(), 
+			instanceWorldBBs.size() * sizeof(GPUBoundingBox));
 	}
 }
 
@@ -1308,6 +1309,77 @@ void RenderFrontend::issueSkyDrawcalls() {
 	sunSpriteMatrices.mvp = m_viewProjectionMatrix * sunSpriteMatrices.model;
 
     gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, (char*)&sunSpriteMatrices, m_sunSpritePass);
+}
+
+void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) {
+	//cull instances
+	{
+		struct GPUFrustumData {
+			glm::vec4 points[6];
+			glm::vec4 normal[6];
+		};
+		GPUFrustumData frustumData;
+		//top
+		frustumData.points[0] = glm::vec4(m_cameraFrustum.points.l_u_f, 0);
+		frustumData.normal[0] = glm::vec4(m_cameraFrustum.normals.top, 0);
+		//bot
+		frustumData.points[1] = glm::vec4(m_cameraFrustum.points.l_l_f, 0);
+		frustumData.normal[1] = glm::vec4(m_cameraFrustum.normals.bot, 0);
+		//near
+		frustumData.points[2] = glm::vec4(m_cameraFrustum.points.l_l_n, 0);
+		frustumData.normal[2] = glm::vec4(m_cameraFrustum.normals.near, 0);
+		//far
+		frustumData.points[3] = glm::vec4(m_cameraFrustum.points.l_l_f, 0);
+		frustumData.normal[3] = glm::vec4(m_cameraFrustum.normals.far, 0);
+		//left
+		frustumData.points[4] = glm::vec4(m_cameraFrustum.points.l_l_f, 0);
+		frustumData.normal[4] = glm::vec4(m_cameraFrustum.normals.left, 0);
+		//right
+		frustumData.points[5] = glm::vec4(m_cameraFrustum.points.r_l_f, 0);
+		frustumData.normal[5] = glm::vec4(m_cameraFrustum.normals.right, 0);
+
+		gRenderBackend.setUniformBufferData(m_cameraFrustumInfoBuffer, &frustumData, sizeof(frustumData));
+
+		//reset culled counter
+		uint32_t zero = 0;
+		gRenderBackend.setStorageBufferData(m_sdfInstanceFrustumCulledIndexBuffer, &zero, sizeof(zero));
+
+		RenderPassExecution exe;
+		exe.handle = m_sdfInstanceCullToCameraFrustum;
+		exe.resources.storageBuffers = {
+			StorageBufferResource(m_sdfInstanceBuffer, true, 0),
+			StorageBufferResource(m_sdfInstanceFrustumCulledIndexBuffer, true, 2),
+			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 3)
+		};
+		exe.resources.uniformBuffers = {
+			UniformBufferResource(m_cameraFrustumInfoBuffer, 1)
+		};
+		exe.dispatchCount[0] = uint32_t(glm::ceil(m_currentSDFInstanceCount / 64.f));
+		exe.dispatchCount[1] = 1;
+		exe.dispatchCount[2] = 1;
+
+		gRenderBackend.setRenderPassExecution(exe);
+	}
+	//visualize SDF
+	{
+		RenderPassExecution exe;
+		exe.handle = m_sdfDebugPass;
+		exe.resources.storageImages = { ImageResource(m_postProcessBuffers[0], 0, 0) };
+		exe.resources.sampledImages = { ImageResource(m_skyLut, 0, 2)
+		};
+		exe.resources.storageBuffers = {
+			StorageBufferResource(m_lightBuffer, true, 1),
+			StorageBufferResource(m_sdfInstanceBuffer, true, 3),
+			StorageBufferResource(m_sdfInstanceFrustumCulledIndexBuffer, true, 4)
+		};
+		exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+		exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+		exe.dispatchCount[2] = 1;
+		exe.parents = parent;
+		exe.parents.push_back(m_sdfInstanceCullToCameraFrustum);
+
+		gRenderBackend.setRenderPassExecution(exe);
+	}
 }
 
 void RenderFrontend::updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB) {
@@ -2223,6 +2295,24 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 		desc.size = maxObjectCountMainScene * sizeof(SDFInstance) + sizeof(uint32_t) * 4; //extra uint for object count with padding to 16 byte
 		m_sdfInstanceBuffer = gRenderBackend.createStorageBuffer(desc);
 	}
+	//sdf instance frustum culled index buffer
+	{
+		StorageBufferDescription desc;
+		desc.size = maxObjectCountMainScene * sizeof(uint32_t) + sizeof(uint32_t);
+		m_sdfInstanceFrustumCulledIndexBuffer = gRenderBackend.createStorageBuffer(desc);
+	}
+	//camera frustum info buffer
+	{
+		UniformBufferDescription desc;
+		desc.size = 12 * sizeof(glm::vec4);
+		m_cameraFrustumInfoBuffer = gRenderBackend.createUniformBuffer(desc);
+	}
+	//sdf instance world bounding boxes
+	{
+		StorageBufferDescription desc;
+		desc.size = maxObjectCountMainScene * 2 * sizeof(glm::vec4);
+		m_sdfInstanceWorldBBBuffer = gRenderBackend.createStorageBuffer(desc);
+	}
 }
 
 void RenderFrontend::initMeshs() {
@@ -2768,6 +2858,13 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 		desc.name = "Indirect lighting upscale";
 		desc.shaderDescription.srcPathRelative = "indirectLightUpscale.comp";
 		m_indirectLightingUpscale = gRenderBackend.createComputePass(desc);
+	}
+	//sdf instance frustum culling
+	{
+		ComputePassDescription desc;
+		desc.name = "SDF instance frustum culling";
+		desc.shaderDescription.srcPathRelative = "sdfInstancesFrustumCulling.comp";
+		m_sdfInstanceCullToCameraFrustum = gRenderBackend.createComputePass(desc);
 	}
 }
 

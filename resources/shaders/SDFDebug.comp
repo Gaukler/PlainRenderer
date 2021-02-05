@@ -32,29 +32,125 @@ layout(set=1, binding = 3, std430) buffer sdfInstanceBuffer{
 	SDFInstance sdfInstances[];
 };
 
+layout(set=1, binding = 4, std430) buffer culledSdfInstanceBuffer{
+    uint culledInstanceCount;
+	uint culledInstanceIndices[];
+};
+
 layout(set=2, binding = 0) uniform texture3D[] textures;
 
 void main(){
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
 
-	vec2 pixelCoor = (vec2(uv.xy) / g_screenResolution - 0.5) * 2;
-	pixelCoor.y *= -1;
-	vec3 V = calculateViewDirectionFromPixel(pixelCoor, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
-
-	vec3 rayStart = g_cameraPosition.xyz + g_nearPlane * V;	//in range [0, 1]
-	vec3 rayEnd = rayStart + g_farPlane * V;
-
 	int hitCount = 0;
-
 	bool hit = false;
 	float closestHitDistance = 10000.f;
 	vec3 N;
 	vec3 albedo;
+	vec3 hitPos;
 
+	vec2 pixelCoor = (vec2(uv.xy) / g_screenResolution - 0.5) * 2;
+	pixelCoor.y *= -1;
+	vec3 V = calculateViewDirectionFromPixel(pixelCoor, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
+
+	{
+		vec3 rayStart = g_cameraPosition.xyz + g_nearPlane * V;	//in range [0, 1]
+		vec3 rayEnd = rayStart + g_farPlane * V;
+		vec3 rayDirectionWorld = normalize(rayEnd - rayStart);
+
+		//for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
+		//	SDFInstance instance = sdfInstances[instanceIndex];
+		for(int instanceIndex = 0; instanceIndex < culledInstanceCount; instanceIndex++){
+			SDFInstance instance = sdfInstances[culledInstanceIndices[instanceIndex]];
+
+			vec3 rayStartLocal	= (instance.worldToLocal * vec4(rayStart, 1)).xyz;
+			vec3 rayEndLocal	= (instance.worldToLocal * vec4(rayEnd, 1)).xyz;
+
+			vec3 rayDirection = rayEndLocal - rayStartLocal;
+			rayDirection /= length(rayDirection);
+
+			vec3 sdfMaxLocal = instance.localExtends * 0.5;
+			vec3 sdfMinLocal = -sdfMaxLocal;
+
+			float hitDistance = 0.f;
+
+			if(!isPointInAABB(rayStartLocal, sdfMinLocal, sdfMaxLocal)){
+				HitResult aabbHit = rayAABBIntersection(rayStartLocal, rayDirection, sdfMinLocal, sdfMaxLocal);
+		
+				if(aabbHit.hit){
+					//move sample point to intersection
+					rayStartLocal += (aabbHit.t) * rayDirection;
+					hitDistance = aabbHit.t;
+				}
+				else{
+					//ray missed AABB
+					continue;
+				}
+			}
+
+			vec3 localSamplePos = rayStartLocal;
+
+			float distanceThreshold = 0.1f;
+			ivec3 sdfResolution = textureSize(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), 0);
+			distanceThreshold = length(instance.localExtends / sdfResolution) * 0.25;
+
+			float dLast = 0.f;	//last step distance
+			float d = 0.f;
+
+			for(int i = 0; i < 128; i++){
+
+				vec3 localExtendsHalf = instance.localExtends * 0.5;
+				localExtendsHalf += 0.01; //bias
+				if(any(greaterThan(localSamplePos, localExtendsHalf)) || any(lessThan(localSamplePos, -localExtendsHalf))){
+					break;
+				}
+
+				vec3 sampleUV = localSamplePos / instance.localExtends + 0.5;
+			
+				dLast = d;
+				d = texture(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), sampleUV).r; 
+
+				if(d < distanceThreshold){
+					hit = true;
+					if(hitDistance < closestHitDistance){
+						closestHitDistance = hitDistance;
+						hitCount = i;
+
+						float lastStepSize = d / (1.f - (d - dLast));
+
+						//assume surface is planar and calculate hit using geometric series
+						//see: "GPU-based clay simulation and ray-tracing tech in Claybook", page 25
+						localSamplePos += rayDirection * lastStepSize;
+						sampleUV = localSamplePos / instance.localExtends + 0.5;
+
+						N = normalFromSDF(sampleUV, instance.localExtends, textures[instance.sdfTextureIndex]);
+						N = transpose(mat3(instance.worldToLocal)) * N;	//worldToLocal is rotation matrix, so transpose is inverse
+						albedo = pow(instance.meanAlbedo, vec3(2.2f));
+						hitPos = rayStart + rayDirectionWorld * (hitDistance + lastStepSize);
+					}
+					break;
+				}
+				hitCount = i;
+				localSamplePos += rayDirection * abs(d);
+				hitDistance += abs(d);
+			}
+		}
+	}
+
+	float shadow = 1.f;
 	for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
 		SDFInstance instance = sdfInstances[instanceIndex];
-		vec3 rayStartLocal	= (instance.worldToLocal * vec4(rayStart, 1)).xyz;
-		vec3 rayEndLocal	= (instance.worldToLocal * vec4(rayEnd, 1)).xyz;
+		
+		float distanceThreshold = 0.1f;
+		ivec3 sdfResolution = textureSize(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), 0);
+		distanceThreshold = length(instance.localExtends / sdfResolution) * 0.25;
+
+		vec3 L = g_sunDirection.xyz;
+		vec3 shadowStart = hitPos + L * distanceThreshold * 2.5;
+		vec3 shadowEnd = shadowStart + L * 20;
+
+		vec3 rayStartLocal	= (instance.worldToLocal * vec4(shadowStart, 1)).xyz;
+		vec3 rayEndLocal	= (instance.worldToLocal * vec4(shadowEnd, 1)).xyz;
 
 		vec3 rayDirection = rayEndLocal - rayStartLocal;
 		rayDirection /= length(rayDirection);
@@ -62,30 +158,22 @@ void main(){
 		vec3 sdfMaxLocal = instance.localExtends * 0.5;
 		vec3 sdfMinLocal = -sdfMaxLocal;
 
-		float hitDistance = 0.f;
+		bool shadowHit = false;
 
 		if(!isPointInAABB(rayStartLocal, sdfMinLocal, sdfMaxLocal)){
 			HitResult aabbHit = rayAABBIntersection(rayStartLocal, rayDirection, sdfMinLocal, sdfMaxLocal);
 		
 			if(aabbHit.hit){
 				//move sample point to intersection
-				rayStartLocal += (aabbHit.t) * rayDirection;
-				hitDistance = aabbHit.t;
+				rayStartLocal += aabbHit.t * rayDirection;
 			}
 			else{
 				//ray missed AABB
 				continue;
 			}
 		}
-
+		
 		vec3 localSamplePos = rayStartLocal;
-
-		float distanceThreshold = 0.1f;
-		ivec3 sdfResolution = textureSize(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), 0);
-		distanceThreshold = length(instance.localExtends / sdfResolution) * 0.25;
-
-		float dLast = 0.f;	//last step distance
-		float d = 0.f;
 
 		for(int i = 0; i < 128; i++){
 
@@ -97,38 +185,28 @@ void main(){
 
 			vec3 sampleUV = localSamplePos / instance.localExtends + 0.5;
 			
-			dLast = d;
-			d = texture(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), sampleUV).r; 
+			float d = texture(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), sampleUV).r; 
 
 			if(d < distanceThreshold){
-				hit = true;
-				if(hitDistance < closestHitDistance){
-					closestHitDistance = hitDistance;
-					hitCount = i;
-
-					float lastStepSize = d / (1.f - (d - dLast));
-
-					//assume surface is planar and calculate hit using geometric series
-					//see: "GPU-based clay simulation and ray-tracing tech in Claybook", page 25
-					localSamplePos += rayDirection * lastStepSize;
-					sampleUV = localSamplePos / instance.localExtends + 0.5;
-
-					N = normalFromSDF(sampleUV, instance.localExtends, textures[instance.sdfTextureIndex]);
-					albedo = instance.meanAlbedo;
-				}
+				shadowHit = true;
+				shadow = 0.f;
 				break;
 			}
-			hitCount = i;
-			localSamplePos += rayDirection * abs(d);
-			hitDistance += abs(d);
+			localSamplePos += rayDirection * d;
+		}
+		if(shadowHit){
+			break;
 		}
 	}
 
 	if(hit){
 		vec3 color = vec3(hitCount / 128.f + 0.1);
-		//color = vec3(1, 0, 0);
 		color = N*0.5+0.5;
-		color = albedo * clamp(dot(N, g_sunDirection.xyz), 0, 1);
+		vec3 sunLight = lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
+		sunLight *= shadow; 
+		vec3 ambient = vec3(0.1f);
+		float NoL = clamp(dot(N, g_sunDirection.xyz), 0, 1);
+		color = albedo * (ambient + sunLight * NoL);
 		imageStore(imageOut, uv, vec4(color, 1.f));
 	}
 	else{

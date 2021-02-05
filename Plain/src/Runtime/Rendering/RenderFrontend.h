@@ -148,6 +148,7 @@ private:
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void issueSkyDrawcalls();
+	void renderSDFDebug(const std::vector<RenderPassHandle> parent);
 
 	void updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB);
 
@@ -171,6 +172,8 @@ private:
     uint32_t m_currentMeshCount = 0;                //mesh commands received
     uint32_t m_currentMainPassDrawcallCount = 0;    //executed after camera culling
     uint32_t m_currentShadowPassDrawcallCount = 0;  //executed after shadow frustum culling
+
+	uint32_t m_currentSDFInstanceCount = 0;
 
     //timings are cached and not updated every frame to improve readability
     std::vector<RenderPassTime> m_currentRenderTimings;
@@ -238,6 +241,7 @@ private:
 	RenderPassHandle m_indirectDiffuseFilterTemporalPass;
 	RenderPassHandle m_depthDownscalePass;
 	RenderPassHandle m_indirectLightingUpscale;
+	RenderPassHandle m_sdfInstanceCullToCameraFrustum;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -298,11 +302,14 @@ private:
 	StorageBufferHandle m_shadowPassTransformsBuffer;
 	StorageBufferHandle m_boundingBoxDebugRenderMatrices;
 	StorageBufferHandle m_sdfInstanceBuffer;
+	StorageBufferHandle m_sdfInstanceFrustumCulledIndexBuffer;
+	StorageBufferHandle m_sdfInstanceWorldBBBuffer;
 
     UniformBufferHandle m_globalUniformBuffer;
     UniformBufferHandle m_atmosphereSettingsBuffer;
     UniformBufferHandle m_taaResolveWeightBuffer;
     UniformBufferHandle m_sdfVolumeInfoBuffer;
+	UniformBufferHandle m_cameraFrustumInfoBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
