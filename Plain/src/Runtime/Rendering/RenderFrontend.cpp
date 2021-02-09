@@ -56,6 +56,9 @@ const uint32_t shadowSampleCount = 8;
 
 const uint32_t maxObjectCountMainScene = 300;
 
+const size_t sdfCullingTileSize = 32;
+const size_t maxSdfObjectsPerTile = 40;
+
 //bindings of global shader uniforms
 const uint32_t globalUniformBufferBinding               = 0;
 const uint32_t globalSamplerAnisotropicRepeatBinding    = 1;
@@ -686,20 +689,22 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 		instanceWorldBBs.reserve(scene.size());
 		for (const RenderObject& obj : scene) {
 
+			//culling requires the padded bounding box, used for rendering and computation
+			const AxisAlignedBoundingBox paddedWorldBB = padSDFBoundingBox(obj.bbWorld);
 			GPUBoundingBox worldBB;
-			worldBB.min = obj.bbWorld.min;
-			worldBB.max = obj.bbWorld.max;
+			worldBB.min = paddedWorldBB.min;
+			worldBB.max = paddedWorldBB.max;
 			instanceWorldBBs.push_back(worldBB);
 
 			SDFInstance instance;
 			const MeshFrontend& mesh = m_frontendMeshes[obj.mesh.index];
 			instance.sdfTextureIndex = mesh.sdfTextureIndex;
 
-			const AxisAlignedBoundingBox paddedBB = padSDFBoundingBox(mesh.localBB);
-			instance.localExtends = paddedBB.max - paddedBB.min;
+			const AxisAlignedBoundingBox paddedLocalBB = padSDFBoundingBox(mesh.localBB);
+			instance.localExtends = paddedLocalBB.max - paddedLocalBB.min;
 			instance.meanAlbedo = mesh.meanAlbedo;
 
-			const glm::vec3 bbOffset = (paddedBB.min + paddedBB.max) * 0.5f;
+			const glm::vec3 bbOffset = (paddedLocalBB.min + paddedLocalBB.max) * 0.5f;
 
 			glm::mat4 bbT = glm::translate(glm::mat4x4(1.f), bbOffset);
 
@@ -1348,7 +1353,7 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 		exe.handle = m_sdfInstanceCullToCameraFrustum;
 		exe.resources.storageBuffers = {
 			StorageBufferResource(m_sdfInstanceBuffer, true, 0),
-			StorageBufferResource(m_sdfInstanceFrustumCulledIndexBuffer, true, 2),
+			StorageBufferResource(m_sdfInstanceFrustumCulledIndexBuffer, false, 2),
 			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 3)
 		};
 		exe.resources.uniformBuffers = {
@@ -1357,6 +1362,29 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 		exe.dispatchCount[0] = uint32_t(glm::ceil(m_currentSDFInstanceCount / 64.f));
 		exe.dispatchCount[1] = 1;
 		exe.dispatchCount[2] = 1;
+
+		gRenderBackend.setRenderPassExecution(exe);
+	}
+	//tile culling
+	{
+		RenderPassExecution exe;
+		exe.handle = m_sdfPerTileCulling;
+		exe.parents = { m_sdfInstanceCullToCameraFrustum };
+
+		const uint32_t tileCountX = uint32_t(glm::ceil(m_screenWidth  / float(sdfCullingTileSize)));
+		const uint32_t tileCountY = uint32_t(glm::ceil(m_screenHeight / float(sdfCullingTileSize)));
+
+		const uint32_t localGroupSize = 8;
+
+		exe.dispatchCount[0] = uint32_t(glm::ceil(tileCountX / float(localGroupSize)));
+		exe.dispatchCount[1] = uint32_t(glm::ceil(tileCountY / float(localGroupSize)));
+		exe.dispatchCount[2] = 1;
+
+		exe.resources.storageBuffers = {
+			StorageBufferResource(m_sdfInstanceFrustumCulledIndexBuffer, true, 0),
+			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 1),
+			StorageBufferResource(m_sdfTileCulledInstancesBuffer, false, 2)
+		};
 
 		gRenderBackend.setRenderPassExecution(exe);
 	}
@@ -1370,13 +1398,14 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 		exe.resources.storageBuffers = {
 			StorageBufferResource(m_lightBuffer, true, 1),
 			StorageBufferResource(m_sdfInstanceBuffer, true, 3),
-			StorageBufferResource(m_sdfInstanceFrustumCulledIndexBuffer, true, 4)
+			StorageBufferResource(m_sdfInstanceFrustumCulledIndexBuffer, true, 4),
+			StorageBufferResource(m_sdfTileCulledInstancesBuffer, true, 5)
 		};
 		exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
 		exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
 		exe.dispatchCount[2] = 1;
 		exe.parents = parent;
-		exe.parents.push_back(m_sdfInstanceCullToCameraFrustum);
+		exe.parents.push_back(m_sdfPerTileCulling);
 
 		gRenderBackend.setRenderPassExecution(exe);
 	}
@@ -2313,6 +2342,17 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 		desc.size = maxObjectCountMainScene * 2 * sizeof(glm::vec4);
 		m_sdfInstanceWorldBBBuffer = gRenderBackend.createStorageBuffer(desc);
 	}
+	//sdf tile culling buffer
+	{
+		StorageBufferDescription desc;
+		//FIXME: handle bigger resolutions and don't allocate for worst case
+		const size_t maxWidth = 1920;
+		const size_t maxHeight = 1080;
+		const size_t tileCount = glm::ceil(maxWidth / sdfCullingTileSize) * glm::ceil(maxHeight / sdfCullingTileSize);
+		const size_t tileSize = maxSdfObjectsPerTile * sizeof(uint32_t) + sizeof(uint32_t); //one uint index per object + object count
+		desc.size = tileCount * tileSize;
+		m_sdfTileCulledInstancesBuffer = gRenderBackend.createStorageBuffer(desc);
+	}
 }
 
 void RenderFrontend::initMeshs() {
@@ -2865,6 +2905,13 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 		desc.name = "SDF instance frustum culling";
 		desc.shaderDescription.srcPathRelative = "sdfInstancesFrustumCulling.comp";
 		m_sdfInstanceCullToCameraFrustum = gRenderBackend.createComputePass(desc);
+	}
+	//sdf per tile culling
+	{
+		ComputePassDescription desc;
+		desc.name = "SDF per tile culling";
+		desc.shaderDescription.srcPathRelative = "sdfInstancesTileCulling.comp";
+		m_sdfPerTileCulling = gRenderBackend.createComputePass(desc);
 	}
 }
 

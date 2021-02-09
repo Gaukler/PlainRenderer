@@ -8,6 +8,7 @@
 #include "lightBuffer.inc"
 #include "SDF.inc"
 #include "sky.inc"
+#include "sdfCulling.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -37,6 +38,10 @@ layout(set=1, binding = 4, std430) buffer culledSdfInstanceBuffer{
 	uint culledInstanceIndices[];
 };
 
+layout(set=1, binding = 5, std430) buffer perTileInstanceBuffer{
+    CulledInstancesPerTile cullingTiles[];
+};
+
 layout(set=2, binding = 0) uniform texture3D[] textures;
 
 void main(){
@@ -53,15 +58,27 @@ void main(){
 	pixelCoor.y *= -1;
 	vec3 V = calculateViewDirectionFromPixel(pixelCoor, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 
+	//FIXME: get tile size from CPU
+	ivec2 tileUV = uv / ivec2(cullingTileSize);
+	uint tileIndex = tileIndexFromTileUV(tileUV);
+
 	{
 		vec3 rayStart = g_cameraPosition.xyz + g_nearPlane * V;	//in range [0, 1]
 		vec3 rayEnd = rayStart + g_farPlane * V;
 		vec3 rayDirectionWorld = normalize(rayEnd - rayStart);
 
+		//code for iterating coarser culling groups for debugging
+		//iterate over all scene objects
 		//for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
 		//	SDFInstance instance = sdfInstances[instanceIndex];
-		for(int instanceIndex = 0; instanceIndex < culledInstanceCount; instanceIndex++){
-			SDFInstance instance = sdfInstances[culledInstanceIndices[instanceIndex]];
+		//iterate over all objects within camera frustum
+		//for(int instanceIndex = 0; instanceIndex < culledInstanceCount; instanceIndex++){
+		//	SDFInstance instance = sdfInstances[culledInstanceIndices[instanceIndex]];
+		
+		//iterate all objects in culling tile
+		CulledInstancesPerTile cullingTile = cullingTiles[tileIndex];
+		for(int instanceIndex = 0; instanceIndex < cullingTile.objectCount; instanceIndex++){
+			SDFInstance instance = sdfInstances[cullingTile.indices[instanceIndex]];
 
 			vec3 rayStartLocal	= (instance.worldToLocal * vec4(rayStart, 1)).xyz;
 			vec3 rayEndLocal	= (instance.worldToLocal * vec4(rayEnd, 1)).xyz;
@@ -200,18 +217,23 @@ void main(){
 	}
 
 	if(hit){
-		vec3 color = vec3(hitCount / 128.f + 0.1);
-		color = N*0.5+0.5;
+		//vec3 color = vec3(hitCount / 128.f + 0.1);
+		//vec3 color = vec3(cullingTiles[tileIndex].objectCount / 40.f);
+		//vec3 color = N*0.5+0.5;
 		vec3 sunLight = lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
 		sunLight *= shadow; 
-		vec3 ambient = vec3(0.1f);
+		vec3 ambient = vec3(0.15f);
 		float NoL = clamp(dot(N, g_sunDirection.xyz), 0, 1);
-		color = albedo * (ambient + sunLight * NoL);
+		vec3 color = albedo * (ambient + sunLight * NoL);
 		imageStore(imageOut, uv, vec4(color, 1.f));
 	}
 	else{
 		vec3 color = sampleSkyLut(V, skyLut);
-		//color = vec3(hitCount / 128.f);
+		//vec3 color = vec3(hitCount / 128.f);
 		imageStore(imageOut, uv, vec4(color, 0));
+	}
+	//visualize overflowing tiles
+	if(cullingTiles[tileIndex].objectCount >= 40){
+		imageStore(imageOut, uv, vec4(vec3(1, 0, 0), 0));
 	}
 }

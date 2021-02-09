@@ -242,6 +242,7 @@ private:
 	RenderPassHandle m_depthDownscalePass;
 	RenderPassHandle m_indirectLightingUpscale;
 	RenderPassHandle m_sdfInstanceCullToCameraFrustum;
+	RenderPassHandle m_sdfPerTileCulling;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -304,6 +305,7 @@ private:
 	StorageBufferHandle m_sdfInstanceBuffer;
 	StorageBufferHandle m_sdfInstanceFrustumCulledIndexBuffer;
 	StorageBufferHandle m_sdfInstanceWorldBBBuffer;
+	StorageBufferHandle m_sdfTileCulledInstancesBuffer;
 
     UniformBufferHandle m_globalUniformBuffer;
     UniformBufferHandle m_atmosphereSettingsBuffer;

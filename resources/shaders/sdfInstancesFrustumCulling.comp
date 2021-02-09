@@ -23,7 +23,7 @@ layout(set=1, binding = 2, std430) buffer culledSdfInstanceBuffer{
 struct BoundingBox{
 		vec3 bbMin; float padding1;
 		vec3 bbMax; float padding2;
-	};
+};
 
 layout(set=1, binding = 3, std430) buffer worldBBInstanceBuffer{
 	BoundingBox instanceBBs[];
