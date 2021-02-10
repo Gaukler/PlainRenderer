@@ -33,13 +33,18 @@ layout(set=1, binding = 3, std430) buffer sdfInstanceBuffer{
 	SDFInstance sdfInstances[];
 };
 
-layout(set=1, binding = 4, std430) buffer culledSdfInstanceBuffer{
-    uint culledInstanceCount;
-	uint culledInstanceIndices[];
+layout(set=1, binding = 4, std430) buffer perTileInstanceBuffer{
+    CulledInstancesPerTile cullingTiles[];
 };
 
-layout(set=1, binding = 5, std430) buffer perTileInstanceBuffer{
-    CulledInstancesPerTile cullingTiles[];
+layout(set=1, binding = 5, std430) buffer cameraCulledSdfInstanceBuffer{
+    uint cameraCulledInstanceCount;
+	uint cameraCulledInstanceIndices[];
+};
+
+layout(set=1, binding = 6, std430) buffer shadowCulledSdfInstanceBuffer{
+    uint shadowCulledInstanceCount;
+	uint shadowCulledInstanceIndices[];
 };
 
 layout(set=2, binding = 0) uniform texture3D[] textures;
@@ -72,8 +77,8 @@ void main(){
 		//for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
 		//	SDFInstance instance = sdfInstances[instanceIndex];
 		//iterate over all objects within camera frustum
-		//for(int instanceIndex = 0; instanceIndex < culledInstanceCount; instanceIndex++){
-		//	SDFInstance instance = sdfInstances[culledInstanceIndices[instanceIndex]];
+		//for(int instanceIndex = 0; instanceIndex < cameraCulledInstanceCount; instanceIndex++){
+		//	SDFInstance instance = sdfInstances[cameraCulledInstanceIndices[instanceIndex]];
 		
 		//iterate all objects in culling tile
 		CulledInstancesPerTile cullingTile = cullingTiles[tileIndex];
@@ -155,8 +160,14 @@ void main(){
 	}
 
 	float shadow = 1.f;
-	for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
-		SDFInstance instance = sdfInstances[instanceIndex];
+
+	//iterate over all instances in scene
+	//for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
+	//	SDFInstance instance = sdfInstances[instanceIndex];
+
+	//iterate over all instances within shadow frustum
+	for(int instanceIndex = 0; instanceIndex < shadowCulledInstanceCount; instanceIndex++){
+		SDFInstance instance = sdfInstances[shadowCulledInstanceIndices[instanceIndex]];
 		
 		float distanceThreshold = 0.1f;
 		ivec3 sdfResolution = textureSize(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), 0);

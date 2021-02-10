@@ -241,8 +241,9 @@ private:
 	RenderPassHandle m_indirectDiffuseFilterTemporalPass;
 	RenderPassHandle m_depthDownscalePass;
 	RenderPassHandle m_indirectLightingUpscale;
-	RenderPassHandle m_sdfInstanceCullToCameraFrustum;
+	RenderPassHandle m_sdfCameraFrustumCulling;
 	RenderPassHandle m_sdfPerTileCulling;
+	RenderPassHandle m_sdfShadowFrustumCulling;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -303,7 +304,8 @@ private:
 	StorageBufferHandle m_shadowPassTransformsBuffer;
 	StorageBufferHandle m_boundingBoxDebugRenderMatrices;
 	StorageBufferHandle m_sdfInstanceBuffer;
-	StorageBufferHandle m_sdfInstanceFrustumCulledIndexBuffer;
+	StorageBufferHandle m_sdfCameraFrustumCulledInstances;
+	StorageBufferHandle m_sdfShadowFrustumCulledInstances;
 	StorageBufferHandle m_sdfInstanceWorldBBBuffer;
 	StorageBufferHandle m_sdfTileCulledInstancesBuffer;
 
@@ -311,7 +313,8 @@ private:
     UniformBufferHandle m_atmosphereSettingsBuffer;
     UniformBufferHandle m_taaResolveWeightBuffer;
     UniformBufferHandle m_sdfVolumeInfoBuffer;
-	UniformBufferHandle m_cameraFrustumInfoBuffer;
+	UniformBufferHandle m_cameraFrustumBuffer;
+	UniformBufferHandle m_shadowFrustumBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
