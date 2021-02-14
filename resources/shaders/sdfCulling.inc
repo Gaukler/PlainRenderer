@@ -1,5 +1,6 @@
 uint cullingTileSize = 32;
 const uint maxObjectsPerTile = 40;
+uint shadowTileCount1D = 32;
 
 struct CulledInstancesPerTile{
 	uint objectCount;

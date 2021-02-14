@@ -56,8 +56,10 @@ const uint32_t shadowSampleCount = 8;
 
 const uint32_t maxObjectCountMainScene = 300;
 
-const size_t sdfCullingTileSize = 32;
+const size_t sdfCameraCullingTileSize = 32;
 const size_t maxSdfObjectsPerTile = 40;
+
+const uint32_t sdfShadowCullingTilesCount1D = 32;
 
 //bindings of global shader uniforms
 const uint32_t globalUniformBufferBinding               = 0;
@@ -84,6 +86,13 @@ struct MainPassMatrices {
 	glm::mat4 model;
 	glm::mat4 mvp;
 	glm::mat4 mvpPrevious;
+};
+
+struct ShadowFrustumInfo {
+	glm::vec3 frustumUp;		float padding0;
+	glm::vec3 frustumRight;		float padding1;
+	glm::vec2 frustumExtends;
+	glm::vec2 frustumOffset;
 };
 
 void resizeCallback(GLFWwindow* window, int width, int height) {
@@ -1365,6 +1374,14 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 
 		gRenderBackend.setRenderPassExecution(exe);
 	}
+
+	//custom camera and shadow frusta to limit shadow distance
+	//with high far plane, shadow culling tiles cover so much space that they are ineffective
+	Camera sdfCamera = m_camera;
+	sdfCamera.intrinsic.far = m_sdfShadowDistance;
+	const ViewFrustum sdfCameraFrustum = computeViewFrustum(sdfCamera);
+	const ViewFrustum sdfShadowFrustum = computeOrthogonalFrustumFittedToCamera(sdfCameraFrustum, directionToVector(m_sunDirection));
+
 	//shadow frustum culling
 	{
 		//no near plane culling, as objects behing near plane can cast shadow into camera frustum
@@ -1375,22 +1392,22 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 
 		GPUShadowFrustumData frustumData;
 		//top
-		frustumData.points[0] = glm::vec4(m_sunShadowFrustum.points.l_u_f, 0);
-		frustumData.normal[0] = glm::vec4(m_sunShadowFrustum.normals.top, 0);
+		frustumData.points[0] = glm::vec4(sdfShadowFrustum.points.l_u_f, 0);
+		frustumData.normal[0] = glm::vec4(sdfShadowFrustum.normals.top, 0);
 		//bot
-		frustumData.points[1] = glm::vec4(m_sunShadowFrustum.points.l_l_f, 0);
-		frustumData.normal[1] = glm::vec4(m_sunShadowFrustum.normals.bot, 0);
+		frustumData.points[1] = glm::vec4(sdfShadowFrustum.points.l_l_f, 0);
+		frustumData.normal[1] = glm::vec4(sdfShadowFrustum.normals.bot, 0);
 		//far
-		frustumData.points[2] = glm::vec4(m_sunShadowFrustum.points.l_l_f, 0);
-		frustumData.normal[2] = glm::vec4(m_sunShadowFrustum.normals.far, 0);
+		frustumData.points[2] = glm::vec4(sdfShadowFrustum.points.l_l_f, 0);
+		frustumData.normal[2] = glm::vec4(sdfShadowFrustum.normals.far, 0);
 		//left
-		frustumData.points[3] = glm::vec4(m_sunShadowFrustum.points.l_l_f, 0);
-		frustumData.normal[3] = glm::vec4(m_sunShadowFrustum.normals.left, 0);
+		frustumData.points[3] = glm::vec4(sdfShadowFrustum.points.l_l_f, 0);
+		frustumData.normal[3] = glm::vec4(sdfShadowFrustum.normals.left, 0);
 		//right
-		frustumData.points[4] = glm::vec4(m_sunShadowFrustum.points.r_l_f, 0);
-		frustumData.normal[4] = glm::vec4(m_sunShadowFrustum.normals.right, 0);
+		frustumData.points[4] = glm::vec4(sdfShadowFrustum.points.r_l_f, 0);
+		frustumData.normal[4] = glm::vec4(sdfShadowFrustum.normals.right, 0);
 
-		gRenderBackend.setUniformBufferData(m_shadowFrustumBuffer, &frustumData, sizeof(frustumData));
+		gRenderBackend.setUniformBufferData(m_shadowFrustumPointsBuffer, &frustumData, sizeof(frustumData));
 
 		//reset culled counter
 		uint32_t zero = 0;
@@ -1404,7 +1421,7 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 3)
 		};
 		exe.resources.uniformBuffers = {
-			UniformBufferResource(m_shadowFrustumBuffer, 1)
+			UniformBufferResource(m_shadowFrustumPointsBuffer, 1)
 		};
 		exe.dispatchCount[0] = uint32_t(glm::ceil(m_currentSDFInstanceCount / 64.f));
 		exe.dispatchCount[1] = 1;
@@ -1412,14 +1429,62 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 
 		gRenderBackend.setRenderPassExecution(exe);
 	}
-	//tile culling
+	//shadow tile culling
+	{
+		//compute and set shadow frustum info
+		ShadowFrustumInfo shadowFrustum;
+
+		const glm::vec3 L = -directionToVector(m_sunDirection);
+		const glm::vec3 up = glm::abs(glm::dot(L, glm::vec3(0.f, -1.f, 0.f))) < 0.99f ? glm::vec3(0.f, -1.f, 0.f) : glm::vec3(-1.f, 0.f, 0.f);
+		shadowFrustum.frustumRight = glm::normalize(glm::cross(up, L));
+		shadowFrustum.frustumUp = glm::cross(L, shadowFrustum.frustumRight);
+
+		glm::vec2 projectedMin = glm::vec2(INFINITY);
+		glm::vec2 projectedMax = glm::vec2(-INFINITY);
+		for (const glm::vec3 p : getFrustumPoints(sdfShadowFrustum)) {
+			const glm::vec2 projected = glm::vec2(
+				glm::dot(p, shadowFrustum.frustumRight),
+				glm::dot(p, shadowFrustum.frustumUp));
+
+			projectedMin = glm::min(projectedMin, projected);
+			projectedMax = glm::max(projectedMax, projected);
+		}
+
+		shadowFrustum.frustumExtends = projectedMax - projectedMin;
+		shadowFrustum.frustumOffset = projectedMin;
+
+		gRenderBackend.setUniformBufferData(m_shadowFrustumInfoBuffer, &shadowFrustum, sizeof(ShadowFrustumInfo));
+
+		//set execution
+		RenderPassExecution exe;
+		exe.handle = m_sdfShadowTileCulling;
+		exe.parents = { m_sdfShadowFrustumCulling };
+
+		const uint32_t localGroupSize = 8;
+		exe.dispatchCount[0] = uint32_t(glm::ceil(sdfShadowCullingTilesCount1D / float(localGroupSize)));
+		exe.dispatchCount[1] = uint32_t(glm::ceil(sdfShadowCullingTilesCount1D / float(localGroupSize)));
+		exe.dispatchCount[2] = 1;
+
+		exe.resources.storageBuffers = {
+			StorageBufferResource(m_sdfShadowFrustumCulledInstances, true, 0),
+			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 1),
+			StorageBufferResource(m_sdfShadowCulledTiles, false, 2)
+		};
+
+		exe.resources.uniformBuffers = {
+			UniformBufferResource(m_shadowFrustumInfoBuffer, 3)
+		};
+
+		gRenderBackend.setRenderPassExecution(exe);
+	}
+	//camera tile culling
 	{
 		RenderPassExecution exe;
-		exe.handle = m_sdfPerTileCulling;
+		exe.handle = m_sdfCameraTileCulling;
 		exe.parents = { m_sdfCameraFrustumCulling };
 
-		const uint32_t tileCountX = uint32_t(glm::ceil(m_screenWidth  / float(sdfCullingTileSize)));
-		const uint32_t tileCountY = uint32_t(glm::ceil(m_screenHeight / float(sdfCullingTileSize)));
+		const uint32_t tileCountX = uint32_t(glm::ceil(m_screenWidth  / float(sdfCameraCullingTileSize)));
+		const uint32_t tileCountY = uint32_t(glm::ceil(m_screenHeight / float(sdfCameraCullingTileSize)));
 
 		const uint32_t localGroupSize = 8;
 
@@ -1430,7 +1495,7 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 		exe.resources.storageBuffers = {
 			StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 0),
 			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 1),
-			StorageBufferResource(m_sdfTileCulledInstancesBuffer, false, 2)
+			StorageBufferResource(m_sdfCameraCulledTiles, false, 2)
 		};
 
 		gRenderBackend.setRenderPassExecution(exe);
@@ -1440,21 +1505,24 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 		RenderPassExecution exe;
 		exe.handle = m_sdfDebugPass;
 		exe.resources.storageImages = { ImageResource(m_postProcessBuffers[0], 0, 0) };
-		exe.resources.sampledImages = { ImageResource(m_skyLut, 0, 2)
-		};
+		exe.resources.sampledImages = { ImageResource(m_skyLut, 0, 2) };
 		exe.resources.storageBuffers = {
 			StorageBufferResource(m_lightBuffer, true, 1),
 			StorageBufferResource(m_sdfInstanceBuffer, true, 3),
-			StorageBufferResource(m_sdfTileCulledInstancesBuffer, true, 4),
-			StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 5),
-			StorageBufferResource(m_sdfShadowFrustumCulledInstances, true, 6),			
+			StorageBufferResource(m_sdfCameraCulledTiles, true, 4),
+			StorageBufferResource(m_sdfShadowCulledTiles, true, 5),
+			StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 6),
+			StorageBufferResource(m_sdfShadowFrustumCulledInstances, true, 7),			
+		};
+		exe.resources.uniformBuffers = {
+			UniformBufferResource(m_shadowFrustumInfoBuffer, 8)
 		};
 		exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
 		exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
 		exe.dispatchCount[2] = 1;
 		exe.parents = parent;
-		exe.parents.push_back(m_sdfPerTileCulling);
-		exe.parents.push_back(m_sdfShadowFrustumCulling);
+		exe.parents.push_back(m_sdfCameraTileCulling);
+		exe.parents.push_back(m_sdfShadowTileCulling);
 
 		gRenderBackend.setRenderPassExecution(exe);
 	}
@@ -2395,7 +2463,7 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 	{
 		UniformBufferDescription desc;
 		desc.size = 10 * sizeof(glm::vec4);
-		m_shadowFrustumBuffer = gRenderBackend.createUniformBuffer(desc);
+		m_shadowFrustumPointsBuffer = gRenderBackend.createUniformBuffer(desc);
 	}
 	//sdf instance world bounding boxes
 	{
@@ -2403,16 +2471,30 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 		desc.size = maxObjectCountMainScene * 2 * sizeof(glm::vec4);
 		m_sdfInstanceWorldBBBuffer = gRenderBackend.createStorageBuffer(desc);
 	}
-	//sdf tile culling buffer
+	//sdf camera culled tiles
 	{
 		StorageBufferDescription desc;
 		//FIXME: handle bigger resolutions and don't allocate for worst case
 		const size_t maxWidth = 1920;
 		const size_t maxHeight = 1080;
-		const size_t tileCount = glm::ceil(maxWidth / sdfCullingTileSize) * glm::ceil(maxHeight / sdfCullingTileSize);
+		const size_t tileCount = glm::ceil(maxWidth / sdfCameraCullingTileSize) * glm::ceil(maxHeight / sdfCameraCullingTileSize);
 		const size_t tileSize = maxSdfObjectsPerTile * sizeof(uint32_t) + sizeof(uint32_t); //one uint index per object + object count
 		desc.size = tileCount * tileSize;
-		m_sdfTileCulledInstancesBuffer = gRenderBackend.createStorageBuffer(desc);
+		m_sdfCameraCulledTiles = gRenderBackend.createStorageBuffer(desc);
+	}
+	//sdf shadow culled tiles
+	{
+		StorageBufferDescription desc;
+		const size_t tileCount = sdfShadowCullingTilesCount1D * sdfShadowCullingTilesCount1D;
+		const size_t tileSize = tileCount * sizeof(uint32_t) + sizeof(uint32_t); //one uint index per object + object count
+		desc.size = tileCount * tileSize;
+		m_sdfShadowCulledTiles = gRenderBackend.createStorageBuffer(desc);
+	}
+	//shadow frustum info buffer
+	{
+		UniformBufferDescription desc;
+		desc.size = sizeof(ShadowFrustumInfo);
+		m_shadowFrustumInfoBuffer = gRenderBackend.createUniformBuffer(desc);
 	}
 }
 
@@ -2967,19 +3049,26 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 		desc.shaderDescription.srcPathRelative = "sdfCameraFrustumCulling.comp";
 		m_sdfCameraFrustumCulling = gRenderBackend.createComputePass(desc);
 	}
-	//sdf per tile culling
-	{
-		ComputePassDescription desc;
-		desc.name = "SDF per tile culling";
-		desc.shaderDescription.srcPathRelative = "sdfInstancesTileCulling.comp";
-		m_sdfPerTileCulling = gRenderBackend.createComputePass(desc);
-	}
 	//sdf shadow frustum culling
 	{
 		ComputePassDescription desc;
 		desc.name = "SDF shadow frustum culling";
 		desc.shaderDescription.srcPathRelative = "sdfShadowFrustumCulling.comp";
 		m_sdfShadowFrustumCulling = gRenderBackend.createComputePass(desc);
+	}
+	//sdf camera tile culling
+	{
+		ComputePassDescription desc;
+		desc.name = "SDF camera tile culling";
+		desc.shaderDescription.srcPathRelative = "sdfCameraTileCulling.comp";
+		m_sdfCameraTileCulling = gRenderBackend.createComputePass(desc);
+	}
+	//sdf shadow tile culling
+	{
+		ComputePassDescription desc;
+		desc.name = "SDF shadow tile culling";
+		desc.shaderDescription.srcPathRelative = "sdfShadowTileCulling.comp";
+		m_sdfShadowTileCulling = gRenderBackend.createComputePass(desc);
 	}
 }
 
@@ -3090,8 +3179,11 @@ void RenderFrontend::drawUi() {
 
     ImGui::Begin("Rendering");
 
-	const char* sdfDebugOptions[] = { "None", "Visualize SDF" };
-	ImGui::Combo("SDF debug mode", (int*)&m_sdfDebugMode, sdfDebugOptions, 2);
+	if (ImGui::CollapsingHeader("SDF settings")) {
+		const char* sdfDebugOptions[] = { "None", "Visualize SDF" };
+		ImGui::Combo("SDF debug mode", (int*)&m_sdfDebugMode, sdfDebugOptions, 2);
+		ImGui::InputFloat("Shadow distance", &m_sdfShadowDistance);
+	}
 
     //Temporal filter Settings
     if(ImGui::CollapsingHeader("Temporal filter settings")){

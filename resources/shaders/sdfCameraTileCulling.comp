@@ -49,8 +49,8 @@ void main(){
 
 	float coneRadiusPerMeter = distance(V_ll, V_ur) * 0.5f;
 
-	for(int instanceIndex = 0; instanceIndex < culledInstanceCount; instanceIndex++){
-		BoundingBox bb = instanceBBs[culledInstanceIndices[instanceIndex]];
+	for(int i = 0; i < culledInstanceCount; i++){
+		BoundingBox bb = instanceBBs[culledInstanceIndices[i]];
 		 
 		if(cullingTiles[tileIndex].objectCount >= maxObjectsPerTile){
 			break;
@@ -64,7 +64,7 @@ void main(){
 		float d = distance(boundingSphereCenter, projectionV * V + g_cameraPosition.xyz);
 
 		if(d < boundingSphereRadius + coneRadiusPerMeter * projectionV){
-			cullingTiles[tileIndex].indices[cullingTiles[tileIndex].objectCount] = culledInstanceIndices[instanceIndex];
+			cullingTiles[tileIndex].indices[cullingTiles[tileIndex].objectCount] = culledInstanceIndices[i];
 			cullingTiles[tileIndex].objectCount++;
 		}
 	}

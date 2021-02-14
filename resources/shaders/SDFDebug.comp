@@ -9,6 +9,7 @@
 #include "SDF.inc"
 #include "sky.inc"
 #include "sdfCulling.inc"
+#include "noise.inc" //temp for debugging
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -33,18 +34,29 @@ layout(set=1, binding = 3, std430) buffer sdfInstanceBuffer{
 	SDFInstance sdfInstances[];
 };
 
-layout(set=1, binding = 4, std430) buffer perTileInstanceBuffer{
-    CulledInstancesPerTile cullingTiles[];
+layout(set=1, binding = 4, std430) buffer cameraCulledTileBuffer{
+    CulledInstancesPerTile cameraCulledTiles[];
 };
 
-layout(set=1, binding = 5, std430) buffer cameraCulledSdfInstanceBuffer{
+layout(set=1, binding = 5, std430) buffer shadowCulledTileBuffer{
+    CulledInstancesPerTile shadowCulledTiles[];
+};
+
+layout(set=1, binding = 6, std430) buffer cameraCulledSdfInstanceBuffer{
     uint cameraCulledInstanceCount;
 	uint cameraCulledInstanceIndices[];
 };
 
-layout(set=1, binding = 6, std430) buffer shadowCulledSdfInstanceBuffer{
+layout(set=1, binding = 7, std430) buffer shadowCulledSdfInstanceBuffer{
     uint shadowCulledInstanceCount;
 	uint shadowCulledInstanceIndices[];
+};
+
+layout(set=1, binding = 8, std140) uniform shadowFrustumInfoBuffer{
+	vec3 shadowFrustumUp;		float paddingSF0;
+	vec3 shadowFrustumRight;	float paddingSF1;
+	vec2 shadowFrustumExtends;
+	vec2 shadowFrustumOffset;
 };
 
 layout(set=2, binding = 0) uniform texture3D[] textures;
@@ -81,7 +93,7 @@ void main(){
 		//	SDFInstance instance = sdfInstances[cameraCulledInstanceIndices[instanceIndex]];
 		
 		//iterate all objects in culling tile
-		CulledInstancesPerTile cullingTile = cullingTiles[tileIndex];
+		CulledInstancesPerTile cullingTile = cameraCulledTiles[tileIndex];
 		for(int instanceIndex = 0; instanceIndex < cullingTile.objectCount; instanceIndex++){
 			SDFInstance instance = sdfInstances[cullingTile.indices[instanceIndex]];
 
@@ -161,90 +173,122 @@ void main(){
 
 	float shadow = 1.f;
 
-	//iterate over all instances in scene
-	//for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
-	//	SDFInstance instance = sdfInstances[instanceIndex];
+	vec2 shadowFrustumUV = vec2(dot(hitPos, shadowFrustumRight), dot(hitPos, shadowFrustumUp));
+	shadowFrustumUV -= shadowFrustumOffset;
+	shadowFrustumUV /= shadowFrustumExtends;
+	ivec2 shadowTileUV = ivec2(shadowFrustumUV * shadowTileCount1D);
+	uint shadowTileIndex = shadowTileUV.x + shadowTileUV.y * shadowTileCount1D;
 
-	//iterate over all instances within shadow frustum
-	for(int instanceIndex = 0; instanceIndex < shadowCulledInstanceCount; instanceIndex++){
-		SDFInstance instance = sdfInstances[shadowCulledInstanceIndices[instanceIndex]];
+	bool validShadowTile = all(greaterThanEqual(shadowTileUV, ivec2(0))) && all(lessThan(shadowTileUV, ivec2(shadowTileCount1D)));
+
+	if(hit && validShadowTile){
+		//code for iterating over coarser culling structures for testing
+		//iterate over all instances in scene
+		//for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
+		//	SDFInstance instance = sdfInstances[instanceIndex];
+		//
+		//iterate over all instances within shadow frustum
+		//for(int instanceIndex = 0; instanceIndex < shadowCulledInstanceCount; instanceIndex++){
+		//	SDFInstance instance = sdfInstances[shadowCulledInstanceIndices[instanceIndex]];	
+
+		CulledInstancesPerTile shadowTile = shadowCulledTiles[shadowTileIndex];
+		for(int i = 0; i < shadowTile.objectCount; i++){
+			SDFInstance instance = sdfInstances[shadowTile.indices[i]];
+
+			float distanceThreshold = 0.1f;
+			ivec3 sdfResolution = textureSize(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), 0);
+			distanceThreshold = length(instance.localExtends / sdfResolution) * 0.25;
+
+			vec3 L = g_sunDirection.xyz;
+			vec3 shadowStart = hitPos + L * distanceThreshold * 2.5;
+			vec3 shadowEnd = shadowStart + L * 20;
+
+			vec3 rayStartLocal	= (instance.worldToLocal * vec4(shadowStart, 1)).xyz;
+			vec3 rayEndLocal	= (instance.worldToLocal * vec4(shadowEnd, 1)).xyz;
+
+			vec3 rayDirection = rayEndLocal - rayStartLocal;
+			rayDirection /= length(rayDirection);
+
+			vec3 sdfMaxLocal = instance.localExtends * 0.5;
+			vec3 sdfMinLocal = -sdfMaxLocal;
+
+			bool shadowHit = false;
+
+			if(!isPointInAABB(rayStartLocal, sdfMinLocal, sdfMaxLocal)){
+				HitResult aabbHit = rayAABBIntersection(rayStartLocal, rayDirection, sdfMinLocal, sdfMaxLocal);
 		
-		float distanceThreshold = 0.1f;
-		ivec3 sdfResolution = textureSize(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), 0);
-		distanceThreshold = length(instance.localExtends / sdfResolution) * 0.25;
-
-		vec3 L = g_sunDirection.xyz;
-		vec3 shadowStart = hitPos + L * distanceThreshold * 2.5;
-		vec3 shadowEnd = shadowStart + L * 20;
-
-		vec3 rayStartLocal	= (instance.worldToLocal * vec4(shadowStart, 1)).xyz;
-		vec3 rayEndLocal	= (instance.worldToLocal * vec4(shadowEnd, 1)).xyz;
-
-		vec3 rayDirection = rayEndLocal - rayStartLocal;
-		rayDirection /= length(rayDirection);
-
-		vec3 sdfMaxLocal = instance.localExtends * 0.5;
-		vec3 sdfMinLocal = -sdfMaxLocal;
-
-		bool shadowHit = false;
-
-		if(!isPointInAABB(rayStartLocal, sdfMinLocal, sdfMaxLocal)){
-			HitResult aabbHit = rayAABBIntersection(rayStartLocal, rayDirection, sdfMinLocal, sdfMaxLocal);
+				if(aabbHit.hit){
+					//move sample point to intersection
+					rayStartLocal += aabbHit.t * rayDirection;
+				}
+				else{
+					//ray missed AABB
+					continue;
+				}
+			}
 		
-			if(aabbHit.hit){
-				//move sample point to intersection
-				rayStartLocal += aabbHit.t * rayDirection;
-			}
-			else{
-				//ray missed AABB
-				continue;
-			}
-		}
-		
-		vec3 localSamplePos = rayStartLocal;
+			vec3 localSamplePos = rayStartLocal;
 
-		for(int i = 0; i < 128; i++){
+			for(int i = 0; i < 128; i++){
 
-			vec3 localExtendsHalf = instance.localExtends * 0.5;
-			localExtendsHalf += 0.01; //bias
-			if(any(greaterThan(localSamplePos, localExtendsHalf)) || any(lessThan(localSamplePos, -localExtendsHalf))){
-				break;
-			}
+				vec3 localExtendsHalf = instance.localExtends * 0.5;
+				localExtendsHalf += 0.01; //bias
+				if(any(greaterThan(localSamplePos, localExtendsHalf)) || any(lessThan(localSamplePos, -localExtendsHalf))){
+					break;
+				}
 
-			vec3 sampleUV = localSamplePos / instance.localExtends + 0.5;
+				vec3 sampleUV = localSamplePos / instance.localExtends + 0.5;
 			
-			float d = texture(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), sampleUV).r; 
+				float d = texture(sampler3D(textures[instance.sdfTextureIndex], g_sampler_linearClamp), sampleUV).r; 
 
-			if(d < distanceThreshold){
-				shadowHit = true;
-				shadow = 0.f;
+				if(d < distanceThreshold){
+					shadowHit = true;
+					shadow = 0.f;
+					break;
+				}
+				localSamplePos += rayDirection * d;
+			}
+			if(shadowHit){
 				break;
 			}
-			localSamplePos += rayDirection * d;
-		}
-		if(shadowHit){
-			break;
 		}
 	}
+	
 
 	if(hit){
 		//vec3 color = vec3(hitCount / 128.f + 0.1);
 		//vec3 color = vec3(cullingTiles[tileIndex].objectCount / 40.f);
 		//vec3 color = N*0.5+0.5;
+
 		vec3 sunLight = lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
 		sunLight *= shadow; 
 		vec3 ambient = vec3(0.15f);
 		float NoL = clamp(dot(N, g_sunDirection.xyz), 0, 1);
 		vec3 color = albedo * (ambient + sunLight * NoL);
+
+		//visualize different shadow tiles
+		//uint test = wang_hash(shadowTileIndex);
+		//color = vec3(rand(test));
+
+		//mark tile indices outside of valid range
+		//color = all(greaterThanEqual(shadowTileUV, ivec2(0))) ? color : vec3(0, 0, 1);
+		//color = all(lessThan(shadowTileUV, ivec2(shadowTileCount1D))) ? color : vec3(0, 1, 1);
+
 		imageStore(imageOut, uv, vec4(color, 1.f));
+
+		//visualize overflowing shadow tiles
+		if(shadowCulledTiles[shadowTileIndex].objectCount >= 40){
+			imageStore(imageOut, uv, vec4(vec3(0, 1, 0), 0));
+		}
 	}
 	else{
 		vec3 color = sampleSkyLut(V, skyLut);
 		//vec3 color = vec3(hitCount / 128.f);
 		imageStore(imageOut, uv, vec4(color, 0));
 	}
-	//visualize overflowing tiles
-	if(cullingTiles[tileIndex].objectCount >= 40){
+
+	//visualize overflowing camera tiles
+	if(cameraCulledTiles[tileIndex].objectCount >= 40){
 		imageStore(imageOut, uv, vec4(vec3(1, 0, 0), 0));
 	}
 }

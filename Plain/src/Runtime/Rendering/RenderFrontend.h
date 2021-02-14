@@ -199,6 +199,7 @@ private:
     ViewFrustum m_sunShadowFrustum;
 
     float m_exposureOffset = 0.f;
+	float m_sdfShadowDistance = 30.f;
     
     void updateCameraFrustum();
     void updateShadowFrustum();
@@ -242,8 +243,9 @@ private:
 	RenderPassHandle m_depthDownscalePass;
 	RenderPassHandle m_indirectLightingUpscale;
 	RenderPassHandle m_sdfCameraFrustumCulling;
-	RenderPassHandle m_sdfPerTileCulling;
 	RenderPassHandle m_sdfShadowFrustumCulling;
+	RenderPassHandle m_sdfCameraTileCulling;
+	RenderPassHandle m_sdfShadowTileCulling;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -307,14 +309,16 @@ private:
 	StorageBufferHandle m_sdfCameraFrustumCulledInstances;
 	StorageBufferHandle m_sdfShadowFrustumCulledInstances;
 	StorageBufferHandle m_sdfInstanceWorldBBBuffer;
-	StorageBufferHandle m_sdfTileCulledInstancesBuffer;
+	StorageBufferHandle m_sdfCameraCulledTiles;
+	StorageBufferHandle m_sdfShadowCulledTiles;
 
     UniformBufferHandle m_globalUniformBuffer;
     UniformBufferHandle m_atmosphereSettingsBuffer;
     UniformBufferHandle m_taaResolveWeightBuffer;
     UniformBufferHandle m_sdfVolumeInfoBuffer;
 	UniformBufferHandle m_cameraFrustumBuffer;
-	UniformBufferHandle m_shadowFrustumBuffer;
+	UniformBufferHandle m_shadowFrustumPointsBuffer;
+	UniformBufferHandle m_shadowFrustumInfoBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
