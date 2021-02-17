@@ -57,7 +57,7 @@ const uint32_t shadowSampleCount = 8;
 const uint32_t maxObjectCountMainScene = 300;
 
 const size_t sdfCameraCullingTileSize = 32;
-const size_t maxSdfObjectsPerTile = 40;
+const size_t maxSdfObjectsPerTile = 100;
 
 const uint32_t sdfShadowCullingTilesCount1D = 32;
 
@@ -976,11 +976,15 @@ void RenderFrontend::computeSunLightMatrices() const{
 
 void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) const {
 	
+	sdfInstanceCulling(m_sdfTraceInfluenceRadius);
+
 	RenderPassExecution exe;
 	exe.handle = m_diffuseSDFTracePass;
+	exe.parents = { m_depthPrePass, m_sdfCameraTileCulling, m_sdfShadowTileCulling };
 	if (m_shadingConfig.indirectLightingHalfRes) {
 		exe.parents = { m_depthDownscalePass };
 	}
+
 	exe.resources.storageImages = {
 		ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
 		ImageResource(m_indirectDiffuse_CoCg[0], 0, 1)
@@ -995,7 +999,13 @@ void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) co
 	};
 	exe.resources.storageBuffers = {
 		StorageBufferResource(m_lightBuffer, true, 5),
-		StorageBufferResource(m_sdfInstanceBuffer, true, 6)
+		StorageBufferResource(m_sdfInstanceBuffer, true, 6),
+		StorageBufferResource(m_sdfCameraCulledTiles, true, 7),
+		StorageBufferResource(m_sdfShadowCulledTiles, true, 8)
+	};
+
+	exe.resources.uniformBuffers = {
+		UniformBufferResource(m_shadowFrustumInfoBuffer, 9)
 	};
 
 	const int resolutionDivider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
@@ -1322,7 +1332,36 @@ void RenderFrontend::issueSkyDrawcalls() {
     gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, (char*)&sunSpriteMatrices, m_sunSpritePass);
 }
 
-void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) {
+void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) const{
+
+	sdfInstanceCulling(0.f); //only instances directly visible within view cone required -> set influence radius to zero
+
+	RenderPassExecution exe;
+	exe.handle = m_sdfDebugPass;
+	exe.resources.storageImages = { ImageResource(m_postProcessBuffers[0], 0, 0) };
+	exe.resources.sampledImages = { ImageResource(m_skyLut, 0, 2) };
+	exe.resources.storageBuffers = {
+		StorageBufferResource(m_lightBuffer, true, 1),
+		StorageBufferResource(m_sdfInstanceBuffer, true, 3),
+		StorageBufferResource(m_sdfCameraCulledTiles, true, 4),
+		StorageBufferResource(m_sdfShadowCulledTiles, true, 5),
+		StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 6),
+		StorageBufferResource(m_sdfShadowFrustumCulledInstances, true, 7),			
+	};
+	exe.resources.uniformBuffers = {
+		UniformBufferResource(m_shadowFrustumInfoBuffer, 8)
+	};
+	exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+	exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+	exe.dispatchCount[2] = 1;
+	exe.parents = parent;
+	exe.parents.push_back(m_sdfCameraTileCulling);
+	exe.parents.push_back(m_sdfShadowTileCulling);
+
+	gRenderBackend.setRenderPassExecution(exe);
+}
+
+void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius) const{
 	//camera frustum culling
 	{
 		struct GPUFrustumData {
@@ -1447,6 +1486,9 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 			projectedMax = glm::max(projectedMax, projected);
 		}
 
+		projectedMin -= sdfInfluenceRadius;
+		projectedMax += sdfInfluenceRadius;
+
 		shadowFrustum.frustumExtends = projectedMax - projectedMin;
 		shadowFrustum.frustumOffset = projectedMin;
 
@@ -1480,7 +1522,7 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 		exe.handle = m_sdfCameraTileCulling;
 		exe.parents = { m_sdfCameraFrustumCulling };
 
-		const uint32_t tileCountX = uint32_t(glm::ceil(m_screenWidth  / float(sdfCameraCullingTileSize)));
+		const uint32_t tileCountX = uint32_t(glm::ceil(m_screenWidth / float(sdfCameraCullingTileSize)));
 		const uint32_t tileCountY = uint32_t(glm::ceil(m_screenHeight / float(sdfCameraCullingTileSize)));
 
 		const uint32_t localGroupSize = 8;
@@ -1495,31 +1537,11 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 			StorageBufferResource(m_sdfCameraCulledTiles, false, 2)
 		};
 
-		gRenderBackend.setRenderPassExecution(exe);
-	}
-	//visualize SDF
-	{
-		RenderPassExecution exe;
-		exe.handle = m_sdfDebugPass;
-		exe.resources.storageImages = { ImageResource(m_postProcessBuffers[0], 0, 0) };
-		exe.resources.sampledImages = { ImageResource(m_skyLut, 0, 2) };
-		exe.resources.storageBuffers = {
-			StorageBufferResource(m_lightBuffer, true, 1),
-			StorageBufferResource(m_sdfInstanceBuffer, true, 3),
-			StorageBufferResource(m_sdfCameraCulledTiles, true, 4),
-			StorageBufferResource(m_sdfShadowCulledTiles, true, 5),
-			StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 6),
-			StorageBufferResource(m_sdfShadowFrustumCulledInstances, true, 7),			
-		};
+		gRenderBackend.setUniformBufferData(m_sdfTraceInfluenceRangeBuffer, &sdfInfluenceRadius, sizeof(m_sdfTraceInfluenceRadius));
+
 		exe.resources.uniformBuffers = {
-			UniformBufferResource(m_shadowFrustumInfoBuffer, 8)
+			UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 3)
 		};
-		exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-		exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-		exe.dispatchCount[2] = 1;
-		exe.parents = parent;
-		exe.parents.push_back(m_sdfCameraTileCulling);
-		exe.parents.push_back(m_sdfShadowTileCulling);
 
 		gRenderBackend.setRenderPassExecution(exe);
 	}
@@ -2478,6 +2500,12 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 		desc.size = sizeof(ShadowFrustumInfo);
 		m_shadowFrustumInfoBuffer = gRenderBackend.createUniformBuffer(desc);
 	}
+	//sdf trace influence range buffer
+	{
+		UniformBufferDescription desc;
+		desc.size = sizeof(float);
+		m_sdfTraceInfluenceRangeBuffer = gRenderBackend.createUniformBuffer(desc);
+	}
 }
 
 void RenderFrontend::initMeshs() {
@@ -3165,6 +3193,7 @@ void RenderFrontend::drawUi() {
 		const char* sdfDebugOptions[] = { "None", "Visualize SDF" };
 		ImGui::Combo("SDF debug mode", (int*)&m_sdfDebugMode, sdfDebugOptions, 2);
 		ImGui::InputFloat("Shadow distance", &m_sdfShadowDistance);
+		ImGui::InputFloat("SDF trace influence range", &m_sdfTraceInfluenceRadius);
 	}
 
     //Temporal filter Settings

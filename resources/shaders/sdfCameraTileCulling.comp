@@ -21,6 +21,10 @@ layout(set=1, binding = 2, std430) buffer perTileInstanceBuffer{
     CulledInstancesPerTile cullingTiles[];
 };
 
+layout(set=1, binding = 3, std140) uniform influenceRangeBuffer{
+    float influenceRange;
+};
+
 vec3 VFromiUV(ivec2 iUV){
 	vec2 pixelCoor = (iUV / vec2(g_screenResolution) - 0.5) * 2;
 	pixelCoor.y *= -1;
@@ -63,7 +67,7 @@ void main(){
 		float projectionV = dot(boundingSphereCenter - g_cameraPosition.xyz, V);
 		float d = distance(boundingSphereCenter, projectionV * V + g_cameraPosition.xyz);
 
-		if(d < boundingSphereRadius + coneRadiusPerMeter * projectionV){
+		if(d < boundingSphereRadius + coneRadiusPerMeter * projectionV + influenceRange){
 			cullingTiles[tileIndex].indices[cullingTiles[tileIndex].objectCount] = culledInstanceIndices[i];
 			cullingTiles[tileIndex].objectCount++;
 		}

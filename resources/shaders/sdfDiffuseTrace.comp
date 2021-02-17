@@ -13,6 +13,7 @@
 #include "noise.inc"
 #include "SphericalHarmonics.inc"
 #include "colorConversion.inc"
+#include "sdfCulling.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -32,6 +33,18 @@ layout(set=1, binding = 6, std430) buffer sdfInstanceBuffer{
 	uint padding2;
 	uint padding3;
 	SDFInstance sdfInstances[];
+};
+
+layout(set=1, binding = 7, std430) buffer cameraCulledTileBuffer{
+    CulledInstancesPerTile cameraCulledTiles[];
+};
+
+layout(set=1, binding = 8, std430) buffer shadowCulledTileBuffer{
+    CulledInstancesPerTile shadowCulledTiles[];
+};
+
+layout(set=1, binding = 9, std140) uniform shadowFrustumInfoBuffer{
+	ShadowFrustum shadowFrustum;
 };
 
 layout(set=2, binding = 0) uniform texture3D[] textures;
@@ -63,9 +76,17 @@ void main(){
 	traceResult.hit = false;
 	traceResult.closestHitDistance = 10000.f;
 
-	for(int i = 0; i < instanceCount; i++){
+	//iterate over all objects in scene
+	//for(int i = 0; i < instanceCount; i++){
+	//	SDFInstance instance = sdfInstances[i];
 
-		SDFInstance instance = sdfInstances[i];
+	ivec2 tileUV = iUV / ivec2(cullingTileSize);
+	uint tileIndex = tileIndexFromTileUV(tileUV);
+
+	//iterate all objects in culling tile
+	CulledInstancesPerTile cullingTile = cameraCulledTiles[tileIndex];
+	for(int i = 0; i < cullingTile.objectCount; i++){
+		SDFInstance instance = sdfInstances[cullingTile.indices[i]];
 
 		traceRayTroughSDFInstance(instance, rayOrigin, textures[instance.sdfTextureIndex], L, traceResult);
 
@@ -81,13 +102,29 @@ void main(){
 
 	float shadow = 1.f;
 
-	for(int i = 0; i < instanceCount; i++){
-		SDFInstance instance = sdfInstances[i];
+	//iterate over all instances in scene
+	//for(int i = 0; i < instanceCount; i++){
+	//	SDFInstance instance = sdfInstances[i];
 
-		bool shadowHit = shadowRay(instance, traceResult.hitPos, traceResult.N, g_sunDirection.xyz, textures[instance.sdfTextureIndex]);
-		if(shadowHit){
-			shadow = 0.f;
-			break;
+	vec2 shadowFrustumUV = vec2(dot(traceResult.hitPos, shadowFrustum.right), dot(traceResult.hitPos, shadowFrustum.up));
+	shadowFrustumUV -= shadowFrustum.offset;
+	shadowFrustumUV /= shadowFrustum.extends;
+	ivec2 shadowTileUV = ivec2(shadowFrustumUV * shadowTileCount1D);
+	uint shadowTileIndex = shadowTileUV.x + shadowTileUV.y * shadowTileCount1D;
+
+	bool validShadowTile = all(greaterThanEqual(shadowTileUV, ivec2(0))) && all(lessThan(shadowTileUV, ivec2(shadowTileCount1D)));
+
+	if(traceResult.hit && validShadowTile){
+
+		CulledInstancesPerTile shadowTile = shadowCulledTiles[shadowTileIndex];
+		for(int i = 0; i < shadowTile.objectCount; i++){
+			SDFInstance instance = sdfInstances[shadowTile.indices[i]];
+
+			bool shadowHit = shadowRay(instance, traceResult.hitPos, traceResult.N, g_sunDirection.xyz, textures[instance.sdfTextureIndex]);
+			if(shadowHit){
+				shadow = 0.f;
+				break;
+			}
 		}
 	}
 

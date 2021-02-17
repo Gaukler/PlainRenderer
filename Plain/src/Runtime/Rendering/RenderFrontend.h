@@ -148,7 +148,8 @@ private:
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void issueSkyDrawcalls();
-	void renderSDFDebug(const std::vector<RenderPassHandle> parent);
+	void renderSDFDebug(const std::vector<RenderPassHandle> parent) const;
+	void sdfInstanceCulling(const float sdfInfluenceRadius) const;
 
 	void updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB);
 
@@ -318,6 +319,7 @@ private:
 	UniformBufferHandle m_cameraFrustumBuffer;
 	UniformBufferHandle m_shadowFrustumPointsBuffer;
 	UniformBufferHandle m_shadowFrustumInfoBuffer;
+	UniformBufferHandle m_sdfTraceInfluenceRangeBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
@@ -353,6 +355,7 @@ private:
     glm::ivec2 computeSinglePassMipChainDispatchCount(const uint32_t width, const uint32_t height, const uint32_t mipCount, const uint32_t maxMipCount) const;
 
     glm::vec2 m_sunDirection = glm::vec2(0.f, 0.f);
+	float m_sdfTraceInfluenceRadius = 10.f;
    
     void drawUi();
 };

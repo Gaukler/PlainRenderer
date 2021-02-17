@@ -1,10 +1,17 @@
 uint cullingTileSize = 32;
-const uint maxObjectsPerTile = 40;
+const uint maxObjectsPerTile = 100;
 uint shadowTileCount1D = 32;
 
 struct CulledInstancesPerTile{
 	uint objectCount;
 	uint indices[maxObjectsPerTile];
+};
+
+struct ShadowFrustum{
+	vec3 up;		float padding0;
+	vec3 right;		float padding1;
+	vec2 extends;
+	vec2 offset;
 };
 
 struct BoundingBox{
