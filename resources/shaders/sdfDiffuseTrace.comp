@@ -96,9 +96,8 @@ void main(){
 	if(traceResult.hit){
 		vec3 sunLight = lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
 		sunLight *= shadow; 
-		vec3 ambient = vec3(0.15f);
 		float NoL = clamp(dot(traceResult.N, g_sunDirection.xyz), 0, 1);
-		hitColor = traceResult.albedo * (ambient + sunLight * NoL);
+		hitColor = traceResult.albedo * sunLight * NoL;
 	}
 	else{
 		hitColor = sampleSkyLut(L, skyLut);
