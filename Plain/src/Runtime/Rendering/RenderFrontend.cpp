@@ -989,16 +989,13 @@ void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) co
 	ImageHandle depthSrc = m_shadingConfig.indirectLightingHalfRes ? m_depthHalfRes : currentTarget.depthBuffer;
 
 	exe.resources.sampledImages = {
-		ImageResource(m_sceneSDF, 0, 2),
-		ImageResource(depthSrc, 0, 4),
-		ImageResource(m_worldSpaceNormalImage, 0, 5),
-		ImageResource(m_skyLut, 0, 8)
-	};
-	exe.resources.uniformBuffers = {
-		UniformBufferResource(m_sdfVolumeInfoBuffer, 6)
+		ImageResource(depthSrc, 0, 2),
+		ImageResource(m_worldSpaceNormalImage, 0, 3),
+		ImageResource(m_skyLut, 0, 4)
 	};
 	exe.resources.storageBuffers = {
-		StorageBufferResource(m_lightBuffer, true, 7)
+		StorageBufferResource(m_lightBuffer, true, 5),
+		StorageBufferResource(m_sdfInstanceBuffer, true, 6)
 	};
 
 	const int resolutionDivider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
@@ -2048,21 +2045,6 @@ void RenderFrontend::initImages() {
 		desc.initialData = generateBlueNoiseTexture(glm::ivec2(noiseTextureWidth, noiseTextureHeight), channelCount);
 
         m_noiseTextures.push_back(gRenderBackend.createImage(desc));
-    }
-    //scene SDF default data
-    {
-        const uint32_t sdfRes = 1;
-        ImageDescription desc;
-        desc.width = sdfRes;
-        desc.height = sdfRes;
-        desc.depth = sdfRes;
-        desc.type = ImageType::Type3D;
-        desc.format = ImageFormat::R16_sFloat;
-        desc.usageFlags = ImageUsageFlags::Sampled;
-        desc.mipCount = MipCount::One;
-        desc.autoCreateMips = false;
-        desc.initialData = { 0, 0 };
-        m_sceneSDF = gRenderBackend.createImage(desc);
     }
 	//indirect diffuse Y component spherical harmonics
 	{

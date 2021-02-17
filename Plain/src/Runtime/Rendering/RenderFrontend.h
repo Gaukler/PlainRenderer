@@ -262,7 +262,6 @@ private:
     ImageHandle m_skyShadowMap;
     ImageHandle m_sceneLuminance;
     ImageHandle m_lastFrameLuminance;
-    ImageHandle m_sceneSDF;
 	ImageHandle m_indirectDiffuse_Y_SH[2];			//ping pong buffers for filtering, Y component of YCoCg color space as spherical harmonics		
 	ImageHandle m_indirectDiffuse_CoCg[2];			//ping pong buffers for filtering, CoCg component of YCoCg color space
 	ImageHandle m_indirectDiffuseHistory_Y_SH[2];	//Y component of YCoCg color space as spherical harmonics

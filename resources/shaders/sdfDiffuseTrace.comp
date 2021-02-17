@@ -1,6 +1,7 @@
 #version 460
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
 #include "global.inc"
 #include "screenToWorld.inc"
@@ -17,19 +18,23 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 0, rgba16f) 	uniform image2D imageOut_Y_SH;
 layout(set=1, binding = 1, rg16f) 		uniform image2D imageOut_CoCg;
-layout(set=1, binding = 2) 	            uniform texture3D sdfTexture;
-layout(set=1, binding = 4) 	            uniform texture2D depthTexture;
-layout(set=1, binding = 5) 	            uniform texture2D normalTexture;
+layout(set=1, binding = 2) 	            uniform texture2D depthTexture;
+layout(set=1, binding = 3) 	            uniform texture2D normalTexture;
+layout(set=1, binding = 4)				uniform texture2D skyLut;
 
-layout(set=1, binding = 6, std140)		uniform sdfVolumeData{
-    VolumeInfo sdfInfo;
-};
-
-layout(set=1, binding = 7, std430) buffer lightStorageBuffer{
+layout(set=1, binding = 5, std430) buffer lightStorageBuffer{
     LightBuffer lightBuffer;
 };
 
-layout(set=1, binding = 8) uniform texture2D skyLut;
+layout(set=1, binding = 6, std430) buffer sdfInstanceBuffer{
+    uint instanceCount;
+	uint padding1;
+	uint padding2;
+	uint padding3;
+	SDFInstance sdfInstances[];
+};
+
+layout(set=2, binding = 0) uniform texture3D[] textures;
 
 void main(){
 	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
@@ -42,44 +47,63 @@ void main(){
 	vec3 V = calculateViewDirectionFromPixel(pixelNDC, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 	vec3 pWorld = g_cameraPosition.xyz + V / dot(V, -g_cameraForward.xyz) * depthLinear;
 
-	vec3 normalTexel = texture(sampler2D(normalTexture, g_sampler_nearestClamp), uv).rgb;
-	vec3 N = normalTexel * 2 - 1;
-
-	float sdfThreshold = 0.12f;
-
-	vec3 sdfMin = sdfInfo.offset.xyz - sdfInfo.extends.xyz * 0.5f;
-	vec3 sdfMax = sdfInfo.offset.xyz + sdfInfo.extends.xyz * 0.5f;
-
-	vec3 rayOrigin = pWorld + N * 0.2;
-	if(sampleSDF(worldPositionToVolume(rayOrigin, sdfInfo.offset.xyz, sdfInfo.extends.xyz), sdfTexture) < sdfThreshold){
-		//bias not enough to move point out of mesh, so ignore
-		//create infinity to mark invalid sample
-		//TODO: infinity might be implementation specific, look for more robust way
-		imageStore(imageOut_Y_SH, iUV, vec4(0.f / 1.f));
-		imageStore(imageOut_CoCg, iUV, vec4(0.f / 1.f));
-		return;
-	}
-
 	vec4 result_Y_SH = vec4(0.f);
 	vec2 result_CoCg = vec2(0.f);
 
 	vec2 noiseUV = vec2(iUV) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
 	vec2 xi = texture(sampler2D(g_noiseTexture, g_sampler_nearestRepeat), noiseUV).rg;
 
+	vec3 normalTexel = texture(sampler2D(normalTexture, g_sampler_nearestClamp), uv).rgb;
+	vec3 N = normalTexel * 2 - 1;
+	vec3 rayOrigin = pWorld + N * 0.2;
+
 	vec3 L = importanceSampleCosine(xi, N);
 
-	SDFTrace trace = sdfTrace(rayOrigin, L, sdfInfo, sdfTexture, sdfThreshold, sdfMin, sdfMax);
+	TraceResult traceResult;
+	traceResult.hit = false;
+	traceResult.closestHitDistance = 10000.f;
+
+	for(int i = 0; i < instanceCount; i++){
+
+		SDFInstance instance = sdfInstances[i];
+
+		traceRayTroughSDFInstance(instance, rayOrigin, textures[instance.sdfTextureIndex], L, traceResult);
+
+		//if(sampleSDF(worldPositionToVolume(rayOrigin, sdfInfo.offset.xyz, sdfInfo.extends.xyz), sdfTexture) < sdfThreshold){
+		//	//bias not enough to move point out of mesh, so ignore
+		//	//create infinity to mark invalid sample
+		//	//TODO: infinity might be implementation specific, look for more robust way
+		//	imageStore(imageOut_Y_SH, iUV, vec4(0.f / 1.f));
+		//	imageStore(imageOut_CoCg, iUV, vec4(0.f / 1.f));
+		//	return;
+		//}
+	}
+
+	float shadow = 1.f;
+
+	for(int i = 0; i < instanceCount; i++){
+		SDFInstance instance = sdfInstances[i];
+
+		bool shadowHit = shadowRay(instance, traceResult.hitPos, traceResult.N, g_sunDirection.xyz, textures[instance.sdfTextureIndex]);
+		if(shadowHit){
+			shadow = 0.f;
+			break;
+		}
+	}
 
 	vec3 hitColor;
 
-	if(trace.hit){
-		vec3 ambient = vec3(0.f);
-		hitColor = shadeHit(trace, sdfInfo, sdfTexture, sdfThreshold, ambient, sdfMin, sdfMax, 
-			lightBuffer.sunColor, lightBuffer.sunStrengthExposed);
+	if(traceResult.hit){
+		vec3 sunLight = lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
+		sunLight *= shadow; 
+		vec3 ambient = vec3(0.15f);
+		float NoL = clamp(dot(traceResult.N, g_sunDirection.xyz), 0, 1);
+		hitColor = traceResult.albedo * (ambient + sunLight * NoL);
 	}
 	else{
 		hitColor = sampleSkyLut(L, skyLut);
 	}
+
 	vec3 YCoCg = linearToYCoCg(hitColor);
 
 	result_Y_SH += YCoCg.x * directionToSH_L1(L);
