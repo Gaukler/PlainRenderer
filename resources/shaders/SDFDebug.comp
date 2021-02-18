@@ -129,7 +129,6 @@ void main(){
 		vec3 ambient = vec3(0.15f);
 		float NoL = clamp(dot(traceResult.N, g_sunDirection.xyz), 0, 1);
 		vec3 color = traceResult.albedo * (ambient + sunLight * NoL);
-
 		//visualize different shadow tiles
 		//uint test = wang_hash(shadowTileIndex);
 		//color = vec3(rand(test));

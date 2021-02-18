@@ -13,7 +13,7 @@ float sampleSDF(vec3 uv, texture3D sdfTexture){
 vec3 normalFromSDF(vec3 uv, vec3 extends, texture3D sdfTexture){
 	float extendsMax = max(extends.x, max(extends.y, extends.z));
 	vec3 extendsNormalized = extends.xyz / extendsMax;
-	vec3 epsilon = vec3(0.5f) / textureSize(sampler3D(sdfTexture, g_sampler_linearClamp), 0) / extendsNormalized;	//voxels are anisotropic so epsilon must be scaled per axis
+	vec3 epsilon = vec3(0.15f) / textureSize(sampler3D(sdfTexture, g_sampler_linearClamp), 0) / extendsNormalized;	//voxels are anisotropic so epsilon must be scaled per axis
 	return normalize(vec3(
 		sampleSDF(uv + vec3(epsilon.x, 0, 0), sdfTexture) - sampleSDF(uv - vec3(epsilon.x, 0, 0), sdfTexture),
 		sampleSDF(uv + vec3(0, epsilon.y, 0), sdfTexture) - sampleSDF(uv - vec3(0, epsilon.y, 0), sdfTexture),
@@ -172,8 +172,8 @@ bool shadowRay(SDFInstance instance, vec3 worldPos, vec3 N, vec3 L, texture3D sd
 	distanceThreshold = length(instance.localExtends / sdfResolution) * 0.25;
 
 	vec3 shadowStart = worldPos;
-	shadowStart += L * distanceThreshold * 2.5;		//bias towards light direction
-	//shadowStart += N * distanceThreshold * 0.1;	//bias towards normal
+	//shadowStart += L * distanceThreshold * 2.5;		//bias towards light direction
+	shadowStart += N * distanceThreshold * 1.1;	//bias towards normal
 	vec3 shadowEnd = shadowStart + L * 20;
 
 	vec3 rayStartLocal	= (instance.worldToLocal * vec4(shadowStart, 1)).xyz;
@@ -184,8 +184,6 @@ bool shadowRay(SDFInstance instance, vec3 worldPos, vec3 N, vec3 L, texture3D sd
 
 	vec3 sdfMaxLocal = instance.localExtends * 0.5;
 	vec3 sdfMinLocal = -sdfMaxLocal;
-
-	bool shadowHit = false;
 
 	if(!isPointInAABB(rayStartLocal, sdfMinLocal, sdfMaxLocal)){
 		HitResult aabbHit = rayAABBIntersection(rayStartLocal, rayDirection, sdfMinLocal, sdfMaxLocal);
