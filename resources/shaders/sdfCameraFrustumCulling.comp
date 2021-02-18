@@ -29,6 +29,10 @@ layout(set=1, binding = 3, std430) buffer worldBBInstanceBuffer{
 	BoundingBox instanceBBs[];
 };
 
+layout(set=1, binding = 4, std140) uniform influenceRangeBuffer{
+    float influenceRange;
+};
+
 void main(){
 	uint instanceIndex = gl_GlobalInvocationID.x;
 	if(instanceIndex >= instanceCount){
@@ -37,28 +41,17 @@ void main(){
 
 	BoundingBox bb = instanceBBs[instanceIndex];
 
-	vec3 bbCorners[8] = {
-		vec3(bb.bbMin.x, bb.bbMin.y, bb.bbMin.z),
-		vec3(bb.bbMin.x, bb.bbMin.y, bb.bbMax.z),
-		vec3(bb.bbMin.x, bb.bbMax.y, bb.bbMin.z),
-		vec3(bb.bbMin.x, bb.bbMax.y, bb.bbMax.z),
-		vec3(bb.bbMax.x, bb.bbMin.y, bb.bbMin.z),
-		vec3(bb.bbMax.x, bb.bbMin.y, bb.bbMax.z),
-		vec3(bb.bbMax.x, bb.bbMax.y, bb.bbMin.z),
-		vec3(bb.bbMax.x, bb.bbMax.y, bb.bbMax.z)
-	};
+	vec3 boundingSphereCenter = (bb.bbMax + bb.bbMin) * 0.5f;
+	vec3 bbExtends = (bb.bbMax - bb.bbMin);
+	float boundingSphereRadius = max(max(bbExtends.x, bbExtends.y), bbExtends.z) * 0.5f;
+	boundingSphereRadius += influenceRange;
 
 	bool isInsideFrustum = true;
 	for (int i = 0; i < 6; i++) {
         vec3 frustumPoint  = frustumPoints[i].xyz;
         vec3 frustumNormal = frustumNormals[i].xyz;
 
-        //iterate bounding box
-		bool isOutsidePlane = true;
-        for (int bbPointIndex = 0; bbPointIndex < 8; bbPointIndex++) {
-			vec3 bbPoint = bbCorners[bbPointIndex];
-            isOutsidePlane = isOutsidePlane && dot(bbPoint - frustumPoint, frustumNormal) > 0;
-        }
+        bool isOutsidePlane = dot(boundingSphereCenter - frustumPoint, frustumNormal) > boundingSphereRadius;
 		isInsideFrustum = isInsideFrustum && !isOutsidePlane;
     }
 

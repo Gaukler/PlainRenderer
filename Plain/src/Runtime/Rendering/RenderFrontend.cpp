@@ -1402,7 +1402,8 @@ void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius) const{
 			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 3)
 		};
 		exe.resources.uniformBuffers = {
-			UniformBufferResource(m_cameraFrustumBuffer, 1)
+			UniformBufferResource(m_cameraFrustumBuffer, 1),
+			UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 4)
 		};
 		exe.dispatchCount[0] = uint32_t(glm::ceil(m_currentSDFInstanceCount / 64.f));
 		exe.dispatchCount[1] = 1;

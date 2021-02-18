@@ -63,11 +63,13 @@ void main(){
 		vec3 boundingSphereCenter = (bb.bbMax + bb.bbMin) * 0.5f;
 		vec3 bbExtends = (bb.bbMax - bb.bbMin) * 0.5f;
 		float boundingSphereRadius = max(max(bbExtends.x, bbExtends.y), bbExtends.z);
+		boundingSphereRadius += influenceRange;
 
 		float projectionV = dot(boundingSphereCenter - g_cameraPosition.xyz, V);
+		projectionV = clamp(projectionV, g_nearPlane, g_farPlane);
 		float d = distance(boundingSphereCenter, projectionV * V + g_cameraPosition.xyz);
 
-		if(d < boundingSphereRadius + coneRadiusPerMeter * projectionV + influenceRange){
+		if(d < boundingSphereRadius + coneRadiusPerMeter * projectionV){
 			cullingTiles[tileIndex].indices[cullingTiles[tileIndex].objectCount] = culledInstanceIndices[i];
 			cullingTiles[tileIndex].objectCount++;
 		}
