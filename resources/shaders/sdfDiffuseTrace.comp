@@ -76,10 +76,6 @@ void main(){
 	traceResult.hit = false;
 	traceResult.closestHitDistance = 10000.f;
 
-	//iterate over all objects in scene
-	//for(int i = 0; i < instanceCount; i++){
-	//	SDFInstance instance = sdfInstances[i];
-
 	ivec2 tileUV = iUV / ivec2(cullingTileSize);
 	uint tileIndex = tileIndexFromTileUV(tileUV);
 
@@ -87,24 +83,10 @@ void main(){
 	CulledInstancesPerTile cullingTile = cameraCulledTiles[tileIndex];
 	for(int i = 0; i < cullingTile.objectCount; i++){
 		SDFInstance instance = sdfInstances[cullingTile.indices[i]];
-
 		traceRayTroughSDFInstance(instance, rayOrigin, textures[instance.sdfTextureIndex], L, traceResult);
-
-		//if(sampleSDF(worldPositionToVolume(rayOrigin, sdfInfo.offset.xyz, sdfInfo.extends.xyz), sdfTexture) < sdfThreshold){
-		//	//bias not enough to move point out of mesh, so ignore
-		//	//create infinity to mark invalid sample
-		//	//TODO: infinity might be implementation specific, look for more robust way
-		//	imageStore(imageOut_Y_SH, iUV, vec4(0.f / 1.f));
-		//	imageStore(imageOut_CoCg, iUV, vec4(0.f / 1.f));
-		//	return;
-		//}
 	}
 
 	float shadow = 1.f;
-
-	//iterate over all instances in scene
-	//for(int i = 0; i < instanceCount; i++){
-	//	SDFInstance instance = sdfInstances[i];
 
 	uint shadowTileIndex = computeShadowTileIndex(traceResult.hitPos, shadowFrustum);
 

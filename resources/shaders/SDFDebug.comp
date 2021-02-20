@@ -64,14 +64,6 @@ void main(){
 	vec3 rayStart = g_cameraPosition.xyz + g_nearPlane * V;	//in range [0, 1]
 	vec3 rayEnd = rayStart + g_farPlane * V;
 	vec3 rayDirectionWorld = normalize(rayEnd - rayStart);
-
-	//code for iterating coarser culling groups for debugging
-	//iterate over all scene objects
-	//for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
-	//	SDFInstance instance = sdfInstances[instanceIndex];
-	//iterate over all objects within camera frustum
-	//for(int instanceIndex = 0; instanceIndex < cameraCulledInstanceCount; instanceIndex++){
-	//	SDFInstance instance = sdfInstances[cameraCulledInstanceIndices[instanceIndex]];
 		
 	TraceResult traceResult;
 	traceResult.hit = false;
@@ -91,15 +83,6 @@ void main(){
 	CulledInstancesPerTile shadowTile = shadowCulledTiles[shadowTileIndex];
 
 	if(traceResult.hit){
-		//code for iterating over coarser culling structures for testing
-		//iterate over all instances in scene
-		//for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
-		//	SDFInstance instance = sdfInstances[instanceIndex];
-		//
-		//iterate over all instances within shadow frustum
-		//for(int instanceIndex = 0; instanceIndex < shadowCulledInstanceCount; instanceIndex++){
-		//	SDFInstance instance = sdfInstances[shadowCulledInstanceIndices[instanceIndex]];	
-
 		for(int i = 0; i < shadowTile.objectCount; i++){
 			SDFInstance instance = sdfInstances[shadowTile.indices[i]];
 
