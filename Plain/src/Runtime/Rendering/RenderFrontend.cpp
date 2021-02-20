@@ -371,6 +371,15 @@ void RenderFrontend::setupGlobalShaderInfoResources() {
 
 void RenderFrontend::prepareRenderpasses(){
 
+	if (m_sdfDebugMode == SDFDebugMode::VisualizeSDF) {
+		computeColorBufferHistogram(m_postProcessBuffers[0]);
+		computeExposure();
+		updateSkyLut();
+		renderSDFDebug(m_postProcessBuffers[0], m_skyLutPass);
+		computeTonemapping(m_sdfDebugPass, m_postProcessBuffers[0]);
+		return;
+	}
+
     std::vector<RenderPassHandle> forwardShadingDependencies;
 
     if (m_isBRDFLutShaderDescriptionStale) {
@@ -438,12 +447,6 @@ void RenderFrontend::prepareRenderpasses(){
         computeTemporalFilter(currentSrc, currentRenderTarget, m_postProcessBuffers[1], currentPass, currentHistory, lastHistory);
         currentPass = m_temporalFilterPass;
         currentSrc = m_postProcessBuffers[1];        
-    }
-
-    if (m_sdfDebugMode == SDFDebugMode::VisualizeSDF) {
-		renderSDFDebug({ currentPass });
-		currentPass = m_sdfDebugPass;
-		currentSrc = m_postProcessBuffers[0];
     }
 
     computeTonemapping(currentPass, currentSrc);
@@ -566,6 +569,59 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
         return;
     }
 
+	//sdf scene
+	{
+		struct GPUBoundingBox {
+			glm::vec3 min;
+			float padding1 = 0.f;
+			glm::vec3 max;
+			float padding2 = 0.f;
+		};
+		std::vector<GPUBoundingBox> instanceWorldBBs;
+		std::vector<SDFInstance> instanceData;
+		instanceData.reserve(scene.size());
+		instanceWorldBBs.reserve(scene.size());
+		for (const RenderObject& obj : scene) {
+
+			//culling requires the padded bounding box, used for rendering and computation
+			const AxisAlignedBoundingBox paddedWorldBB = padSDFBoundingBox(obj.bbWorld);
+			GPUBoundingBox worldBB;
+			worldBB.min = paddedWorldBB.min;
+			worldBB.max = paddedWorldBB.max;
+			instanceWorldBBs.push_back(worldBB);
+
+			SDFInstance instance;
+			const MeshFrontend& mesh = m_frontendMeshes[obj.mesh.index];
+			instance.sdfTextureIndex = mesh.sdfTextureIndex;
+
+			const AxisAlignedBoundingBox paddedLocalBB = padSDFBoundingBox(mesh.localBB);
+			instance.localExtends = paddedLocalBB.max - paddedLocalBB.min;
+			instance.meanAlbedo = mesh.meanAlbedo;
+
+			const glm::vec3 bbOffset = (paddedLocalBB.min + paddedLocalBB.max) * 0.5f;
+
+			glm::mat4 bbT = glm::translate(glm::mat4x4(1.f), bbOffset);
+
+			instance.worldToLocal = glm::inverse(obj.modelMatrix * bbT);
+			instanceData.push_back(instance);
+		}
+		std::vector<uint8_t> bufferData(sizeof(SDFInstance) * instanceData.size() + sizeof(uint32_t) * 4);
+		m_currentSDFInstanceCount = instanceData.size();
+		uint32_t padding[3];
+		memcpy(bufferData.data(), &m_currentSDFInstanceCount, sizeof(uint32_t));
+		memcpy(bufferData.data() + sizeof(uint32_t), &padding, sizeof(uint32_t) * 3);
+		memcpy(bufferData.data() + sizeof(uint32_t) * 4, instanceData.data(), sizeof(SDFInstance) * instanceData.size());
+		gRenderBackend.setStorageBufferData(m_sdfInstanceBuffer, bufferData.data(), bufferData.size());
+
+		gRenderBackend.setStorageBufferData(m_sdfInstanceWorldBBBuffer, instanceWorldBBs.data(),
+			instanceWorldBBs.size() * sizeof(GPUBoundingBox));
+	}
+
+	//no mesh drawcalls needed for sdf visualisation
+	if (m_sdfDebugMode == SDFDebugMode::VisualizeSDF) {
+		return;
+	}
+
     m_currentMeshCount += (uint32_t)scene.size();
 
     //main and prepass
@@ -683,54 +739,6 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 		const size_t bbMatricesSize = boundingBoxMatrices.size() * sizeof(glm::mat4);
 		gRenderBackend.setStorageBufferData(m_boundingBoxDebugRenderMatrices, (char*)boundingBoxMatrices.data(), bbMatricesSize);
 	}
-
-	//sdf scene
-	{
-		struct GPUBoundingBox {
-			glm::vec3 min; 
-			float padding1 = 0.f;
-			glm::vec3 max;
-			float padding2 = 0.f;
-		};
-		std::vector<GPUBoundingBox> instanceWorldBBs;
-		std::vector<SDFInstance> instanceData;
-		instanceData.reserve(scene.size());
-		instanceWorldBBs.reserve(scene.size());
-		for (const RenderObject& obj : scene) {
-
-			//culling requires the padded bounding box, used for rendering and computation
-			const AxisAlignedBoundingBox paddedWorldBB = padSDFBoundingBox(obj.bbWorld);
-			GPUBoundingBox worldBB;
-			worldBB.min = paddedWorldBB.min;
-			worldBB.max = paddedWorldBB.max;
-			instanceWorldBBs.push_back(worldBB);
-
-			SDFInstance instance;
-			const MeshFrontend& mesh = m_frontendMeshes[obj.mesh.index];
-			instance.sdfTextureIndex = mesh.sdfTextureIndex;
-
-			const AxisAlignedBoundingBox paddedLocalBB = padSDFBoundingBox(mesh.localBB);
-			instance.localExtends = paddedLocalBB.max - paddedLocalBB.min;
-			instance.meanAlbedo = mesh.meanAlbedo;
-
-			const glm::vec3 bbOffset = (paddedLocalBB.min + paddedLocalBB.max) * 0.5f;
-
-			glm::mat4 bbT = glm::translate(glm::mat4x4(1.f), bbOffset);
-
-			instance.worldToLocal = glm::inverse(obj.modelMatrix * bbT);
-			instanceData.push_back(instance);
-		}
-		std::vector<uint8_t> bufferData(sizeof(SDFInstance) * instanceData.size() + sizeof(uint32_t) * 4);
-		m_currentSDFInstanceCount = instanceData.size();
-		uint32_t padding[3];
-		memcpy(bufferData.data(), &m_currentSDFInstanceCount, sizeof(uint32_t));
-		memcpy(bufferData.data() + sizeof(uint32_t), &padding, sizeof(uint32_t) * 3);
-		memcpy(bufferData.data() + sizeof(uint32_t) * 4, instanceData.data(), sizeof(SDFInstance) * instanceData.size());
-		gRenderBackend.setStorageBufferData(m_sdfInstanceBuffer, bufferData.data(), bufferData.size());
-
-		gRenderBackend.setStorageBufferData(m_sdfInstanceWorldBBBuffer, instanceWorldBBs.data(), 
-			instanceWorldBBs.size() * sizeof(GPUBoundingBox));
-	}
 }
 
 void RenderFrontend::renderFrame() {
@@ -740,7 +748,10 @@ void RenderFrontend::renderFrame() {
     }
 	m_globalShaderInfo.frameIndex++;
 
-    issueSkyDrawcalls();
+	//no sky drawn in debug mode
+	if (m_sdfDebugMode == SDFDebugMode::None) {
+		issueSkyDrawcalls();
+	}
     gRenderBackend.renderFrame(true);
 
     //set after frame finished so logic before rendering can decide if cut should happen
@@ -796,63 +807,69 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
         gRenderBackend.setRenderPassExecution(histogramCombineTilesExecution);
     }
 }
+
+void RenderFrontend::updateSkyLut() const {
+	//compute transmission lut
+	{
+		ImageResource lutResource(m_skyTransmissionLut, 0, 0);
+		UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 1);
+
+		RenderPassExecution skyTransmissionLutExecution;
+		skyTransmissionLutExecution.handle = m_skyTransmissionLutPass;
+		skyTransmissionLutExecution.resources.storageImages = { lutResource };
+		skyTransmissionLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
+		skyTransmissionLutExecution.dispatchCount[0] = skyTransmissionLutResolution / 8;
+		skyTransmissionLutExecution.dispatchCount[1] = skyTransmissionLutResolution / 8;
+		skyTransmissionLutExecution.dispatchCount[2] = 1;
+		gRenderBackend.setRenderPassExecution(skyTransmissionLutExecution);
+	}
+	//compute multiscatter lut
+	{
+		ImageResource multiscatterLutResource(m_skyMultiscatterLut, 0, 0);
+		ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
+		UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 3);
+
+		RenderPassExecution skyMultiscatterLutExecution;
+		skyMultiscatterLutExecution.handle = m_skyMultiscatterLutPass;
+		skyMultiscatterLutExecution.parents = { m_skyTransmissionLutPass };
+		skyMultiscatterLutExecution.resources.storageImages = { multiscatterLutResource };
+		skyMultiscatterLutExecution.resources.sampledImages = { transmissionLutResource };
+		skyMultiscatterLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
+		skyMultiscatterLutExecution.dispatchCount[0] = skyMultiscatterLutResolution / 8;
+		skyMultiscatterLutExecution.dispatchCount[1] = skyMultiscatterLutResolution / 8;
+		skyMultiscatterLutExecution.dispatchCount[2] = 1;
+		gRenderBackend.setRenderPassExecution(skyMultiscatterLutExecution);
+	}
+	//compute sky lut
+	{
+		ImageResource lutResource(m_skyLut, 0, 0);
+		ImageResource lutTransmissionResource(m_skyTransmissionLut, 0, 1);
+		ImageResource lutMultiscatterResource(m_skyMultiscatterLut, 0, 2);
+		UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 4);
+		StorageBufferResource lightBufferResource(m_lightBuffer, true, 5);
+
+		RenderPassExecution skyLutExecution;
+		skyLutExecution.handle = m_skyLutPass;
+		skyLutExecution.resources.storageImages = { lutResource };
+		skyLutExecution.resources.sampledImages = { lutTransmissionResource, lutMultiscatterResource };
+		skyLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
+		skyLutExecution.resources.storageBuffers = { lightBufferResource };
+		skyLutExecution.dispatchCount[0] = skyLutWidth / 8;
+		skyLutExecution.dispatchCount[1] = skyLutHeight / 8;
+		skyLutExecution.dispatchCount[2] = 1;
+		skyLutExecution.parents = { m_skyTransmissionLutPass, m_skyMultiscatterLutPass, m_preExposeLightsPass };
+		gRenderBackend.setRenderPassExecution(skyLutExecution);
+	}
+}
    
 void RenderFrontend::renderSky(const FramebufferHandle framebuffer, const RenderPassHandle parent) const {
     gRenderBackend.setUniformBufferData(
         m_atmosphereSettingsBuffer, 
         &m_atmosphereSettings, 
         sizeof(m_atmosphereSettings));
-    //compute transmission lut
-    {
-        ImageResource lutResource(m_skyTransmissionLut, 0, 0);
-        UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 1);
+    
+	updateSkyLut();
 
-        RenderPassExecution skyTransmissionLutExecution;
-        skyTransmissionLutExecution.handle = m_skyTransmissionLutPass;
-        skyTransmissionLutExecution.resources.storageImages = { lutResource };
-        skyTransmissionLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
-        skyTransmissionLutExecution.dispatchCount[0] = skyTransmissionLutResolution / 8;
-        skyTransmissionLutExecution.dispatchCount[1] = skyTransmissionLutResolution / 8;
-        skyTransmissionLutExecution.dispatchCount[2] = 1;
-        gRenderBackend.setRenderPassExecution(skyTransmissionLutExecution);
-    }
-    //compute multiscatter lut
-    {
-        ImageResource multiscatterLutResource(m_skyMultiscatterLut, 0, 0);
-        ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
-        UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 3);
-
-        RenderPassExecution skyMultiscatterLutExecution;
-        skyMultiscatterLutExecution.handle = m_skyMultiscatterLutPass;
-        skyMultiscatterLutExecution.parents = { m_skyTransmissionLutPass };
-        skyMultiscatterLutExecution.resources.storageImages = { multiscatterLutResource };
-        skyMultiscatterLutExecution.resources.sampledImages = { transmissionLutResource };
-        skyMultiscatterLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
-        skyMultiscatterLutExecution.dispatchCount[0] = skyMultiscatterLutResolution / 8;
-        skyMultiscatterLutExecution.dispatchCount[1] = skyMultiscatterLutResolution / 8;
-        skyMultiscatterLutExecution.dispatchCount[2] = 1;
-        gRenderBackend.setRenderPassExecution(skyMultiscatterLutExecution);
-    }
-    //compute sky lut
-    {
-        ImageResource lutResource(m_skyLut, 0, 0);
-        ImageResource lutTransmissionResource(m_skyTransmissionLut, 0, 1);
-        ImageResource lutMultiscatterResource(m_skyMultiscatterLut, 0, 2);
-        UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 4);
-        StorageBufferResource lightBufferResource(m_lightBuffer, true, 5);
-
-        RenderPassExecution skyLutExecution;
-        skyLutExecution.handle = m_skyLutPass;
-        skyLutExecution.resources.storageImages = { lutResource };
-        skyLutExecution.resources.sampledImages = { lutTransmissionResource, lutMultiscatterResource };
-        skyLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
-        skyLutExecution.resources.storageBuffers = { lightBufferResource };
-        skyLutExecution.dispatchCount[0] = skyLutWidth / 8;
-        skyLutExecution.dispatchCount[1] = skyLutHeight / 8;
-        skyLutExecution.dispatchCount[2] = 1;
-        skyLutExecution.parents = { m_skyTransmissionLutPass, m_skyMultiscatterLutPass, m_preExposeLightsPass };
-        gRenderBackend.setRenderPassExecution(skyLutExecution);
-    }
     //render skybox
     {
         const ImageResource skyLutResource (m_skyLut, 0, 0);
@@ -980,9 +997,9 @@ void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) co
 
 	RenderPassExecution exe;
 	exe.handle = m_diffuseSDFTracePass;
-	exe.parents = { m_depthPrePass, m_sdfCameraTileCulling, m_sdfShadowTileCulling };
+	exe.parents = { m_depthPrePass, m_sdfCameraTileCulling, m_sdfShadowTileCulling, m_skyLutPass };
 	if (m_shadingConfig.indirectLightingHalfRes) {
-		exe.parents = { m_depthDownscalePass };
+		exe.parents.push_back(m_depthDownscalePass);
 	}
 
 	exe.resources.storageImages = {
@@ -1332,13 +1349,13 @@ void RenderFrontend::issueSkyDrawcalls() {
     gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, (char*)&sunSpriteMatrices, m_sunSpritePass);
 }
 
-void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) const{
+void RenderFrontend::renderSDFDebug(const ImageHandle targetImage, const RenderPassHandle parent) const{
 
 	sdfInstanceCulling(0.f); //only instances directly visible within view cone required -> set influence radius to zero
 
 	RenderPassExecution exe;
 	exe.handle = m_sdfDebugPass;
-	exe.resources.storageImages = { ImageResource(m_postProcessBuffers[0], 0, 0) };
+	exe.resources.storageImages = { ImageResource(targetImage, 0, 0) };
 	exe.resources.sampledImages = { ImageResource(m_skyLut, 0, 2) };
 	exe.resources.storageBuffers = {
 		StorageBufferResource(m_lightBuffer, true, 1),
@@ -1354,7 +1371,7 @@ void RenderFrontend::renderSDFDebug(const std::vector<RenderPassHandle> parent) 
 	exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
 	exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
 	exe.dispatchCount[2] = 1;
-	exe.parents = parent;
+	exe.parents = { parent };
 	exe.parents.push_back(m_sdfCameraTileCulling);
 	exe.parents.push_back(m_sdfShadowTileCulling);
 

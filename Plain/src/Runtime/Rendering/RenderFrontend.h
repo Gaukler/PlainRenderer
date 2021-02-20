@@ -130,6 +130,7 @@ private:
 
     //computes image histogram using compute shaders
     void computeColorBufferHistogram(const ImageHandle lastFrameColor) const;
+	void updateSkyLut() const;
     void renderSky(const FramebufferHandle framebuffer, const RenderPassHandle parent) const;
     void renderSunShadowCascades() const;
     void computeExposure() const;
@@ -148,7 +149,7 @@ private:
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void issueSkyDrawcalls();
-	void renderSDFDebug(const std::vector<RenderPassHandle> parent) const;
+	void renderSDFDebug(const ImageHandle targetImage, const RenderPassHandle parent) const;
 	void sdfInstanceCulling(const float sdfInfluenceRadius) const;
 
 	void updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB);
