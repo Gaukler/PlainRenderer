@@ -149,7 +149,7 @@ private:
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void issueSkyDrawcalls();
-	void renderSDFDebug(const ImageHandle targetImage, const RenderPassHandle parent) const;
+	void renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const;
 	void sdfInstanceCulling(const float sdfInfluenceRadius) const;
 
 	void updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB);
@@ -238,7 +238,7 @@ private:
     RenderPassHandle m_temporalFilterPass;
     RenderPassHandle m_hdrImageCopyPass;		//input must be R11G11B10
     RenderPassHandle m_colorToLuminancePass;
-    RenderPassHandle m_sdfDebugPass;
+    RenderPassHandle m_visualizeSDFPass;
 	RenderPassHandle m_diffuseSDFTracePass;
 	RenderPassHandle m_indirectDiffuseFilterSpatialPass[2];
 	RenderPassHandle m_indirectDiffuseFilterTemporalPass;

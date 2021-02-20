@@ -375,8 +375,8 @@ void RenderFrontend::prepareRenderpasses(){
 		computeColorBufferHistogram(m_postProcessBuffers[0]);
 		computeExposure();
 		updateSkyLut();
-		renderSDFDebug(m_postProcessBuffers[0], m_skyLutPass);
-		computeTonemapping(m_sdfDebugPass, m_postProcessBuffers[0]);
+		renderSDFVisualization(m_postProcessBuffers[0], m_skyLutPass);
+		computeTonemapping(m_visualizeSDFPass, m_postProcessBuffers[0]);
 		return;
 	}
 
@@ -1349,12 +1349,12 @@ void RenderFrontend::issueSkyDrawcalls() {
     gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, (char*)&sunSpriteMatrices, m_sunSpritePass);
 }
 
-void RenderFrontend::renderSDFDebug(const ImageHandle targetImage, const RenderPassHandle parent) const{
+void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const{
 
 	sdfInstanceCulling(0.f); //only instances directly visible within view cone required -> set influence radius to zero
 
 	RenderPassExecution exe;
-	exe.handle = m_sdfDebugPass;
+	exe.handle = m_visualizeSDFPass;
 	exe.resources.storageImages = { ImageResource(targetImage, 0, 0) };
 	exe.resources.sampledImages = { ImageResource(m_skyLut, 0, 2) };
 	exe.resources.storageBuffers = {
@@ -3025,7 +3025,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         ComputePassDescription desc;
         desc.name = "Visualize SDF";
         desc.shaderDescription.srcPathRelative = "visualizeSDF.comp";
-        m_sdfDebugPass = gRenderBackend.createComputePass(desc);
+        m_visualizeSDFPass = gRenderBackend.createComputePass(desc);
     }
 	//sdf indirect lighting
 	{
