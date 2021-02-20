@@ -3023,8 +3023,8 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     //sdf debug pass
     {
         ComputePassDescription desc;
-        desc.name = "SDF Debug";
-        desc.shaderDescription.srcPathRelative = "SDFDebug.comp";
+        desc.name = "Visualize SDF";
+        desc.shaderDescription.srcPathRelative = "visualizeSDF.comp";
         m_sdfDebugPass = gRenderBackend.createComputePass(desc);
     }
 	//sdf indirect lighting
