@@ -25,7 +25,7 @@ enum class IndirectLightingTech : int { SDFTrace, ConstantAmbient };
 struct ShadingConfig {
     DiffuseBRDF diffuseBRDF = DiffuseBRDF::CoDWWII;
     DirectSpecularMultiscattering directMultiscatter = DirectSpecularMultiscattering::McAuley;
-	IndirectLightingTech indirectLightingTech = IndirectLightingTech::ConstantAmbient;
+	IndirectLightingTech indirectLightingTech = IndirectLightingTech::SDFTrace;
     bool useIndirectMultiscatter = true;
     bool useGeometryAA = true;
 	bool indirectLightingHalfRes = true;
@@ -356,7 +356,7 @@ private:
     glm::ivec2 computeSinglePassMipChainDispatchCount(const uint32_t width, const uint32_t height, const uint32_t mipCount, const uint32_t maxMipCount) const;
 
     glm::vec2 m_sunDirection = glm::vec2(0.f, 0.f);
-	float m_sdfTraceInfluenceRadius = 10.f;
+	float m_sdfTraceInfluenceRadius = 3.f;
    
     void drawUi();
 };
