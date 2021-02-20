@@ -106,15 +106,9 @@ void main(){
 	//for(int i = 0; i < instanceCount; i++){
 	//	SDFInstance instance = sdfInstances[i];
 
-	vec2 shadowFrustumUV = vec2(dot(traceResult.hitPos, shadowFrustum.right), dot(traceResult.hitPos, shadowFrustum.up));
-	shadowFrustumUV -= shadowFrustum.offset;
-	shadowFrustumUV /= shadowFrustum.extends;
-	ivec2 shadowTileUV = ivec2(shadowFrustumUV * shadowTileCount1D);
-	uint shadowTileIndex = shadowTileUV.x + shadowTileUV.y * shadowTileCount1D;
+	uint shadowTileIndex = computeShadowTileIndex(traceResult.hitPos, shadowFrustum);
 
-	bool validShadowTile = all(greaterThanEqual(shadowTileUV, ivec2(0))) && all(lessThan(shadowTileUV, ivec2(shadowTileCount1D)));
-
-	if(traceResult.hit && validShadowTile){
+	if(traceResult.hit){
 
 		CulledInstancesPerTile shadowTile = shadowCulledTiles[shadowTileIndex];
 		for(int i = 0; i < shadowTile.objectCount; i++){

@@ -87,15 +87,10 @@ void main(){
 
 	float shadow = 1.f;
 
-	vec2 shadowFrustumUV = vec2(dot(traceResult.hitPos, shadowFrustum.right), dot(traceResult.hitPos, shadowFrustum.up));
-	shadowFrustumUV -= shadowFrustum.offset;
-	shadowFrustumUV /= shadowFrustum.extends;
-	ivec2 shadowTileUV = ivec2(shadowFrustumUV * shadowTileCount1D);
-	uint shadowTileIndex = shadowTileUV.x + shadowTileUV.y * shadowTileCount1D;
+	uint shadowTileIndex = computeShadowTileIndex(traceResult.hitPos, shadowFrustum);
+	CulledInstancesPerTile shadowTile = shadowCulledTiles[shadowTileIndex];
 
-	bool validShadowTile = all(greaterThanEqual(shadowTileUV, ivec2(0))) && all(lessThan(shadowTileUV, ivec2(shadowTileCount1D)));
-
-	if(traceResult.hit && validShadowTile){
+	if(traceResult.hit){
 		//code for iterating over coarser culling structures for testing
 		//iterate over all instances in scene
 		//for(int instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++){
@@ -104,8 +99,6 @@ void main(){
 		//iterate over all instances within shadow frustum
 		//for(int instanceIndex = 0; instanceIndex < shadowCulledInstanceCount; instanceIndex++){
 		//	SDFInstance instance = sdfInstances[shadowCulledInstanceIndices[instanceIndex]];	
-
-		CulledInstancesPerTile shadowTile = shadowCulledTiles[shadowTileIndex];
 
 		for(int i = 0; i < shadowTile.objectCount; i++){
 			SDFInstance instance = sdfInstances[shadowTile.indices[i]];

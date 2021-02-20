@@ -23,3 +23,15 @@ uint tileIndexFromTileUV(ivec2 tileUV){
 	uint tileCountX = uint(ceil(g_screenResolution.x / float(cullingTileSize.x)));
 	return tileUV.x + tileUV.y * tileCountX;
 }
+
+uint computeShadowTileIndex(vec3 positionWorld, ShadowFrustum shadowFrustum){
+	vec2 shadowFrustumUV = vec2(dot(positionWorld, shadowFrustum.right), dot(positionWorld, shadowFrustum.up));
+	shadowFrustumUV -= shadowFrustum.offset;
+	shadowFrustumUV /= shadowFrustum.extends;
+	ivec2 shadowTileUV = ivec2(shadowFrustumUV * shadowTileCount1D);
+	return shadowTileUV.x + shadowTileUV.y * shadowTileCount1D;
+}
+
+bool isShadowTileValid(ivec2 shadowTileUV){
+	return  all(greaterThanEqual(shadowTileUV, ivec2(0))) && all(lessThan(shadowTileUV, ivec2(shadowTileCount1D)));
+}
