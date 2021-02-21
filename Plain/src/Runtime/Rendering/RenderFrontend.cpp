@@ -320,6 +320,10 @@ void RenderFrontend::prepareNewFrame() {
         gRenderBackend.updateComputePassShaderDescription(m_temporalSupersamplingPass, createTemporalSupersamplingShaderDescription());
         m_isTemporalSupersamplingShaderDescriptionStale = false;
     }
+	if (m_isSDFDebugShaderDescriptionStale) {
+		gRenderBackend.updateComputePassShaderDescription(m_sdfDebugVisualisationPass, createSDFDebugShaderDescription());
+		m_isSDFDebugShaderDescriptionStale = false;
+	}
 
     gRenderBackend.updateShaderCode();
     gRenderBackend.newFrame();    
@@ -371,12 +375,12 @@ void RenderFrontend::setupGlobalShaderInfoResources() {
 
 void RenderFrontend::prepareRenderpasses(){
 
-	if (m_sdfDebugMode == SDFDebugMode::VisualizeSDF) {
+	if (m_sdfDebugMode != SDFDebugMode::None) {
 		computeColorBufferHistogram(m_postProcessBuffers[0]);
 		computeExposure();
 		updateSkyLut();
 		renderSDFVisualization(m_postProcessBuffers[0], m_skyLutPass);
-		computeTonemapping(m_visualizeSDFPass, m_postProcessBuffers[0]);
+		computeTonemapping(m_sdfDebugVisualisationPass, m_postProcessBuffers[0]);
 		return;
 	}
 
@@ -617,8 +621,8 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 			instanceWorldBBs.size() * sizeof(GPUBoundingBox));
 	}
 
-	//no mesh drawcalls needed for sdf visualisation
-	if (m_sdfDebugMode == SDFDebugMode::VisualizeSDF) {
+	//no mesh drawcalls needed for sdf debug visualisation
+	if (m_sdfDebugMode != SDFDebugMode::None) {
 		return;
 	}
 
@@ -1351,10 +1355,11 @@ void RenderFrontend::issueSkyDrawcalls() {
 
 void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const{
 
-	sdfInstanceCulling(0.f); //only instances directly visible within view cone required -> set influence radius to zero
+	const float sdfIncluenceRadius = m_useInfluenceRadiusForDebug ? m_sdfTraceInfluenceRadius : 0.f;
+	sdfInstanceCulling(sdfIncluenceRadius); //only instances directly visible within view cone required -> set influence radius to zero
 
 	RenderPassExecution exe;
-	exe.handle = m_visualizeSDFPass;
+	exe.handle = m_sdfDebugVisualisationPass;
 	exe.resources.storageImages = { ImageResource(targetImage, 0, 0) };
 	exe.resources.sampledImages = { ImageResource(m_skyLut, 0, 2) };
 	exe.resources.storageBuffers = {
@@ -1824,6 +1829,18 @@ ShaderDescription RenderFrontend::createEdgeMipCreationShaderDescription() {
 			dataToCharArray((void*)&mipCount, sizeof(mipCount)) //value
 		});
 
+	return desc;
+}
+
+ShaderDescription RenderFrontend::createSDFDebugShaderDescription() {
+	ShaderDescription desc;
+	desc.srcPathRelative = "sdfDebugVisualisation.comp";
+	desc.specialisationConstants = {
+		{
+		0,																//location
+		dataToCharArray((void*)&m_sdfDebugMode, sizeof(m_sdfDebugMode))	//value
+		}
+	};
 	return desc;
 }
 
@@ -3024,8 +3041,8 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     {
         ComputePassDescription desc;
         desc.name = "Visualize SDF";
-        desc.shaderDescription.srcPathRelative = "visualizeSDF.comp";
-        m_visualizeSDFPass = gRenderBackend.createComputePass(desc);
+		desc.shaderDescription = createSDFDebugShaderDescription();
+		m_sdfDebugVisualisationPass = gRenderBackend.createComputePass(desc);
     }
 	//sdf indirect lighting
 	{
@@ -3208,8 +3225,11 @@ void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
 
 	if (ImGui::CollapsingHeader("SDF settings")) {
-		const char* sdfDebugOptions[] = { "None", "Visualize SDF" };
-		ImGui::Combo("SDF debug mode", (int*)&m_sdfDebugMode, sdfDebugOptions, 2);
+		const char* sdfDebugOptions[] = { "None", "Visualize SDF", "Camera tile usage", "Shadow tile usage", "Shadow tile id",
+			"SDF Normals", "Raymarching count"};
+		m_isSDFDebugShaderDescriptionStale = ImGui::Combo("SDF debug mode", (int*)&m_sdfDebugMode, sdfDebugOptions, 7);
+
+		ImGui::Checkbox("Use influence radius for debug visualisation", &m_useInfluenceRadiusForDebug);
 		ImGui::InputFloat("Shadow distance", &m_sdfShadowDistance);
 		ImGui::InputFloat("SDF trace influence range", &m_sdfTraceInfluenceRadius);
 	}

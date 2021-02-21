@@ -32,7 +32,8 @@ struct ShadingConfig {
 };
 
 enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2, Bicubic5Tap=3, Bicubic1Tap=4 };
-enum class SDFDebugMode : int { None=0, VisualizeSDF=1 };
+enum class SDFDebugMode : int { None=0, VisualizeSDF=1, CameraTileUsage=2, ShadowTileUsage=3, ShadowTileId=4,
+	SDFNormals=5, RaymarchingSteps=6};
 
 struct TemporalFilterSettings {
     bool enabled = true;
@@ -208,10 +209,14 @@ private:
 
     HistogramSettings createHistogramSettings();
 
+	glm::vec2 m_sunDirection = glm::vec2(0.f, 0.f);
+
     ShadingConfig m_shadingConfig;
     TemporalFilterSettings m_temporalFilterSettings;
     AtmosphereSettings m_atmosphereSettings;
 	SDFDebugMode m_sdfDebugMode = SDFDebugMode::None;
+	bool m_useInfluenceRadiusForDebug = true;	//less efficient, but tile usage is same as for indirect light tracing
+	float m_sdfTraceInfluenceRadius = 3.f;
 
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
@@ -238,7 +243,6 @@ private:
     RenderPassHandle m_temporalFilterPass;
     RenderPassHandle m_hdrImageCopyPass;		//input must be R11G11B10
     RenderPassHandle m_colorToLuminancePass;
-    RenderPassHandle m_visualizeSDFPass;
 	RenderPassHandle m_diffuseSDFTracePass;
 	RenderPassHandle m_indirectDiffuseFilterSpatialPass[2];
 	RenderPassHandle m_indirectDiffuseFilterTemporalPass;
@@ -248,6 +252,7 @@ private:
 	RenderPassHandle m_sdfShadowFrustumCulling;
 	RenderPassHandle m_sdfCameraTileCulling;
 	RenderPassHandle m_sdfShadowTileCulling;
+	RenderPassHandle m_sdfDebugVisualisationPass;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -328,11 +333,13 @@ private:
     ShaderDescription createTemporalSupersamplingShaderDescription();
 	ShaderDescription createIndirectLightingMipCreationShaderDescription();
 	ShaderDescription createEdgeMipCreationShaderDescription();
+	ShaderDescription createSDFDebugShaderDescription();
 
     bool m_isMainPassShaderDescriptionStale = false;
     bool m_isBRDFLutShaderDescriptionStale = false;
     bool m_isTemporalFilterShaderDescriptionStale = false;
     bool m_isTemporalSupersamplingShaderDescriptionStale = false;
+	bool m_isSDFDebugShaderDescriptionStale = false;
 
     void updateGlobalShaderInfo();
 
@@ -354,9 +361,6 @@ private:
     //threadgroup count is needed as a pointer in a specialisation constant, so it must be from outer scope to stay valid
     ShaderDescription createDepthPyramidShaderDescription(uint32_t* outThreadgroupCount);
     glm::ivec2 computeSinglePassMipChainDispatchCount(const uint32_t width, const uint32_t height, const uint32_t mipCount, const uint32_t maxMipCount) const;
-
-    glm::vec2 m_sunDirection = glm::vec2(0.f, 0.f);
-	float m_sdfTraceInfluenceRadius = 3.f;
    
     void drawUi();
 };

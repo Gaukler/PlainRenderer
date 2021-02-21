@@ -9,9 +9,16 @@
 #include "SDF.inc"
 #include "sky.inc"
 #include "sdfCulling.inc"
-#include "noise.inc" //temp for debugging
+#include "noise.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+//0: None
+//1: visualize sdf
+//2: camera tile usage
+//3: shadow tile usage
+//4: shadow tile id
+layout(constant_id = 0) const int debugMode = 0;
 
 layout(set=1, binding = 0, r11f_g11f_b10f)	uniform image2D imageOut;
 layout(set=1, binding = 1, std430) buffer lightStorageBuffer{
@@ -50,6 +57,24 @@ layout(set=1, binding = 8, std140) uniform shadowFrustumInfoBuffer{
 
 layout(set=2, binding = 0) uniform texture3D[] textures;
 
+vec3 percentageToColor(float percentage){
+	if(percentage < 0.6){
+		return vec3(0, 1, 0);
+	}
+	else if(percentage < 0.8){
+		return vec3(1, 1, 0);
+	}
+	else if(percentage < 0.95f){
+		return vec3(1, 0.2, 0);
+	}
+	else if(percentage < 1.f){
+		return vec3(1, 0.1, 0);
+	}
+	else{
+		return vec3(1, 0, 0);
+	}
+}
+
 void main(){
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
 
@@ -68,15 +93,17 @@ void main(){
 	TraceResult traceResult;
 	traceResult.hit = false;
 	traceResult.closestHitDistance = 10000.f;
+	
+	CulledInstancesPerTile cullingTile = cameraCulledTiles[tileIndex];
 
 	//iterate all objects in culling tile
-	CulledInstancesPerTile cullingTile = cameraCulledTiles[tileIndex];
 	for(int instanceIndex = 0; instanceIndex < cullingTile.objectCount; instanceIndex++){
 		SDFInstance instance = sdfInstances[cullingTile.indices[instanceIndex]];
 		
 		traceRayTroughSDFInstance(instance, rayStart, textures[instance.sdfTextureIndex], rayDirectionWorld, traceResult);
 	}
 
+	//compute shadow
 	float shadow = 1.f;
 
 	uint shadowTileIndex = computeShadowTileIndex(traceResult.hitPos, shadowFrustum);
@@ -93,41 +120,49 @@ void main(){
 			}
 		}
 	}
-	
+
+	vec3 color = vec3(0.f);
 
 	if(traceResult.hit){
-		//vec3 color = vec3(hitCount / 128.f + 0.1);
-		//vec3 color = vec3(cullingTiles[tileIndex].objectCount / 40.f);
-		//vec3 color = N*0.5+0.5;
 
-		vec3 sunLight = lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
-		sunLight *= shadow; 
-		vec3 ambient = vec3(0.15f);
-		float NoL = clamp(dot(traceResult.N, g_sunDirection.xyz), 0, 1);
-		vec3 color = traceResult.albedo * (ambient + sunLight * NoL);
-		//visualize different shadow tiles
-		//uint test = wang_hash(shadowTileIndex);
-		//color = vec3(rand(test));
-
-		//mark tile indices outside of valid range
-		//color = all(greaterThanEqual(shadowTileUV, ivec2(0))) ? color : vec3(0, 0, 1);
-		//color = all(lessThan(shadowTileUV, ivec2(shadowTileCount1D))) ? color : vec3(0, 1, 1);
-
-		imageStore(imageOut, uv, vec4(color, 1.f));
-
-		//visualize overflowing shadow tiles
-		if(shadowCulledTiles[shadowTileIndex].objectCount >= 40){
-			imageStore(imageOut, uv, vec4(vec3(0, 1, 0), 0));
+		//sdf visualisation
+		if(debugMode == 1){
+			vec3 sunLight = lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
+			sunLight *= shadow; 
+			vec3 ambient = vec3(0.15f);
+			float NoL = clamp(dot(traceResult.N, g_sunDirection.xyz), 0, 1);
+			color = traceResult.albedo * (ambient + sunLight * NoL);
+		}
+		//camera tile usage
+		else if(debugMode == 2){
+			float percentage = cullingTile.objectCount / float(maxObjectsPerTile);
+			color = percentage >= 1.f ? vec3(1, 0, 0) :  vec3(percentage);
+			//color = percentageToColor(percentage);
+		}
+		//shadow tile usage and id
+		else if(debugMode == 3){
+			float percentage = shadowTile.objectCount / float(maxObjectsPerTile);
+			color = percentage >= 1.f ? vec3(1, 0, 0) :  vec3(percentage);
+			//color = percentageToColor(percentage);
+		}
+		//shadow tile id
+		else if(debugMode == 4){
+			uint hashedIndex = wang_hash(shadowTileIndex);
+			//make it nice and colorful =)
+			color = vec3(rand(hashedIndex), rand(hashedIndex), rand(hashedIndex));
+		}
+		//normals
+		else if(debugMode == 5){
+			color = traceResult.N * 0.5 + 0.5;
+		}
+		//raymarching count
+		else if(debugMode == 6){
+			color = vec3(traceResult.hitCount / 128.f);
 		}
 	}
 	else{
-		vec3 color = sampleSkyLut(V, skyLut);
-		//vec3 color = vec3(hitCount / 128.f);
-		imageStore(imageOut, uv, vec4(color, 0));
+		color = sampleSkyLut(V, skyLut);
 	}
 
-	//visualize overflowing camera tiles
-	if(cameraCulledTiles[tileIndex].objectCount >= maxObjectsPerTile){
-		imageStore(imageOut, uv, vec4(vec3(1, 0, 0), 0));
-	}
+	imageStore(imageOut, uv, vec4(color, 1.f));
 }
