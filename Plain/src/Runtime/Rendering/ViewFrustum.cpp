@@ -235,8 +235,8 @@ ViewFrustum computeOrthogonalFrustumFittedToCamera(const ViewFrustum& cameraFrus
     glm::vec3 up = abs(lightDirection.y) < 0.999f ? glm::vec3(0.f, -1.f, 0.f) : glm::vec3(0.f, 0.f, -1.f);
 
     const glm::mat4 V = glm::lookAt(-lightDirection, glm::vec3(0.f), up);
-    glm::vec3 maxP = glm::vec3(std::numeric_limits<float>::min());
-    glm::vec3 minP = glm::vec3(std::numeric_limits<float>::max());
+    glm::vec3 maxP = -glm::vec3(std::numeric_limits<float>::infinity());
+    glm::vec3 minP = glm::vec3(std::numeric_limits<float>::infinity());
 
     for (const auto& p : getFrustumPoints(cameraFrustum)) {
         const glm::vec3 pTransformed = V * glm::vec4(p, 1.f);

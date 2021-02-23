@@ -133,8 +133,8 @@ glm::mat4 viewProjectionMatrixAroundBB(const AxisAlignedBoundingBox& bb, const g
 
     //reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
     const auto frustumPoints = getAxisAlignedBoundingBoxPoints(bb);
-    glm::vec3 minP(std::numeric_limits<float>::max());
-    glm::vec3 maxP(std::numeric_limits<float>::min());
+    glm::vec3 minP(std::numeric_limits<float>::infinity());
+    glm::vec3 maxP(-std::numeric_limits<float>::infinity());
 
     for (int i = 0; i < 8; i++) {
         glm::vec3 p = frustumPoints[i];
