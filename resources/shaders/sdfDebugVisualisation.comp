@@ -106,7 +106,9 @@ void main(){
 	//compute shadow
 	float shadow = 1.f;
 
-	uint shadowTileIndex = computeShadowTileIndex(traceResult.hitPos, shadowFrustum);
+	ivec2 shadowTileUV = computeShadowTileUV(traceResult.hitPos, shadowFrustum);
+	uint shadowTileIndex = computeShadowTileIndexFromUV(shadowTileUV);
+
 	CulledInstancesPerTile shadowTile = shadowCulledTiles[shadowTileIndex];
 
 	if(traceResult.hit){

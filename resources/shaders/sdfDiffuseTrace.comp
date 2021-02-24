@@ -88,9 +88,12 @@ void main(){
 
 	float shadow = 1.f;
 
-	uint shadowTileIndex = computeShadowTileIndex(traceResult.hitPos, shadowFrustum);
+	ivec2 shadowTileUV = computeShadowTileUV(traceResult.hitPos, shadowFrustum);
+	uint shadowTileIndex = computeShadowTileIndexFromUV(shadowTileUV);
 
-	if(traceResult.hit){
+	bool validShadowTile = isShadowTileValid(shadowTileUV);
+
+	if(traceResult.hit && validShadowTile){
 
 		CulledInstancesPerTile shadowTile = shadowCulledTiles[shadowTileIndex];
 		for(int i = 0; i < shadowTile.objectCount; i++){
@@ -102,6 +105,9 @@ void main(){
 				break;
 			}
 		}
+	}
+	else{
+		shadow = 0.f;
 	}
 
 	vec3 hitColor;

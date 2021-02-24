@@ -24,11 +24,14 @@ uint tileIndexFromTileUV(ivec2 tileUV){
 	return tileUV.x + tileUV.y * tileCountX;
 }
 
-uint computeShadowTileIndex(vec3 positionWorld, ShadowFrustum shadowFrustum){
+ivec2 computeShadowTileUV(vec3 positionWorld, ShadowFrustum shadowFrustum){
 	vec2 shadowFrustumUV = vec2(dot(positionWorld, shadowFrustum.right), dot(positionWorld, shadowFrustum.up));
 	shadowFrustumUV -= shadowFrustum.offset;
 	shadowFrustumUV /= shadowFrustum.extends;
-	ivec2 shadowTileUV = ivec2(shadowFrustumUV * shadowTileCount1D);
+	return ivec2(shadowFrustumUV * shadowTileCount1D);
+}
+
+uint computeShadowTileIndexFromUV(ivec2 shadowTileUV){
 	return shadowTileUV.x + shadowTileUV.y * shadowTileCount1D;
 }
 
