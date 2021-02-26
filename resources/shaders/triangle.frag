@@ -139,7 +139,7 @@ void main(){
 	vec3 L = normalize(g_sunDirection.xyz);
     
 	vec3 V = g_cameraPosition.xyz - passPos;
-    float pixelDistance = dot(V, g_cameraForward.xyz); 
+    float pixelDistance = dot(V, -g_cameraForward.xyz); 
     V = normalize(V);
     
 	vec3 H = normalize(V + L);

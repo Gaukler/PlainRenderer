@@ -79,16 +79,13 @@ void main(){
 	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
 
 	vec2 pixelCoor = (vec2(uv.xy) / g_screenResolution - 0.5) * 2;
-	pixelCoor.y *= -1;
-	vec3 V = calculateViewDirectionFromPixel(pixelCoor, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
+	vec3 cameraToPixel = -calculateViewDirectionFromPixel(pixelCoor, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 
 	//FIXME: get tile size from CPU
 	ivec2 tileUV = uv / ivec2(cullingTileSize);
 	uint tileIndex = tileIndexFromTileUV(tileUV);
 
-	vec3 rayStart = g_cameraPosition.xyz + g_nearPlane * V;	//in range [0, 1]
-	vec3 rayEnd = rayStart + g_farPlane * V;
-	vec3 rayDirectionWorld = normalize(rayEnd - rayStart);
+	vec3 rayStart = g_cameraPosition.xyz + g_nearPlane * cameraToPixel;
 		
 	TraceResult traceResult;
 	traceResult.hit = false;
@@ -100,7 +97,7 @@ void main(){
 	for(int instanceIndex = 0; instanceIndex < cullingTile.objectCount; instanceIndex++){
 		SDFInstance instance = sdfInstances[cullingTile.indices[instanceIndex]];
 		
-		traceRayTroughSDFInstance(instance, rayStart, textures[instance.sdfTextureIndex], rayDirectionWorld, traceResult);
+		traceRayTroughSDFInstance(instance, rayStart, textures[instance.sdfTextureIndex], cameraToPixel, traceResult);
 	}
 
 	//compute shadow
@@ -163,7 +160,7 @@ void main(){
 		}
 	}
 	else{
-		color = sampleSkyLut(V, skyLut);
+		color = sampleSkyLut(cameraToPixel, skyLut);
 	}
 
 	imageStore(imageOut, uv, vec4(color, 1.f));

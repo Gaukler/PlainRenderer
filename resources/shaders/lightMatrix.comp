@@ -21,8 +21,8 @@ layout(set=1, binding = 1, rg32f) uniform image2D depthMinMaxLowestMip;
 
 //reference: http://www.lighthouse3d.com/tutorials/view-frustum-culling/geometric-approach-extracting-the-planes/
 void computeFrustumPoints(inout vec3[8] frustumPoints, float near, float far){
-    vec3 nearPlaneCenter = g_cameraPosition.xyz - g_cameraForward.xyz * near;
-    vec3 farPlaneCenter  = g_cameraPosition.xyz - g_cameraForward.xyz * far;
+    vec3 nearPlaneCenter = g_cameraPosition.xyz + g_cameraForward.xyz * near;
+    vec3 farPlaneCenter  = g_cameraPosition.xyz + g_cameraForward.xyz * far;
 
     float heightNear = g_cameraTanFovHalf * near;
     float heightFar  = g_cameraTanFovHalf * far;
@@ -60,7 +60,7 @@ void main(){
     vec3 forward = -g_sunDirection.xyz;
     vec3 up = abs(forward.y) < 0.9999f ? vec3(0.f, -1.f, 0.f) : vec3(0.f, 0.f, -1.f);
     vec3 right = cross(forward, up);
-    up = cross(forward, right);
+    up = cross(right, forward);
     V[0].xyz = normalize(right);
     V[1].xyz = normalize(up);
     V[2].xyz = forward;

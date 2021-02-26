@@ -10,7 +10,7 @@ NormalizedUInt16 floatToNormalizedUInt16(const float f) {
 
 NormalizedInt16 floatToNormalizedInt16(const float f) {
     const float fClamped = glm::clamp(f, -1.f, 1.f);
-    constexpr float minValue = std::numeric_limits<int16_t>::min();
+    constexpr float minValue = std::numeric_limits<int16_t>::lowest();
     constexpr float maxValue = std::numeric_limits<int16_t>::max();
     const float valueRange = maxValue - minValue;
     const float fRemapped = fClamped * 0.5f + 0.5f; //remap to range [0, 1]

@@ -53,7 +53,7 @@ uint32_t nextPowerOfTwo(const uint32_t in) {
 //reference: https://www.iquilezles.org/www/articles/triangledistance/triangledistance.htm
 float computePointTrianglesClosestDistance(const glm::vec3 p, const std::vector<TriangleInfo>& triangles) {
 
-	float closestD = std::numeric_limits<float>::max();
+	float closestD = std::numeric_limits<float>::infinity();
 	for (const TriangleInfo& t : triangles) {
 
 		const glm::vec3 v1ToP = p - t.v0;
@@ -247,7 +247,7 @@ std::vector<std::vector<TriangleInfo>> buildUniformGrid(const MeshData& mesh, co
 		triangle.v1 = mesh.positions[i1];
 		triangle.v2 = mesh.positions[i2];
 
-		triangle.N = glm::normalize(cross(triangle.v0 - triangle.v1, triangle.v0 - triangle.v2));
+		triangle.N = glm::normalize(cross(triangle.v0 - triangle.v2, triangle.v0 - triangle.v1));
 
 		const glm::vec3 triangleMin = glm::min(glm::min(triangle.v0, triangle.v1), triangle.v2);
 		const glm::vec3 triangleMax = glm::max(glm::max(triangle.v0, triangle.v1), triangle.v2);
@@ -296,7 +296,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution, const AxisAlignedB
 		t.v0 = mesh.positions[i0];
 		t.v1 = mesh.positions[i1];
 		t.v2 = mesh.positions[i2];
-		t.N = glm::normalize(glm::cross(t.v0 - t.v1, t.v0 - t.v2));
+		t.N = glm::normalize(glm::cross(t.v0 - t.v2, t.v0 - t.v1));
 
 		totalMeshTriangles.push_back(t);
 	}
@@ -315,6 +315,10 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution, const AxisAlignedB
         for (uint32_t y = 0; y < resolution.y; y++) {
             for (uint32_t x = 0; x < resolution.x; x++) {
 
+				if (x == 7 && y == 7 && z == 7) {
+					std::cout << std::endl;
+				}
+
 				const uint32_t index = flattenGridIndex(glm::ivec3(x, y, z), glm::ivec3(resolution));
                 const uint32_t byteIndex = index * bytePerPixel;
 
@@ -323,7 +327,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution, const AxisAlignedB
                 //reference: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/ray-triangle-intersection-geometric-solution
                 //reference: https://courses.cs.washington.edu/courses/csep557/10au/lectures/triangle_intersection.pdf
 				const glm::vec3 rayOrigin = volumeIndexToCellCenter(glm::ivec3(x, y, z), resolution, sdfVolumeInfo);
-                float closestHitTotal = std::numeric_limits<float>::max();
+                float closestHitTotal = std::numeric_limits<float>::infinity();
 
                 const int sampleCount1D = 15;
 
@@ -342,7 +346,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution, const AxisAlignedB
 
                         const glm::vec2 angles = glm::vec2(phi, theta) / 3.1415f * 180.f;
                         const glm::vec3 rayDirection = directionToVector(angles);
-                        float rayClosestHit = std::numeric_limits<float>::max();
+                        float rayClosestHit = std::numeric_limits<float>::infinity();
 
 						bool rayIsInBoundingBox = true;
 
@@ -386,9 +390,9 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution, const AxisAlignedB
 								const glm::vec3 C1 = planeIntersection - triangle.v1;
 								const glm::vec3 C2 = planeIntersection - triangle.v2;
 
-								const float d0 = glm::dot(triangle.N, cross(edge0, C0));
-								const float d1 = glm::dot(triangle.N, cross(edge1, C1));
-								const float d2 = glm::dot(triangle.N, cross(edge2, C2));
+								const float d0 = glm::dot(triangle.N, cross(C0, edge0));
+								const float d1 = glm::dot(triangle.N, cross(C1, edge1));
+								const float d2 = glm::dot(triangle.N, cross(C2, edge2));
 
 								const bool isInsideTriangle =
 									d0 >= 0.f &&
@@ -424,7 +428,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution, const AxisAlignedB
 							}
 							else {
 								//find next cell intersection
-								float distanceToNextCellIntersection = std::numeric_limits<float>::max();
+								float distanceToNextCellIntersection = std::numeric_limits<float>::infinity();
 
 								//check x,y,z
 								int intersectedComponent = 0;
@@ -481,7 +485,7 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution, const AxisAlignedB
                 const float backHitPercentage = backHitCounter / (float)hitsTotal;
                 closestHitTotal *= backHitPercentage > 0.5f ? -1 : 1;
 
-				if (closestHitTotal == std::numeric_limits<float>::max()) {
+				if (closestHitTotal == std::numeric_limits<float>::infinity()) {
 					//indicates no hits, in this case assume that point is outside of mesh and compute distance to closest triangle
 					closestHitTotal = computePointTrianglesClosestDistance(rayOrigin, totalMeshTriangles);
 				}

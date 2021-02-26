@@ -8,8 +8,8 @@ ViewFrustum computeViewFrustum(const Camera& camera) {
     const CameraIntrinsic& intrinsic = camera.intrinsic;
 
     //looking towards negative axis
-    const glm::vec3 nearPlaneCenter = extrinsic.position - extrinsic.forward * intrinsic.near;
-    const glm::vec3 farPlaneCenter = extrinsic.position - extrinsic.forward * intrinsic.far;
+    const glm::vec3 nearPlaneCenter = extrinsic.position + extrinsic.forward * intrinsic.near;
+    const glm::vec3 farPlaneCenter  = extrinsic.position + extrinsic.forward * intrinsic.far;
 
     const float tanFoV = glm::tan(glm::radians(camera.intrinsic.fov) * 0.5f);
     const float heightNear = tanFoV * intrinsic.near;
@@ -38,14 +38,14 @@ ViewFrustum computeViewFrustum(const Camera& camera) {
 
 ViewFrustumNormals computeViewFrustumNormals(const ViewFrustumPoints& p) {
     ViewFrustumNormals normals;
-    normals.top = glm::normalize(glm::cross(p.r_u_n - p.l_u_n, p.r_u_f - p.r_u_n));
-    normals.bot = glm::normalize(glm::cross(p.r_l_f - p.r_l_n, p.r_l_n - p.l_l_n));
+    normals.top = glm::normalize(glm::cross(p.r_u_f - p.r_u_n, p.r_u_n - p.l_u_n));
+	normals.bot = glm::normalize(glm::cross(p.r_l_n - p.l_l_n, p.r_l_f - p.r_l_n));
 
-    normals.right = glm::normalize(glm::cross(p.r_l_f - p.r_l_n, p.r_u_n - p.r_l_n));
-    normals.left = glm::normalize(glm::cross(p.l_u_n - p.l_l_n, p.l_l_f - p.l_l_n));
+    normals.right = glm::normalize(glm::cross(p.r_u_n - p.r_l_n, p.r_l_f - p.r_l_n));
+	normals.left  = glm::normalize(glm::cross(p.l_l_f - p.l_l_n, p.l_u_n - p.l_l_n));
 
-    normals.near = glm::normalize(glm::cross(p.r_l_n - p.l_l_n, p.r_u_n - p.r_l_n));
-    normals.far = glm::normalize(glm::cross(p.r_u_f - p.r_l_f, p.r_l_f - p.l_l_f));
+    normals.near = glm::normalize(glm::cross(p.r_u_n - p.r_l_n, p.r_l_n - p.l_l_n));
+	normals.far  = glm::normalize(glm::cross(p.r_l_f - p.l_l_f, p.r_u_f - p.r_l_f));
 
     return normals;
 }
@@ -236,7 +236,7 @@ ViewFrustum computeOrthogonalFrustumFittedToCamera(const ViewFrustum& cameraFrus
 
     const glm::mat4 V = glm::lookAt(-lightDirection, glm::vec3(0.f), up);
     glm::vec3 maxP = -glm::vec3(std::numeric_limits<float>::infinity());
-    glm::vec3 minP = glm::vec3(std::numeric_limits<float>::infinity());
+    glm::vec3 minP =  glm::vec3(std::numeric_limits<float>::infinity());
 
     for (const auto& p : getFrustumPoints(cameraFrustum)) {
         const glm::vec3 pTransformed = V * glm::vec4(p, 1.f);
@@ -256,14 +256,14 @@ ViewFrustum computeOrthogonalFrustumFittedToCamera(const ViewFrustum& cameraFrus
     glm::mat4 clipToWorld = glm::inverse(clip * V);
 
     ViewFrustum result;
-    result.points.l_l_n = clipToWorld * glm::vec4(-1,  1, -1, 1);
-    result.points.r_l_n = clipToWorld * glm::vec4( 1,  1, -1, 1);
-    result.points.l_u_n = clipToWorld * glm::vec4(-1, -1, -1, 1);
-    result.points.r_u_n = clipToWorld * glm::vec4( 1, -1, -1, 1);
-    result.points.l_l_f = clipToWorld * glm::vec4(-1,  1,  1, 1);
-    result.points.r_l_f = clipToWorld * glm::vec4( 1,  1,  1, 1);
-    result.points.l_u_f = clipToWorld * glm::vec4(-1, -1,  1, 1);
-    result.points.r_u_f = clipToWorld * glm::vec4( 1, -1,  1, 1);
+    result.points.l_l_n = clipToWorld * glm::vec4(-1, -1, -1, 1);
+    result.points.r_l_n = clipToWorld * glm::vec4( 1, -1, -1, 1);
+    result.points.l_u_n = clipToWorld * glm::vec4(-1,  1, -1, 1);
+    result.points.r_u_n = clipToWorld * glm::vec4( 1,  1, -1, 1);
+    result.points.l_l_f = clipToWorld * glm::vec4(-1, -1,  1, 1);
+    result.points.r_l_f = clipToWorld * glm::vec4( 1, -1,  1, 1);
+    result.points.l_u_f = clipToWorld * glm::vec4(-1,  1,  1, 1);
+    result.points.r_u_f = clipToWorld * glm::vec4( 1,  1,  1, 1);
 
     result.normals = computeViewFrustumNormals(result.points);
 

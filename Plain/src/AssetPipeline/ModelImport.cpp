@@ -181,11 +181,9 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 			//correct coordinate system
 			for (glm::vec3& p : data.positions) {
 				p.y *= -1;
-				p.z *= -1;
 			}
 			for (glm::vec3& n : data.normals) {
 				n.y *= -1;
-				n.z *= -1;
 			}
 
 			//uvs
@@ -259,7 +257,6 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 
 				glm::mat4 correctionMatrix(1.f);
 				correctionMatrix[1][1] = -1;
-				correctionMatrix[2][2] = -1;
 
 				//to change the coordinate system the correction matrix c has to be applied at the end: 
 				//world = c * m1 * m2 *... * vertex

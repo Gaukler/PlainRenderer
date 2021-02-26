@@ -25,11 +25,11 @@ layout(set=1, binding = 3, std140) uniform influenceRangeBuffer{
     float influenceRange;
 };
 
+layout(set=1, binding = 4)	uniform texture2D depthMinMaxTexture;
+
 vec3 VFromiUV(ivec2 iUV){
 	vec2 pixelCoor = (iUV / vec2(g_screenResolution) - 0.5) * 2;
-	pixelCoor.y *= -1;
-	vec3 V = calculateViewDirectionFromPixel(pixelCoor, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
-	return V;
+	return calculateViewDirectionFromPixel(pixelCoor, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 }
 
 void main(){
@@ -65,11 +65,11 @@ void main(){
 		float boundingSphereRadius = max(max(bbExtends.x, bbExtends.y), bbExtends.z);
 		boundingSphereRadius += influenceRange;
 
-		float projectionV = dot(boundingSphereCenter - g_cameraPosition.xyz, V);
-		projectionV = clamp(projectionV, g_nearPlane, g_farPlane);
-		float d = distance(boundingSphereCenter, projectionV * V + g_cameraPosition.xyz);
+		float projection = dot(boundingSphereCenter - g_cameraPosition.xyz, cameraToPixel);
+		projection = clamp(projection, depthMin, depthMax);
+		float d = distance(boundingSphereCenter, projection * cameraToPixel + g_cameraPosition.xyz);
 
-		if(d < boundingSphereRadius + coneRadiusPerMeter * projectionV){
+		if(d < boundingSphereRadius + coneRadiusPerMeter * projection){
 			cullingTiles[tileIndex].indices[cullingTiles[tileIndex].objectCount] = culledInstanceIndices[i];
 			cullingTiles[tileIndex].objectCount++;
 		}

@@ -3,8 +3,8 @@
 
 AxisAlignedBoundingBox axisAlignedBoundingBoxFromPositions(const std::vector<glm::vec3>& positions) {
     AxisAlignedBoundingBox bb;
-    bb.min = glm::vec3(std::numeric_limits<float>::max());
-    bb.max = glm::vec3(std::numeric_limits<float>::lowest());
+    bb.min = glm::vec3(std::numeric_limits<float>::infinity());
+    bb.max = glm::vec3(-std::numeric_limits<float>::infinity());
 
     for (const auto& pos : positions) {
         bb.min = glm::min(bb.min, pos);

@@ -56,9 +56,8 @@ void main(){
 	float depthLinear = linearizeDepth(depth, g_nearPlane, g_farPlane);
 
 	vec2 pixelNDC = uv * 2 - 1;
-	pixelNDC.y *= -1;
-	vec3 V = calculateViewDirectionFromPixel(pixelNDC, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
-	vec3 pWorld = g_cameraPosition.xyz + V / dot(V, -g_cameraForward.xyz) * depthLinear;
+	vec3 V = -calculateViewDirectionFromPixel(pixelNDC, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
+	vec3 pWorld = g_cameraPosition.xyz + V / dot(V, g_cameraForward.xyz) * depthLinear;
 
 	vec4 result_Y_SH = vec4(0.f);
 	vec2 result_CoCg = vec2(0.f);
