@@ -10,7 +10,10 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(constant_id = 0) const bool useHiZ = false;
-layout(constant_id = 1) const bool halfResTracing = true;
+
+layout(push_constant) uniform MatrixBlock {
+	uvec2 cameraTileCount;
+};
 
 layout(set=1, binding = 0, std430) buffer culledSdfInstanceBuffer{
     uint culledInstanceCount;
@@ -39,10 +42,7 @@ vec3 VFromiUV(ivec2 iUV){
 void main(){
 	ivec2 tileUV = ivec2(gl_GlobalInvocationID.xy);
 
-	uvec2 tileCount = uvec2(ceil(g_screenResolution / vec2(cullingTileSize)));
-	tileCount /= halfResTracing ? 2 : 1;
-
-	if(any(greaterThanEqual(tileUV, tileCount))){
+	if(any(greaterThanEqual(tileUV, cameraTileCount))){
 		return;
 	}
 
@@ -52,6 +52,7 @@ void main(){
 
 	vec3 cameraToPixel = -VFromiUV(tileUV * int(cullingTileSize) + ivec2(cullingTileSize, cullingTileSize) / 2);
 
+	//compute cone radius in 1m distance by computing distance between tiles two most extreme (inverse) view vectors
 	vec3 V_ll = -VFromiUV(tileUV * int(cullingTileSize));
 	vec3 V_ur = -VFromiUV(tileUV * int(cullingTileSize) + ivec2(cullingTileSize, cullingTileSize));
 	V_ll /= dot(cameraToPixel, V_ll);
@@ -61,39 +62,16 @@ void main(){
 
 	float depthMin = g_nearPlane;
 	float depthMax = g_farPlane;
-	bool test = true;
-	//test = false;
-	vec2 uv = tileUV / vec2(tileCount);
-	if(useHiZ && test){
-		
 
-		depthMin = g_farPlane;
-		depthMax = g_nearPlane;
-
-		const int mip = 4;
-
-		for(int x = -1; x <= 1; x++){
-			for(int y = -1; y <= 1; y++){
-				vec2 depthMinMax = textureLod(sampler2D(depthMinMaxTexture, g_sampler_nearestClamp), uv + vec2(x, y) / tileCount, mip).rg;
-				depthMin = min(depthMin, linearizeDepth(depthMinMax.g, g_nearPlane, g_farPlane));
-				depthMax = max(depthMax, linearizeDepth(depthMinMax.r, g_nearPlane, g_farPlane));
-			}
-		}
-		vec2 depthMinMax = textureLod(sampler2D(depthMinMaxTexture, g_sampler_nearestClamp), uv, mip).rg;
+	vec2 uv = tileUV / vec2(cameraTileCount);
+	if(useHiZ){
+		//depthMinMaxTexture is bound at appropriate mip level, so use mip 0 in texture function
+		vec2 depthMinMax = textureLod(sampler2D(depthMinMaxTexture, g_sampler_nearestClamp), uv, 0).rg;
 		depthMin = linearizeDepth(depthMinMax.g, g_nearPlane, g_farPlane);
 		depthMax = linearizeDepth(depthMinMax.r, g_nearPlane, g_farPlane);
 	}
-
-	//if(uv.x < 0.5 ){
-	//	depthMin = 10;
-	//	depthMax = 20;
-	//}
-	//else{
-	//	depthMin = 0;
-	//	depthMax = 0;
-	//}
 	
-
+	//depth is distance in camera forward direction, but view vectors don't directly point in that direction
 	depthMin *= dot(cameraToPixel, g_cameraForward.xyz);
 	depthMax *= dot(cameraToPixel, g_cameraForward.xyz);
 

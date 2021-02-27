@@ -998,7 +998,7 @@ void RenderFrontend::computeSunLightMatrices() const{
 void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) const {
 	
 	//TODO: return parent passes from culling function
-	sdfInstanceCulling(m_sdfTraceInfluenceRadius, true);
+	sdfInstanceCulling(m_sdfTraceInfluenceRadius, true, m_shadingConfig.indirectLightingHalfRes);
 
 	ComputePassExecution exe;
 	exe.genericInfo.handle = m_diffuseSDFTracePass;
@@ -1358,7 +1358,7 @@ void RenderFrontend::issueSkyDrawcalls() {
 void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const{
 
 	const float sdfIncluenceRadius = m_useInfluenceRadiusForDebug ? m_sdfTraceInfluenceRadius : 0.f;
-	sdfInstanceCulling(sdfIncluenceRadius, false); //only instances directly visible within view cone required -> set influence radius to zero
+	sdfInstanceCulling(sdfIncluenceRadius, false, false);
 
 	ComputePassExecution exe;
 	exe.genericInfo.handle = m_sdfDebugVisualisationPass;
@@ -1385,7 +1385,7 @@ void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const
 	gRenderBackend.setComputePassExecution(exe);
 }
 
-void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ) const{
+void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ, const bool tracingHalfRes) const{
 	//camera frustum culling
 	{
 		struct GPUFrustumData {
@@ -1550,14 +1550,22 @@ void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bo
 			exe.genericInfo.parents.push_back(m_depthPyramidPass);
 		};
 
-		const uint32_t tileCountX = uint32_t(glm::ceil(m_screenWidth / float(sdfCameraCullingTileSize)));
-		const uint32_t tileCountY = uint32_t(glm::ceil(m_screenHeight / float(sdfCameraCullingTileSize)));
+		glm::uvec2 traceResolution = glm::uvec2(m_screenWidth, m_screenHeight);
+		if (tracingHalfRes) {
+			traceResolution /= 2;
+		}
+
+		const glm::uvec2 tileCount = glm::uvec2(
+			glm::ceil(traceResolution.x / float(sdfCameraCullingTileSize)),
+			glm::ceil(traceResolution.y / float(sdfCameraCullingTileSize)));
 
 		const uint32_t localGroupSize = 8;
 
-		exe.dispatchCount[0] = uint32_t(glm::ceil(tileCountX / float(localGroupSize)));
-		exe.dispatchCount[1] = uint32_t(glm::ceil(tileCountY / float(localGroupSize)));
+		exe.dispatchCount[0] = uint32_t(glm::ceil(tileCount.x / float(localGroupSize)));
+		exe.dispatchCount[1] = uint32_t(glm::ceil(tileCount.y / float(localGroupSize)));
 		exe.dispatchCount[2] = 1;
+
+		exe.pushConstants = dataToCharArray((void*)&tileCount, sizeof(tileCount));
 
 		exe.genericInfo.resources.storageBuffers = {
 			StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 0),
@@ -1570,8 +1578,12 @@ void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bo
 		exe.genericInfo.resources.uniformBuffers = {
 			UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 3)
 		};
+
+		//-1 because pyramid is already half of screen resolution at base mip
+		const int depthPyramidMipLevel = glm::log2(glm::ceil(float(sdfCameraCullingTileSize))) - 1;
+		assert(depthPyramidMipLevel == 4);
 		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_minMaxDepthPyramid, 0, 4)
+			ImageResource(m_minMaxDepthPyramid, depthPyramidMipLevel, 4)
 		};
 
 		gRenderBackend.setComputePassExecution(exe);

@@ -154,7 +154,7 @@ private:
 
 	//when culling for direct visualisation hi-z culling results in artifacts
 	//enable for indirect, disable for direct
-	void sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ) const;
+	void sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ, const bool tracingHalfRes) const;
 
 	void updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB);
 
