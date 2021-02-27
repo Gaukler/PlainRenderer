@@ -1506,6 +1506,11 @@ void RenderBackend::submitComputePass(const ComputePassExecution& execution,
 	const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, m_globalTextureArrayDescriptorSet };
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
+	if (execution.pushConstants.size() > 0) {
+		vkCmdPushConstants(commandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+			sizeof(char) * execution.pushConstants.size(), execution.pushConstants.data());
+	}
+
 	vkCmdDispatch(commandBuffer, execution.dispatchCount[0], execution.dispatchCount[1], execution.dispatchCount[2]);
 
 	timeQuery.endQuery = issueTimestampQuery(commandBuffer);

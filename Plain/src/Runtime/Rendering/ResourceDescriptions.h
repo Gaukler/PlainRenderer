@@ -69,6 +69,7 @@ struct GraphicPassExecution {
 //contains RenderPassExecution and additional info for compute pass
 struct ComputePassExecution {
 	RenderPassExecution genericInfo;
+	std::vector<char> pushConstants;
 	uint32_t dispatchCount[3] = { 1, 1, 1 };
 };
 
