@@ -328,11 +328,4 @@ void main(){
 	//color = irradiance / pi;
 	//color = N*0.5+0.5;
 	//color = passPos;
-
-	//vec3 test[4] = { vec3(1, 0, 0), vec3(0, 1, 0), vec3(0, 0, 1), vec3(1, 1, 0) };
-	//color = test[cascadeIndex];
-
-	//vec3 test = calculateViewDirectionFromPixel(gl_FragCoord.xy / g_screenResolution * 2.f - 1.f, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
-	//color = V;
-	//color = test;
 }
