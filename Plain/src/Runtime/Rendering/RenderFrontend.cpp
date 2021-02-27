@@ -772,43 +772,43 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
         ImageResource colorTextureResource(lastFrameColor, 0, 2);
         StorageBufferResource lightBufferResource(m_lightBuffer, true, 3);
 
-        RenderPassExecution histogramPerTileExecution;
-        histogramPerTileExecution.handle = m_histogramPerTilePass;
-        histogramPerTileExecution.resources.storageBuffers = { histogramPerTileResource, lightBufferResource };
-        histogramPerTileExecution.resources.sampledImages = { colorTextureResource };
+		ComputePassExecution histogramPerTileExecution;
+        histogramPerTileExecution.genericInfo.handle = m_histogramPerTilePass;
+        histogramPerTileExecution.genericInfo.resources.storageBuffers = { histogramPerTileResource, lightBufferResource };
+        histogramPerTileExecution.genericInfo.resources.sampledImages = { colorTextureResource };
         histogramPerTileExecution.dispatchCount[0] = uint32_t(std::ceilf((float)m_screenWidth / float(histogramTileSizeX)));
         histogramPerTileExecution.dispatchCount[1] = uint32_t(std::ceilf((float)m_screenHeight / float(histogramTileSizeY)));
         histogramPerTileExecution.dispatchCount[2] = 1;
 
-        gRenderBackend.setRenderPassExecution(histogramPerTileExecution);
+        gRenderBackend.setComputePassExecution(histogramPerTileExecution);
     }
 
     const float binsPerDispatch = 64.f;
     //reset global tile
     {
-        RenderPassExecution histogramResetExecution;
-        histogramResetExecution.handle = m_histogramResetPass;
-        histogramResetExecution.resources.storageBuffers = { histogramResource };
+		ComputePassExecution histogramResetExecution;
+        histogramResetExecution.genericInfo.handle = m_histogramResetPass;
+        histogramResetExecution.genericInfo.resources.storageBuffers = { histogramResource };
         histogramResetExecution.dispatchCount[0] = uint32_t(std::ceilf(float(nHistogramBins) / binsPerDispatch));
         histogramResetExecution.dispatchCount[1] = 1;
         histogramResetExecution.dispatchCount[2] = 1;
 
-        gRenderBackend.setRenderPassExecution(histogramResetExecution);
+        gRenderBackend.setComputePassExecution(histogramResetExecution);
     }
     //combine tiles
     {
-        RenderPassExecution histogramCombineTilesExecution;
-        histogramCombineTilesExecution.handle = m_histogramCombinePass;
-        histogramCombineTilesExecution.resources.storageBuffers = { histogramPerTileResource, histogramResource };
+		ComputePassExecution histogramCombineTilesExecution;
+        histogramCombineTilesExecution.genericInfo.handle = m_histogramCombinePass;
+        histogramCombineTilesExecution.genericInfo.resources.storageBuffers = { histogramPerTileResource, histogramResource };
         uint32_t tileCount =
             (uint32_t)std::ceilf(m_screenWidth / float(histogramTileSizeX)) *
             (uint32_t)std::ceilf(m_screenHeight / float(histogramTileSizeY));
         histogramCombineTilesExecution.dispatchCount[0] = tileCount;
         histogramCombineTilesExecution.dispatchCount[1] = uint32_t(std::ceilf(float(nHistogramBins) / binsPerDispatch));
         histogramCombineTilesExecution.dispatchCount[2] = 1;
-        histogramCombineTilesExecution.parents = { m_histogramPerTilePass, m_histogramResetPass };
+        histogramCombineTilesExecution.genericInfo.parents = { m_histogramPerTilePass, m_histogramResetPass };
 
-        gRenderBackend.setRenderPassExecution(histogramCombineTilesExecution);
+        gRenderBackend.setComputePassExecution(histogramCombineTilesExecution);
     }
 }
 
@@ -818,14 +818,14 @@ void RenderFrontend::updateSkyLut() const {
 		ImageResource lutResource(m_skyTransmissionLut, 0, 0);
 		UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 1);
 
-		RenderPassExecution skyTransmissionLutExecution;
-		skyTransmissionLutExecution.handle = m_skyTransmissionLutPass;
-		skyTransmissionLutExecution.resources.storageImages = { lutResource };
-		skyTransmissionLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
+		ComputePassExecution skyTransmissionLutExecution;
+		skyTransmissionLutExecution.genericInfo.handle = m_skyTransmissionLutPass;
+		skyTransmissionLutExecution.genericInfo.resources.storageImages = { lutResource };
+		skyTransmissionLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
 		skyTransmissionLutExecution.dispatchCount[0] = skyTransmissionLutResolution / 8;
 		skyTransmissionLutExecution.dispatchCount[1] = skyTransmissionLutResolution / 8;
 		skyTransmissionLutExecution.dispatchCount[2] = 1;
-		gRenderBackend.setRenderPassExecution(skyTransmissionLutExecution);
+		gRenderBackend.setComputePassExecution(skyTransmissionLutExecution);
 	}
 	//compute multiscatter lut
 	{
@@ -833,16 +833,16 @@ void RenderFrontend::updateSkyLut() const {
 		ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
 		UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 3);
 
-		RenderPassExecution skyMultiscatterLutExecution;
-		skyMultiscatterLutExecution.handle = m_skyMultiscatterLutPass;
-		skyMultiscatterLutExecution.parents = { m_skyTransmissionLutPass };
-		skyMultiscatterLutExecution.resources.storageImages = { multiscatterLutResource };
-		skyMultiscatterLutExecution.resources.sampledImages = { transmissionLutResource };
-		skyMultiscatterLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
+		ComputePassExecution skyMultiscatterLutExecution;
+		skyMultiscatterLutExecution.genericInfo.handle = m_skyMultiscatterLutPass;
+		skyMultiscatterLutExecution.genericInfo.parents = { m_skyTransmissionLutPass };
+		skyMultiscatterLutExecution.genericInfo.resources.storageImages = { multiscatterLutResource };
+		skyMultiscatterLutExecution.genericInfo.resources.sampledImages = { transmissionLutResource };
+		skyMultiscatterLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
 		skyMultiscatterLutExecution.dispatchCount[0] = skyMultiscatterLutResolution / 8;
 		skyMultiscatterLutExecution.dispatchCount[1] = skyMultiscatterLutResolution / 8;
 		skyMultiscatterLutExecution.dispatchCount[2] = 1;
-		gRenderBackend.setRenderPassExecution(skyMultiscatterLutExecution);
+		gRenderBackend.setComputePassExecution(skyMultiscatterLutExecution);
 	}
 	//compute sky lut
 	{
@@ -852,17 +852,17 @@ void RenderFrontend::updateSkyLut() const {
 		UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 4);
 		StorageBufferResource lightBufferResource(m_lightBuffer, true, 5);
 
-		RenderPassExecution skyLutExecution;
-		skyLutExecution.handle = m_skyLutPass;
-		skyLutExecution.resources.storageImages = { lutResource };
-		skyLutExecution.resources.sampledImages = { lutTransmissionResource, lutMultiscatterResource };
-		skyLutExecution.resources.uniformBuffers = { atmosphereBufferResource };
-		skyLutExecution.resources.storageBuffers = { lightBufferResource };
+		ComputePassExecution skyLutExecution;
+		skyLutExecution.genericInfo.handle = m_skyLutPass;
+		skyLutExecution.genericInfo.resources.storageImages = { lutResource };
+		skyLutExecution.genericInfo.resources.sampledImages = { lutTransmissionResource, lutMultiscatterResource };
+		skyLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
+		skyLutExecution.genericInfo.resources.storageBuffers = { lightBufferResource };
 		skyLutExecution.dispatchCount[0] = skyLutWidth / 8;
 		skyLutExecution.dispatchCount[1] = skyLutHeight / 8;
 		skyLutExecution.dispatchCount[2] = 1;
-		skyLutExecution.parents = { m_skyTransmissionLutPass, m_skyMultiscatterLutPass, m_preExposeLightsPass };
-		gRenderBackend.setRenderPassExecution(skyLutExecution);
+		skyLutExecution.genericInfo.parents = { m_skyTransmissionLutPass, m_skyMultiscatterLutPass, m_preExposeLightsPass };
+		gRenderBackend.setComputePassExecution(skyLutExecution);
 	}
 }
    
@@ -878,40 +878,40 @@ void RenderFrontend::renderSky(const FramebufferHandle framebuffer, const Render
     {
         const ImageResource skyLutResource (m_skyLut, 0, 0);
 
-        RenderPassExecution skyPassExecution;
-        skyPassExecution.handle = m_skyPass;
+        GraphicPassExecution skyPassExecution;
+        skyPassExecution.genericInfo.handle = m_skyPass;
         skyPassExecution.framebuffer = framebuffer;
-        skyPassExecution.resources.sampledImages = { skyLutResource };
-        skyPassExecution.parents = { parent,  m_skyLutPass };
-        gRenderBackend.setRenderPassExecution(skyPassExecution);
+        skyPassExecution.genericInfo.resources.sampledImages = { skyLutResource };
+        skyPassExecution.genericInfo.parents = { parent,  m_skyLutPass };
+        gRenderBackend.setGraphicPassExecution(skyPassExecution);
     }
     //sun sprite
     {
         const StorageBufferResource lightBufferResource(m_lightBuffer, true, 0);
         const ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
 
-        RenderPassExecution sunSpritePassExecution;
-        sunSpritePassExecution.handle = m_sunSpritePass;
+		GraphicPassExecution sunSpritePassExecution;
+        sunSpritePassExecution.genericInfo.handle = m_sunSpritePass;
         sunSpritePassExecution.framebuffer = framebuffer;
-        sunSpritePassExecution.parents = { m_skyPass };
-        sunSpritePassExecution.resources.storageBuffers = { lightBufferResource };
-        sunSpritePassExecution.resources.sampledImages = { transmissionLutResource };
-        gRenderBackend.setRenderPassExecution(sunSpritePassExecution);
+        sunSpritePassExecution.genericInfo.parents = { m_skyPass };
+        sunSpritePassExecution.genericInfo.resources.storageBuffers = { lightBufferResource };
+        sunSpritePassExecution.genericInfo.resources.sampledImages = { transmissionLutResource };
+        gRenderBackend.setGraphicPassExecution(sunSpritePassExecution);
     }
 }
 
 void RenderFrontend::renderSunShadowCascades() const {
     for (uint32_t i = 0; i < shadowCascadeCount; i++) {
-        RenderPassExecution shadowPassExecution;
-        shadowPassExecution.handle = m_shadowPasses[i];
-        shadowPassExecution.parents = { m_lightMatrixPass };
+		GraphicPassExecution shadowPassExecution;
+        shadowPassExecution.genericInfo.handle = m_shadowPasses[i];
+        shadowPassExecution.genericInfo.parents = { m_lightMatrixPass };
         shadowPassExecution.framebuffer = m_shadowCascadeFramebuffers[i];
-        shadowPassExecution.resources.storageBuffers = { 
+        shadowPassExecution.genericInfo.resources.storageBuffers = {
 			StorageBufferResource(m_sunShadowInfoBuffer, true, 0),
 			StorageBufferResource(m_shadowPassTransformsBuffer, true, 1)
 		};
 
-        gRenderBackend.setRenderPassExecution(shadowPassExecution);
+        gRenderBackend.setGraphicPassExecution(shadowPassExecution);
     }
 }
 
@@ -920,30 +920,30 @@ void RenderFrontend::computeExposure() const {
     StorageBufferResource histogramResource(m_histogramBuffer, false, 1);
     ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 2);
 
-    RenderPassExecution preExposeLightsExecution;
-    preExposeLightsExecution.handle = m_preExposeLightsPass;
-    preExposeLightsExecution.resources.storageBuffers = { histogramResource, lightBufferResource };
-    preExposeLightsExecution.resources.sampledImages = { transmissionLutResource };
-    preExposeLightsExecution.parents = { m_histogramCombinePass, m_skyTransmissionLutPass };
+    ComputePassExecution preExposeLightsExecution;
+    preExposeLightsExecution.genericInfo.handle = m_preExposeLightsPass;
+    preExposeLightsExecution.genericInfo.resources.storageBuffers = { histogramResource, lightBufferResource };
+    preExposeLightsExecution.genericInfo.resources.sampledImages = { transmissionLutResource };
+    preExposeLightsExecution.genericInfo.parents = { m_histogramCombinePass, m_skyTransmissionLutPass };
     preExposeLightsExecution.dispatchCount[0] = 1;
     preExposeLightsExecution.dispatchCount[1] = 1;
     preExposeLightsExecution.dispatchCount[2] = 1;
 
-    gRenderBackend.setRenderPassExecution(preExposeLightsExecution);
+    gRenderBackend.setComputePassExecution(preExposeLightsExecution);
 }
 
 void RenderFrontend::renderDepthPrepass(const FramebufferHandle framebuffer) const {
-    RenderPassExecution prepassExe;
-    prepassExe.handle = m_depthPrePass;
+	GraphicPassExecution prepassExe;
+    prepassExe.genericInfo.handle = m_depthPrePass;
     prepassExe.framebuffer = framebuffer;
-	prepassExe.resources.storageBuffers = { StorageBufferResource(m_mainPassTransformsBuffer, true, 0) };
-    gRenderBackend.setRenderPassExecution(prepassExe);
+	prepassExe.genericInfo.resources.storageBuffers = { StorageBufferResource(m_mainPassTransformsBuffer, true, 0) };
+    gRenderBackend.setGraphicPassExecution(prepassExe);
 }
 
 void RenderFrontend::computeDepthPyramid(const ImageHandle depthBuffer) const {
-    RenderPassExecution exe;
-    exe.handle = m_depthPyramidPass;
-    exe.parents = { m_depthPrePass };
+	ComputePassExecution exe;
+    exe.genericInfo.handle = m_depthPyramidPass;
+    exe.genericInfo.parents = { m_depthPrePass };
 
     const uint32_t width = m_screenWidth / 2;
     const uint32_t height = m_screenHeight / 2;
@@ -962,71 +962,73 @@ void RenderFrontend::computeDepthPyramid(const ImageHandle depthBuffer) const {
     ImageResource depthBufferResource(depthBuffer, 0, 13);
     ImageResource depthPyramidResource(m_minMaxDepthPyramid, 0, 15);
 
-    exe.resources.sampledImages = { depthBufferResource, depthPyramidResource };
+    exe.genericInfo.resources.sampledImages = { depthBufferResource, depthPyramidResource };
 
     StorageBufferResource syncBuffer(m_depthPyramidSyncBuffer, false, 16);
-    exe.resources.storageBuffers = { syncBuffer };
+    exe.genericInfo.resources.storageBuffers = { syncBuffer };
 
-    exe.resources.storageImages.reserve(maxMipCount);
+    exe.genericInfo.resources.storageImages.reserve(maxMipCount);
     const uint32_t unusedMipCount = maxMipCount - mipCount;
     for (uint32_t i = 0; i < maxMipCount; i++) {
         const uint32_t mipLevel = i >= unusedMipCount ? i - unusedMipCount : 0;
         ImageResource pyramidMip(m_minMaxDepthPyramid, mipLevel, i);
-        exe.resources.storageImages.push_back(pyramidMip);
+        exe.genericInfo.resources.storageImages.push_back(pyramidMip);
     }
-    gRenderBackend.setRenderPassExecution(exe);
+    gRenderBackend.setComputePassExecution(exe);
 }
 
 void RenderFrontend::computeSunLightMatrices() const{
-    RenderPassExecution exe;
-    exe.handle = m_lightMatrixPass;
-    exe.parents = { m_depthPyramidPass };
+	ComputePassExecution exe;
+    exe.genericInfo.handle = m_lightMatrixPass;
+    exe.genericInfo.parents = { m_depthPyramidPass };
     exe.dispatchCount[0] = 1;
     exe.dispatchCount[1] = 1;
     exe.dispatchCount[2] = 1;
 
     const uint32_t depthPyramidMipCount = mipCountFromResolution(m_screenWidth / 2, m_screenHeight / 2, 1);
     ImageResource depthPyramidLowestMipResource(m_minMaxDepthPyramid, depthPyramidMipCount - 1, 1);
-    exe.resources.storageImages = { depthPyramidLowestMipResource };
+    exe.genericInfo.resources.storageImages = { depthPyramidLowestMipResource };
 
     StorageBufferResource lightMatrixBuffer(m_sunShadowInfoBuffer, false, 0);
-    exe.resources.storageBuffers = { lightMatrixBuffer };
+    exe.genericInfo.resources.storageBuffers = { lightMatrixBuffer };
 
-    gRenderBackend.setRenderPassExecution(exe);
+    gRenderBackend.setComputePassExecution(exe);
 }
 
 void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) const {
 	
-	sdfInstanceCulling(m_sdfTraceInfluenceRadius);
+	//TODO: return parent passes from culling function
+	sdfInstanceCulling(m_sdfTraceInfluenceRadius, true);
 
-	RenderPassExecution exe;
-	exe.handle = m_diffuseSDFTracePass;
-	exe.parents = { m_depthPrePass, m_sdfCameraTileCulling, m_sdfShadowTileCulling, m_skyLutPass };
+	ComputePassExecution exe;
+	exe.genericInfo.handle = m_diffuseSDFTracePass;
+	exe.genericInfo.parents = { m_depthPrePass, m_sdfCameraTileCullingHiZ, m_sdfShadowTileCulling, m_skyLutPass };
 	if (m_shadingConfig.indirectLightingHalfRes) {
-		exe.parents.push_back(m_depthDownscalePass);
+		exe.genericInfo.parents.push_back(m_depthDownscalePass);
 	}
 
-	exe.resources.storageImages = {
+	exe.genericInfo.resources.storageImages = {
 		ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
 		ImageResource(m_indirectDiffuse_CoCg[0], 0, 1)
 	};
 
 	ImageHandle depthSrc = m_shadingConfig.indirectLightingHalfRes ? m_depthHalfRes : currentTarget.depthBuffer;
 
-	exe.resources.sampledImages = {
+	exe.genericInfo.resources.sampledImages = {
 		ImageResource(depthSrc, 0, 2),
 		ImageResource(m_worldSpaceNormalImage, 0, 3),
 		ImageResource(m_skyLut, 0, 4)
 	};
-	exe.resources.storageBuffers = {
+	exe.genericInfo.resources.storageBuffers = {
 		StorageBufferResource(m_lightBuffer, true, 5),
 		StorageBufferResource(m_sdfInstanceBuffer, true, 6),
 		StorageBufferResource(m_sdfCameraCulledTiles, true, 7),
 		StorageBufferResource(m_sdfShadowCulledTiles, true, 8)
 	};
 
-	exe.resources.uniformBuffers = {
-		UniformBufferResource(m_shadowFrustumInfoBuffer, 9)
+	exe.genericInfo.resources.uniformBuffers = {
+		UniformBufferResource(m_shadowFrustumInfoBuffer, 9),
+		UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 10)
 	};
 
 	const int resolutionDivider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
@@ -1039,7 +1041,7 @@ void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) co
 	exe.dispatchCount[1] = dispatchCount.y;
 	exe.dispatchCount[2] = 1;
 
-	gRenderBackend.setRenderPassExecution(exe);
+	gRenderBackend.setComputePassExecution(exe);
 }
 
 void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame) const {
@@ -1051,15 +1053,15 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 
 	//spatial filter on input
 	{
-		RenderPassExecution exe;
-		exe.handle = m_indirectDiffuseFilterSpatialPass[0];
-		exe.parents = { m_diffuseSDFTracePass };
+		ComputePassExecution exe;
+		exe.genericInfo.handle = m_indirectDiffuseFilterSpatialPass[0];
+		exe.genericInfo.parents = { m_diffuseSDFTracePass };
 
-		exe.resources.storageImages = {
+		exe.genericInfo.resources.storageImages = {
 			ImageResource(m_indirectDiffuse_Y_SH[1], 0, 0),
 			ImageResource(m_indirectDiffuse_CoCg[1], 0, 1)
 		};
-		exe.resources.sampledImages = {
+		exe.genericInfo.resources.sampledImages = {
 			ImageResource(m_indirectDiffuse_Y_SH[0], 0, 2),
 			ImageResource(m_indirectDiffuse_CoCg[0], 0, 3),
 			ImageResource(depthSrc, 0, 4),
@@ -1072,24 +1074,24 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 		exe.dispatchCount[1] = dispatchCount.y;
 		exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setRenderPassExecution(exe);
+		gRenderBackend.setComputePassExecution(exe);
 	}
 	//temporal filter
 	{
-		RenderPassExecution exe;
-		exe.handle = m_indirectDiffuseFilterTemporalPass;
-		exe.parents = { m_indirectDiffuseFilterSpatialPass[0] };
+		ComputePassExecution exe;
+		exe.genericInfo.handle = m_indirectDiffuseFilterTemporalPass;
+		exe.genericInfo.parents = { m_indirectDiffuseFilterSpatialPass[0] };
 
 		const uint32_t historySrcIndex = m_globalShaderInfo.frameIndex % 2;
 		const uint32_t historyDstIndex = historySrcIndex == 0 ? 1 : 0;
 
-		exe.resources.storageImages = {
+		exe.genericInfo.resources.storageImages = {
 			ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
 			ImageResource(m_indirectDiffuse_CoCg[0], 0, 1),
 			ImageResource(m_indirectDiffuseHistory_Y_SH[1], 0, 2),
 			ImageResource(m_indirectDiffuseHistory_CoCg[1], 0, 3)
 		};
-		exe.resources.sampledImages = {
+		exe.genericInfo.resources.sampledImages = {
 			ImageResource(m_indirectDiffuse_Y_SH[1], 0, 4),
 			ImageResource(m_indirectDiffuse_CoCg[1], 0, 5),
 			ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 6),
@@ -1104,19 +1106,19 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 		exe.dispatchCount[1] = dispatchCount.y;
 		exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setRenderPassExecution(exe);
+		gRenderBackend.setComputePassExecution(exe);
 	}
 	//spatial filter on history
 	{
-		RenderPassExecution exe;
-		exe.handle = m_indirectDiffuseFilterSpatialPass[1];
-		exe.parents = { m_indirectDiffuseFilterTemporalPass };
+		ComputePassExecution exe;
+		exe.genericInfo.handle = m_indirectDiffuseFilterSpatialPass[1];
+		exe.genericInfo.parents = { m_indirectDiffuseFilterTemporalPass };
 
-		exe.resources.storageImages = {
+		exe.genericInfo.resources.storageImages = {
 			ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 0),
 			ImageResource(m_indirectDiffuseHistory_CoCg[0], 0, 1)
 		};
-		exe.resources.sampledImages = {
+		exe.genericInfo.resources.sampledImages = {
 			ImageResource(m_indirectDiffuseHistory_Y_SH[1], 0, 2),
 			ImageResource(m_indirectDiffuseHistory_CoCg[1], 0, 3),
 			ImageResource(depthSrc, 0, 4),
@@ -1129,19 +1131,19 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 		exe.dispatchCount[1] = dispatchCount.y;
 		exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setRenderPassExecution(exe);
+		gRenderBackend.setComputePassExecution(exe);
 	}
 	//upscale
 	if(m_shadingConfig.indirectLightingHalfRes) {
-		RenderPassExecution exe;
-		exe.handle = m_indirectLightingUpscale;
-		exe.parents = { m_indirectDiffuseFilterSpatialPass[1] };
+		ComputePassExecution exe;
+		exe.genericInfo.handle = m_indirectLightingUpscale;
+		exe.genericInfo.parents = { m_indirectDiffuseFilterSpatialPass[1] };
 
-		exe.resources.storageImages = {
+		exe.genericInfo.resources.storageImages = {
 			ImageResource(m_indirectLightingFullRes_Y_SH, 0, 0),
 			ImageResource(m_indirectLightingFullRes_CoCg, 0, 1),
 		};
-		exe.resources.sampledImages = {
+		exe.genericInfo.resources.sampledImages = {
 			ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 2),
 			ImageResource(m_indirectDiffuseHistory_CoCg[0], 0, 3),
 			ImageResource(currentFrame.depthBuffer, 0, 4),
@@ -1153,14 +1155,14 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 		exe.dispatchCount[1] = glm::ceil(m_screenHeight / localThreadSize);
 		exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setRenderPassExecution(exe);
+		gRenderBackend.setComputePassExecution(exe);
 	}
 }
 
 void RenderFrontend::downscaleDepth(const FrameRenderTargets& currentTarget) const {
-	RenderPassExecution exe;
-	exe.handle = m_depthDownscalePass;
-	exe.parents = { m_depthPrePass };
+	ComputePassExecution exe;
+	exe.genericInfo.handle = m_depthDownscalePass;
+	exe.genericInfo.parents = { m_depthPrePass };
 
 	const float localThreadSize = 8.f;
 	const glm::vec2 halfRes = glm::ivec2(m_screenWidth, m_screenHeight) / 2;
@@ -1169,14 +1171,14 @@ void RenderFrontend::downscaleDepth(const FrameRenderTargets& currentTarget) con
 	exe.dispatchCount[1] = dispatchCount.y;
 	exe.dispatchCount[2] = 1;
 	
-	exe.resources.storageImages = {
+	exe.genericInfo.resources.storageImages = {
 		ImageResource(m_depthHalfRes, 0, 0)
 	};
-	exe.resources.sampledImages = {
+	exe.genericInfo.resources.sampledImages = {
 		ImageResource(currentTarget.depthBuffer, 0, 1)
 	};
 
-	gRenderBackend.setRenderPassExecution(exe);
+	gRenderBackend.setComputePassExecution(exe);
 }
 
 void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const {
@@ -1186,10 +1188,10 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
     const auto lightMatrixBuffer = StorageBufferResource(m_sunShadowInfoBuffer, true, 8);
 
-    RenderPassExecution mainPassExecution;
-    mainPassExecution.handle = m_mainPass;
+	GraphicPassExecution mainPassExecution;
+    mainPassExecution.genericInfo.handle = m_mainPass;
     mainPassExecution.framebuffer = framebuffer;
-    mainPassExecution.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer,
+    mainPassExecution.genericInfo.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer,
 		StorageBufferResource{m_mainPassTransformsBuffer, true, 17} };
 
 	ImageHandle indirectSrc_Y_SH = m_indirectDiffuseHistory_Y_SH[0];
@@ -1199,37 +1201,37 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
 		indirectSrc_CoCg = m_indirectLightingFullRes_CoCg;
 	}
 
-	mainPassExecution.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource,
+	mainPassExecution.genericInfo.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource,
 		ImageResource(indirectSrc_Y_SH, 0, 15),
 		ImageResource(indirectSrc_CoCg, 0, 16) };
 
     //add shadow map cascade resources
     for (uint32_t i = 0; i < shadowCascadeCount; i++) {
         const auto shadowMapResource = ImageResource(m_shadowMaps[i], 0, 9 + i);
-        mainPassExecution.resources.sampledImages.push_back(shadowMapResource);
+        mainPassExecution.genericInfo.resources.sampledImages.push_back(shadowMapResource);
     }
 
-    mainPassExecution.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
-    mainPassExecution.parents.insert(mainPassExecution.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
-    mainPassExecution.parents.insert(mainPassExecution.parents.begin(), externalDependencies.begin(), externalDependencies.end());
+    mainPassExecution.genericInfo.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
+    mainPassExecution.genericInfo.parents.insert(mainPassExecution.genericInfo.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
+    mainPassExecution.genericInfo.parents.insert(mainPassExecution.genericInfo.parents.begin(), externalDependencies.begin(), externalDependencies.end());
 
-    gRenderBackend.setRenderPassExecution(mainPassExecution);
+    gRenderBackend.setGraphicPassExecution(mainPassExecution);
 }
 
 void RenderFrontend::copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const {
     const ImageResource srcResource(src, 0, 1);
     const ImageResource dstResource(dst, 0, 2);
 
-    RenderPassExecution exe;
-    exe.handle = m_hdrImageCopyPass;
-    exe.resources.sampledImages = { srcResource };
-    exe.resources.storageImages = { dstResource };
+	ComputePassExecution exe;
+    exe.genericInfo.handle = m_hdrImageCopyPass;
+    exe.genericInfo.resources.sampledImages = { srcResource };
+    exe.genericInfo.resources.storageImages = { dstResource };
     exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
     exe.dispatchCount[2] = 1;
-    exe.parents = { parent };
+    exe.genericInfo.parents = { parent };
 
-    gRenderBackend.setRenderPassExecution(exe);
+    gRenderBackend.setComputePassExecution(exe);
 }
 
 void RenderFrontend::computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame, 
@@ -1239,16 +1241,16 @@ void RenderFrontend::computeTemporalSuperSampling(const FrameRenderTargets& curr
         const ImageResource srcResource(currentFrame.colorBuffer, 0, 0);
         const ImageResource dstResource(m_sceneLuminance, 0, 1);
 
-        RenderPassExecution exe;
-        exe.handle = m_colorToLuminancePass;
-        exe.resources.storageImages = { dstResource };
-        exe.resources.sampledImages = { srcResource };
+		ComputePassExecution exe;
+        exe.genericInfo.handle = m_colorToLuminancePass;
+        exe.genericInfo.resources.storageImages = { dstResource };
+        exe.genericInfo.resources.sampledImages = { srcResource };
         exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
         exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
         exe.dispatchCount[2] = 1;
-        exe.parents = { parent };
+        exe.genericInfo.parents = { parent };
 
-        gRenderBackend.setRenderPassExecution(exe);
+        gRenderBackend.setComputePassExecution(exe);
     }
     //temporal supersampling
     {
@@ -1261,10 +1263,10 @@ void RenderFrontend::computeTemporalSuperSampling(const FrameRenderTargets& curr
         const ImageResource currentLuminanceResource(m_sceneLuminance, 0, 7);
         const ImageResource lastLuminanceResource(m_lastFrameLuminance, 0, 8);
 
-        RenderPassExecution temporalSupersamplingExecution;
-        temporalSupersamplingExecution.handle = m_temporalSupersamplingPass;
-        temporalSupersamplingExecution.resources.storageImages = { targetResource };
-        temporalSupersamplingExecution.resources.sampledImages = {
+		ComputePassExecution temporalSupersamplingExecution;
+        temporalSupersamplingExecution.genericInfo.handle = m_temporalSupersamplingPass;
+        temporalSupersamplingExecution.genericInfo.resources.storageImages = { targetResource };
+        temporalSupersamplingExecution.genericInfo.resources.sampledImages = {
             currentFrameResource,
             lastFrameResource,
             velocityBufferResource,
@@ -1275,9 +1277,9 @@ void RenderFrontend::computeTemporalSuperSampling(const FrameRenderTargets& curr
         temporalSupersamplingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
         temporalSupersamplingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
         temporalSupersamplingExecution.dispatchCount[2] = 1;
-        temporalSupersamplingExecution.parents = { m_colorToLuminancePass };
+        temporalSupersamplingExecution.genericInfo.parents = { m_colorToLuminancePass };
 
-        gRenderBackend.setRenderPassExecution(temporalSupersamplingExecution);
+        gRenderBackend.setComputePassExecution(temporalSupersamplingExecution);
     }
 }
 
@@ -1292,17 +1294,17 @@ void RenderFrontend::computeTemporalFilter(const ImageHandle colorSrc, const Fra
     const ImageResource depthBufferResource(currentFrame.depthBuffer, 0, 5);
     const UniformBufferResource resolveWeightsResource(m_taaResolveWeightBuffer, 6);
 
-    RenderPassExecution temporalFilterExecution;
-    temporalFilterExecution.handle = m_temporalFilterPass;
-    temporalFilterExecution.resources.storageImages = { outputImageResource, historyDstResource };
-    temporalFilterExecution.resources.sampledImages = { inputImageResource, historySrcResource, motionBufferResource, depthBufferResource };
-    temporalFilterExecution.resources.uniformBuffers = { resolveWeightsResource };
+	ComputePassExecution temporalFilterExecution;
+    temporalFilterExecution.genericInfo.handle = m_temporalFilterPass;
+    temporalFilterExecution.genericInfo.resources.storageImages = { outputImageResource, historyDstResource };
+    temporalFilterExecution.genericInfo.resources.sampledImages = { inputImageResource, historySrcResource, motionBufferResource, depthBufferResource };
+    temporalFilterExecution.genericInfo.resources.uniformBuffers = { resolveWeightsResource };
     temporalFilterExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     temporalFilterExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
     temporalFilterExecution.dispatchCount[2] = 1;
-    temporalFilterExecution.parents = { parent };
+    temporalFilterExecution.genericInfo.parents = { parent };
 
-    gRenderBackend.setRenderPassExecution(temporalFilterExecution);
+    gRenderBackend.setComputePassExecution(temporalFilterExecution);
 }
 
 void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const {
@@ -1310,25 +1312,25 @@ void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const Ima
     ImageResource targetResource(swapchainInput, 0, 0);
     ImageResource colorBufferResource(src, 0, 1);
 
-    RenderPassExecution tonemappingExecution;
-    tonemappingExecution.handle = m_tonemappingPass;
-    tonemappingExecution.resources.storageImages = { targetResource };
-    tonemappingExecution.resources.sampledImages = { colorBufferResource };
+	ComputePassExecution tonemappingExecution;
+    tonemappingExecution.genericInfo.handle = m_tonemappingPass;
+    tonemappingExecution.genericInfo.resources.storageImages = { targetResource };
+    tonemappingExecution.genericInfo.resources.sampledImages = { colorBufferResource };
     tonemappingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     tonemappingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
     tonemappingExecution.dispatchCount[2] = 1;
-    tonemappingExecution.parents = { parent };
+    tonemappingExecution.genericInfo.parents = { parent };
 
-    gRenderBackend.setRenderPassExecution(tonemappingExecution);
+    gRenderBackend.setComputePassExecution(tonemappingExecution);
 }
 
 void RenderFrontend::renderDebugGeometry(const FramebufferHandle framebuffer) const {
-    RenderPassExecution debugPassExecution;
-    debugPassExecution.handle = m_debugGeoPass;
+	GraphicPassExecution debugPassExecution;
+    debugPassExecution.genericInfo.handle = m_debugGeoPass;
     debugPassExecution.framebuffer = framebuffer;
-    debugPassExecution.parents = { m_mainPass };
-	debugPassExecution.resources.storageBuffers = { StorageBufferResource(m_boundingBoxDebugRenderMatrices, true, 0) };
-    gRenderBackend.setRenderPassExecution(debugPassExecution);
+    debugPassExecution.genericInfo.parents = { m_mainPass };
+	debugPassExecution.genericInfo.resources.storageBuffers = { StorageBufferResource(m_boundingBoxDebugRenderMatrices, true, 0) };
+    gRenderBackend.setGraphicPassExecution(debugPassExecution);
 }
 
 void RenderFrontend::issueSkyDrawcalls() {
@@ -1356,13 +1358,13 @@ void RenderFrontend::issueSkyDrawcalls() {
 void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const{
 
 	const float sdfIncluenceRadius = m_useInfluenceRadiusForDebug ? m_sdfTraceInfluenceRadius : 0.f;
-	sdfInstanceCulling(sdfIncluenceRadius); //only instances directly visible within view cone required -> set influence radius to zero
+	sdfInstanceCulling(sdfIncluenceRadius, false); //only instances directly visible within view cone required -> set influence radius to zero
 
-	RenderPassExecution exe;
-	exe.handle = m_sdfDebugVisualisationPass;
-	exe.resources.storageImages = { ImageResource(targetImage, 0, 0) };
-	exe.resources.sampledImages = { ImageResource(m_skyLut, 0, 2) };
-	exe.resources.storageBuffers = {
+	ComputePassExecution exe;
+	exe.genericInfo.handle = m_sdfDebugVisualisationPass;
+	exe.genericInfo.resources.storageImages = { ImageResource(targetImage, 0, 0) };
+	exe.genericInfo.resources.sampledImages = { ImageResource(m_skyLut, 0, 2) };
+	exe.genericInfo.resources.storageBuffers = {
 		StorageBufferResource(m_lightBuffer, true, 1),
 		StorageBufferResource(m_sdfInstanceBuffer, true, 3),
 		StorageBufferResource(m_sdfCameraCulledTiles, true, 4),
@@ -1370,20 +1372,20 @@ void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const
 		StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 6),
 		StorageBufferResource(m_sdfShadowFrustumCulledInstances, true, 7),			
 	};
-	exe.resources.uniformBuffers = {
+	exe.genericInfo.resources.uniformBuffers = {
 		UniformBufferResource(m_shadowFrustumInfoBuffer, 8)
 	};
 	exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
 	exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
 	exe.dispatchCount[2] = 1;
-	exe.parents = { parent };
-	exe.parents.push_back(m_sdfCameraTileCulling);
-	exe.parents.push_back(m_sdfShadowTileCulling);
+	exe.genericInfo.parents = { parent };
+	exe.genericInfo.parents.push_back(m_sdfCameraTileCulling);
+	exe.genericInfo.parents.push_back(m_sdfShadowTileCulling);
 
-	gRenderBackend.setRenderPassExecution(exe);
+	gRenderBackend.setComputePassExecution(exe);
 }
 
-void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius) const{
+void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ) const{
 	//camera frustum culling
 	{
 		struct GPUFrustumData {
@@ -1416,14 +1418,14 @@ void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius) const{
 		uint32_t zero = 0;
 		gRenderBackend.setStorageBufferData(m_sdfCameraFrustumCulledInstances, &zero, sizeof(zero));
 
-		RenderPassExecution exe;
-		exe.handle = m_sdfCameraFrustumCulling;
-		exe.resources.storageBuffers = {
+		ComputePassExecution exe;
+		exe.genericInfo.handle = m_sdfCameraFrustumCulling;
+		exe.genericInfo.resources.storageBuffers = {
 			StorageBufferResource(m_sdfInstanceBuffer, true, 0),
 			StorageBufferResource(m_sdfCameraFrustumCulledInstances, false, 2),
 			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 3)
 		};
-		exe.resources.uniformBuffers = {
+		exe.genericInfo.resources.uniformBuffers = {
 			UniformBufferResource(m_cameraFrustumBuffer, 1),
 			UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 4)
 		};
@@ -1431,7 +1433,7 @@ void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius) const{
 		exe.dispatchCount[1] = 1;
 		exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setRenderPassExecution(exe);
+		gRenderBackend.setComputePassExecution(exe);
 	}
 
 	//custom camera and shadow frusta to limit shadow distance
@@ -1472,21 +1474,21 @@ void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius) const{
 		uint32_t zero = 0;
 		gRenderBackend.setStorageBufferData(m_sdfShadowFrustumCulledInstances, &zero, sizeof(zero));
 
-		RenderPassExecution exe;
-		exe.handle = m_sdfShadowFrustumCulling;
-		exe.resources.storageBuffers = {
+		ComputePassExecution exe;
+		exe.genericInfo.handle = m_sdfShadowFrustumCulling;
+		exe.genericInfo.resources.storageBuffers = {
 			StorageBufferResource(m_sdfInstanceBuffer, true, 0),
 			StorageBufferResource(m_sdfShadowFrustumCulledInstances, false, 2),
 			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 3)
 		};
-		exe.resources.uniformBuffers = {
+		exe.genericInfo.resources.uniformBuffers = {
 			UniformBufferResource(m_shadowFrustumPointsBuffer, 1)
 		};
 		exe.dispatchCount[0] = uint32_t(glm::ceil(m_currentSDFInstanceCount / 64.f));
 		exe.dispatchCount[1] = 1;
 		exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setRenderPassExecution(exe);
+		gRenderBackend.setComputePassExecution(exe);
 	}
 	//shadow tile culling
 	{
@@ -1518,32 +1520,35 @@ void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius) const{
 		gRenderBackend.setUniformBufferData(m_shadowFrustumInfoBuffer, &shadowFrustum, sizeof(ShadowFrustumInfo));
 
 		//set execution
-		RenderPassExecution exe;
-		exe.handle = m_sdfShadowTileCulling;
-		exe.parents = { m_sdfShadowFrustumCulling };
+		ComputePassExecution exe;
+		exe.genericInfo.handle = m_sdfShadowTileCulling;
+		exe.genericInfo.parents = { m_sdfShadowFrustumCulling };
 
 		const uint32_t localGroupSize = 8;
 		exe.dispatchCount[0] = uint32_t(glm::ceil(sdfShadowCullingTilesCount1D / float(localGroupSize)));
 		exe.dispatchCount[1] = uint32_t(glm::ceil(sdfShadowCullingTilesCount1D / float(localGroupSize)));
 		exe.dispatchCount[2] = 1;
 
-		exe.resources.storageBuffers = {
+		exe.genericInfo.resources.storageBuffers = {
 			StorageBufferResource(m_sdfShadowFrustumCulledInstances, true, 0),
 			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 1),
 			StorageBufferResource(m_sdfShadowCulledTiles, false, 2)
 		};
 
-		exe.resources.uniformBuffers = {
+		exe.genericInfo.resources.uniformBuffers = {
 			UniformBufferResource(m_shadowFrustumInfoBuffer, 3)
 		};
 
-		gRenderBackend.setRenderPassExecution(exe);
+		gRenderBackend.setComputePassExecution(exe);
 	}
 	//camera tile culling
 	{
-		RenderPassExecution exe;
-		exe.handle = m_sdfCameraTileCulling;
-		exe.parents = { m_sdfCameraFrustumCulling };
+		ComputePassExecution exe;
+		exe.genericInfo.handle = useHiZ ? m_sdfCameraTileCullingHiZ : m_sdfCameraTileCulling;
+		exe.genericInfo.parents = { m_sdfCameraFrustumCulling };
+		if (useHiZ) {
+			exe.genericInfo.parents.push_back(m_depthPyramidPass);
+		};
 
 		const uint32_t tileCountX = uint32_t(glm::ceil(m_screenWidth / float(sdfCameraCullingTileSize)));
 		const uint32_t tileCountY = uint32_t(glm::ceil(m_screenHeight / float(sdfCameraCullingTileSize)));
@@ -1554,7 +1559,7 @@ void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius) const{
 		exe.dispatchCount[1] = uint32_t(glm::ceil(tileCountY / float(localGroupSize)));
 		exe.dispatchCount[2] = 1;
 
-		exe.resources.storageBuffers = {
+		exe.genericInfo.resources.storageBuffers = {
 			StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 0),
 			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 1),
 			StorageBufferResource(m_sdfCameraCulledTiles, false, 2)
@@ -1562,11 +1567,14 @@ void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius) const{
 
 		gRenderBackend.setUniformBufferData(m_sdfTraceInfluenceRangeBuffer, &sdfInfluenceRadius, sizeof(m_sdfTraceInfluenceRadius));
 
-		exe.resources.uniformBuffers = {
+		exe.genericInfo.resources.uniformBuffers = {
 			UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 3)
 		};
+		exe.genericInfo.resources.sampledImages = {
+			ImageResource(m_minMaxDepthPyramid, 0, 4)
+		};
 
-		gRenderBackend.setRenderPassExecution(exe);
+		gRenderBackend.setComputePassExecution(exe);
 	}
 }
 
@@ -1619,15 +1627,15 @@ void RenderFrontend::skyIBLConvolution() {
         const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 0);
         const auto skyLutResource = ImageResource(m_skyLut, 0, 1);
 
-        RenderPassExecution diffuseConvolutionExecution;
-        diffuseConvolutionExecution.handle = m_skyDiffuseConvolutionPass;
-        diffuseConvolutionExecution.parents = { m_skyLutPass };
-        diffuseConvolutionExecution.resources.storageImages = { diffuseProbeResource };
-        diffuseConvolutionExecution.resources.sampledImages = { skyLutResource };
+		ComputePassExecution diffuseConvolutionExecution;
+        diffuseConvolutionExecution.genericInfo.handle = m_skyDiffuseConvolutionPass;
+        diffuseConvolutionExecution.genericInfo.parents = { m_skyLutPass };
+        diffuseConvolutionExecution.genericInfo.resources.storageImages = { diffuseProbeResource };
+        diffuseConvolutionExecution.genericInfo.resources.sampledImages = { skyLutResource };
         diffuseConvolutionExecution.dispatchCount[0] = uint32_t(std::ceil(diffuseSkyProbeRes / 8.f));
         diffuseConvolutionExecution.dispatchCount[1] = uint32_t(std::ceil(diffuseSkyProbeRes / 8.f));
         diffuseConvolutionExecution.dispatchCount[2] = 6;
-        gRenderBackend.setRenderPassExecution(diffuseConvolutionExecution);
+        gRenderBackend.setComputePassExecution(diffuseConvolutionExecution);
     }
     //specular probe convolution
     for (uint32_t mipLevel = 0; mipLevel < m_specularSkyProbeMipCount; mipLevel++) {
@@ -1635,15 +1643,15 @@ void RenderFrontend::skyIBLConvolution() {
         const auto specularProbeResource = ImageResource(m_specularSkyProbe, mipLevel, 0);
         const auto skyLutResource = ImageResource(m_skyLut, 0, 1);
 
-        RenderPassExecution specularConvolutionExecution;
-        specularConvolutionExecution.handle = m_skySpecularConvolutionPerMipPasses[mipLevel];
-        specularConvolutionExecution.parents = { m_skyLutPass };
-        specularConvolutionExecution.resources.storageImages = { specularProbeResource };
-        specularConvolutionExecution.resources.sampledImages = { skyLutResource };
+		ComputePassExecution specularConvolutionExecution;
+        specularConvolutionExecution.genericInfo.handle = m_skySpecularConvolutionPerMipPasses[mipLevel];
+        specularConvolutionExecution.genericInfo.parents = { m_skyLutPass };
+        specularConvolutionExecution.genericInfo.resources.storageImages = { specularProbeResource };
+        specularConvolutionExecution.genericInfo.resources.sampledImages = { skyLutResource };
         specularConvolutionExecution.dispatchCount[0] = specularSkyProbeRes / uint32_t(pow(2, mipLevel)) / 8;
         specularConvolutionExecution.dispatchCount[1] = specularSkyProbeRes / uint32_t(pow(2, mipLevel)) / 8;
         specularConvolutionExecution.dispatchCount[2] = 6;
-        gRenderBackend.setRenderPassExecution(specularConvolutionExecution);
+        gRenderBackend.setComputePassExecution(specularConvolutionExecution);
     }
 }
 
@@ -1651,13 +1659,13 @@ void RenderFrontend::computeBRDFLut() {
 
     const auto brdfLutStorageResource = ImageResource(m_brdfLut, 0, 0);
 
-    RenderPassExecution brdfLutExecution;
-    brdfLutExecution.handle = m_brdfLutPass;
-    brdfLutExecution.resources.storageImages = { brdfLutStorageResource };
+	ComputePassExecution brdfLutExecution;
+    brdfLutExecution.genericInfo.handle = m_brdfLutPass;
+    brdfLutExecution.genericInfo.resources.storageImages = { brdfLutStorageResource };
     brdfLutExecution.dispatchCount[0] = brdfLutRes / 8;
     brdfLutExecution.dispatchCount[1] = brdfLutRes / 8;
     brdfLutExecution.dispatchCount[2] = 1;
-    gRenderBackend.setRenderPassExecution(brdfLutExecution);
+    gRenderBackend.setComputePassExecution(brdfLutExecution);
 }
 
 void RenderFrontend::updateCameraFrustum() {
@@ -3106,7 +3114,27 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 		ComputePassDescription desc;
 		desc.name = "SDF camera tile culling";
 		desc.shaderDescription.srcPathRelative = "sdfCameraTileCulling.comp";
+
+		//hi-z disabled
+		bool useHiZ = false;
+		desc.shaderDescription.specialisationConstants = {
+			{
+				0,                                              //location
+				dataToCharArray((void*)&useHiZ, sizeof(useHiZ))	//value
+			}
+		};
 		m_sdfCameraTileCulling = gRenderBackend.createComputePass(desc);
+
+		//hi-z enabled
+		useHiZ = true;
+		desc.shaderDescription.specialisationConstants = {
+			{
+				0,                                              //location
+				dataToCharArray((void*)&useHiZ, sizeof(useHiZ))	//value
+			}
+		};
+		m_sdfCameraTileCullingHiZ = gRenderBackend.createComputePass(desc);
+
 	}
 	//sdf shadow tile culling
 	{

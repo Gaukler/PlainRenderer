@@ -34,6 +34,17 @@ RenderBackend gRenderBackend;
 
 const uint32_t maxTextureCount = 1000;
 
+//===== private function declarations
+
+RenderPassExecution getGenericRenderpassInfoFromExecutionEntry(const RenderPassExecutionEntry& entry,
+	const std::vector<GraphicPassExecution>& graphicExecutions,
+	const std::vector<ComputePassExecution>& computeExecutions);
+
+RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExecution>& graphicExecutions,
+	const std::vector<ComputePassExecution>& computeExecutions);
+
+//=====
+
 /*
 ==================
 
@@ -420,7 +431,9 @@ void RenderBackend::newFrame() {
     res = vkResetFences(vkContext.device, 1, &m_renderFinishedFence);
     assert(res == VK_SUCCESS);
 
-    m_renderPassExecutions.clear();
+    m_graphicPassExecutions.clear();
+	m_computePassExecutions.clear();
+
     m_swapchainInputImageHandle.index = VK_NULL_HANDLE;
 
     ImGui_ImplVulkan_NewFrame();
@@ -430,13 +443,8 @@ void RenderBackend::newFrame() {
 
 void RenderBackend::startDrawcallRecording() {
     //iterate over graphic passes that will be executed
-    for (const RenderPassExecution execution : m_renderPassExecutions) {
-        const RenderPassHandle passHandle = execution.handle;
-
-        //only need graphic passes
-        if (!m_renderPasses.isGraphicPassHandle(passHandle)) {
-            continue;
-        }
+    for (const GraphicPassExecution execution : m_graphicPassExecutions) {
+        const RenderPassHandle passHandle = execution.genericInfo.handle;
 
         const GraphicPass pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
 
@@ -490,25 +498,23 @@ void RenderBackend::startDrawcallRecording() {
     }
 }
 
-void RenderBackend::setRenderPassExecution(const RenderPassExecution& execution) {
+void RenderBackend::setGraphicPassExecution(const GraphicPassExecution& execution) {
+	if (execution.framebuffer.index == invalidIndex) {
+		std::cout << "Renderpass execution is missing framebuffer, skipping execution\n";
+		return;
+	}
+	const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
+	if (!validateFramebufferTargetGraphicPassCombination(framebuffer.desc.targets, execution.genericInfo.handle)) {
+		std::cout << "Framebuffer and renderpass are incompatible, skipping execution\n";
+		return;
+	}
+	updateDescriptorSet(m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle).descriptorSet, execution.genericInfo.resources);
+	m_graphicPassExecutions.push_back(execution);
+}
 
-    if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
-        if (execution.framebuffer.index == invalidIndex) {
-            std::cout << "Renderpass execution is missing framebuffer, skipping execution\n";
-            return;
-        }
-        const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
-        if (!validateFramebufferTargetGraphicPassCombination(framebuffer.desc.targets, execution.handle)) {
-            std::cout << "Framebuffer and renderpass are incompatible, skipping execution\n";
-            return;
-        }
-        updateDescriptorSet(m_renderPasses.getGraphicPassRefByHandle(execution.handle).descriptorSet, execution.resources);
-    }
-    else {
-        updateDescriptorSet(m_renderPasses.getComputePassRefByHandle(execution.handle).descriptorSet, execution.resources);
-    }
-    
-    m_renderPassExecutions.push_back(execution);
+void RenderBackend::setComputePassExecution(const ComputePassExecution& execution) {
+	updateDescriptorSet(m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle).descriptorSet, execution.genericInfo.resources);
+	m_computePassExecutions.push_back(execution);
 }
 
 void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData,const RenderPassHandle passHandle) {
@@ -632,9 +638,88 @@ void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle pa
     }
 }
 
-void RenderBackend::renderFrame(bool presentToScreen) {
+//helper that picks correct vector from entry and returns RenderPassExecution accprdong to entry index
+RenderPassExecution getGenericRenderpassInfoFromExecutionEntry(const RenderPassExecutionEntry& entry,
+	const std::vector<GraphicPassExecution>& graphicExecutions,
+	const std::vector<ComputePassExecution>& computeExecutions) {
 
-    prepareRenderPasses();
+	if (entry.type == RenderPassType::Graphic) {
+		return graphicExecutions[entry.index].genericInfo;
+	}
+	else if (entry.type == RenderPassType::Compute) {
+		return computeExecutions[entry.index].genericInfo;
+	}
+	else {
+		std::cout << "Unknown RenderPassType\n";
+		throw("Unknown RenderPassType");
+	}
+}
+
+RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExecution>& graphicExecutions,
+	const std::vector<ComputePassExecution>& computeExecutions) {
+
+	std::vector<RenderPassExecutionEntry> pendingPasses;
+	//add graphic passes to pending list
+	for (int i = 0; i < graphicExecutions.size(); i++) {
+		RenderPassExecutionEntry entry;
+		entry.type = RenderPassType::Graphic;
+		entry.index = i;
+		pendingPasses.push_back(entry);
+	}
+	//add compute passes to pending list
+	for (int i = 0; i < computeExecutions.size(); i++) {
+		RenderPassExecutionEntry entry;
+		entry.type = RenderPassType::Compute;
+		entry.index = i;
+		pendingPasses.push_back(entry);
+	}
+
+	//iterate over passes, add them if possible
+	//adding is possible if all parents have already been added
+	//index is reset if pass is added to recheck condition for previous passes
+	uint32_t passIndex = 0;
+	RenderPassExecutionOrder order;
+
+	while (passIndex < pendingPasses.size()) {
+		const RenderPassExecutionEntry executionEntry = pendingPasses[passIndex];
+		const RenderPassExecution executionInfo = getGenericRenderpassInfoFromExecutionEntry(executionEntry,
+			graphicExecutions, computeExecutions);
+
+		bool parentsAvaible = true;
+		for (const RenderPassHandle parent : executionInfo.parents) {
+			bool parentFound = false;
+			for (const RenderPassExecutionEntry& parentCandidate : order.executions) {
+				const RenderPassExecution parentCandidateInfo = getGenericRenderpassInfoFromExecutionEntry(parentCandidate,
+					graphicExecutions, computeExecutions);
+				if (parentCandidateInfo.handle.index == parent.index) {
+					parentFound = true;
+					break;
+				}
+			}
+			if (!parentFound) {
+				parentsAvaible = false;
+				passIndex++;
+				break;
+			}
+		}
+		if (!parentsAvaible) {
+			continue;
+		}
+		order.executions.push_back(executionEntry);
+
+		//remove pass from pending list by swapping with end
+		pendingPasses[passIndex] = pendingPasses.back();
+		pendingPasses.pop_back();
+
+		//restart at beginning
+		passIndex = 0;
+	}
+	assert(pendingPasses.size() == 0); //all passes must have been added
+
+	return order;
+}
+
+void RenderBackend::renderFrame(bool presentToScreen) {
 
     //reset doesn't work before waiting for render finished fence
     resetTimestampQueryPool();
@@ -664,8 +749,20 @@ void RenderBackend::renderFrame(bool presentToScreen) {
         m_timestampQueries.push_back(frameQuery);
     }
             
-    for (const auto& execution : m_renderPassInternalExecutions) {
-        submitRenderPass(execution, currentCommandBuffer);
+	const RenderPassExecutionOrder executionOrder = computeExecutionOrder(m_graphicPassExecutions, m_computePassExecutions);
+	const std::vector<RenderPassBarriers> barriers = createRenderPassBarriers(executionOrder, m_graphicPassExecutions, m_computePassExecutions);
+
+	for (int i = 0; i < executionOrder.executions.size(); i++) {
+		const RenderPassExecutionEntry& executionEntry = executionOrder.executions[i];
+		if (executionEntry.type == RenderPassType::Graphic) {
+			submitGraphicPass(m_graphicPassExecutions[executionEntry.index], barriers[i], currentCommandBuffer);
+		}
+		else if (executionEntry.type == RenderPassType::Compute) {
+			submitComputePass(m_computePassExecutions[executionEntry.index], barriers[i], currentCommandBuffer);
+		}
+		else {
+			std::cout << "Unknown RenderPassType\n";
+		}
     }
 
     //imgui    
@@ -677,9 +774,13 @@ void RenderBackend::renderFrame(bool presentToScreen) {
         imguiQuery.startQuery = issueTimestampQuery(currentCommandBuffer);
     
         ImGui::Render();
-    
+		
+		const std::vector<VkImageMemoryBarrier> uiBarrier = createImageBarriers(m_images[m_swapchainInputImageHandle.index],
+			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
+
         vkCmdPipelineBarrier(currentCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-            0, 0, nullptr, 0, nullptr, 1, m_ui.barriers.data());
+            0, 0, nullptr, 0, nullptr, 1, uiBarrier.data());
     
         vkCmdBeginRenderPass(currentCommandBuffer, &m_ui.passBeginInfos[m_swapchainInputImageIndex], VK_SUBPASS_CONTENTS_INLINE);
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentCommandBuffer);
@@ -1200,179 +1301,134 @@ std::vector<RenderPassTime> RenderBackend::getRenderpassTimings() {
     return m_renderpassTimings;
 }
 
-void RenderBackend::prepareRenderPasses() {
-    
-    m_renderPassInternalExecutions.clear();
-    auto renderPassesToAdd = m_renderPassExecutions;
-    m_renderPassExecutions.clear();
+std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers(const RenderPassExecutionOrder& executionOrder,
+	const std::vector<GraphicPassExecution>& graphicExecutions,
+	const std::vector<ComputePassExecution>& computeExecutions) {
 
-    //order passes
-    //iterate over passes, add them if possible
-    //adding is possible if all parents have already been added
-    //index is reset if pass is added to recheck condition for previous passes
-    uint32_t passIndex = 0;
-    while (passIndex < renderPassesToAdd.size()) {
-        const auto pass = renderPassesToAdd[passIndex];
-        bool parentsAvaible = true;
-        for (const auto parent : pass.parents) {
-            bool parentFound = false;
-            for (uint32_t j = 0; j < m_renderPassInternalExecutions.size(); j++) {
-                if (m_renderPassInternalExecutions[j].handle.index == parent.index) {
-                    parentFound = true;
-                    break;
-                }
-            }
-            if (!parentFound) {
-                parentsAvaible = false;
-                passIndex++;
-                break;
-            }
-        }
-        if (parentsAvaible) {
-            m_renderPassExecutions.push_back(pass);
-            RenderPassExecutionInternal internalExec;
-            internalExec.handle = pass.handle;
-            internalExec.framebuffer = pass.framebuffer;
-            internalExec.dispatches[0] = pass.dispatchCount[0];
-            internalExec.dispatches[1] = pass.dispatchCount[1];
-            internalExec.dispatches[2] = pass.dispatchCount[2];
-            m_renderPassInternalExecutions.push_back(internalExec);
-            
-            //remove pass by swapping with end
-            renderPassesToAdd[passIndex] = renderPassesToAdd.back();
-            renderPassesToAdd.pop_back();
-            passIndex = 0;
-        }
-    }
-    assert(renderPassesToAdd.size() == 0); //all passes must have been added
+	std::vector<RenderPassBarriers> barrierList;
 
-    
-    //create barriers
-    for (uint32_t i = 0; i < m_renderPassExecutions.size(); i++) {
+	for (const RenderPassExecutionEntry executionEntry : executionOrder.executions) {
 
-        auto& execution = m_renderPassExecutions[i];
-        std::vector<VkImageMemoryBarrier> barriers;
-        const auto& resources = execution.resources;
+		const RenderPassExecution execution = getGenericRenderpassInfoFromExecutionEntry(executionEntry,
+			graphicExecutions, computeExecutions);
 
-        //storage images        
-        for (auto& storageImage : resources.storageImages) {
-            Image& image = m_images[storageImage.image.index];
+		const RenderPassResources& resources = execution.resources;
+		RenderPassBarriers barriers;
 
-            //check if any mip levels need a layout transition            
-            const VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_GENERAL;
-            bool needsLayoutTransition = false;
-            for (const auto& layout : image.layoutPerMip) {
-                if (layout != requiredLayout) {
-                    needsLayoutTransition = true;
-                }
-            }
+		//storage images        
+		for (const ImageResource& storageImage : resources.storageImages) {
+			Image& image = m_images[storageImage.image.index];
 
-            //check if image already has a barrier
-            //can happen if same image is used as two storage image when accessing different mips            
-            bool hasBarrierAlready = false;
-            for (const auto& barrier : barriers) {
-                if (barrier.image == image.vulkanHandle) {
-                    hasBarrierAlready = true;
-                    break;
-                }
-            }
+			//check if any mip levels need a layout transition            
+			const VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_GENERAL;
+			bool needsLayoutTransition = false;
+			for (const auto& layout : image.layoutPerMip) {
+				if (layout != requiredLayout) {
+					needsLayoutTransition = true;
+				}
+			}
 
-            if ((image.currentlyWriting || needsLayoutTransition) && !hasBarrierAlready) {
-                const auto& layoutBarriers = createImageBarriers(image, requiredLayout,
-                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, 0, (uint32_t)image.layoutPerMip.size());
-                barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
-            }
-            image.currentlyWriting = true;
-        }
+			//check if image already has a barrier
+			//can happen if same image is used as two storage image when accessing different mips            
+			bool hasBarrierAlready = false;
+			for (const auto& barrier : barriers.imageBarriers) {
+				if (barrier.image == image.vulkanHandle) {
+					hasBarrierAlready = true;
+					break;
+				}
+			}
 
-        //sampled images        
-        for (auto& sampledImage : resources.sampledImages) {
+			if ((image.currentlyWriting || needsLayoutTransition) && !hasBarrierAlready) {
+				const auto& layoutBarriers = createImageBarriers(image, requiredLayout,
+					VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, 0, (uint32_t)image.layoutPerMip.size());
+				barriers.imageBarriers.insert(barriers.imageBarriers.end(), layoutBarriers.begin(), layoutBarriers.end());
+			}
+			image.currentlyWriting = true;
+		}
 
-            //use general layout if image is used as a storage image too
-            bool isUsedAsStorageImage = false;
-            {
-                for (auto& storageImage : resources.storageImages) {
-                    if (storageImage.image.index == sampledImage.image.index) {
-                        isUsedAsStorageImage = true;
-                        break;
-                    }
-                }
-            }
-            if (isUsedAsStorageImage) {
-                continue;
-            }
+		//sampled images        
+		for (const ImageResource& sampledImage : resources.sampledImages) {
 
-            Image& image = m_images[sampledImage.image.index];
+			//use general layout if image is used as a storage image too
+			bool isUsedAsStorageImage = false;
+			{
+				for (const ImageResource& storageImage : resources.storageImages) {
+					if (storageImage.image.index == sampledImage.image.index) {
+						isUsedAsStorageImage = true;
+						break;
+					}
+				}
+			}
+			if (isUsedAsStorageImage) {
+				continue;
+			}
 
-            //check if any mip levels need a layout transition            
-            VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			Image& image = m_images[sampledImage.image.index];
 
-            bool needsLayoutTransition = false;
-            for (const auto& layout : image.layoutPerMip) {
-                if (layout != requiredLayout) {
-                    needsLayoutTransition = true;
-                }
-            }
+			//check if any mip levels need a layout transition            
+			VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-            if (image.currentlyWriting || needsLayoutTransition) {
-                const auto& layoutBarriers = createImageBarriers(image, requiredLayout, VK_ACCESS_SHADER_READ_BIT, 
-                    0, (uint32_t)image.viewPerMip.size());
-                barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
-            }
-        }
+			bool needsLayoutTransition = false;
+			for (const auto& layout : image.layoutPerMip) {
+				if (layout != requiredLayout) {
+					needsLayoutTransition = true;
+				}
+			}
 
-        //attachments        
-        if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
-            const auto& framebuffer = m_framebuffers[execution.framebuffer.index];
-            for (const auto target : framebuffer.desc.targets) {
-                Image& image = m_images[target.image.index];
+			if (image.currentlyWriting || needsLayoutTransition) {
+				const auto& layoutBarriers = createImageBarriers(image, requiredLayout, VK_ACCESS_SHADER_READ_BIT,
+					0, (uint32_t)image.viewPerMip.size());
+				barriers.imageBarriers.insert(barriers.imageBarriers.end(), layoutBarriers.begin(), layoutBarriers.end());
+			}
+		}
 
-                //check if any mip levels need a layout transition                
-                const VkImageLayout requiredLayout = isDepthFormat(image.format) ?
-                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		//attachments        
+		if (executionEntry.type == RenderPassType::Graphic) {
+			const GraphicPassExecution graphicExecutionInfo = graphicExecutions[executionEntry.index];
 
-                bool needsLayoutTransition = false;
-                for (const auto& layout : image.layoutPerMip) {
-                    if (layout != requiredLayout) {
-                        needsLayoutTransition = true;
-                    }
-                }
+			const Framebuffer& framebuffer = m_framebuffers[graphicExecutionInfo.framebuffer.index];
+			for (const FramebufferTarget& target : framebuffer.desc.targets) {
+				Image& image = m_images[target.image.index];
 
-                if (image.currentlyWriting || needsLayoutTransition) {
-                    const VkAccessFlags access = isDepthFormat(image.format) ?
-                        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+				//check if any mip levels need a layout transition                
+				const VkImageLayout requiredLayout = isDepthFormat(image.format) ?
+					VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-                    const auto& layoutBarriers = createImageBarriers(image, requiredLayout, access, 0, 
-                        (uint32_t)image.viewPerMip.size());
-                    barriers.insert(barriers.end(), layoutBarriers.begin(), layoutBarriers.end());
-                }
-                image.currentlyWriting = true;
-            }
-        }
-        
-        m_renderPassInternalExecutions[i].imageBarriers = barriers;
+				bool needsLayoutTransition = false;
+				for (const auto& layout : image.layoutPerMip) {
+					if (layout != requiredLayout) {
+						needsLayoutTransition = true;
+					}
+				}
 
-        //storage buffer barriers
-        for (const auto& bufferResource : resources.storageBuffers) {
-            StorageBufferHandle handle = bufferResource.buffer;
-            Buffer& buffer = m_storageBuffers[handle.index];
-            const bool needsBarrier = buffer.isBeingWritten;
-            if (needsBarrier) {
-                VkBufferMemoryBarrier barrier = createBufferBarrier(buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
-                m_renderPassInternalExecutions[i].memoryBarriers.push_back(barrier);
-            }
+				if (image.currentlyWriting || needsLayoutTransition) {
+					const VkAccessFlags access = isDepthFormat(image.format) ?
+						VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-            //update writing state
-            buffer.isBeingWritten = !bufferResource.readOnly;
-        }
-    }
+					const auto& layoutBarriers = createImageBarriers(image, requiredLayout, access, 0,
+						(uint32_t)image.viewPerMip.size());
+					barriers.imageBarriers.insert(barriers.imageBarriers.end(), layoutBarriers.begin(), layoutBarriers.end());
+				}
+				image.currentlyWriting = true;
+			}
+		}
 
-    /*
-    add UI barriers
-    */
-    m_ui.barriers = createImageBarriers(m_images[m_swapchainInputImageHandle.index], 
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
+		//storage buffer barriers
+		for (const auto& bufferResource : resources.storageBuffers) {
+			StorageBufferHandle handle = bufferResource.buffer;
+			Buffer& buffer = m_storageBuffers[handle.index];
+			const bool needsBarrier = buffer.isBeingWritten;
+			if (needsBarrier) {
+				VkBufferMemoryBarrier barrier = createBufferBarrier(buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+				barriers.memoryBarriers.push_back(barrier);
+			}
+
+			//update writing state
+			buffer.isBeingWritten = !bufferResource.readOnly;
+		}
+		barrierList.push_back(barriers);
+	}
+	return barrierList;
 }
 
 VkRenderPassBeginInfo createBeginInfo(const uint32_t width, const uint32_t height, const VkRenderPass pass, 
@@ -1398,57 +1454,63 @@ VkRenderPassBeginInfo createBeginInfo(const uint32_t width, const uint32_t heigh
     return beginInfo;
 }
 
-void RenderBackend::submitRenderPass(const RenderPassExecutionInternal& execution, const VkCommandBuffer commandBuffer) {
+void RenderBackend::submitGraphicPass(const GraphicPassExecution& execution,
+	const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer) {
 
-    TimestampQuery timeQuery;
+	GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle);
+	startDebugLabel(commandBuffer, pass.graphicPassDesc.name);
 
-    if (m_renderPasses.isGraphicPassHandle(execution.handle)) {
+	TimestampQuery timeQuery;
+	timeQuery.name = pass.graphicPassDesc.name;
+	timeQuery.startQuery = issueTimestampQuery(commandBuffer);
 
-        auto& pass = m_renderPasses.getGraphicPassRefByHandle(execution.handle);
-        startDebugLabel(commandBuffer, pass.graphicPassDesc.name);
+	barriersCommand(commandBuffer, barriers.imageBarriers, barriers.memoryBarriers);
 
-        timeQuery.name = pass.graphicPassDesc.name;
-        timeQuery.startQuery = issueTimestampQuery(commandBuffer);
+	const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
+	const glm::ivec2 resolution = resolutionFromFramebufferTargets(framebuffer.desc.targets);
+	const auto beginInfo = createBeginInfo(resolution.x, resolution.y, pass.vulkanRenderPass,
+		framebuffer.vkHandle, pass.clearValues);
 
-        barriersCommand(commandBuffer, execution.imageBarriers, execution.memoryBarriers);
+	//prepare pass
+	vkCmdBeginRenderPass(commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
-        const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
-        const glm::ivec2 resolution = resolutionFromFramebufferTargets(framebuffer.desc.targets);
-        const auto beginInfo = createBeginInfo(resolution.x, resolution.y, pass.vulkanRenderPass, 
-            framebuffer.vkHandle, pass.clearValues);
+	//stop recording mesh commands
+	vkEndCommandBuffer(pass.meshCommandBuffer);
 
-        //prepare pass
-        vkCmdBeginRenderPass(commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+	//execute mesh commands
+	vkCmdExecuteCommands(commandBuffer, 1, &pass.meshCommandBuffer);
 
-        //stop recording mesh commands
-        vkEndCommandBuffer(pass.meshCommandBuffer);
+	vkCmdEndRenderPass(commandBuffer);
 
-        //execute mesh commands
-        vkCmdExecuteCommands(commandBuffer, 1, &pass.meshCommandBuffer);
+	timeQuery.endQuery = issueTimestampQuery(commandBuffer);
+	endDebugLabel(commandBuffer);
+	m_timestampQueries.push_back(timeQuery);
+}
 
-        vkCmdEndRenderPass(commandBuffer);
-    }
-    else {
-		//TODO: add push constants for compute passes
-        auto& pass = m_renderPasses.getComputePassRefByHandle(execution.handle);
-        startDebugLabel(commandBuffer, pass.computePassDesc.name);
+void RenderBackend::submitComputePass(const ComputePassExecution& execution,
+	const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer) {
 
-        timeQuery.name = pass.computePassDesc.name;
-        timeQuery.startQuery = issueTimestampQuery(commandBuffer);
+	TimestampQuery timeQuery;
 
-        barriersCommand(commandBuffer, execution.imageBarriers, execution.memoryBarriers);
+	//TODO: add push constants for compute passes
+	ComputePass& pass = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle);
+	startDebugLabel(commandBuffer, pass.computePassDesc.name);
 
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
+	timeQuery.name = pass.computePassDesc.name;
+	timeQuery.startQuery = issueTimestampQuery(commandBuffer);
 
-        const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, m_globalTextureArrayDescriptorSet };
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
+	barriersCommand(commandBuffer, barriers.imageBarriers, barriers.memoryBarriers);
 
-        vkCmdDispatch(commandBuffer, execution.dispatches[0], execution.dispatches[1], execution.dispatches[2]);
-    }
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
 
-    timeQuery.endQuery = issueTimestampQuery(commandBuffer);
-    endDebugLabel(commandBuffer);
-    m_timestampQueries.push_back(timeQuery);
+	const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSet, m_globalTextureArrayDescriptorSet };
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
+
+	vkCmdDispatch(commandBuffer, execution.dispatchCount[0], execution.dispatchCount[1], execution.dispatchCount[2]);
+
+	timeQuery.endQuery = issueTimestampQuery(commandBuffer);
+	endDebugLabel(commandBuffer);
+	m_timestampQueries.push_back(timeQuery);
 }
 
 void RenderBackend::waitForRenderFinished() {

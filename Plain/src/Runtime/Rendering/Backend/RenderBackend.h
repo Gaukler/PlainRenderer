@@ -23,7 +23,6 @@ struct Swapchain {
 };
 
 struct UIRenderInfo {
-    std::vector<VkImageMemoryBarrier>   barriers;
     std::vector<VkRenderPassBeginInfo>  passBeginInfos;
     std::vector<VkFramebuffer>          framebuffers;
     VkRenderPass                        renderPass = VK_NULL_HANDLE;
@@ -82,6 +81,17 @@ struct VulkanRasterizationStateCreateInfo {
 	VkPipelineRasterizationConservativeStateCreateInfoEXT conservativeInfo;
 };
 
+enum class RenderPassType { Graphic, Compute };
+
+struct RenderPassExecutionEntry {
+	RenderPassType type;
+	int index;
+};
+
+struct RenderPassExecutionOrder {
+	std::vector<RenderPassExecutionEntry> executions;
+};
+
 /*
 RenderPass handles are shared between compute and graphics to allow easy dependency management in the frontend
 the first bit of the handle indicates wether a handle is a compute or graphic pass
@@ -136,7 +146,10 @@ public:
     void newFrame();
 
     //must be called after newFrame and before startDrawcallRecording
-    void setRenderPassExecution(const RenderPassExecution& execution);
+    void setGraphicPassExecution(const GraphicPassExecution& execution);
+
+	//must be called after newFrame and before startDrawcallRecording
+	void setComputePassExecution(const ComputePassExecution& execution);
     
     //prepares for mesh drawcalls, must be called after all render pass executions have been set
     void startDrawcallRecording();
@@ -211,17 +224,18 @@ private:
 	size_t m_globalTextureArrayDescriptorSetTextureCount = 0;
 	std::vector<int32_t> m_globalTextureArrayDescriptorSetFreeTextureIndices;
 
-    //calculates pass order, updates descritor sets, creates barriers    
-    void prepareRenderPasses();
+	std::vector<RenderPassBarriers> createRenderPassBarriers(const RenderPassExecutionOrder& executionOrder,
+		const std::vector<GraphicPassExecution>& graphicExecutions,
+		const std::vector<ComputePassExecution>& computeExecutions);
 
-    std::vector<RenderPassExecution>            m_renderPassExecutions;
-    std::vector<RenderPassExecutionInternal>    m_renderPassInternalExecutions;
+    std::vector<GraphicPassExecution> m_graphicPassExecutions;
+	std::vector<ComputePassExecution> m_computePassExecutions;
 
-    /*
-    submits render commands of pass
-    m_commandBuffer must be recording
-    */
-    void submitRenderPass(const RenderPassExecutionInternal& execution, const VkCommandBuffer commandBuffer);
+    void submitGraphicPass(const GraphicPassExecution& execution, 
+		const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer);
+
+	void submitComputePass(const ComputePassExecution& execution, 
+		const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer);
 
     void waitForRenderFinished();
 

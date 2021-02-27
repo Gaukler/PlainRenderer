@@ -126,14 +126,9 @@ struct ComputePass {
 	size_t pushConstantSize;
 };
 
-//stores all information needed to execute a pass
-//the external version is used to order, update and create barriers
-struct RenderPassExecutionInternal {
-    RenderPassHandle                    handle;
-    FramebufferHandle                   framebuffer;
-    uint32_t                            dispatches[3] = {1, 1, 1}; //for compute only
-    std::vector<VkBufferMemoryBarrier>  memoryBarriers;
-    std::vector<VkImageMemoryBarrier>   imageBarriers;
+struct RenderPassBarriers {
+	std::vector<VkBufferMemoryBarrier>  memoryBarriers;
+	std::vector<VkImageMemoryBarrier>   imageBarriers;
 };
 
 struct Framebuffer {

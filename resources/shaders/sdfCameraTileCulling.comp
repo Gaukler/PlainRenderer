@@ -5,8 +5,12 @@
 #include "global.inc"
 #include "sdfCulling.inc"
 #include "screenToWorld.inc"
+#include "linearDepth.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(constant_id = 0) const bool useHiZ = false;
+layout(constant_id = 1) const bool halfResTracing = true;
 
 layout(set=1, binding = 0, std430) buffer culledSdfInstanceBuffer{
     uint culledInstanceCount;
@@ -36,6 +40,8 @@ void main(){
 	ivec2 tileUV = ivec2(gl_GlobalInvocationID.xy);
 
 	uvec2 tileCount = uvec2(ceil(g_screenResolution / vec2(cullingTileSize)));
+	tileCount /= halfResTracing ? 2 : 1;
+
 	if(any(greaterThanEqual(tileUV, tileCount))){
 		return;
 	}
@@ -44,14 +50,52 @@ void main(){
 
 	cullingTiles[tileIndex].objectCount = 0;
 
-	vec3 V = VFromiUV(tileUV * int(cullingTileSize) + ivec2(cullingTileSize, cullingTileSize) / 2);
+	vec3 cameraToPixel = -VFromiUV(tileUV * int(cullingTileSize) + ivec2(cullingTileSize, cullingTileSize) / 2);
 
-	vec3 V_ll = VFromiUV(tileUV * int(cullingTileSize));
-	vec3 V_ur = VFromiUV(tileUV * int(cullingTileSize) + ivec2(cullingTileSize, cullingTileSize));
-	V_ll /= dot(V, V_ll);
-	V_ur /= dot(V, V_ur);
+	vec3 V_ll = -VFromiUV(tileUV * int(cullingTileSize));
+	vec3 V_ur = -VFromiUV(tileUV * int(cullingTileSize) + ivec2(cullingTileSize, cullingTileSize));
+	V_ll /= dot(cameraToPixel, V_ll);
+	V_ur /= dot(cameraToPixel, V_ur);
 
 	float coneRadiusPerMeter = distance(V_ll, V_ur) * 0.5f;
+
+	float depthMin = g_nearPlane;
+	float depthMax = g_farPlane;
+	bool test = true;
+	//test = false;
+	vec2 uv = tileUV / vec2(tileCount);
+	if(useHiZ && test){
+		
+
+		depthMin = g_farPlane;
+		depthMax = g_nearPlane;
+
+		const int mip = 4;
+
+		for(int x = -1; x <= 1; x++){
+			for(int y = -1; y <= 1; y++){
+				vec2 depthMinMax = textureLod(sampler2D(depthMinMaxTexture, g_sampler_nearestClamp), uv + vec2(x, y) / tileCount, mip).rg;
+				depthMin = min(depthMin, linearizeDepth(depthMinMax.g, g_nearPlane, g_farPlane));
+				depthMax = max(depthMax, linearizeDepth(depthMinMax.r, g_nearPlane, g_farPlane));
+			}
+		}
+		vec2 depthMinMax = textureLod(sampler2D(depthMinMaxTexture, g_sampler_nearestClamp), uv, mip).rg;
+		depthMin = linearizeDepth(depthMinMax.g, g_nearPlane, g_farPlane);
+		depthMax = linearizeDepth(depthMinMax.r, g_nearPlane, g_farPlane);
+	}
+
+	//if(uv.x < 0.5 ){
+	//	depthMin = 10;
+	//	depthMax = 20;
+	//}
+	//else{
+	//	depthMin = 0;
+	//	depthMax = 0;
+	//}
+	
+
+	depthMin *= dot(cameraToPixel, g_cameraForward.xyz);
+	depthMax *= dot(cameraToPixel, g_cameraForward.xyz);
 
 	for(int i = 0; i < culledInstanceCount; i++){
 		BoundingBox bb = instanceBBs[culledInstanceIndices[i]];

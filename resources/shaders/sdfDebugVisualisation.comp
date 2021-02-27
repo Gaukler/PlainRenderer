@@ -162,6 +162,5 @@ void main(){
 	else{
 		color = sampleSkyLut(cameraToPixel, skyLut);
 	}
-
 	imageStore(imageOut, uv, vec4(color, 1.f));
 }

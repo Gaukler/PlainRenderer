@@ -151,7 +151,10 @@ private:
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void issueSkyDrawcalls();
 	void renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const;
-	void sdfInstanceCulling(const float sdfInfluenceRadius) const;
+
+	//when culling for direct visualisation hi-z culling results in artifacts
+	//enable for indirect, disable for direct
+	void sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ) const;
 
 	void updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB);
 
@@ -251,6 +254,7 @@ private:
 	RenderPassHandle m_sdfCameraFrustumCulling;
 	RenderPassHandle m_sdfShadowFrustumCulling;
 	RenderPassHandle m_sdfCameraTileCulling;
+	RenderPassHandle m_sdfCameraTileCullingHiZ;
 	RenderPassHandle m_sdfShadowTileCulling;
 	RenderPassHandle m_sdfDebugVisualisationPass;
 

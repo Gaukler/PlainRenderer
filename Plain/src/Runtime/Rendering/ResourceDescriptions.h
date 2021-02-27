@@ -53,15 +53,24 @@ struct RenderPassResources {
 };
 
 
-//contains all info used to submit a renderpass execution to the backend
+//generic info for a renderpass
 struct RenderPassExecution {
     RenderPassHandle                handle;
     RenderPassResources             resources;
     std::vector<RenderPassHandle>   parents;
-    FramebufferHandle               framebuffer;
-    uint32_t                        dispatchCount[3] = { 1, 1, 1}; //compute pass only
 };
 
+//contains RenderPassExecution and additional info for graphic pass
+struct GraphicPassExecution {
+	RenderPassExecution genericInfo;
+	FramebufferHandle framebuffer;
+};
+
+//contains RenderPassExecution and additional info for compute pass
+struct ComputePassExecution {
+	RenderPassExecution genericInfo;
+	uint32_t dispatchCount[3] = { 1, 1, 1 };
+};
 
 enum class RasterizationeMode { Fill, Line, Point };
 enum class CullMode { None, Front, Back };
