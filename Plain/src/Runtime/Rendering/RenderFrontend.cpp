@@ -375,7 +375,15 @@ void RenderFrontend::setupGlobalShaderInfoResources() {
 
 void RenderFrontend::prepareRenderpasses(){
 
-	if (m_sdfDebugMode != SDFDebugMode::None) {
+	static int sceneRenderTargetIndex;
+	const FrameRenderTargets lastRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
+	sceneRenderTargetIndex++;
+	sceneRenderTargetIndex %= 2;
+	const FrameRenderTargets currentRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
+
+	if (m_sdfDebugSettings.visualisationMode != SDFVisualisationMode::None) {
+		renderDepthPrepass(currentRenderTarget.prepassFramebuffer);
+		computeDepthPyramid(currentRenderTarget.depthBuffer);
 		computeColorBufferHistogram(m_postProcessBuffers[0]);
 		computeExposure();
 		updateSkyLut();
@@ -401,12 +409,6 @@ void RenderFrontend::prepareRenderpasses(){
 			forwardShadingDependencies.push_back(m_indirectLightingUpscale);
 		}
 	}
-
-    static int sceneRenderTargetIndex;
-    const FrameRenderTargets lastRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
-    sceneRenderTargetIndex++;
-    sceneRenderTargetIndex %= 2;
-    const FrameRenderTargets currentRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
 
     renderSunShadowCascades();
     computeColorBufferHistogram(lastRenderTarget.colorBuffer);
@@ -621,11 +623,6 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 			instanceWorldBBs.size() * sizeof(GPUBoundingBox));
 	}
 
-	//no mesh drawcalls needed for sdf debug visualisation
-	if (m_sdfDebugMode != SDFDebugMode::None) {
-		return;
-	}
-
     m_currentMeshCount += (uint32_t)scene.size();
 
     //main and prepass
@@ -665,13 +662,23 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 				mainPassMatrices.push_back(matrices);
             }
         }
-        gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstants.data(), m_mainPass);
-        gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstants.data(), m_depthPrePass);
-
+		//only prepass drawcalls needed for sdf debug visualisation
+		if (m_sdfDebugSettings.visualisationMode != SDFVisualisationMode::None) {
+			gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstants.data(), m_depthPrePass);
+		}
+		else {
+			gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstants.data(), m_mainPass);
+			gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstants.data(), m_depthPrePass);
+		}
 		gRenderBackend.setStorageBufferData(m_mainPassTransformsBuffer, mainPassMatrices.data(), 
 			sizeof(MainPassMatrices) * mainPassMatrices.size());
     }
     
+	//only prepass drawcalls needed for sdf debug visualisation
+	if (m_sdfDebugSettings.visualisationMode != SDFVisualisationMode::None) {
+		return;
+	}
+
     //shadow pass
     {
 		struct ShadowPushConstants {
@@ -753,7 +760,7 @@ void RenderFrontend::renderFrame() {
 	m_globalShaderInfo.frameIndex++;
 
 	//no sky drawn in debug mode
-	if (m_sdfDebugMode == SDFDebugMode::None) {
+	if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::None) {
 		issueSkyDrawcalls();
 	}
     gRenderBackend.renderFrame(true);
@@ -997,12 +1004,14 @@ void RenderFrontend::computeSunLightMatrices() const{
 
 void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) const {
 	
-	//TODO: return parent passes from culling function
-	sdfInstanceCulling(m_sdfTraceInfluenceRadius, true, m_shadingConfig.indirectLightingHalfRes);
+	const std::vector<RenderPassHandle> cullingParentPasses = 
+		sdfInstanceCulling(m_sdfTraceInfluenceRadius, true, m_shadingConfig.indirectLightingHalfRes);
 
 	ComputePassExecution exe;
 	exe.genericInfo.handle = m_diffuseSDFTracePass;
-	exe.genericInfo.parents = { m_depthPrePass, m_sdfCameraTileCullingHiZ, m_sdfShadowTileCulling, m_skyLutPass };
+	exe.genericInfo.parents = cullingParentPasses;
+	exe.genericInfo.parents.push_back(m_depthPrePass);
+	exe.genericInfo.parents.push_back(m_skyLutPass);
 	if (m_shadingConfig.indirectLightingHalfRes) {
 		exe.genericInfo.parents.push_back(m_depthDownscalePass);
 	}
@@ -1358,7 +1367,12 @@ void RenderFrontend::issueSkyDrawcalls() {
 void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const{
 
 	const float sdfIncluenceRadius = m_useInfluenceRadiusForDebug ? m_sdfTraceInfluenceRadius : 0.f;
-	sdfInstanceCulling(sdfIncluenceRadius, false, false);
+
+	bool useHiZCulling = false;
+	if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::CameraTileUsage && m_sdfDebugSettings.showCameraTileUsageWithHiZ) {
+		useHiZCulling = true;
+	}
+	const std::vector<RenderPassHandle> cullingParentPasses = sdfInstanceCulling(sdfIncluenceRadius, useHiZCulling, false);
 
 	ComputePassExecution exe;
 	exe.genericInfo.handle = m_sdfDebugVisualisationPass;
@@ -1378,14 +1392,13 @@ void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const
 	exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
 	exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
 	exe.dispatchCount[2] = 1;
-	exe.genericInfo.parents = { parent };
-	exe.genericInfo.parents.push_back(m_sdfCameraTileCulling);
-	exe.genericInfo.parents.push_back(m_sdfShadowTileCulling);
+	exe.genericInfo.parents = cullingParentPasses;
+	exe.genericInfo.parents.push_back(parent);
 
 	gRenderBackend.setComputePassExecution(exe);
 }
 
-void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ, const bool tracingHalfRes) const{
+std::vector<RenderPassHandle> RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ, const bool tracingHalfRes) const{
 	//camera frustum culling
 	{
 		struct GPUFrustumData {
@@ -1542,9 +1555,10 @@ void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bo
 		gRenderBackend.setComputePassExecution(exe);
 	}
 	//camera tile culling
+	const RenderPassHandle cameraTileCullingPass = useHiZ ? m_sdfCameraTileCullingHiZ : m_sdfCameraTileCulling;
 	{
 		ComputePassExecution exe;
-		exe.genericInfo.handle = useHiZ ? m_sdfCameraTileCullingHiZ : m_sdfCameraTileCulling;
+		exe.genericInfo.handle = cameraTileCullingPass;
 		exe.genericInfo.parents = { m_sdfCameraFrustumCulling };
 		if (useHiZ) {
 			exe.genericInfo.parents.push_back(m_depthPyramidPass);
@@ -1588,6 +1602,7 @@ void RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bo
 
 		gRenderBackend.setComputePassExecution(exe);
 	}
+	return { m_sdfShadowTileCulling, cameraTileCullingPass };
 }
 
 void RenderFrontend::updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB) {
@@ -1855,10 +1870,11 @@ ShaderDescription RenderFrontend::createEdgeMipCreationShaderDescription() {
 ShaderDescription RenderFrontend::createSDFDebugShaderDescription() {
 	ShaderDescription desc;
 	desc.srcPathRelative = "sdfDebugVisualisation.comp";
+	const SDFVisualisationMode& visualisationMode = m_sdfDebugSettings.visualisationMode;
 	desc.specialisationConstants = {
 		{
-		0,																//location
-		dataToCharArray((void*)&m_sdfDebugMode, sizeof(m_sdfDebugMode))	//value
+		0,																		//location
+		dataToCharArray((void*)&visualisationMode, sizeof(visualisationMode))	//value
 		}
 	};
 	return desc;
@@ -3267,7 +3283,11 @@ void RenderFrontend::drawUi() {
 	if (ImGui::CollapsingHeader("SDF settings")) {
 		const char* sdfDebugOptions[] = { "None", "Visualize SDF", "Camera tile usage", "Shadow tile usage", "Shadow tile id",
 			"SDF Normals", "Raymarching count"};
-		m_isSDFDebugShaderDescriptionStale = ImGui::Combo("SDF debug mode", (int*)&m_sdfDebugMode, sdfDebugOptions, 7);
+		m_isSDFDebugShaderDescriptionStale 
+			= ImGui::Combo("SDF debug mode", (int*)&m_sdfDebugSettings.visualisationMode, sdfDebugOptions, 7);
+		if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::CameraTileUsage) {
+			ImGui::Checkbox("Camera tile usage with hi-Z culling", &m_sdfDebugSettings.showCameraTileUsageWithHiZ);
+		}
 
 		ImGui::Checkbox("Use influence radius for debug visualisation", &m_useInfluenceRadiusForDebug);
 		ImGui::InputFloat("Shadow distance", &m_sdfShadowDistance);

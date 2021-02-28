@@ -32,8 +32,13 @@ struct ShadingConfig {
 };
 
 enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2, Bicubic5Tap=3, Bicubic1Tap=4 };
-enum class SDFDebugMode : int { None=0, VisualizeSDF=1, CameraTileUsage=2, ShadowTileUsage=3, ShadowTileId=4,
+enum class SDFVisualisationMode : int { None=0, VisualizeSDF=1, CameraTileUsage=2, ShadowTileUsage=3, ShadowTileId=4,
 	SDFNormals=5, RaymarchingSteps=6};
+
+struct SDFDebugSettings {
+	SDFVisualisationMode visualisationMode = SDFVisualisationMode::None;
+	bool showCameraTileUsageWithHiZ = true;
+};
 
 struct TemporalFilterSettings {
     bool enabled = true;
@@ -152,9 +157,10 @@ private:
     void issueSkyDrawcalls();
 	void renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const;
 
+	//returns list of passes that must be used as parent to wait for results
 	//when culling for direct visualisation hi-z culling results in artifacts
 	//enable for indirect, disable for direct
-	void sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ, const bool tracingHalfRes) const;
+	std::vector<RenderPassHandle> sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ, const bool tracingHalfRes) const;
 
 	void updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB);
 
@@ -217,7 +223,7 @@ private:
     ShadingConfig m_shadingConfig;
     TemporalFilterSettings m_temporalFilterSettings;
     AtmosphereSettings m_atmosphereSettings;
-	SDFDebugMode m_sdfDebugMode = SDFDebugMode::None;
+	SDFDebugSettings m_sdfDebugSettings;
 	bool m_useInfluenceRadiusForDebug = true;	//less efficient, but tile usage is same as for indirect light tracing
 	float m_sdfTraceInfluenceRadius = 3.f;
 
