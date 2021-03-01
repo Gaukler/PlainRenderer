@@ -324,6 +324,11 @@ void RenderFrontend::prepareNewFrame() {
 		gRenderBackend.updateComputePassShaderDescription(m_sdfDebugVisualisationPass, createSDFDebugShaderDescription());
 		m_isSDFDebugShaderDescriptionStale = false;
 	}
+	if (m_isSDFDiffuseTraceShaderDescriptionStale) {
+		gRenderBackend.updateComputePassShaderDescription(m_diffuseSDFTracePass, 
+			createSDFDiffuseTraceShaderDescription(m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff));
+		m_isSDFDiffuseTraceShaderDescriptionStale = false;
+	}
 
     gRenderBackend.updateShaderCode();
     gRenderBackend.newFrame();    
@@ -1005,7 +1010,7 @@ void RenderFrontend::computeSunLightMatrices() const{
 void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) const {
 	
 	const std::vector<RenderPassHandle> cullingParentPasses = 
-		sdfInstanceCulling(m_sdfTraceInfluenceRadius, true, m_shadingConfig.indirectLightingHalfRes);
+		sdfInstanceCulling(m_sdfDiffuseTraceSettings.traceInfluenceRadius, true, m_shadingConfig.indirectLightingHalfRes);
 
 	ComputePassExecution exe;
 	exe.genericInfo.handle = m_diffuseSDFTracePass;
@@ -1366,7 +1371,8 @@ void RenderFrontend::issueSkyDrawcalls() {
 
 void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const{
 
-	const float sdfIncluenceRadius = m_useInfluenceRadiusForDebug ? m_sdfTraceInfluenceRadius : 0.f;
+	const float sdfIncluenceRadius = m_sdfDebugSettings.useInfluenceRadiusForDebug ? 
+		m_sdfDiffuseTraceSettings.traceInfluenceRadius : 0.f;
 
 	bool useHiZCulling = false;
 	if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::CameraTileUsage && m_sdfDebugSettings.showCameraTileUsageWithHiZ) {
@@ -1452,7 +1458,7 @@ std::vector<RenderPassHandle> RenderFrontend::sdfInstanceCulling(const float sdf
 	//custom camera and shadow frusta to limit shadow distance
 	//with high far plane, shadow culling tiles cover so much space that they are ineffective
 	Camera sdfCamera = m_camera;
-	sdfCamera.intrinsic.far = m_sdfShadowDistance;
+	sdfCamera.intrinsic.far = m_sdfDiffuseTraceSettings.shadowDistance;
 	const ViewFrustum sdfCameraFrustum = computeViewFrustum(sdfCamera);
 	const ViewFrustum sdfShadowFrustum = computeOrthogonalFrustumFittedToCamera(sdfCameraFrustum, directionToVector(m_sunDirection));
 
@@ -1587,7 +1593,7 @@ std::vector<RenderPassHandle> RenderFrontend::sdfInstanceCulling(const float sdf
 			StorageBufferResource(m_sdfCameraCulledTiles, false, 2)
 		};
 
-		gRenderBackend.setUniformBufferData(m_sdfTraceInfluenceRangeBuffer, &sdfInfluenceRadius, sizeof(m_sdfTraceInfluenceRadius));
+		gRenderBackend.setUniformBufferData(m_sdfTraceInfluenceRangeBuffer, &sdfInfluenceRadius, sizeof(sdfInfluenceRadius));
 
 		exe.genericInfo.resources.uniformBuffers = {
 			UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 3)
@@ -1875,6 +1881,18 @@ ShaderDescription RenderFrontend::createSDFDebugShaderDescription() {
 		{
 		0,																		//location
 		dataToCharArray((void*)&visualisationMode, sizeof(visualisationMode))	//value
+		}
+	};
+	return desc;
+}
+
+ShaderDescription RenderFrontend::createSDFDiffuseTraceShaderDescription(const bool strictInfluenceRadiusCutoff) {
+	ShaderDescription desc;
+	desc.srcPathRelative = "sdfDiffuseTrace.comp";
+	desc.specialisationConstants = {
+		{
+		0,																							//location
+		dataToCharArray((void*)&strictInfluenceRadiusCutoff, sizeof(strictInfluenceRadiusCutoff))	//value
 		}
 	};
 	return desc;
@@ -3083,8 +3101,8 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 	//sdf indirect lighting
 	{
 		ComputePassDescription desc;
-		desc.name = "Indirect SDF lighting";
-		desc.shaderDescription.srcPathRelative = "sdfDiffuseTrace.comp";
+		desc.name = "Indirect diffuse SDF trace";
+		desc.shaderDescription = createSDFDiffuseTraceShaderDescription(m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff);
 		m_diffuseSDFTracePass = gRenderBackend.createComputePass(desc);
 	}
 	//indirect diffuse spatial filter
@@ -3281,6 +3299,12 @@ void RenderFrontend::drawUi() {
     ImGui::Begin("Rendering");
 
 	if (ImGui::CollapsingHeader("SDF settings")) {
+
+		m_isSDFDiffuseTraceShaderDescriptionStale |=
+			ImGui::Checkbox("Strict influence radius cutoff", &m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff);
+		ImGui::InputFloat("Shadow distance", &m_sdfDiffuseTraceSettings.shadowDistance);
+		ImGui::InputFloat("Diffuse trace influence range", &m_sdfDiffuseTraceSettings.traceInfluenceRadius);
+
 		const char* sdfDebugOptions[] = { "None", "Visualize SDF", "Camera tile usage", "Shadow tile usage", "Shadow tile id",
 			"SDF Normals", "Raymarching count"};
 		m_isSDFDebugShaderDescriptionStale 
@@ -3289,9 +3313,7 @@ void RenderFrontend::drawUi() {
 			ImGui::Checkbox("Camera tile usage with hi-Z culling", &m_sdfDebugSettings.showCameraTileUsageWithHiZ);
 		}
 
-		ImGui::Checkbox("Use influence radius for debug visualisation", &m_useInfluenceRadiusForDebug);
-		ImGui::InputFloat("Shadow distance", &m_sdfShadowDistance);
-		ImGui::InputFloat("SDF trace influence range", &m_sdfTraceInfluenceRadius);
+		ImGui::Checkbox("Use influence radius for debug visualisation", &m_sdfDebugSettings.useInfluenceRadiusForDebug);
 	}
 
     //Temporal filter Settings

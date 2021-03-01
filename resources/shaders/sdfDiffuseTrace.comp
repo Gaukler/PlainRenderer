@@ -53,6 +53,8 @@ layout(set=1, binding = 10, std140) uniform influenceRangeBuffer{
 
 layout(set=2, binding = 0) uniform texture3D[] textures;
 
+layout(constant_id = 0) const bool strictInfluenceRadiusCutoff = false;
+
 void main(){
 	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
 	vec2 uv = iUV / vec2(imageSize(imageOut_Y_SH));
@@ -98,7 +100,8 @@ void main(){
 	bool validShadowTile = isShadowTileValid(shadowTileUV);
 
 	bool hitInRange = traceResult.closestHitDistance < influenceRange;
-	//hitInRange = true;
+	//accept hit regardless of distance, if not using strict influence radius cutoff
+	hitInRange = hitInRange || !strictInfluenceRadiusCutoff;
 
 	if(traceResult.hit && validShadowTile && hitInRange){
 

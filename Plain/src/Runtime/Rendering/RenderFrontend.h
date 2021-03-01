@@ -38,6 +38,16 @@ enum class SDFVisualisationMode : int { None=0, VisualizeSDF=1, CameraTileUsage=
 struct SDFDebugSettings {
 	SDFVisualisationMode visualisationMode = SDFVisualisationMode::None;
 	bool showCameraTileUsageWithHiZ = true;
+	bool useInfluenceRadiusForDebug = true;	//less efficient, but tile usage is same as for indirect light tracing
+};
+
+struct SDFDiffuseTraceSettings {
+	//reject trace hits outside of influence radius
+	//loses range, but results outside of influence radius are not entirely accurate, as objects start to be culled
+	bool strictInfluenceRadiusCutoff;
+	//radius in which objects are not culled, increases effect range and computation time
+	float traceInfluenceRadius = 3.f;
+	float shadowDistance = 30.f;
 };
 
 struct TemporalFilterSettings {
@@ -211,7 +221,6 @@ private:
     ViewFrustum m_sunShadowFrustum;
 
     float m_exposureOffset = 0.f;
-	float m_sdfShadowDistance = 30.f;
     
     void updateCameraFrustum();
     void updateShadowFrustum();
@@ -224,8 +233,7 @@ private:
     TemporalFilterSettings m_temporalFilterSettings;
     AtmosphereSettings m_atmosphereSettings;
 	SDFDebugSettings m_sdfDebugSettings;
-	bool m_useInfluenceRadiusForDebug = true;	//less efficient, but tile usage is same as for indirect light tracing
-	float m_sdfTraceInfluenceRadius = 3.f;
+	SDFDiffuseTraceSettings m_sdfDiffuseTraceSettings;
 
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
@@ -344,12 +352,14 @@ private:
 	ShaderDescription createIndirectLightingMipCreationShaderDescription();
 	ShaderDescription createEdgeMipCreationShaderDescription();
 	ShaderDescription createSDFDebugShaderDescription();
+	ShaderDescription createSDFDiffuseTraceShaderDescription(const bool strictInfluenceRadiusCutoff);
 
     bool m_isMainPassShaderDescriptionStale = false;
     bool m_isBRDFLutShaderDescriptionStale = false;
     bool m_isTemporalFilterShaderDescriptionStale = false;
     bool m_isTemporalSupersamplingShaderDescriptionStale = false;
 	bool m_isSDFDebugShaderDescriptionStale = false;
+	bool m_isSDFDiffuseTraceShaderDescriptionStale = false;
 
     void updateGlobalShaderInfo();
 
