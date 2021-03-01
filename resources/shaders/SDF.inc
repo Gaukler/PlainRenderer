@@ -89,7 +89,12 @@ struct TraceResult{
 	vec3 N; 
 	int hitCount;
 	vec3 albedo;
+	bool selfIntersection;
 };
+
+vec3 localSamplePositionToUV(vec3 localPosition, vec3 AABBExtends){
+	return localPosition / AABBExtends + 0.5;
+}
 
 void traceRayTroughSDFInstance(SDFInstance instance, vec3 rayStartWorld, texture3D sdfTexture, vec3 rayDirectionWorld, inout TraceResult traceResult){
 
@@ -127,6 +132,24 @@ void traceRayTroughSDFInstance(SDFInstance instance, vec3 rayStartWorld, texture
 	float dLast = 0.f;	//last step distance
 	float d = 0.f;
 
+	//check for self intersection
+	{
+		vec3 initialUV = localSamplePositionToUV(localSamplePos, instance.localExtends);
+		float initialD = texture(sampler3D(sdfTexture, g_sampler_linearClamp), initialUV).r; 
+
+		if(initialD < distanceThreshold){
+			//in case of self intersection move sample point in normal direction
+			localSamplePos += normalFromSDF(initialUV, instance.localExtends, sdfTexture) * distanceThreshold;
+
+			//check if self intersection has been recitifed
+			initialUV = localSamplePositionToUV(localSamplePos, instance.localExtends);
+			initialD = texture(sampler3D(sdfTexture, g_sampler_linearClamp), initialUV).r; 
+			if(initialD < distanceThreshold){
+				traceResult.selfIntersection = true;
+			}
+		}
+	}
+
 	for(int i = 0; i < 128; i++){
 		
 		vec3 localExtendsHalf = instance.localExtends * 0.5;
@@ -135,7 +158,7 @@ void traceRayTroughSDFInstance(SDFInstance instance, vec3 rayStartWorld, texture
 			break;
 		}
 
-		vec3 sampleUV = localSamplePos / instance.localExtends + 0.5;
+		vec3 sampleUV = localSamplePositionToUV(localSamplePos, instance.localExtends);
 			
 		dLast = d;
 		d = texture(sampler3D(sdfTexture, g_sampler_linearClamp), sampleUV).r; 
