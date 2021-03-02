@@ -552,40 +552,6 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const 
     }
 }
 
-void RenderBackend::drawDynamicMeshes(
-    const std::vector<DynamicMeshHandle> meshHandles,
-    const std::vector<std::array<glm::mat4, 2>>& primarySecondaryMatrices, 
-    const RenderPassHandle passHandle) {
-
-    if (meshHandles.size() != primarySecondaryMatrices.size()) {
-        std::cout << "Error: drawMeshes handle and modelMatrix count does not match\n";
-    }
-
-    auto& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-
-	VkShaderStageFlags pipelineLayoutStageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	if (pass.graphicPassDesc.shaderDescriptions.geometry.has_value()) {
-		pipelineLayoutStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
-	}
-
-    for (uint32_t i = 0; i < std::min(meshHandles.size(), primarySecondaryMatrices.size()); i++) {
-
-        const auto meshHandle = meshHandles[i];
-        const auto mesh = m_dynamicMeshes[meshHandle.index];
-
-        //vertex/index buffers
-        VkDeviceSize offset[] = { 0 };
-        vkCmdBindVertexBuffers(pass.meshCommandBuffer, 0, 1, &mesh.vertexBuffer.vulkanHandle, offset);
-        vkCmdBindIndexBuffer(pass.meshCommandBuffer, mesh.indexBuffer.vulkanHandle, offset[0], VK_INDEX_TYPE_UINT32);
-
-        //update push constants
-        const auto& matrices = primarySecondaryMatrices[i];
-        vkCmdPushConstants(pass.meshCommandBuffer, pass.pipelineLayout, pipelineLayoutStageFlags, 0, sizeof(matrices), &matrices);
-
-        vkCmdDrawIndexed(pass.meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
-    }
-}
-
 void RenderBackend::setUniformBufferData(const UniformBufferHandle buffer, const void* data, const size_t size) {
     fillBuffer(m_uniformBuffers[buffer.index], data, size);
 }
@@ -947,64 +913,6 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
         m_meshes.push_back(mesh);
     }
     return handles;
-}
-
-std::vector<DynamicMeshHandle> RenderBackend::createDynamicMeshes(const std::vector<uint32_t>& maxPositionsPerMesh, 
-    const std::vector<uint32_t>& maxIndicesPerMesh) {
-    if (maxPositionsPerMesh.size() != maxIndicesPerMesh.size()) {
-        std::cout << "Warning: RenderBackend::createDynamicMeshes, maxPosition and maxIndices vector sizes do not match\n";
-    }
-
-    std::vector<DynamicMeshHandle> handles;
-    for (uint32_t i = 0; i < std::min(maxPositionsPerMesh.size(), maxIndicesPerMesh.size()); i++) {
-        const auto& maxPositions = maxPositionsPerMesh[i];
-        const auto& maxIndices = maxIndicesPerMesh[i];
-        handles.push_back(createDynamicMeshInternal(maxPositions, maxIndices));
-    }
-    return handles;
-}
-
-void RenderBackend::updateDynamicMeshes(const std::vector<DynamicMeshHandle>& handles, 
-    const std::vector<std::vector<glm::vec3>>& positionsPerMesh, 
-    const std::vector<std::vector<uint32_t>>&  indicesPerMesh) {
-
-    if (handles.size() != positionsPerMesh.size() && handles.size() != indicesPerMesh.size()) {
-        std::cout << "Warning: RenderBackend::updateDynamicMeshes handle, position and index vector sizes do not match\n";
-    };
-
-    const uint32_t meshCount = (uint32_t)std::min(std::min(handles.size(), positionsPerMesh.size()), indicesPerMesh.size());
-    for (uint32_t i = 0; i < meshCount; i++) {
-        const auto handle = handles[i];
-        const auto& positions = positionsPerMesh[i];
-        const auto& indices = indicesPerMesh[i];
-        auto& mesh = m_dynamicMeshes[handle.index];
-
-        mesh.indexCount = (uint32_t)indices.size();
-
-        //validate position count
-        const uint32_t floatPerPosition = 3; //xyz
-        const uint32_t maxPositionCount = (uint32_t)mesh.vertexBuffer.size / (sizeof(float) * floatPerPosition);
-
-        if (positions.size() > maxPositionCount) {
-            std::cout << "Warning: RenderBackend::updateDynamicMeshes position count exceeds allocated vertex buffer size\n";
-        }
-
-        //validate index count
-        const uint32_t maxIndexCount = (uint32_t)mesh.indexBuffer.size / sizeof(uint32_t);
-        if (indices.size() > maxIndexCount) {
-            std::cout << "Warning: RenderBackend::updateDynamicMeshes index count exceeds allocated index buffer size\n";
-            mesh.indexCount = maxIndexCount;
-        }
-
-        //update buffers
-        //there memory is host visible so it can be mapped and copied
-        const VkDeviceSize vertexCopySize = std::min(positions.size(), (size_t)maxPositionCount) * sizeof(float) * floatPerPosition;
-        fillHostVisibleCoherentBuffer(mesh.vertexBuffer, (char*)positions.data(), vertexCopySize);
-
-        //index count has already been validated
-        const VkDeviceSize indexCopySize = mesh.indexCount * sizeof(uint32_t);
-        fillHostVisibleCoherentBuffer(mesh.indexBuffer, (char*)indices.data(), indexCopySize);
-    }
 }
 
 ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
@@ -2138,32 +2046,6 @@ VkImageView RenderBackend::createImageView(const Image image, const VkImageViewT
     checkVulkanResult(res);
 
     return view;
-}
-
-DynamicMeshHandle RenderBackend::createDynamicMeshInternal(const uint32_t maxPositions, const uint32_t maxIndices) {
-    
-    DynamicMesh mesh;
-    mesh.indexCount = 0;
-
-    std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphicsQueueIndex };
-    const uint32_t memoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
-    //create vertex buffer    
-    const uint32_t floatsPerPosition = 3; //xyz
-    VkDeviceSize vertexDataSize = maxPositions * sizeof(float) * floatsPerPosition;
-
-    mesh.vertexBuffer = createBufferInternal(vertexDataSize, queueFamilies,
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, memoryFlags);
-
-    //create index buffer
-    VkDeviceSize indexDataSize = maxIndices * sizeof(uint32_t);
-    mesh.indexBuffer = createBufferInternal(indexDataSize, queueFamilies, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, memoryFlags);
-
-    //save and return handle
-    DynamicMeshHandle handle = { (uint32_t)m_dynamicMeshes.size() };
-    m_dynamicMeshes.push_back(mesh);
-
-    return handle;
 }
 
 Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags) {

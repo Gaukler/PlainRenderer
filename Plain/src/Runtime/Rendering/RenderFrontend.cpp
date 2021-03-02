@@ -1591,7 +1591,6 @@ void RenderFrontend::updateCameraFrustum() {
     std::vector<uint32_t> frustumIndices;
 
     frustumToLineMesh(m_cameraFrustum, &frustumPoints, &frustumIndices);
-    gRenderBackend.updateDynamicMeshes({ m_cameraFrustumModel }, { frustumPoints }, { frustumIndices });
 }
 
 void RenderFrontend::updateShadowFrustum() {
@@ -1601,7 +1600,6 @@ void RenderFrontend::updateShadowFrustum() {
     std::vector<glm::vec3> frustumPoints;
     std::vector<uint32_t> frustumIndices;
     frustumToLineMesh(m_sunShadowFrustum, &frustumPoints, &frustumIndices);
-    gRenderBackend.updateDynamicMeshes({ m_shadowFrustumModel }, { frustumPoints }, { frustumIndices });
 }
 
 HistogramSettings RenderFrontend::createHistogramSettings() {
@@ -2444,14 +2442,6 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 }
 
 void RenderFrontend::initMeshs() {
-    //dynamic meshes for frustum debugging
-    {
-        m_cameraFrustumModel = gRenderBackend.createDynamicMeshes(
-            { positionsInViewFrustumLineMesh }, { indicesInViewFrustumLineMesh }).front();
-
-        m_shadowFrustumModel = gRenderBackend.createDynamicMeshes(
-            { positionsInViewFrustumLineMesh }, { indicesInViewFrustumLineMesh }).front();
-    }
     //skybox cube
     {
         MeshData cubeData;

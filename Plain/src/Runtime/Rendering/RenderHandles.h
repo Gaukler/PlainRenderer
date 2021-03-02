@@ -9,10 +9,6 @@ struct MeshHandle {
     uint32_t index = invalidIndex;
 };
 
-struct DynamicMeshHandle {
-    uint32_t index = invalidIndex;
-};
-
 struct RenderPassHandle {
     uint32_t index = invalidIndex;
 };

@@ -316,9 +316,6 @@ private:
     MeshHandle m_quad;
 	MeshHandle m_boundingBoxMesh;
 
-    DynamicMeshHandle m_cameraFrustumModel;
-    DynamicMeshHandle m_shadowFrustumModel;
-
     StorageBufferHandle m_histogramPerTileBuffer;
     StorageBufferHandle m_histogramBuffer;
     StorageBufferHandle m_lightBuffer;          //previous exposure and exposured light values
