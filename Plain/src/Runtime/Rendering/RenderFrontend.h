@@ -29,6 +29,7 @@ struct ShadingConfig {
     bool useIndirectMultiscatter = true;
     bool useGeometryAA = true;
 	bool indirectLightingHalfRes = true;
+	int sunShadowCascadeCount = 4;
 };
 
 enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2, Bicubic5Tap=3, Bicubic1Tap=4 };
@@ -353,6 +354,7 @@ private:
 	ShaderDescription createEdgeMipCreationShaderDescription();
 	ShaderDescription createSDFDebugShaderDescription();
 	ShaderDescription createSDFDiffuseTraceShaderDescription(const bool strictInfluenceRadiusCutoff);
+	ShaderDescription createLightMatrixShaderDescription();
 
     bool m_isMainPassShaderDescriptionStale = false;
     bool m_isBRDFLutShaderDescriptionStale = false;
@@ -360,6 +362,7 @@ private:
     bool m_isTemporalSupersamplingShaderDescriptionStale = false;
 	bool m_isSDFDebugShaderDescriptionStale = false;
 	bool m_isSDFDiffuseTraceShaderDescriptionStale = false;
+	bool m_isLightMatrixPassShaderDescriptionStale = false;
 
     void updateGlobalShaderInfo();
 

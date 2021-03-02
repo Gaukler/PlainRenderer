@@ -7,7 +7,7 @@
 #include "colorConversion.inc"
 #include "brdf.inc"
 #include "GeometricAA.inc"
-#include "shadowCascadeConstants.inc"
+#include "sunShadowCascades.inc"
 #include "linearDepth.inc"
 #include "lightBuffer.inc"
 #include "SphericalHarmonics.inc"
@@ -37,6 +37,7 @@ layout(constant_id = 4) const uint specularProbeMipCount = 0;
 //0: traced into textures
 //1: constant ambient
 layout(constant_id = 5) const int indirectLightingTech = 0;
+layout(constant_id = 6) const uint sunShadowCascadeCount = 4;
 
 layout(set=1, binding = 1) 	uniform textureCube	diffuseProbe;
 
@@ -48,9 +49,7 @@ layout(set=1, binding = 7, std430) buffer lightStorageBuffer{
 };
 
 layout(set=1, binding = 8, std430) buffer sunShadowInfo{
-    vec4 cascadeSplits;
-    mat4 lightMatrices[cascadeCount];
-	vec2 lightSpaceScale[4];
+    ShadowCascadeInfo sunShadowCascadeInfo;
 };
 
 layout(set=1, binding = 9)  uniform texture2D shadowMapCascade0;
@@ -94,7 +93,7 @@ float calcShadow(vec3 pos, float LoV, texture2D shadowMap, mat4 lightMatrix, int
 	vec2 noiseUV = gl_FragCoord.xy / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
 	float noise = texture(sampler2D(g_noiseTexture, g_sampler_linearRepeat), noiseUV).r;
 
-	vec2 offsetScale = shadowSampleRadius * lightSpaceScale[cascade];
+	vec2 offsetScale = shadowSampleRadius * sunShadowCascadeInfo.lightSpaceScale[cascade];
 
 	float shadow = 0.f;
 
@@ -166,20 +165,20 @@ void main(){
     //sun light
     float sunShadow;
     int cascadeIndex = 0;
-    for(int cascade = 0; cascade < cascadeCount - 1; cascade++){
-        cascadeIndex += int(pixelDistance >= cascadeSplits[cascade]);
+    for(int cascade = 0; cascade < sunShadowCascadeCount - 1; cascade++){
+        cascadeIndex += int(pixelDistance >= sunShadowCascadeInfo.splits[cascade]);
     }
     if(cascadeIndex == 0){
-        sunShadow = calcShadow(passPos, LoV, shadowMapCascade0, lightMatrices[cascadeIndex], 0);
+        sunShadow = calcShadow(passPos, LoV, shadowMapCascade0, sunShadowCascadeInfo.lightMatrices[cascadeIndex], 0);
     }
     else if(cascadeIndex == 1){
-        sunShadow = calcShadow(passPos, LoV, shadowMapCascade1, lightMatrices[cascadeIndex], 1);
+        sunShadow = calcShadow(passPos, LoV, shadowMapCascade1, sunShadowCascadeInfo.lightMatrices[cascadeIndex], 1);
     }
     else if(cascadeIndex == 2){
-        sunShadow = calcShadow(passPos, LoV, shadowMapCascade2, lightMatrices[cascadeIndex], 2);
+        sunShadow = calcShadow(passPos, LoV, shadowMapCascade2, sunShadowCascadeInfo.lightMatrices[cascadeIndex], 2);
     }
     else if(cascadeIndex == 3){
-        sunShadow = calcShadow(passPos, LoV, shadowMapCascade3, lightMatrices[cascadeIndex], 3);
+        sunShadow = calcShadow(passPos, LoV, shadowMapCascade3, sunShadowCascadeInfo.lightMatrices[cascadeIndex], 3);
     }
 	vec3 directLighting = max(dot(N, L), 0.f) * sunShadow * lightBuffer.sunColor;
     
@@ -328,4 +327,5 @@ void main(){
 	//color = irradiance / pi;
 	//color = N*0.5+0.5;
 	//color = passPos;
+	//color = sunShadowCascadeDebugColors(cascadeIndex);
 }

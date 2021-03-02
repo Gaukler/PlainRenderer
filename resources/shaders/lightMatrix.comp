@@ -3,15 +3,15 @@
 #extension GL_GOOGLE_include_directive : enable
 
 #include "global.inc"
-#include "shadowCascadeConstants.inc"
+#include "sunShadowCascades.inc"
 #include "linearDepth.inc"
+
+layout(constant_id = 0) const uint sunShadowCascadeCount = 4;
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 layout(set=1, binding = 0, std430) buffer sunShadowInfo{
-    vec4 cascadeSplits;
-    mat4 lightMatrix[4];
-	vec2 lightSpaceScale[4];
+    ShadowCascadeInfo sunShadowCascadeInfo;
 };
 
 layout(set=1, binding = 1, rg32f) uniform image2D depthMinMaxLowestMip;
@@ -43,7 +43,7 @@ void computeFrustumPoints(inout vec3[8] frustumPoints, float near, float far){
 
 //reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
 float computeCascadeSplit(float near, float far, int i){
-    return near + ((far - near) * (i + 1) / float(cascadeCount)); //linear
+    return near + ((far - near) * (i + 1) / float(sunShadowCascadeCount)); //linear
 }
 
 //reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
@@ -71,29 +71,40 @@ void main(){
     float depthMaxLinear = linearizeDepth(depthMinMax.x, g_nearPlane, g_farPlane);
     float depthMinLinear = linearizeDepth(depthMinMax.y, g_nearPlane, g_farPlane);
 
-    for(int i = 0; i < cascadeCount - 1; i++){
-        cascadeSplits[i] = computeCascadeSplit(depthMinLinear, depthMaxLinear, i);
+    for(int i = 0; i < sunShadowCascadeCount - 1; i++){
+        sunShadowCascadeInfo.splits[i] = computeCascadeSplit(depthMinLinear, depthMaxLinear, i);
     }
     
-    for(int i = 0; i < 4; i++){
+    for(int i = 0; i < sunShadowCascadeCount; i++){
         
         vec3 minP = vec3(FLOAT_MAX);
         vec3 maxP = vec3(FLOAT_MIN);
         
         vec3 frustumPoints[8];
         
-        if(i == 0){
-            computeFrustumPoints(frustumPoints, depthMinLinear, cascadeSplits[0]);
-        }
-        else if(i == 1){
-            computeFrustumPoints(frustumPoints, cascadeSplits[0], cascadeSplits[1]);
-        }
-        else if(i == 2){
-            computeFrustumPoints(frustumPoints, cascadeSplits[1], cascadeSplits[2]);
-        }
-        else if(i == 3){
-            computeFrustumPoints(frustumPoints, cascadeSplits[3], depthMaxLinear);
-        }
+		float cascadeMinDepth = sunShadowCascadeInfo.splits[i-1];
+		float cascadeMaxDepth = sunShadowCascadeInfo.splits[i];
+
+		if(i == 0){
+			cascadeMinDepth = depthMinLinear;
+		}
+		if(i == sunShadowCascadeCount-1){
+			cascadeMaxDepth = depthMaxLinear;
+		}
+		
+		computeFrustumPoints(frustumPoints, cascadeMinDepth, cascadeMaxDepth);
+        //if(i == 0){
+        //    computeFrustumPoints(frustumPoints, depthMinLinear, sunShadowCascadeInfo.splits[0]);
+        //}
+        //else if(i == 1){
+        //    computeFrustumPoints(frustumPoints, sunShadowCascadeInfo.splits[0], sunShadowCascadeInfo.splits[1]);
+        //}
+        //else if(i == 2){
+        //    computeFrustumPoints(frustumPoints, sunShadowCascadeInfo.splits[1], sunShadowCascadeInfo.splits[2]);
+        //}
+        //else if(i == 3){
+        //    computeFrustumPoints(frustumPoints, sunShadowCascadeInfo.splits[3], depthMaxLinear);
+        //}
         
         for(int i = 0; i < 8; i++) {
             vec3 p = frustumPoints[i];
@@ -118,7 +129,7 @@ void main(){
         P[3][2] = offset.z;
         P[3][3] = 1.f;
         
-        lightMatrix[i] = coordinateSystemCorrection * P * V;
-		lightSpaceScale[i] = scale.xy;
+        sunShadowCascadeInfo.lightMatrices[i] = coordinateSystemCorrection * P * V;
+		sunShadowCascadeInfo.lightSpaceScale[i] = scale.xy;
     }
 }

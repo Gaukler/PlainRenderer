@@ -2,7 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
 
-#include "shadowCascadeConstants.inc"
+#include "sunShadowCascades.inc"
 
 layout(constant_id = 0) const uint cascadeIndex = 0;
 
@@ -17,8 +17,7 @@ layout(push_constant) uniform MatrixBlock {
 };
 
 layout(set=1, binding = 0, std430) buffer sunShadowInfo{
-    vec4 cascadeSplits;
-    mat4 lightMatrix[cascadeCount];
+    ShadowCascadeInfo sunShadowCascadeInfo;
 };
 
 layout(set=1, binding = 1, std430) buffer transformBuffer{
@@ -26,6 +25,6 @@ layout(set=1, binding = 1, std430) buffer transformBuffer{
 };
 
 void main(){
-	gl_Position = lightMatrix[cascadeIndex] * transforms[transformIndex] * vec4(inPos, 1.f);
+	gl_Position = sunShadowCascadeInfo.lightMatrices[cascadeIndex] * transforms[transformIndex] * vec4(inPos, 1.f);
     passUV = inUv;
 }

@@ -34,7 +34,7 @@ const uint32_t diffuseSkyProbeRes = 4;
 const uint32_t skyTextureMipCount = 8;
 const uint32_t brdfLutRes = 512;
 const uint32_t nHistogramBins = 128;
-const uint32_t shadowCascadeCount = 4;
+const int maxSunShadowCascadeCount = 4;
 const uint32_t skyTransmissionLutResolution = 128;
 const uint32_t skyMultiscatterLutResolution = 32;
 const uint32_t skyLutWidth = 200;
@@ -329,6 +329,10 @@ void RenderFrontend::prepareNewFrame() {
 			createSDFDiffuseTraceShaderDescription(m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff));
 		m_isSDFDiffuseTraceShaderDescriptionStale = false;
 	}
+	if (m_isLightMatrixPassShaderDescriptionStale) {
+		gRenderBackend.updateComputePassShaderDescription(m_lightMatrixPass, createLightMatrixShaderDescription());
+		m_isLightMatrixPassShaderDescriptionStale = false;
+	}
 
     gRenderBackend.updateShaderCode();
     gRenderBackend.newFrame();    
@@ -416,6 +420,10 @@ void RenderFrontend::prepareRenderpasses(){
 	}
 
     renderSunShadowCascades();
+	for (int i = 0; i < m_shadingConfig.sunShadowCascadeCount; i++) {
+		forwardShadingDependencies.push_back(m_shadowPasses[i]);
+	}
+
     computeColorBufferHistogram(lastRenderTarget.colorBuffer);
     computeExposure();
     renderDepthPrepass(currentRenderTarget.prepassFramebuffer);
@@ -726,7 +734,7 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 				modelMatrices.push_back(obj.modelMatrix);
             }
         }
-        for (uint32_t shadowPass = 0; shadowPass < m_shadowPasses.size(); shadowPass++) {
+        for (uint32_t shadowPass = 0; shadowPass < m_shadingConfig.sunShadowCascadeCount; shadowPass++) {
             gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstantData.data(), m_shadowPasses[shadowPass]);
         }
 		gRenderBackend.setStorageBufferData(m_shadowPassTransformsBuffer, modelMatrices.data(),
@@ -913,7 +921,7 @@ void RenderFrontend::renderSky(const FramebufferHandle framebuffer, const Render
 }
 
 void RenderFrontend::renderSunShadowCascades() const {
-    for (uint32_t i = 0; i < shadowCascadeCount; i++) {
+    for (uint32_t i = 0; i < m_shadingConfig.sunShadowCascadeCount; i++) {
 		GraphicPassExecution shadowPassExecution;
         shadowPassExecution.genericInfo.handle = m_shadowPasses[i];
         shadowPassExecution.genericInfo.parents = { m_lightMatrixPass };
@@ -1220,13 +1228,13 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
 		ImageResource(indirectSrc_CoCg, 0, 16) };
 
     //add shadow map cascade resources
-    for (uint32_t i = 0; i < shadowCascadeCount; i++) {
+	//max count shadow maps are always allocated and bound, but may be unused
+    for (uint32_t i = 0; i < maxSunShadowCascadeCount; i++) {
         const auto shadowMapResource = ImageResource(m_shadowMaps[i], 0, 9 + i);
         mainPassExecution.genericInfo.resources.sampledImages.push_back(shadowMapResource);
     }
 
     mainPassExecution.genericInfo.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
-    mainPassExecution.genericInfo.parents.insert(mainPassExecution.genericInfo.parents.end(), m_shadowPasses.begin(), m_shadowPasses.end());
     mainPassExecution.genericInfo.parents.insert(mainPassExecution.genericInfo.parents.begin(), externalDependencies.begin(), externalDependencies.end());
 
     gRenderBackend.setGraphicPassExecution(mainPassExecution);
@@ -1774,6 +1782,11 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
 				5,																											//location
 				dataToCharArray((void*)&m_shadingConfig.indirectLightingTech, sizeof(m_shadingConfig.indirectLightingTech)) //value
 			});
+		//sun shadow cascade count
+		constants.push_back({
+				6,																											  //location
+				dataToCharArray((void*)&m_shadingConfig.sunShadowCascadeCount, sizeof(m_shadingConfig.sunShadowCascadeCount)) //value
+			});
     }
 
     return shaderDesc;
@@ -1898,6 +1911,17 @@ ShaderDescription RenderFrontend::createSDFDiffuseTraceShaderDescription(const b
 	return desc;
 }
 
+ShaderDescription RenderFrontend::createLightMatrixShaderDescription() {
+	ShaderDescription desc;
+	desc.srcPathRelative = "lightMatrix.comp";
+	//sun shadow cascade count
+	desc.specialisationConstants.push_back({
+		0,																											  //location
+		dataToCharArray((void*)&m_shadingConfig.sunShadowCascadeCount, sizeof(m_shadingConfig.sunShadowCascadeCount)) //value
+	});
+	return desc;
+}
+
 void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.sunDirection = glm::vec4(directionToVector(m_sunDirection), 0.f);
     m_globalShaderInfo.cameraPos = glm::vec4(m_camera.extrinsic.position, 1.f); 
@@ -1977,8 +2001,8 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_shadowMaps.reserve(shadowCascadeCount);
-        for (uint32_t i = 0; i < shadowCascadeCount; i++) {
+        m_shadowMaps.reserve(maxSunShadowCascadeCount);
+        for (uint32_t i = 0; i < maxSunShadowCascadeCount; i++) {
             const auto shadowMap = gRenderBackend.createImage(desc);
             m_shadowMaps.push_back(shadowMap);
         }
@@ -2481,8 +2505,8 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
     {
         StorageBufferDescription desc;
         const size_t splitSize = sizeof(glm::vec4);
-        const size_t lightMatrixSize = sizeof(glm::mat4) * shadowCascadeCount;
-        const size_t scaleInfoSize = sizeof(glm::vec2) * shadowCascadeCount;
+        const size_t lightMatrixSize = sizeof(glm::mat4) * maxSunShadowCascadeCount;
+        const size_t scaleInfoSize = sizeof(glm::vec2) * maxSunShadowCascadeCount;
         desc.size = splitSize + lightMatrixSize + scaleInfoSize;
         m_sunShadowInfoBuffer = gRenderBackend.createStorageBuffer(desc);
     }
@@ -2757,7 +2781,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         m_mainPass = gRenderBackend.createGraphicPass(mainPassDesc);
     }
     //shadow cascade passes
-    for (uint32_t cascade = 0; cascade < shadowCascadeCount; cascade++) {
+    for (uint32_t cascade = 0; cascade < m_shadingConfig.sunShadowCascadeCount; cascade++) {
 
         const Attachment shadowMapAttachment(ImageFormat::Depth16, AttachmentLoadOp::Clear);
 
@@ -3051,8 +3075,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     {
         ComputePassDescription desc;
         desc.name = "Compute light matrix";
-        desc.shaderDescription.srcPathRelative = "lightMatrix.comp";
-
+		desc.shaderDescription = createLightMatrixShaderDescription();
         m_lightMatrixPass = gRenderBackend.createComputePass(desc);
     }
     //tonemapping pass
@@ -3298,6 +3321,7 @@ void RenderFrontend::drawUi() {
 
     ImGui::Begin("Rendering");
 
+	//SDF settings
 	if (ImGui::CollapsingHeader("SDF settings")) {
 
 		m_isSDFDiffuseTraceShaderDescriptionStale |=
@@ -3315,7 +3339,6 @@ void RenderFrontend::drawUi() {
 
 		ImGui::Checkbox("Use influence radius for debug visualisation", &m_sdfDebugSettings.useInfluenceRadiusForDebug);
 	}
-
     //Temporal filter Settings
     if(ImGui::CollapsingHeader("Temporal filter settings")){
 
@@ -3371,6 +3394,12 @@ void RenderFrontend::drawUi() {
 			resizeIndirectLightingBuffers();
 			m_globalShaderInfo.cameraCut = true;
 		}
+
+		const bool shadowCascadeCountChanged =
+			ImGui::InputInt("Sun shadow cascade count", &m_shadingConfig.sunShadowCascadeCount);
+		m_shadingConfig.sunShadowCascadeCount = glm::clamp(m_shadingConfig.sunShadowCascadeCount, 1, maxSunShadowCascadeCount);
+		m_isMainPassShaderDescriptionStale |= shadowCascadeCountChanged;
+		m_isLightMatrixPassShaderDescriptionStale |= shadowCascadeCountChanged;
     }
     //camera settings
     if (ImGui::CollapsingHeader("Camera settings")) {
