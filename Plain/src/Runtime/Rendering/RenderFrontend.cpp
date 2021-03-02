@@ -43,11 +43,6 @@ const uint32_t skyLutHeight = 100;
 const uint32_t histogramTileSizeX = 32;
 const uint32_t histogramTileSizeY = 32;
 
-const uint32_t  skyShadowMapRes = 1024;
-const uint32_t  skyOcclusionVolumeMaxRes = 256;
-const float     skyOcclusionTargetDensity = 0.5f; //meter/texel
-const uint32_t  skyOcclusionSampleCount = 1024;
-
 const uint32_t noiseTextureCount = 4;
 const uint32_t noiseTextureWidth = 32;
 const uint32_t noiseTextureHeight = 32;
@@ -58,8 +53,6 @@ const uint32_t maxObjectCountMainScene = 300;
 
 const size_t sdfCameraCullingTileSize = 32;
 const size_t maxSdfObjectsPerTile = 100;
-
-const uint32_t sdfShadowCullingTilesCount1D = 32;
 
 //bindings of global shader uniforms
 const uint32_t globalUniformBufferBinding               = 0;
@@ -72,12 +65,6 @@ const uint32_t globalSamplerLinearWhiteBorderBinding    = 6;
 const uint32_t globalSamplerNearestRepeatBinding		= 7;
 const uint32_t globalSamplerNearestWhiteBorderBinding	= 8;
 const uint32_t globalNoiseTextureBindingBinding         = 9;
-
-//some SPD shaders avoids annyoing extra logic for low mips, which are never used anyways
-const uint32_t indirectLightingMaxMipCount = 7;	
-const uint32_t edgeMaxMipCount = 7;
-
-const glm::uvec3 sceneMaterialVoxelTextureResolution = glm::uvec3(64);
 
 //currently rendering without attachment is not supported, so a small dummy is used
 const ImageFormat dummyImageFormat = ImageFormat::R8;
@@ -1740,39 +1727,6 @@ ShaderDescription RenderFrontend::createTemporalSupersamplingShaderDescription()
     return desc;
 }
 
-ShaderDescription RenderFrontend::createIndirectLightingMipCreationShaderDescription() {
-	ShaderDescription desc;
-	desc.srcPathRelative = "colorMip_rgba16f.comp";
-
-	const int resolutionDivider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
-	const uint32_t srcWidth = m_screenWidth / resolutionDivider;
-	const uint32_t srcHeight = m_screenHeight / resolutionDivider;
-	const uint32_t mipCount = glm::min(mipCountFromResolution(srcWidth, srcHeight, 1), indirectLightingMaxMipCount);
-
-	//mip count
-	desc.specialisationConstants.push_back({
-			0,                                                  //location
-			dataToCharArray((void*)&mipCount, sizeof(mipCount)) //value
-		});
-
-	return desc;
-}
-
-ShaderDescription RenderFrontend::createEdgeMipCreationShaderDescription() {
-	ShaderDescription desc;
-	desc.srcPathRelative = "colorMip_r8.comp";
-
-	const uint32_t mipCount = glm::min(mipCountFromResolution(m_screenWidth, m_screenHeight, 1), edgeMaxMipCount);
-
-	//mip count
-	desc.specialisationConstants.push_back({
-			0,                                                  //location
-			dataToCharArray((void*)&mipCount, sizeof(mipCount)) //value
-		});
-
-	return desc;
-}
-
 ShaderDescription RenderFrontend::createSDFDebugShaderDescription() {
 	ShaderDescription desc;
 	desc.srcPathRelative = "sdfDebugVisualisation.comp";
@@ -2029,21 +1983,6 @@ void RenderFrontend::initImages() {
         desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
 
         m_minMaxDepthPyramid = gRenderBackend.createImage(desc);
-    }
-    //sky shadow map
-    {
-        ImageDescription desc;
-        desc.width = skyShadowMapRes;
-        desc.height = skyShadowMapRes;
-        desc.depth = 1;
-        desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::Depth16;
-        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        m_skyShadowMap = gRenderBackend.createImage(desc);
     }
     //scene and history luminance
     {

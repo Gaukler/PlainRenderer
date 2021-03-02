@@ -282,7 +282,6 @@ private:
     ImageHandle m_skyLut;
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
-    ImageHandle m_skyShadowMap;
     ImageHandle m_sceneLuminance;
     ImageHandle m_lastFrameLuminance;
 	ImageHandle m_indirectDiffuse_Y_SH[2];			//ping pong buffers for filtering, Y component of YCoCg color space as spherical harmonics		
@@ -344,8 +343,6 @@ private:
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
     ShaderDescription createTemporalFilterShaderDescription();
     ShaderDescription createTemporalSupersamplingShaderDescription();
-	ShaderDescription createIndirectLightingMipCreationShaderDescription();
-	ShaderDescription createEdgeMipCreationShaderDescription();
 	ShaderDescription createSDFDebugShaderDescription();
 	ShaderDescription createSDFDiffuseTraceShaderDescription(const bool strictInfluenceRadiusCutoff);
 	ShaderDescription createLightMatrixShaderDescription();
