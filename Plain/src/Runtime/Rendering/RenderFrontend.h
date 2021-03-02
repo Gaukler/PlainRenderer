@@ -29,17 +29,16 @@ struct ShadingConfig {
     bool useIndirectMultiscatter = true;
     bool useGeometryAA = true;
 	bool indirectLightingHalfRes = true;
-	int sunShadowCascadeCount = 4;
+	int sunShadowCascadeCount = 3;
 };
 
 enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2, Bicubic5Tap=3, Bicubic1Tap=4 };
-enum class SDFVisualisationMode : int { None=0, VisualizeSDF=1, CameraTileUsage=2, ShadowTileUsage=3, ShadowTileId=4,
-	SDFNormals=5, RaymarchingSteps=6};
+enum class SDFVisualisationMode : int { None=0, VisualizeSDF=1, CameraTileUsage=2, SDFNormals=3, RaymarchingSteps=4};
 
 struct SDFDebugSettings {
 	SDFVisualisationMode visualisationMode = SDFVisualisationMode::None;
 	bool showCameraTileUsageWithHiZ = true;
-	bool useInfluenceRadiusForDebug = true;	//less efficient, but tile usage is same as for indirect light tracing
+	bool useInfluenceRadiusForDebug = false;	//less efficient, but tile usage is same as for indirect light tracing
 };
 
 struct SDFDiffuseTraceSettings {
@@ -47,8 +46,10 @@ struct SDFDiffuseTraceSettings {
 	//loses range, but results outside of influence radius are not entirely accurate, as objects start to be culled
 	bool strictInfluenceRadiusCutoff;
 	//radius in which objects are not culled, increases effect range and computation time
-	float traceInfluenceRadius = 3.f;
-	float shadowDistance = 30.f;
+	float traceInfluenceRadius = 6.f;
+	//highest sun shadow cascade used for shadowing trace hits
+	//if strict influence radius cutoff is disabled hits can be outside influence radius, so extra padding is necessary
+	float additionalSunShadowMapPadding = 3.f;
 };
 
 struct TemporalFilterSettings {
@@ -158,7 +159,6 @@ private:
 	void filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame) const;
 	void downscaleDepth(const FrameRenderTargets& currentTarget) const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const;
-    void copyHDRImage(const ImageHandle src, const ImageHandle dst, RenderPassHandle parent) const; //input must be R11G11B10
     void computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
         const ImageHandle target, const RenderPassHandle parent) const;
     void computeTemporalFilter(const ImageHandle colorSrc, const FrameRenderTargets& currentFrame, const ImageHandle target, const RenderPassHandle parent,
@@ -259,7 +259,6 @@ private:
     RenderPassHandle m_tonemappingPass;
     RenderPassHandle m_temporalSupersamplingPass;
     RenderPassHandle m_temporalFilterPass;
-    RenderPassHandle m_hdrImageCopyPass;		//input must be R11G11B10
     RenderPassHandle m_colorToLuminancePass;
 	RenderPassHandle m_diffuseSDFTracePass;
 	RenderPassHandle m_indirectDiffuseFilterSpatialPass[2];
@@ -267,10 +266,8 @@ private:
 	RenderPassHandle m_depthDownscalePass;
 	RenderPassHandle m_indirectLightingUpscale;
 	RenderPassHandle m_sdfCameraFrustumCulling;
-	RenderPassHandle m_sdfShadowFrustumCulling;
 	RenderPassHandle m_sdfCameraTileCulling;
 	RenderPassHandle m_sdfCameraTileCullingHiZ;
-	RenderPassHandle m_sdfShadowTileCulling;
 	RenderPassHandle m_sdfDebugVisualisationPass;
 
     uint32_t m_specularSkyProbeMipCount = 0;
@@ -311,6 +308,7 @@ private:
     SamplerHandle m_sampler_nearestClamp;
     SamplerHandle m_sampler_linearWhiteBorder;
 	SamplerHandle m_sampler_nearestRepeat;
+	SamplerHandle m_sampler_nearestWhiteBorder;
 
     FramebufferHandle	m_shadowCascadeFramebuffers[4];
     FrameRenderTargets	m_frameRenderTargets[2];
@@ -332,18 +330,14 @@ private:
 	StorageBufferHandle m_boundingBoxDebugRenderMatrices;
 	StorageBufferHandle m_sdfInstanceBuffer;
 	StorageBufferHandle m_sdfCameraFrustumCulledInstances;
-	StorageBufferHandle m_sdfShadowFrustumCulledInstances;
 	StorageBufferHandle m_sdfInstanceWorldBBBuffer;
 	StorageBufferHandle m_sdfCameraCulledTiles;
-	StorageBufferHandle m_sdfShadowCulledTiles;
 
     UniformBufferHandle m_globalUniformBuffer;
     UniformBufferHandle m_atmosphereSettingsBuffer;
     UniformBufferHandle m_taaResolveWeightBuffer;
     UniformBufferHandle m_sdfVolumeInfoBuffer;
 	UniformBufferHandle m_cameraFrustumBuffer;
-	UniformBufferHandle m_shadowFrustumPointsBuffer;
-	UniformBufferHandle m_shadowFrustumInfoBuffer;
 	UniformBufferHandle m_sdfTraceInfluenceRangeBuffer;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);

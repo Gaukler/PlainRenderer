@@ -2,6 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
 
+#include "global.inc"
 #include "sunShadowCascades.inc"
 
 layout(constant_id = 0) const uint cascadeIndex = 0;

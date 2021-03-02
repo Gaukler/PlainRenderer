@@ -10,6 +10,7 @@
 #include "sky.inc"
 #include "sdfCulling.inc"
 #include "noise.inc"
+#include "sunShadowCascades.inc"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -19,6 +20,7 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 //3: shadow tile usage
 //4: shadow tile id
 layout(constant_id = 0) const int debugMode = 0;
+layout(constant_id = 1) const int shadowCascadeIndex = 3;	//for light matrix
 
 layout(set=1, binding = 0, r11f_g11f_b10f)	uniform image2D imageOut;
 layout(set=1, binding = 1, std430) buffer lightStorageBuffer{
@@ -37,23 +39,16 @@ layout(set=1, binding = 4, std430) buffer cameraCulledTileBuffer{
     CulledInstancesPerTile cameraCulledTiles[];
 };
 
-layout(set=1, binding = 5, std430) buffer shadowCulledTileBuffer{
-    CulledInstancesPerTile shadowCulledTiles[];
-};
-
-layout(set=1, binding = 6, std430) buffer cameraCulledSdfInstanceBuffer{
+layout(set=1, binding = 5, std430) buffer cameraCulledSdfInstanceBuffer{
     uint cameraCulledInstanceCount;
 	uint cameraCulledInstanceIndices[];
 };
 
-layout(set=1, binding = 7, std430) buffer shadowCulledSdfInstanceBuffer{
-    uint shadowCulledInstanceCount;
-	uint shadowCulledInstanceIndices[];
+layout(set=1, binding = 6, std430) buffer sunShadowInfo{
+    ShadowCascadeInfo sunShadowCascadeInfo;
 };
 
-layout(set=1, binding = 8, std140) uniform shadowFrustumInfoBuffer{
-	ShadowFrustum shadowFrustum;
-};
+layout(set=1, binding = 7) uniform texture2D shadowMap;
 
 layout(set=2, binding = 0) uniform texture3D[] textures;
 
@@ -100,25 +95,7 @@ void main(){
 		traceRayTroughSDFInstance(instance, rayStart, textures[instance.sdfTextureIndex], cameraToPixel, traceResult);
 	}
 
-	//compute shadow
-	float shadow = 1.f;
-
-	ivec2 shadowTileUV = computeShadowTileUV(traceResult.hitPos, shadowFrustum);
-	uint shadowTileIndex = computeShadowTileIndexFromUV(shadowTileUV);
-
-	CulledInstancesPerTile shadowTile = shadowCulledTiles[shadowTileIndex];
-
-	if(traceResult.hit){
-		for(int i = 0; i < shadowTile.objectCount; i++){
-			SDFInstance instance = sdfInstances[shadowTile.indices[i]];
-
-			bool shadowHit = shadowRay(instance, traceResult.hitPos, traceResult.N, g_sunDirection.xyz, textures[instance.sdfTextureIndex]);
-			if(shadowHit){
-				shadow = 0.f;
-				break;
-			}
-		}
-	}
+	float shadow = simpleShadow(traceResult.hitPos, sunShadowCascadeInfo.lightMatrices[shadowCascadeIndex], shadowMap, g_sampler_nearestBlackBorder);
 
 	vec3 color = vec3(0.f);
 
@@ -138,24 +115,12 @@ void main(){
 			color = percentage >= 1.f ? vec3(1, 0, 0) :  vec3(percentage);
 			//color = percentageToColor(percentage);
 		}
-		//shadow tile usage and id
-		else if(debugMode == 3){
-			float percentage = shadowTile.objectCount / float(maxObjectsPerTile);
-			color = percentage >= 1.f ? vec3(1, 0, 0) :  vec3(percentage);
-			//color = percentageToColor(percentage);
-		}
-		//shadow tile id
-		else if(debugMode == 4){
-			uint hashedIndex = wang_hash(shadowTileIndex);
-			//make it nice and colorful =)
-			color = vec3(rand(hashedIndex), rand(hashedIndex), rand(hashedIndex));
-		}
 		//normals
-		else if(debugMode == 5){
+		else if(debugMode == 3){
 			color = traceResult.N * 0.5 + 0.5;
 		}
 		//raymarching count
-		else if(debugMode == 6){
+		else if(debugMode == 4){
 			color = vec3(traceResult.hitCount / 128.f);
 		}
 	}
