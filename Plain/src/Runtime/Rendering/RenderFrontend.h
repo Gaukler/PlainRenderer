@@ -46,7 +46,7 @@ struct SDFDiffuseTraceSettings {
 	//loses range, but results outside of influence radius are not entirely accurate, as objects start to be culled
 	bool strictInfluenceRadiusCutoff;
 	//radius in which objects are not culled, increases effect range and computation time
-	float traceInfluenceRadius = 6.f;
+	float traceInfluenceRadius = 5.f;
 	//highest sun shadow cascade used for shadowing trace hits
 	//if strict influence radius cutoff is disabled hits can be outside influence radius, so extra padding is necessary
 	float additionalSunShadowMapPadding = 3.f;
