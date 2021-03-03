@@ -55,6 +55,69 @@ layout(set=1, binding = 10) uniform texture2D shadowMap;
 
 layout(set=2, binding = 0) uniform texture3D[] textures;
 
+struct RayInfo{
+	vec3 normal;
+	float depth;
+	vec3 color;
+};
+
+//matches local group size
+shared RayInfo[8][8] sharedRays;
+
+//use neighbouring rays trough LDS, if appropriate
+vec3 resolveColor(vec3 initialColor, vec3 N, float depth){
+	//write ray to LDS
+	RayInfo ray;
+	ray.normal = N;
+	ray.depth = depth;
+	ray.color = initialColor;
+
+	sharedRays[gl_LocalInvocationID.x][gl_LocalInvocationID.y] = ray;
+
+	barrier();
+	memoryBarrier();
+
+	float weightTotal = 1.f;
+	vec3 color = initialColor;
+
+	//iterate over neighbourhood
+	for(int x = -1; x <= 1; x++){
+		for(int y = -1; y <= 1; y++){
+			//color already initialized with center ray
+			if(x == 0 && y == 0){
+				continue;
+			}
+			ivec2 rayIndex = ivec2(gl_LocalInvocationID.xy) + ivec2(x, y);
+			bool isValidIndex = all(greaterThan(rayIndex, ivec2(0))) && all(lessThan(rayIndex, ivec2(8)));
+			if(!isValidIndex){
+				continue;
+			}
+
+			RayInfo neighbourRay = sharedRays[rayIndex.x][rayIndex.y];
+
+			//reject based on normal and depth
+			float normalThreshold = 0.9f;
+			float NoN = clamp(dot(N, neighbourRay.normal), 0, 1);
+			bool normalsMatch = NoN > normalThreshold;
+
+			float depthThreshold = 0.5f;
+			bool depthMatch = abs(depth - neighbourRay.depth) < depthThreshold;
+
+			if(normalsMatch && depthMatch){
+				//works out to gauss kernel, if all samples are accepted
+				float weightX = x == 0 ? 1 : 0.5;
+				float weightY = y == 0 ? 1 : 0.5;
+				float weight = weightX * weightY;
+				//weight = 1;
+				color += weight * neighbourRay.color;
+				weightTotal += weight;
+			}
+		}
+	}
+	color /= weightTotal;
+	return color;
+}
+
 void main(){
 	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
 	vec2 uv = iUV / vec2(imageSize(imageOut_Y_SH));
@@ -119,6 +182,8 @@ void main(){
 	if(!hitInRange){
 		hitColor = vec3(0);
 	}
+
+	hitColor = resolveColor(hitColor, N, depthLinear);
 
 	vec3 YCoCg = linearToYCoCg(hitColor);
 
