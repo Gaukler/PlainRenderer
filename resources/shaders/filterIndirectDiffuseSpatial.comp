@@ -55,11 +55,11 @@ void main(){
 	float depth = texture(sampler2D(depthTexture, g_sampler_nearestClamp), uv).r;
 	float depthLinear = linearizeDepth(depth, g_nearPlane, g_farPlane);
 
-	float radiusWorld = 1.f;
+	float radiusWorld = 6.f;
 
 	//filter on history buffer uses smaller radius
 	if(filterIndex == 1){
-		radiusWorld = 0.5f;
+		radiusWorld *= 0.1f;
 	}
 
 	vec2 noiseUV = vec2(iUV) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
@@ -104,7 +104,7 @@ void main(){
 			weight = 0;
 			//reduce sampling radius when landing offscreen
 			//this avoids close pixels and pixels near screen border being unfiltered
-			lengthModifier *= 0.8f;
+			lengthModifier *= 0.98f;
 		}
 
 		vec3 sampleN = 2 * texture(sampler2D(normalTexture, g_sampler_nearestClamp), sampleUV).rgb - 1;

@@ -38,17 +38,19 @@ void main(){
 	float K = 10;
 	float motionDifferenceFactor = clamp(motionDifference * K, 0, 1);
 
-	float alphaDefault = 0.85f;
-	//alphaDefault = 0;
-	float alpha = mix(alphaDefault, 0, motionDifferenceFactor);
-	
+	float alphaDefault = 0.75f;
+	//the high min value leads to slight ghosting in movement
+	//however in indirect lighting, combined with TAA ghosting is less visible than noise
+	float alphaMin = 0.5f;
+	float alpha = mix(alphaDefault, alphaMin, motionDifferenceFactor);
+
 	//don't blend if current or previous pixel moves too fast
 	//see: https://bartwronski.com/2014/03/15/temporal-supersampling-and-antialiasing/
 	float pixelThreshold = 3.f;
 	if(
 		any(greaterThan(abs(motion)			 * g_screenResolution, vec2(pixelThreshold))) ||
 		any(greaterThan(abs(motionLastFrame) * g_screenResolution, vec2(pixelThreshold)))){
-		//alpha = 0;
+		alpha = alphaMin;
 	}
 	
 	if(any(lessThan(uvReprojected, vec2(0))) || any(greaterThan(uvReprojected, vec2(1)))){
@@ -57,6 +59,8 @@ void main(){
 	if(g_cameraCut){
 		alpha = 0;
 	}
+	//filter NaNs
+	//TODO: check if necessary
 	if(any(isnan(current_Y_SH)) || any(isnan(current_CoCg))){
 		alpha = 1;
 		if(any(isnan(history_Y_SH))){
@@ -66,6 +70,7 @@ void main(){
 			history_CoCg = vec2(0);
 		}
 	}
+	//alpha = 0;	//debug shortcut: disable temporal filter
 	vec4 result_Y_SH = mix(current_Y_SH, history_Y_SH, alpha);
 	vec2 result_CoCg = mix(current_CoCg, history_CoCg, alpha);
 
