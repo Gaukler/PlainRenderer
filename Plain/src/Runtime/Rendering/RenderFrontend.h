@@ -294,7 +294,6 @@ private:
 	ImageHandle m_indirectLightingFullRes_CoCg;
 
     std::vector<ImageHandle> m_noiseTextures;
-    uint32_t m_noiseTextureIndex = 0;
 
     DefaultTextures m_defaultTextures;
 

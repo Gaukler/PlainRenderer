@@ -54,6 +54,7 @@ layout(set=1, binding = 9, std430) buffer sunShadowInfo{
 layout(set=1, binding = 10) uniform texture2D shadowMap;
 
 layout(set=2, binding = 0) uniform texture3D[] textures;
+layout(set=2, binding = 0) uniform texture2D[] textures2D;
 
 struct RayInfo{
 	vec3 normal;
@@ -131,8 +132,10 @@ void main(){
 	vec4 result_Y_SH = vec4(0.f);
 	vec2 result_CoCg = vec2(0.f);
 
-	vec2 noiseUV = vec2(iUV) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
-	vec2 xi = texture(sampler2D(g_noiseTexture, g_sampler_nearestRepeat), noiseUV).rg;
+	uint noiseIndex = g_frameIndexMod2;
+	//noiseIndex = 0;
+	vec2 noiseUV = vec2(iUV) / textureSize(sampler2D(textures2D[g_noiseTextureIndices[noiseIndex]], g_sampler_linearRepeat), 0);
+	vec2 xi = texture(sampler2D(textures2D[g_noiseTextureIndices[noiseIndex]], g_sampler_nearestRepeat), noiseUV).rg;
 
 	vec3 normalTexel = texture(sampler2D(normalTexture, g_sampler_nearestClamp), uv).rgb;
 	vec3 N = normalTexel * 2 - 1;

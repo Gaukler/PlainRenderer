@@ -90,8 +90,9 @@ float calcShadow(vec3 pos, float LoV, texture2D shadowMap, mat4 lightMatrix, int
 	posLightSpace.xy = posLightSpace.xy * 0.5f + 0.5f;
 	float actualDepth = clamp(posLightSpace.z, 0.f, 1.f);
     
-	vec2 noiseUV = gl_FragCoord.xy / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
-	float noise = texture(sampler2D(g_noiseTexture, g_sampler_linearRepeat), noiseUV).r;
+	uint noiseIndex = g_frameIndexMod4;
+	vec2 noiseUV = vec2(gl_FragCoord.xy) / textureSize(sampler2D(textures[g_noiseTextureIndices[noiseIndex]], g_sampler_linearRepeat), 0);
+	float noise = texture(sampler2D(textures[g_noiseTextureIndices[noiseIndex]], g_sampler_nearestRepeat), noiseUV).r;
 
 	vec2 offsetScale = shadowSampleRadius * sunShadowCascadeInfo.lightSpaceScale[cascade];
 

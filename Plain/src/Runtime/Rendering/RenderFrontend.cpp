@@ -361,7 +361,6 @@ void RenderFrontend::setupGlobalShaderInfoResources() {
 		SamplerResource(m_sampler_nearestRepeat,		globalSamplerNearestRepeatBinding),
 		SamplerResource(m_sampler_nearestWhiteBorder,	globalSamplerNearestWhiteBorderBinding)
 	};
-	globalResources.sampledImages = { ImageResource(m_noiseTextures[m_noiseTextureIndex], 0, globalNoiseTextureBindingBinding) };
 	gRenderBackend.setGlobalDescriptorSetResources(globalResources);
 }
 
@@ -753,6 +752,9 @@ void RenderFrontend::renderFrame() {
         return;
     }
 	m_globalShaderInfo.frameIndex++;
+	m_globalShaderInfo.frameIndexMod2 = m_globalShaderInfo.frameIndex % 2;
+	m_globalShaderInfo.frameIndexMod3 = m_globalShaderInfo.frameIndex % 3;
+	m_globalShaderInfo.frameIndexMod4 = m_globalShaderInfo.frameIndex % 4;
 
 	//no sky drawn in debug mode
 	if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::None) {
@@ -1795,9 +1797,6 @@ void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.mipBias = m_temporalFilterSettings.enabled && m_temporalFilterSettings.useMipBias ? glm::log2(lodBiasSampleRadius) : 0.f;
 
     gRenderBackend.setUniformBufferData(m_globalUniformBuffer, &m_globalShaderInfo, sizeof(m_globalShaderInfo));
-
-    m_noiseTextureIndex++;
-    m_noiseTextureIndex = m_noiseTextureIndex % m_noiseTextures.size();
 }
 
 void RenderFrontend::initImages() {
@@ -2014,6 +2013,7 @@ void RenderFrontend::initImages() {
 		desc.initialData = generateBlueNoiseTexture(glm::ivec2(noiseTextureWidth, noiseTextureHeight), channelCount);
 
         m_noiseTextures.push_back(gRenderBackend.createImage(desc));
+		m_globalShaderInfo.noiseTextureIndices[i] = gRenderBackend.getImageGlobalTextureArrayIndex(m_noiseTextures.back());
     }
 	//indirect diffuse Y component spherical harmonics
 	{

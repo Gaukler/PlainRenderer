@@ -5,6 +5,7 @@ layout(set=0, binding = 0, std140) uniform global{
     vec4 g_cameraRight;
     vec4 g_cameraUp;
     vec4 g_cameraForward;   
+	ivec4 g_noiseTextureIndices;
     vec2 g_currentFrameCameraJitter;
     vec2 g_previousFrameCameraJitter;
     ivec2 g_screenResolution;
@@ -20,6 +21,9 @@ layout(set=0, binding = 0, std140) uniform global{
 	float g_mipBias;
 	bool g_cameraCut;
 	uint g_frameIndex;
+	uint g_frameIndexMod2;
+	uint g_frameIndexMod3;
+	uint g_frameIndexMod4;
 };
 
 layout(set=0, binding = 1) uniform sampler g_sampler_anisotropicRepeat;
@@ -30,7 +34,5 @@ layout(set=0, binding = 5) uniform sampler g_sampler_nearestClamp;
 layout(set=0, binding = 6) uniform sampler g_sampler_linearWhiteBorder;
 layout(set=0, binding = 7) uniform sampler g_sampler_nearestRepeat;
 layout(set=0, binding = 8) uniform sampler g_sampler_nearestWhiteBorder;
-
-layout(set=0, binding = 9) uniform texture2D g_noiseTexture;
 
 float pi = 3.1415926535f;

@@ -50,7 +50,7 @@ void main(){
 	
 	float weightTotal = 0.f;
 
-	uint rngState = wang_hash(g_frameIndex % 2 + filterIndex);
+	uint rngState = wang_hash(g_frameIndexMod4 + filterIndex);
 
 	float depth = texture(sampler2D(depthTexture, g_sampler_nearestClamp), uv).r;
 	float depthLinear = linearizeDepth(depth, g_nearPlane, g_farPlane);
@@ -61,9 +61,6 @@ void main(){
 	if(filterIndex == 1){
 		radiusWorld *= 0.1f;
 	}
-
-	vec2 noiseUV = vec2(iUV) / textureSize(sampler2D(g_noiseTexture, g_sampler_linearRepeat), 0);
-	float test = texture(sampler2D(g_noiseTexture, g_sampler_linearRepeat), noiseUV).r;
 
 	float lengthModifier = 1.f;
 
