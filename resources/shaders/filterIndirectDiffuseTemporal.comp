@@ -38,10 +38,15 @@ void main(){
 	float K = 10;
 	float motionDifferenceFactor = clamp(motionDifference * K, 0, 1);
 
-	float alphaDefault = 0.75f;
+	float alphaDefault = 0.8f;
 	//the high min value leads to slight ghosting in movement
 	//however in indirect lighting, combined with TAA ghosting is less visible than noise
-	float alphaMin = 0.5f;
+	float alphaMin = 0.6f;
+
+	//prevent easily visible ghosting of bright areas bleeding into dark areas and vice versa
+	alphaMin -= 0.3 * abs(length(current_Y_SH) - length(history_Y_SH));
+	alphaMin = max(alphaMin, 0);
+
 	float alpha = mix(alphaDefault, alphaMin, motionDifferenceFactor);
 
 	//don't blend if current or previous pixel moves too fast

@@ -43,7 +43,7 @@ void main(){
 	vec3 N = normalize(cross(bitangent, tangent));
 	N = 2 * texture(sampler2D(normalTexture, g_sampler_nearestClamp), uv).rgb - 1;
 
-	int sampleCount = 42;
+	int sampleCount = 32;
 
 	vec4 result_Y_SH = vec4(0);
 	vec2 result_CoCg = vec2(0);
@@ -55,11 +55,11 @@ void main(){
 	float depth = texture(sampler2D(depthTexture, g_sampler_nearestClamp), uv).r;
 	float depthLinear = linearizeDepth(depth, g_nearPlane, g_farPlane);
 
-	float radiusWorld = 6.f;
+	float radiusWorld = 1.5f;
 
-	//filter on history buffer uses smaller radius
+	//slightly smaller radius on history
 	if(filterIndex == 1){
-		radiusWorld *= 0.1f;
+		radiusWorld = 1;
 	}
 
 	float lengthModifier = 1.f;
