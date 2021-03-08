@@ -102,11 +102,6 @@ vec3 fromSkyLut(vec2 uv){
     return vec3(sin(theta) * cos(phi), cos(theta), sin(theta) * sin(phi));
 }
 
-//reference: "Physically Based and Unified Volumetric Rendering in Frostbite", page 29
-vec3 integrateInscattering(vec3 inscattering, vec3 extinctionCoefficients, float length){
-    return (inscattering - inscattering * exp(-extinctionCoefficients * length)) / extinctionCoefficients;
-}
-
 vec2 computeLutUV(float height, float atmoshphereHeight, vec3 up, vec3 direction){
     vec2 lutUV;
     lutUV.x = height / atmoshphereHeight;

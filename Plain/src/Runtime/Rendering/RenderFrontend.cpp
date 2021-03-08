@@ -24,6 +24,17 @@
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
 
+//---- private function declarations ----
+
+void resizeCallback(GLFWwindow* window, int width, int height);
+DefaultTextures createDefaultTextures();
+glm::vec2 computeProjectionMatrixJitter();
+glm::mat4 applyProjectionMatrixJitter(const glm::mat4& projectionMatrix, const glm::vec2& offset);
+std::array<float, 9> computeTaaResolveWeights(const glm::vec2 cameraJitterInPixels);
+glm::ivec3 computeVolumetricLightingFroxelResolution(const uint32_t screenResolutionX, const uint32_t screenResolutionY);
+
+//---- private constants ----
+
 //definition of extern variable from header
 RenderFrontend gRenderFrontend;
 
@@ -54,6 +65,9 @@ const uint32_t maxObjectCountMainScene = 300;
 const size_t sdfCameraCullingTileSize = 32;
 const size_t maxSdfObjectsPerTile = 100;
 
+const uint32_t scatteringTransmittanceFroxelTileSize = 8;
+const uint32_t scatteringTransmittanceDepthSliceCount = 64;
+
 //bindings of global shader uniforms
 const uint32_t globalUniformBufferBinding               = 0;
 const uint32_t globalSamplerAnisotropicRepeatBinding    = 1;
@@ -75,6 +89,8 @@ struct MainPassMatrices {
 	glm::mat4 mvp;
 	glm::mat4 mvpPrevious;
 };
+
+//---- function implementations ----
 
 void resizeCallback(GLFWwindow* window, int width, int height) {
     RenderFrontend* frontEnd = reinterpret_cast<RenderFrontend*>(glfwGetWindowUserPointer(window));
@@ -251,6 +267,7 @@ void RenderFrontend::prepareNewFrame() {
     if (m_didResolutionChange) {
 
         gRenderBackend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
+		//full res render targets
         gRenderBackend.resizeImages({
             m_frameRenderTargets[0].motionBuffer,
 			m_frameRenderTargets[1].motionBuffer,
@@ -268,7 +285,13 @@ void RenderFrontend::prepareNewFrame() {
 			m_indirectLightingFullRes_Y_SH, 
 			m_indirectLightingFullRes_CoCg },
             m_screenWidth, m_screenHeight);
+		//half res render targets
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid, m_depthHalfRes }, m_screenWidth / 2, m_screenHeight / 2);
+
+		const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
+		//volumetric textures
+		gRenderBackend.resizeImages({ m_scatteringTransmittanceVolume, m_volumetricIntegrationVolume },
+			froxelResolution.x,	froxelResolution.y);
 
 		resizeIndirectLightingBuffers();
 
@@ -420,6 +443,10 @@ void RenderFrontend::prepareRenderpasses(){
 		diffuseSDFTrace(currentRenderTarget);
 		filterIndirectDiffuse(currentRenderTarget, lastRenderTarget);
 	}
+
+	computeVolumetricLighting();
+	forwardShadingDependencies.push_back(m_volumetricLightingIntegration);
+
     renderForwardShading(forwardShadingDependencies, currentRenderTarget.colorFramebuffer);
 	RenderPassHandle skyParent = m_mainPass;
 	if (m_renderBoundingBoxes) {
@@ -880,13 +907,14 @@ void RenderFrontend::renderSky(const FramebufferHandle framebuffer, const Render
 
     //render skybox
     {
-        const ImageResource skyLutResource (m_skyLut, 0, 0);
-
         GraphicPassExecution skyPassExecution;
         skyPassExecution.genericInfo.handle = m_skyPass;
         skyPassExecution.framebuffer = framebuffer;
-        skyPassExecution.genericInfo.resources.sampledImages = { skyLutResource };
-        skyPassExecution.genericInfo.parents = { parent,  m_skyLutPass };
+        skyPassExecution.genericInfo.resources.sampledImages = { 
+			ImageResource(m_skyLut, 0, 0),
+			ImageResource(m_volumetricIntegrationVolume, 0, 1)
+		};
+        skyPassExecution.genericInfo.parents = { parent,  m_skyLutPass, m_volumetricLightingIntegration };
         gRenderBackend.setGraphicPassExecution(skyPassExecution);
     }
     //sun sprite
@@ -1220,7 +1248,9 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
 
 	mainPassExecution.genericInfo.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource,
 		ImageResource(indirectSrc_Y_SH, 0, 15),
-		ImageResource(indirectSrc_CoCg, 0, 16) };
+		ImageResource(indirectSrc_CoCg, 0, 16),
+		ImageResource(m_volumetricIntegrationVolume, 0, 18)
+	};
 
     //add shadow map cascade resources
 	//max count shadow maps are always allocated and bound, but may be unused
@@ -1392,6 +1422,56 @@ void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const
 	exe.genericInfo.parents.push_back(m_shadowPasses[shadowCascadeIndex]);
 
 	gRenderBackend.setComputePassExecution(exe);
+}
+
+void RenderFrontend::computeVolumetricLighting() const {
+
+	const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
+
+	//scattering/transmittance computation
+	{
+		const int shadowMapIndex = m_shadingConfig.sunShadowCascadeCount - 1;
+
+		ComputePassExecution exe;
+		exe.genericInfo.handle = m_froxelScatteringTransmittancePass;
+		exe.genericInfo.parents = { m_shadowPasses[shadowMapIndex], m_preExposeLightsPass };
+		exe.genericInfo.resources.storageImages = {
+			ImageResource(m_scatteringTransmittanceVolume, 0, 0)
+		};
+		exe.genericInfo.resources.sampledImages = {
+			ImageResource(m_shadowMaps[shadowMapIndex], 0, 1)
+		};
+		exe.genericInfo.resources.storageBuffers = {
+			StorageBufferResource(m_sunShadowInfoBuffer, true, 2),
+			StorageBufferResource(m_lightBuffer, true, 3)
+		};
+
+		const int groupSize = 4;
+		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
+		exe.dispatchCount[1] = glm::ceil(froxelResolution.y / float(groupSize));
+		exe.dispatchCount[2] = glm::ceil(froxelResolution.z / float(groupSize));
+
+		gRenderBackend.setComputePassExecution(exe);
+	}
+	//integration
+	{
+		ComputePassExecution exe;
+		exe.genericInfo.handle = m_volumetricLightingIntegration;
+		exe.genericInfo.parents = { m_froxelScatteringTransmittancePass };
+		exe.genericInfo.resources.storageImages = {
+			ImageResource(m_volumetricIntegrationVolume, 0, 0)
+		};
+		exe.genericInfo.resources.sampledImages = {
+			ImageResource(m_scatteringTransmittanceVolume, 0, 1)
+		};
+
+		const int groupSize = 8;
+		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
+		exe.dispatchCount[1] = glm::ceil(froxelResolution.y / float(groupSize));
+		exe.dispatchCount[2] = 1;
+
+		gRenderBackend.setComputePassExecution(exe);
+	}
 }
 
 std::vector<RenderPassHandle> RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ, const bool tracingHalfRes) const{
@@ -2110,6 +2190,44 @@ void RenderFrontend::initImages() {
 
 		m_indirectLightingFullRes_CoCg = gRenderBackend.createImage(desc);
 	}
+	const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
+	//scattering/transmittance froxels
+	{
+		ImageDescription desc;
+		desc.width = froxelResolution.x;
+		desc.height = froxelResolution.y;
+		desc.depth = froxelResolution.z;
+		desc.type = ImageType::Type3D;
+		desc.format = ImageFormat::RGBA16_sFloat;
+		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+		desc.mipCount = MipCount::One;
+		desc.manualMipCount = 1;
+		desc.autoCreateMips = false;
+
+		m_scatteringTransmittanceVolume = gRenderBackend.createImage(desc);
+	}
+	//volumetric lighting integration froxels
+	{
+		ImageDescription desc;
+		desc.width = froxelResolution.x;
+		desc.height = froxelResolution.y;
+		desc.depth = froxelResolution.z;
+		desc.type = ImageType::Type3D;
+		desc.format = ImageFormat::RGBA16_sFloat;
+		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+		desc.mipCount = MipCount::One;
+		desc.manualMipCount = 1;
+		desc.autoCreateMips = false;
+
+		m_volumetricIntegrationVolume = gRenderBackend.createImage(desc);
+	}
+}
+
+glm::ivec3 computeVolumetricLightingFroxelResolution(const uint32_t screenResolutionX, const uint32_t screenResolutionY) {
+	return glm::ivec3(
+		glm::ceil(screenResolutionX / float(scatteringTransmittanceFroxelTileSize)),
+		glm::ceil(screenResolutionY / float(scatteringTransmittanceFroxelTileSize)),
+		scatteringTransmittanceDepthSliceCount);
 }
 
 void RenderFrontend::initSamplers(){
@@ -3001,7 +3119,20 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 			}
 		};
 		m_sdfCameraTileCullingHiZ = gRenderBackend.createComputePass(desc);
-
+	}
+	//froxel light scattering
+	{
+		ComputePassDescription desc;
+		desc.name = "Froxel light scattering";
+		desc.shaderDescription.srcPathRelative = "froxelLightScattering.comp";
+		m_froxelScatteringTransmittancePass = gRenderBackend.createComputePass(desc);
+	}
+	//froxel light integration
+	{
+		ComputePassDescription desc;
+		desc.name = "Volumetric light integration";
+		desc.shaderDescription.srcPathRelative = "volumetricLightingIntegration.comp";
+		m_volumetricLightingIntegration = gRenderBackend.createComputePass(desc);
 	}
 }
 

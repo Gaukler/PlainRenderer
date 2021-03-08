@@ -11,8 +11,7 @@
 #include "linearDepth.inc"
 #include "lightBuffer.inc"
 #include "SphericalHarmonics.inc"
-
-#include "screenToWorld.inc" //temp for debugging
+#include "volumetricFroxelLighting.inc"
 
 /*
 specialisation constants
@@ -59,6 +58,8 @@ layout(set=1, binding = 12) uniform texture2D shadowMapCascade3;
 
 layout(set=1, binding = 15) uniform texture2D indirectDiffuse_Y_SH;
 layout(set=1, binding = 16) uniform texture2D indirectDiffuse_CoCg;
+
+layout(set=1, binding = 18) uniform texture3D volumetricLightingLUT;
 
 layout(push_constant) uniform MatrixBlock {
 	int albedoTextureIndex;
@@ -121,6 +122,17 @@ float EnergyAverage(float roughness){
           r = 0.409255f + smoothness * r;
     return min(0.999f, r);
 
+}
+
+vec3 applyVolumetricLighting(float pixelDistance, vec3 V){
+	uint noiseIndex = g_frameIndexMod4;
+	vec2 noiseUV = vec2(gl_FragCoord.xy) / textureSize(sampler2D(textures[g_noiseTextureIndices[noiseIndex]], g_sampler_linearRepeat), 0);
+	vec2 noise = texture(sampler2D(textures[g_noiseTextureIndices[noiseIndex]], g_sampler_nearestRepeat), noiseUV).rg;
+	noise -= 0.5;
+	noise *= 0.02;
+
+	vec4 inscatteringTransmittance = volumeTextureLookup(gl_FragCoord.xy / g_screenResolution.xy, pixelDistance / dot(g_cameraForward.xyz, -V), volumetricLightingLUT, noise);
+	return applyInscatteringTransmittance(color, inscatteringTransmittance);
 }
 
 void main(){
@@ -206,9 +218,10 @@ void main(){
 
 		environmentSample = YCoCgToLinear(vec3(max(dot(directionToSH_L1(R), irradiance_Y_SH), 0), irradiance_CoCg));
 	}
+	//constant ambient
 	else {
-		irradiance			= vec3(0.05f) * lightBuffer.sunStrengthExposed;
-		environmentSample	= vec3(0.05f)  * lightBuffer.sunStrengthExposed;
+		irradiance			= vec3(0.01f) * lightBuffer.sunStrengthExposed;
+		environmentSample	= vec3(0.01f) * lightBuffer.sunStrengthExposed;
 	}
 
 	vec3 brdfLut = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r_indirect, NoV)).rgb;
@@ -324,7 +337,8 @@ void main(){
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
 
     color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
-	color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
+	color = applyVolumetricLighting(pixelDistance, V);
+
 	//color = irradiance / pi;
 	//color = N*0.5+0.5;
 	//color = passPos;

@@ -167,6 +167,7 @@ private:
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void issueSkyDrawcalls();
 	void renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const;
+	void computeVolumetricLighting() const;
 
 	//returns list of passes that must be used as parent to wait for results
 	//when culling for direct visualisation hi-z culling results in artifacts
@@ -269,6 +270,8 @@ private:
 	RenderPassHandle m_sdfCameraTileCulling;
 	RenderPassHandle m_sdfCameraTileCullingHiZ;
 	RenderPassHandle m_sdfDebugVisualisationPass;
+	RenderPassHandle m_froxelScatteringTransmittancePass;
+	RenderPassHandle m_volumetricLightingIntegration;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -292,6 +295,8 @@ private:
 	ImageHandle m_depthHalfRes;
 	ImageHandle m_indirectLightingFullRes_Y_SH;
 	ImageHandle m_indirectLightingFullRes_CoCg;
+	ImageHandle m_scatteringTransmittanceVolume;
+	ImageHandle m_volumetricIntegrationVolume;
 
     std::vector<ImageHandle> m_noiseTextures;
 
