@@ -23,10 +23,6 @@ layout(set=1, binding = 3, std430) buffer lightStorageBuffer{
     LightBuffer lightBuffer;
 };
 
-float uvToDepth(float uv){
-	return maxVolumetricLightingDepth * uv;
-}
-
 void main(){
 	uvec3 iUV = gl_GlobalInvocationID.xyz;
 	uvec3 volumeRes = imageSize(scatteringTransmittanceVolume);
@@ -39,7 +35,7 @@ void main(){
 	vec3 ndc = 2.f * (uv - 0.5f);
 	vec3 V = calculateViewDirectionFromPixel(ndc.xy, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 
-	vec3 posWorld = g_cameraPosition.xyz - V / dot(-V, g_cameraForward.xyz) * uvToDepth(uv.z);
+	vec3 posWorld = g_cameraPosition.xyz - V / dot(-V, g_cameraForward.xyz) * froxelUVToDepth(uv.z);
 
 	float shadow = simpleShadow(posWorld, sunShadowCascadeInfo.lightMatrices[2], sunShadowMap, g_sampler_nearestBlackBorder);
 	vec3 sunLight = shadow * lightBuffer.sunColor.rgb * lightBuffer.sunStrengthExposed;

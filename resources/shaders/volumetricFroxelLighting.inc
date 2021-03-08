@@ -1,11 +1,19 @@
 const float maxVolumetricLightingDepth = 30.f; 
 
+float froxelUVToDepth(float uvZ){
+	return uvZ * maxVolumetricLightingDepth;
+}
+
+float depthToFroxelUVZ(float depth){
+	return clamp(depth / maxVolumetricLightingDepth, 0.f, 1.f);
+}
+
 vec4 volumeTextureLookup(vec2 screenUV, float depth, texture3D froxelTexture, vec2 lookupNoiseVector){
 	vec3 uv;
 	uv.xy = screenUV;
 	uv.xy += lookupNoiseVector;
 
-	uv.z = clamp(depth / maxVolumetricLightingDepth, 0.f, 1.f);
+	uv.z = depthToFroxelUVZ(depth);
 	return texture(sampler3D(froxelTexture, g_sampler_linearClamp), uv);
 }
 

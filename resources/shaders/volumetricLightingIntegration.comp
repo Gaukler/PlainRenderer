@@ -21,16 +21,18 @@ void main(){
 	vec3 inscatteringTotal = vec3(0);
 	float transmittance = 1;
 
-	float depthSegmentLength = maxVolumetricLightingDepth / volumeRes.z;
-
-	
 	for(int z = 0; z <= volumeRes.z; z++){
 		vec4 inscatteringTransmittance = texelFetch(sampler3D(scatteringTransmittanceVolume, g_sampler_nearestClamp), ivec3(iUV.xy, z), 0);
 
-		vec3 inscattering = integrateInscattering(inscatteringTransmittance.rgb, vec3(inscatteringTransmittance.a), depthSegmentLength);
+		//segment length is recalculcated each iteration to account for the possibility that depth slices aren't linearly distributed
+		float depthStart = froxelUVToDepth(z	/ float(volumeRes.z));
+		float depthEnd   = froxelUVToDepth((z+1)/ float(volumeRes.z));
+		float segmentLength = depthEnd - depthStart;
+
+		vec3 inscattering = integrateInscattering(inscatteringTransmittance.rgb, vec3(inscatteringTransmittance.a), segmentLength);
 		inscatteringTotal += inscattering;
 
-		transmittance *= exp(-inscatteringTransmittance.a * depthSegmentLength);
+		transmittance *= exp(-inscatteringTransmittance.a * segmentLength);
 
 		imageStore(integrationVolume, ivec3(iUV, z), vec4(inscatteringTotal, transmittance));
 	}	
