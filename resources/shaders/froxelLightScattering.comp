@@ -41,15 +41,17 @@ void main(){
 	vec3 sunLight = shadow * lightBuffer.sunColor.rgb * lightBuffer.sunStrengthExposed;
 
 	vec3 L = g_sunDirection.xyz;
-	float VoL = dot(V, L);
-	float g = 0.8f;
+	float VoL = dot(-V, L);
+	float g = 0.5f;
     float phase = phaseGreenstein(VoL, g);
 
 	vec3 scatteringCoefficient = vec3(1.f);
-	float densityMultiplier = 0.015f;
+	float densityMultiplier = 0.005f;
 	scatteringCoefficient *= densityMultiplier;
 
-	vec3 inscattering = sunLight * phase * scatteringCoefficient;
+	//indirect lighting is not volumetric, so no proper contribution to volumetric lighting is currently implemented
+	vec3 constantAmbientLighting = vec3(0.02f);
+	vec3 inscattering = (sunLight * phase + constantAmbientLighting) * scatteringCoefficient;
 
 	vec3 absorptionCoefficient = vec3(1.f);
 	absorptionCoefficient *= densityMultiplier;
