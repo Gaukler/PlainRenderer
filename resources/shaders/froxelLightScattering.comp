@@ -14,12 +14,13 @@ layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(set=1, binding = 0, rgba16f) uniform image3D scatteringTransmittanceVolume;
 layout(set=1, binding = 1) uniform texture2D sunShadowMap;
+layout(set=1, binding = 2) uniform texture3D materialVolume;
 
-layout(set=1, binding = 2, std430) buffer sunShadowInfo{
+layout(set=1, binding = 3, std430) buffer sunShadowInfo{
     ShadowCascadeInfo sunShadowCascadeInfo;
 };
 
-layout(set=1, binding = 3, std430) buffer lightStorageBuffer{
+layout(set=1, binding = 4, std430) buffer lightStorageBuffer{
     LightBuffer lightBuffer;
 };
 
@@ -45,16 +46,14 @@ void main(){
 	float g = 0.5f;
     float phase = phaseGreenstein(VoL, g);
 
-	vec3 scatteringCoefficient = vec3(1.f);
-	float densityMultiplier = 0.005f;
-	scatteringCoefficient *= densityMultiplier;
+	vec4 scatteringAbsorptionCoefficients = texelFetch(sampler3D(materialVolume, g_sampler_nearestClamp), ivec3(iUV), 0);
+	vec3 scatteringCoefficient = scatteringAbsorptionCoefficients.rgb;
+	float absorptionCoefficient = scatteringAbsorptionCoefficients.a;
 
 	//indirect lighting is not volumetric, so no proper contribution to volumetric lighting is currently implemented
 	vec3 constantAmbientLighting = vec3(0.02f);
 	vec3 inscattering = (sunLight * phase + constantAmbientLighting) * scatteringCoefficient;
 
-	vec3 absorptionCoefficient = vec3(1.f);
-	absorptionCoefficient *= densityMultiplier;
 	vec3 extinctionCoefficient = scatteringCoefficient + absorptionCoefficient;
 	float transmittance = computeLuminance(extinctionCoefficient);
 

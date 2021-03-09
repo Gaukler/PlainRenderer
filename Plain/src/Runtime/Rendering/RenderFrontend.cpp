@@ -290,7 +290,7 @@ void RenderFrontend::prepareNewFrame() {
 
 		const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
 		//volumetric textures
-		gRenderBackend.resizeImages({ m_scatteringTransmittanceVolume, m_volumetricIntegrationVolume },
+		gRenderBackend.resizeImages({ m_scatteringTransmittanceVolume, m_volumetricIntegrationVolume, m_volumeMaterialVolume },
 			froxelResolution.x,	froxelResolution.y);
 
 		resizeIndirectLightingBuffers();
@@ -1428,22 +1428,38 @@ void RenderFrontend::computeVolumetricLighting() const {
 
 	const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
 
+	//setup material volume
+	{
+		ComputePassExecution exe;
+		exe.genericInfo.handle = m_froxelVolumeMaterialPass;
+		exe.genericInfo.resources.storageImages = {
+			ImageResource(m_volumeMaterialVolume, 0, 0)
+		};
+
+		const int groupSize = 4;
+		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
+		exe.dispatchCount[1] = glm::ceil(froxelResolution.y / float(groupSize));
+		exe.dispatchCount[2] = glm::ceil(froxelResolution.z / float(groupSize));
+
+		gRenderBackend.setComputePassExecution(exe);
+	}
 	//scattering/transmittance computation
 	{
 		const int shadowMapIndex = m_shadingConfig.sunShadowCascadeCount - 1;
 
 		ComputePassExecution exe;
 		exe.genericInfo.handle = m_froxelScatteringTransmittancePass;
-		exe.genericInfo.parents = { m_shadowPasses[shadowMapIndex], m_preExposeLightsPass };
+		exe.genericInfo.parents = { m_froxelVolumeMaterialPass, m_shadowPasses[shadowMapIndex], m_preExposeLightsPass };
 		exe.genericInfo.resources.storageImages = {
 			ImageResource(m_scatteringTransmittanceVolume, 0, 0)
 		};
 		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_shadowMaps[shadowMapIndex], 0, 1)
+			ImageResource(m_shadowMaps[shadowMapIndex], 0, 1),
+			ImageResource(m_volumeMaterialVolume, 0, 2)
 		};
 		exe.genericInfo.resources.storageBuffers = {
-			StorageBufferResource(m_sunShadowInfoBuffer, true, 2),
-			StorageBufferResource(m_lightBuffer, true, 3)
+			StorageBufferResource(m_sunShadowInfoBuffer, true, 3),
+			StorageBufferResource(m_lightBuffer, true, 4)
 		};
 
 		const int groupSize = 4;
@@ -2220,6 +2236,21 @@ void RenderFrontend::initImages() {
 		desc.autoCreateMips = false;
 
 		m_volumetricIntegrationVolume = gRenderBackend.createImage(desc);
+	}
+	//volume material froxels
+	{
+		ImageDescription desc;
+		desc.width = froxelResolution.x;
+		desc.height = froxelResolution.y;
+		desc.depth = froxelResolution.z;
+		desc.type = ImageType::Type3D;
+		desc.format = ImageFormat::RGBA16_sFloat;
+		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+		desc.mipCount = MipCount::One;
+		desc.manualMipCount = 1;
+		desc.autoCreateMips = false;
+
+		m_volumeMaterialVolume = gRenderBackend.createImage(desc);
 	}
 }
 
@@ -3119,6 +3150,13 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 			}
 		};
 		m_sdfCameraTileCullingHiZ = gRenderBackend.createComputePass(desc);
+	}
+	//froxel volume material
+	{
+		ComputePassDescription desc;
+		desc.name = "Froxel volume material";
+		desc.shaderDescription.srcPathRelative = "froxelVolumeMaterial.comp";
+		m_froxelVolumeMaterialPass = gRenderBackend.createComputePass(desc);
 	}
 	//froxel light scattering
 	{
