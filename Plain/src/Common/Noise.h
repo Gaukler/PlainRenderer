@@ -10,3 +10,4 @@ std::vector<glm::vec2> generateBlueNoiseSampleSequence(const uint32_t count);
 
 //the higher the grid cell count the smaller the noise pattern
 std::vector<uint8_t> generate2DPerlinNoise(const glm::ivec2& resolution, const int gridCellCount = 8);
+std::vector<uint8_t> generate3DPerlinNoise(const glm::ivec3& resolution, const int gridCellCount = 8);

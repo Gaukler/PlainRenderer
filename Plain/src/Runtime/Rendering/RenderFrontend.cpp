@@ -1435,6 +1435,9 @@ void RenderFrontend::computeVolumetricLighting() const {
 		exe.genericInfo.resources.storageImages = {
 			ImageResource(m_volumeMaterialVolume, 0, 0)
 		};
+		exe.genericInfo.resources.sampledImages = {
+			ImageResource(m_perlinNoise3D, 0, 1)
+		};
 
 		const int groupSize = 4;
 		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
@@ -2251,6 +2254,23 @@ void RenderFrontend::initImages() {
 		desc.autoCreateMips = false;
 
 		m_volumeMaterialVolume = gRenderBackend.createImage(desc);
+	}
+	//perlin noise 3D
+	{
+		const int noiseResolution = 32;
+
+		ImageDescription desc;
+		desc.width = noiseResolution;
+		desc.height = noiseResolution;
+		desc.depth = noiseResolution;
+		desc.type = ImageType::Type3D;
+		desc.format = ImageFormat::R8;
+		desc.usageFlags = ImageUsageFlags::Sampled;
+		desc.mipCount = MipCount::One;
+		desc.manualMipCount = 1;
+		desc.autoCreateMips = false;
+		desc.initialData = generate3DPerlinNoise(glm::ivec3(noiseResolution), 8);
+		m_perlinNoise3D = gRenderBackend.createImage(desc);
 	}
 }
 

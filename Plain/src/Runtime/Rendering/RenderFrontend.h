@@ -300,6 +300,7 @@ private:
 	ImageHandle m_volumeMaterialVolume;
 	ImageHandle m_scatteringTransmittanceVolume;
 	ImageHandle m_volumetricIntegrationVolume;
+	ImageHandle m_perlinNoise3D;
 
     std::vector<ImageHandle> m_noiseTextures;
 

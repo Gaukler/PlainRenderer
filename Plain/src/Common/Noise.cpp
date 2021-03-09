@@ -407,3 +407,91 @@ std::vector<uint8_t> generate2DPerlinNoise(const glm::ivec2& resolution, const i
 
 	return noise;
 }
+
+float dotGradientOffset(const glm::ivec3& index, const glm::ivec3& cornerOffset, 
+	const std::vector<std::vector<std::vector<glm::vec3>>>& gradientVectors, const glm::vec3& residual, const int gridCellCount) {
+
+	const glm::vec3 offset = glm::vec3(residual.x-cornerOffset.x, residual.y-cornerOffset.y, residual.z- cornerOffset.z);
+	const glm::vec3 gradientVector = gradientVectors
+		[(index.x + cornerOffset.x) % gridCellCount]
+		[(index.y + cornerOffset.y) % gridCellCount]
+		[(index.z + cornerOffset.z) % gridCellCount];
+	return glm::dot(gradientVector, offset);
+}
+
+std::vector<uint8_t> generate3DPerlinNoise(const glm::ivec3& resolution, const int gridCellCount) {
+	using namespace PerlinNoiseHelperFunctions;
+
+	//init gradient vectors
+	std::vector<std::vector<std::vector<glm::vec3>>> gradientVectors;
+
+	//set correct size
+	gradientVectors.resize(gridCellCount);
+	for (std::vector<std::vector<glm::vec3>>& vector2D : gradientVectors) {
+		vector2D.resize(gridCellCount);
+		for (std::vector<glm::vec3>& vector : vector2D) {
+			vector.resize(gridCellCount);
+		}
+	}
+
+	for (int x = 0; x < gridCellCount; x++) {
+		for (int y = 0; y < gridCellCount; y++) {
+			for (int z = 0; z < gridCellCount; z++) {
+				//using random vectors instead of robust hashing method of original paper
+				//but allows arbitrary grid cell count
+				const glm::vec2 random = glm::vec2(rand(), rand()) / float(RAND_MAX) * 2.f * 3.1415f;
+				gradientVectors[x][y][z] = 
+					glm::vec3(sin(random.x) * cos(random.y), sin(random.x) * sin(random.x), cos(random.x));
+			}
+		}
+	}
+
+	const int dimensions = 3;
+	const float maxAbsValue = computePerlineAbsMax(dimensions);
+	std::vector<uint8_t> noise(resolution.x * resolution.y * resolution.z);
+
+	//compute value of every pixel
+	for (int y = 0; y < resolution.y; y++) {
+		for (int x = 0; x < resolution.x; x++) {
+			for (int z = 0; z < resolution.z; z++) {
+				const glm::vec3 uv = glm::vec3(x, y, z) / glm::vec3(resolution);
+				glm::ivec3 gridIndex = glm::ivec3(uv * float(gridCellCount));
+				glm::vec3 residual = float(gridCellCount) * uv - glm::vec3(gridIndex);
+
+				//compute dot of offset and gradients
+				const float dot_000 = dotGradientOffset(gridIndex, glm::ivec3(0, 0, 0), gradientVectors, residual, gridCellCount);
+				const float dot_001 = dotGradientOffset(gridIndex, glm::ivec3(0, 0, 1), gradientVectors, residual, gridCellCount);
+				const float dot_010 = dotGradientOffset(gridIndex, glm::ivec3(0, 1, 0), gradientVectors, residual, gridCellCount);
+				const float dot_011 = dotGradientOffset(gridIndex, glm::ivec3(0, 1, 1), gradientVectors, residual, gridCellCount);
+				const float dot_100 = dotGradientOffset(gridIndex, glm::ivec3(1, 0, 0), gradientVectors, residual, gridCellCount);
+				const float dot_101 = dotGradientOffset(gridIndex, glm::ivec3(1, 0, 1), gradientVectors, residual, gridCellCount);
+				const float dot_110 = dotGradientOffset(gridIndex, glm::ivec3(1, 1, 0), gradientVectors, residual, gridCellCount);
+				const float dot_111 = dotGradientOffset(gridIndex, glm::ivec3(1, 1, 1), gradientVectors, residual, gridCellCount);
+
+				//interpolation
+				const glm::vec3 t = glm::vec3(smoothstep(residual.x), smoothstep(residual.y), smoothstep(residual.z));
+				const float interpolation_00 = glm::mix(dot_000, dot_001, residual.z);
+				const float interpolation_01 = glm::mix(dot_010, dot_011, residual.z);
+				const float interpolation_10 = glm::mix(dot_100, dot_101, residual.z);
+				const float interpolation_11 = glm::mix(dot_110, dot_111, residual.z);
+
+				const float interpolation_0 = glm::mix(interpolation_00, interpolation_01, residual.y);
+				const float interpolation_1 = glm::mix(interpolation_10, interpolation_11, residual.y);
+
+				float value = glm::mix(interpolation_0, interpolation_1, residual.x);
+
+				//bring to range [-1, 1]
+				value /= maxAbsValue;
+
+				//bring to range [0, 1]
+				value = value * 0.5 + 0.5;
+				value = glm::clamp(value, 0.f, 1.f);
+
+				//store as short, which is integer in range [0, 255]
+				noise[x + y * resolution.x + z * resolution.x * resolution.y] = value * 255;
+			}
+		}
+	}
+
+	return noise;
+}
