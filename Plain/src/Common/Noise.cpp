@@ -1,6 +1,38 @@
 #include "pch.h"
 #include "Noise.h"
 
+//----- private function declarations -----
+namespace VoidAndClusterFunctions {
+	std::array<int, 256> computeHistogramm(const std::vector<uint8_t>& array);
+	std::vector<bool> binarizeArray(const std::vector<uint8_t>& array, const float positivePercentage);
+
+	glm::ivec2 indexToCoordinate(const size_t index, const glm::ivec2& resolution);
+	uint32_t coordinateToIndex(const glm::ivec2& coordinate, const glm::ivec2& resolution);
+
+	glm::ivec2 calculateToroidalOffset(const glm::ivec2 a, const glm::ivec2& b, const glm::ivec2& resolution);
+	float gaussianFilter(const glm::ivec2& offset);
+
+	std::vector<float> calculateFilterLut(const std::vector<bool>& binaryPattern, const glm::ivec2& resolution);
+	std::vector<float> calculatePixelInfluence(const glm::ivec2& inputPosition, const glm::ivec2& resolution);
+	std::vector<float> addInfluenceVectors(const std::vector<float>& a, const std::vector<float>& b);
+	std::vector<float> subtractInfluenceVectors(const std::vector<float>& a, const std::vector<float>& b);
+
+	size_t findBiggestVoid(const std::vector<float>& influence, const std::vector<bool>& binaryPattern);
+	size_t findTightestCluster(const std::vector<float>& influence, const std::vector<bool>& binaryPattern);
+
+	std::vector<bool> createPrototypeBinaryPattern(const glm::ivec2& resolution, const uint32_t minorityPixelCount);
+}
+
+namespace PerlinNoiseHelperFunctions {
+	glm::vec2 sampleGradientVectors2D(const int x, const int y, const std::vector<std::vector<glm::vec2>>& gradientVectors,
+		const int gridCellCount);
+
+	float computePerlineAbsMax(const int dimensions);
+	float smoothstep(const float t);
+}
+
+//----- function implementations -----
+
 std::vector<uint8_t> generateWhiteNoiseTexture(const glm::ivec2& resolution) {
     std::vector<uint8_t> noise;
     noise.resize(size_t(resolution.x) * size_t(resolution.y));
@@ -11,25 +43,6 @@ std::vector<uint8_t> generateWhiteNoiseTexture(const glm::ivec2& resolution) {
 }
 
 namespace VoidAndClusterFunctions {
-
-    std::array<int, 256> computeHistogramm(const std::vector<uint8_t>& array);
-    std::vector<bool> binarizeArray(const std::vector<uint8_t>& array, const float positivePercentage);
-
-    glm::ivec2 indexToCoordinate(const size_t index, const glm::ivec2& resolution);
-    uint32_t coordinateToIndex(const glm::ivec2& coordinate, const glm::ivec2& resolution);
-
-    glm::ivec2 calculateToroidalOffset(const glm::ivec2 a, const glm::ivec2& b, const glm::ivec2& resolution);
-    float gaussianFilter(const glm::ivec2& offset);
-
-    std::vector<float> calculateFilterLut(const std::vector<bool>& binaryPattern, const glm::ivec2& resolution);
-    std::vector<float> calculatePixelInfluence(const glm::ivec2& inputPosition, const glm::ivec2& resolution);
-    std::vector<float> addInfluenceVectors(const std::vector<float>& a, const std::vector<float>& b);
-    std::vector<float> subtractInfluenceVectors(const std::vector<float>& a, const std::vector<float>& b);
-    
-    size_t findBiggestVoid(const std::vector<float>& influence, const std::vector<bool>& binaryPattern);
-    size_t findTightestCluster(const std::vector<float>& influence, const std::vector<bool>& binaryPattern);
-
-    std::vector<bool> createPrototypeBinaryPattern(const glm::ivec2& resolution, const uint32_t minorityPixelCount);
 
     std::array<int, 256> computeHistogramm(const std::vector<uint8_t>& array) {
         std::array<int, 256> histogramm = {};
@@ -309,4 +322,88 @@ std::vector<glm::vec2> generateBlueNoiseSampleSequence(const uint32_t count) {
     }
     assert(samples.size() == count);
     return samples;
+}
+
+namespace PerlinNoiseHelperFunctions {
+	glm::vec2 sampleGradientVectors2D(const int x, const int y, const std::vector<std::vector<glm::vec2>>& gradientVectors,
+		const int gridCellCount) {
+		return gradientVectors[x % gridCellCount][y % gridCellCount];
+	};
+
+	//for max range see: https://digitalfreepen.com/2017/06/20/range-perlin-noise.html
+	float computePerlineAbsMax(const int dimensions) {
+		return glm::sqrt(dimensions / 4.f);
+	}
+
+	//from: "Improving Noise", from Ken Perlin
+	float smoothstep(const float t) {
+		return glm::pow(t, 5.f) * 6.f
+			- 15.f * glm::pow(t, 4.f)
+			+ 10.f * glm::pow(t, 3.f);
+	}
+}
+
+std::vector<uint8_t> generate2DPerlinNoise(const glm::ivec2& resolution, const int gridCellCount) {
+	using namespace PerlinNoiseHelperFunctions;
+
+	//init gradient vectors
+	std::vector<std::vector<glm::vec2>> gradientVectors;
+
+	//set correct size
+	gradientVectors.resize(gridCellCount);
+	for (std::vector<glm::vec2>& vector : gradientVectors) {
+		vector.resize(gridCellCount);
+	}
+
+	for (int x = 0; x < gridCellCount; x++) {
+		for (int y = 0; y < gridCellCount; y++) {
+			//using random vectors instead of robust hashing method of original paper
+			//but allows arbitrary grid cell count
+			const float random = rand() / float(RAND_MAX) * 2.f * 3.1415f;
+			gradientVectors[x][y] = glm::vec2(cos(random), sin(random));
+		}
+	}
+
+	const int dimensions = 2;
+	const float maxAbsValue = computePerlineAbsMax(dimensions);
+	std::vector<uint8_t> noise(resolution.x * resolution.y);
+
+	//compute value of every pixel
+	for (int y = 0; y < resolution.y; y++) {
+		for (int x = 0; x < resolution.x; x++) {
+
+			const glm::vec2 uv = glm::vec2(x, y) / glm::vec2(resolution);
+			glm::ivec2 gridIndex = glm::ivec2(uv * float(gridCellCount));
+			glm::vec2 residual = float(gridCellCount) * uv - glm::vec2(gridIndex);
+
+			//compute offset to all four cell corners and compute dot between offset and corner gradient vector
+			glm::vec2 x0_offset = glm::vec2(residual.x, residual.y);
+			float x0_dot = glm::dot(sampleGradientVectors2D(gridIndex.x, gridIndex.y, gradientVectors, gridCellCount), x0_offset);
+
+			glm::vec2 x1_offset = glm::vec2(residual.x-1,residual.y);
+			float x1_dot = glm::dot(sampleGradientVectors2D(gridIndex.x+1, gridIndex.y, gradientVectors, gridCellCount), x1_offset);
+
+			glm::vec2 y0_offset = glm::vec2(residual.x, residual.y-1);
+			float y0_dot = glm::dot(sampleGradientVectors2D(gridIndex.x, gridIndex.y+1, gradientVectors, gridCellCount), y0_offset);
+
+			glm::vec2 y1_offset = glm::vec2(residual.x-1, residual.y-1);
+			float y1_dot = glm::dot(sampleGradientVectors2D(gridIndex.x+1, gridIndex.y+1, gradientVectors, gridCellCount), y1_offset);
+
+			//interpolation
+			glm::vec2 t = glm::vec2(smoothstep(residual.x), smoothstep(residual.y));
+			float value = glm::mix(glm::mix(x0_dot, x1_dot, t.x), glm::mix(y0_dot, y1_dot, t.x), t.y);
+
+			//bring to range [-1, 1]
+			value /= maxAbsValue;
+
+			//bring to range [0, 1]
+			value = value * 0.5 + 0.5;
+			value = glm::clamp(value, 0.f, 1.f);
+
+			//store as short, which is integer in range [0, 255]
+			noise[x + y * resolution.x] = value * 255;
+		}
+	}
+
+	return noise;
 }
