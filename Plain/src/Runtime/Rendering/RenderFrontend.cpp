@@ -290,7 +290,8 @@ void RenderFrontend::prepareNewFrame() {
 
 		const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
 		//volumetric textures
-		gRenderBackend.resizeImages({ m_scatteringTransmittanceVolume, m_volumetricIntegrationVolume, m_volumeMaterialVolume },
+		gRenderBackend.resizeImages({ m_scatteringTransmittanceVolume, m_volumetricIntegrationVolume, m_volumeMaterialVolume,
+			m_volumetricLightingHistory[0], m_volumetricLightingHistory[1] },
 			froxelResolution.x,	froxelResolution.y);
 
 		resizeIndirectLightingBuffers();
@@ -443,7 +444,7 @@ void RenderFrontend::prepareRenderpasses(){
 		diffuseSDFTrace(currentRenderTarget);
 		filterIndirectDiffuse(currentRenderTarget, lastRenderTarget);
 	}
-
+	
 	computeVolumetricLighting();
 	forwardShadingDependencies.push_back(m_volumetricLightingIntegration);
 
@@ -524,6 +525,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
         m_viewProjectionMatrix = projectionMatrix * viewMatrix;
     }
 
+	m_globalShaderInfo.viewProjectionPrevious = m_globalShaderInfo.viewProjection;
 	m_globalShaderInfo.viewProjection = m_viewProjectionMatrix;
 
     updateCameraFrustum();
@@ -1227,6 +1229,7 @@ void RenderFrontend::downscaleDepth(const FrameRenderTargets& currentTarget) con
 }
 
 void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const {
+
     const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 1);
     const auto brdfLutResource = ImageResource(m_brdfLut, 0, 3);
     const auto specularProbeResource = ImageResource(m_specularSkyProbe, 0, 4);
@@ -1428,6 +1431,12 @@ void RenderFrontend::computeVolumetricLighting() const {
 
 	const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
 
+	static int jitterIndex = 0;
+	jitterIndex++;
+	const int sampleCount = 8;
+	jitterIndex %= sampleCount;
+	const float sampleOffset = hammersley2D(jitterIndex).x - 0.5f;
+
 	//setup material volume
 	{
 		ComputePassExecution exe;
@@ -1443,6 +1452,8 @@ void RenderFrontend::computeVolumetricLighting() const {
 		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
 		exe.dispatchCount[1] = glm::ceil(froxelResolution.y / float(groupSize));
 		exe.dispatchCount[2] = glm::ceil(froxelResolution.z / float(groupSize));
+
+		exe.pushConstants = dataToCharArray((void*)&sampleOffset, sizeof(sampleOffset));
 
 		gRenderBackend.setComputePassExecution(exe);
 	}
@@ -1465,6 +1476,32 @@ void RenderFrontend::computeVolumetricLighting() const {
 			StorageBufferResource(m_lightBuffer, true, 4)
 		};
 
+		exe.pushConstants = dataToCharArray((void*)&sampleOffset, sizeof(sampleOffset));
+
+		const int groupSize = 4;
+		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
+		exe.dispatchCount[1] = glm::ceil(froxelResolution.y / float(groupSize));
+		exe.dispatchCount[2] = glm::ceil(froxelResolution.z / float(groupSize));
+
+		gRenderBackend.setComputePassExecution(exe);
+	}
+
+	const ImageHandle reprojectionTarget = m_volumetricLightingHistory[m_globalShaderInfo.frameIndexMod2];
+	const ImageHandle reprojectionHistory = m_volumetricLightingHistory[(m_globalShaderInfo.frameIndexMod2 + 1) % 2];
+
+	//temporal reprojection
+	{
+		ComputePassExecution exe;
+		exe.genericInfo.handle = m_volumetricLightingReprojection;
+		exe.genericInfo.parents = { m_froxelScatteringTransmittancePass };
+		exe.genericInfo.resources.storageImages = {
+			ImageResource(reprojectionTarget, 0, 0)
+		};
+		exe.genericInfo.resources.sampledImages = {
+			ImageResource(m_scatteringTransmittanceVolume, 0, 1),
+			ImageResource(reprojectionHistory, 0, 2)
+		};
+
 		const int groupSize = 4;
 		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
 		exe.dispatchCount[1] = glm::ceil(froxelResolution.y / float(groupSize));
@@ -1476,12 +1513,12 @@ void RenderFrontend::computeVolumetricLighting() const {
 	{
 		ComputePassExecution exe;
 		exe.genericInfo.handle = m_volumetricLightingIntegration;
-		exe.genericInfo.parents = { m_froxelScatteringTransmittancePass };
+		exe.genericInfo.parents = { m_volumetricLightingReprojection };
 		exe.genericInfo.resources.storageImages = {
 			ImageResource(m_volumetricIntegrationVolume, 0, 0)
 		};
 		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_scatteringTransmittanceVolume, 0, 1)
+			ImageResource(reprojectionTarget, 0, 1)
 		};
 
 		const int groupSize = 8;
@@ -1874,6 +1911,7 @@ ShaderDescription RenderFrontend::createLightMatrixShaderDescription() {
 
 void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.sunDirection = glm::vec4(directionToVector(m_sunDirection), 0.f);
+	m_globalShaderInfo.cameraPosPrevious = m_globalShaderInfo.cameraPos;
     m_globalShaderInfo.cameraPos = glm::vec4(m_camera.extrinsic.position, 1.f); 
 
     m_globalShaderInfo.deltaTime = Timer::getDeltaTimeFloat();
@@ -1883,6 +1921,7 @@ void RenderFrontend::updateGlobalShaderInfo() {
 
     m_globalShaderInfo.cameraRight      = glm::vec4(m_camera.extrinsic.right, 0);
     m_globalShaderInfo.cameraUp         = glm::vec4(m_camera.extrinsic.up, 0);
+	m_globalShaderInfo.cameraForwardPrevious = m_globalShaderInfo.cameraForward;
     m_globalShaderInfo.cameraForward    = glm::vec4(m_camera.extrinsic.forward, 0);
     m_globalShaderInfo.cameraTanFovHalf = glm::tan(glm::radians(m_camera.intrinsic.fov) * 0.5f);
     m_globalShaderInfo.cameraAspectRatio = m_camera.intrinsic.aspectRatio;
@@ -2239,6 +2278,8 @@ void RenderFrontend::initImages() {
 		desc.autoCreateMips = false;
 
 		m_volumetricIntegrationVolume = gRenderBackend.createImage(desc);
+		m_volumetricLightingHistory[0] = gRenderBackend.createImage(desc);
+		m_volumetricLightingHistory[1] = gRenderBackend.createImage(desc);
 	}
 	//volume material froxels
 	{
@@ -3191,6 +3232,13 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 		desc.name = "Volumetric light integration";
 		desc.shaderDescription.srcPathRelative = "volumetricLightingIntegration.comp";
 		m_volumetricLightingIntegration = gRenderBackend.createComputePass(desc);
+	}
+	//volumetric lighting reprojection
+	{
+		ComputePassDescription desc;
+		desc.name = "Volumetric lighting reprojection";
+		desc.shaderDescription.srcPathRelative = "volumeLightingReprojection.comp";
+		m_volumetricLightingReprojection = gRenderBackend.createComputePass(desc);
 	}
 }
 

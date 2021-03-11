@@ -129,7 +129,7 @@ vec3 applyVolumetricLighting(float pixelDistance, vec3 V){
 	vec2 noiseUV = vec2(gl_FragCoord.xy) / textureSize(sampler2D(textures[g_noiseTextureIndices[noiseIndex]], g_sampler_linearRepeat), 0);
 	vec2 noise = texture(sampler2D(textures[g_noiseTextureIndices[noiseIndex]], g_sampler_nearestRepeat), noiseUV).rg;
 	noise -= 0.5;
-	noise *= 0.02;
+	noise *= 0.013;
 
 	vec4 inscatteringTransmittance = volumeTextureLookup(gl_FragCoord.xy / g_screenResolution.xy, pixelDistance / dot(g_cameraForward.xyz, -V), volumetricLightingLUT, noise);
 	return applyInscatteringTransmittance(color, inscatteringTransmittance);

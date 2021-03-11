@@ -1,10 +1,13 @@
 layout(set=0, binding = 0, std140) uniform global{
 	mat4 g_viewProjection;
+	mat4 g_viewProjectionPrevious;
 	vec4 g_sunDirection;
 	vec4 g_cameraPosition;
+	vec4 g_cameraPositionPrevious;
     vec4 g_cameraRight;
     vec4 g_cameraUp;
-    vec4 g_cameraForward;   
+    vec4 g_cameraForward;
+	vec4 g_cameraForwardPrevious;   
 	ivec4 g_noiseTextureIndices;
     vec2 g_currentFrameCameraJitter;
     vec2 g_previousFrameCameraJitter;

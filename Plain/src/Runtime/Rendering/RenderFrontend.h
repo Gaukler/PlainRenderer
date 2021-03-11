@@ -273,7 +273,7 @@ private:
 	RenderPassHandle m_froxelVolumeMaterialPass;
 	RenderPassHandle m_froxelScatteringTransmittancePass;
 	RenderPassHandle m_volumetricLightingIntegration;
-	
+	RenderPassHandle m_volumetricLightingReprojection;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -299,6 +299,7 @@ private:
 	ImageHandle m_indirectLightingFullRes_CoCg;
 	ImageHandle m_volumeMaterialVolume;
 	ImageHandle m_scatteringTransmittanceVolume;
+	ImageHandle m_volumetricLightingHistory[2];
 	ImageHandle m_volumetricIntegrationVolume;
 	ImageHandle m_perlinNoise3D;
 

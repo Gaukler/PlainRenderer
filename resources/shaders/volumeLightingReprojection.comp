@@ -1,0 +1,59 @@
+#version 460
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "global.inc"
+#include "screenToWorld.inc"
+#include "volumetricFroxelLighting.inc"
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(set=1, binding = 0, rgba16f) uniform image3D targetImage;
+layout(set=1, binding = 1) uniform texture3D inputVolume;
+layout(set=1, binding = 2) uniform texture3D historyVolume;
+
+void main(){
+	uvec3 iUV = gl_GlobalInvocationID.xyz;
+	uvec3 volumeRes = imageSize(targetImage);
+	if(any(greaterThanEqual(iUV, volumeRes))){
+		return;
+	}
+
+	vec4 current = texelFetch(sampler3D(inputVolume, g_sampler_nearestClamp), ivec3(iUV), 0);
+
+	//to world
+	vec3 uv = (iUV + 0.5f) / volumeRes;
+	vec3 ndc = 2.f * (uv - 0.5f);
+	vec3 V = calculateViewDirectionFromPixel(ndc.xy, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
+
+	vec3 windVector = normalize(vec3(1, 1, 1));
+	float windSpeed = 0.3f;
+
+	vec3 posWorld = g_cameraPosition.xyz - V / dot(-V, g_cameraForward.xyz) * froxelUVToDepth(uv.z);
+
+	//reproject into previous frustum
+	vec4 ndcPrevious = g_viewProjectionPrevious * vec4(posWorld, 1.f);
+	ndcPrevious.xyz /= ndcPrevious.w;
+	vec3 V_history = normalize(g_cameraPositionPrevious.xyz - posWorld);
+	float historyDistance = distance(posWorld, g_cameraPositionPrevious.xyz);
+	float historyDepth = historyDistance * dot(-V_history, g_cameraForwardPrevious.xyz);
+	vec3 historyUV = vec3(ndcPrevious.xy * 0.5 + 0.5, depthToFroxelUVZ(historyDepth));
+
+	vec4 history = texture(sampler3D(historyVolume, g_sampler_linearClamp), historyUV);
+
+	float alpha = 0.95f;
+	if(any(greaterThan(historyUV, vec3(1))) || any(lessThan(historyUV, vec3(0)))){
+		//reprojection outside of frustum
+		alpha = 0;
+	}
+
+	//reduce alpha when inscattering is very different
+	//reduces ghosting when light is moving
+	float distanceFactor = 2;
+	alpha = mix(alpha, 0, clamp(distanceFactor * distance(history.xyz, current.xyz) , 0, 1));
+
+	//exponential moving average
+	vec4 result = mix(current, history, alpha);
+
+	imageStore(targetImage, ivec3(iUV), result);
+}

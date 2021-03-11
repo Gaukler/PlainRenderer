@@ -24,6 +24,10 @@ layout(set=1, binding = 4, std430) buffer lightStorageBuffer{
     LightBuffer lightBuffer;
 };
 
+layout(push_constant) uniform pushConstantBlock {
+	float sampleOffset;
+};
+
 void main(){
 	uvec3 iUV = gl_GlobalInvocationID.xyz;
 	uvec3 volumeRes = imageSize(scatteringTransmittanceVolume);
@@ -32,7 +36,7 @@ void main(){
 	}
 
 	//calculate world position
-	vec3 uv = (iUV + 0.5f) / volumeRes;
+	vec3 uv = (iUV + 0.5f + sampleOffset) / volumeRes;
 	vec3 ndc = 2.f * (uv - 0.5f);
 	vec3 V = calculateViewDirectionFromPixel(ndc.xy, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 

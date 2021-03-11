@@ -169,11 +169,14 @@ struct SamplerDescription {
 
 struct GlobalShaderInfo {
 	glm::mat4 viewProjection = glm::mat4(0.f);
+	glm::mat4 viewProjectionPrevious = glm::mat4(0.f);
     glm::vec4 sunDirection  = glm::vec4(0.f, -1.f, 0.f, 0.f);
     glm::vec4 cameraPos     = glm::vec4(0.f);
+	glm::vec4 cameraPosPrevious = glm::vec4(0.f);
     glm::vec4 cameraRight   = glm::vec4(1.f, 0.f, 0.f, 0.f);
     glm::vec4 cameraUp      = glm::vec4(0.f, -1.f, 0.f, 0.f);
     glm::vec4 cameraForward = glm::vec4(0.f, 0.f, -1.f, 0.f);
+	glm::vec4 cameraForwardPrevious = glm::vec4(0.f, 0.f, -1.f, 0.f);
 	glm::ivec4 noiseTextureIndices = glm::ivec4(0);
     glm::vec2 currentFrameCameraJitter  = glm::vec2(0.f);
     glm::vec2 previousFrameCameraJitter = glm::vec2(0.f);

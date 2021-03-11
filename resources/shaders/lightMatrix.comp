@@ -5,6 +5,7 @@
 #include "global.inc"
 #include "sunShadowCascades.inc"
 #include "linearDepth.inc"
+#include "volumetricFroxelLighting.inc"
 
 layout(constant_id = 0) const uint sunShadowCascadeCount = 4;
 
@@ -94,10 +95,10 @@ void main(){
 			cascadeMinDepth = depthMinLinear;
 		}
 		//last cascade is used for sdf trace shadowing and (will be used for) volumetric light shadowing
-		//because of this it spans the entire frustum
+		//because of this it spans from the near plane to at least the volumetric lighting distance
 		if(i == sunShadowCascadeCount-1){
-			cascadeMinDepth = depthMinLinear;
-			cascadeMaxDepth = depthMaxLinear;
+			cascadeMinDepth = g_nearPlane;
+			cascadeMaxDepth = max(depthMaxLinear, maxVolumetricLightingDepth);
 		}
 		
 		computeFrustumPoints(frustumPoints, cascadeMinDepth, cascadeMaxDepth);
