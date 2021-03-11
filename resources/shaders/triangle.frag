@@ -124,14 +124,14 @@ float EnergyAverage(float roughness){
 
 }
 
-vec3 applyVolumetricLighting(float pixelDistance, vec3 V){
+vec3 applyVolumetricLighting(float pixelDepth, vec3 V){
 	uint noiseIndex = g_frameIndexMod4;
 	vec2 noiseUV = vec2(gl_FragCoord.xy) / textureSize(sampler2D(textures[g_noiseTextureIndices[noiseIndex]], g_sampler_linearRepeat), 0);
 	vec2 noise = texture(sampler2D(textures[g_noiseTextureIndices[noiseIndex]], g_sampler_nearestRepeat), noiseUV).rg;
 	noise -= 0.5;
 	noise *= 0.013;
 
-	vec4 inscatteringTransmittance = volumeTextureLookup(gl_FragCoord.xy / g_screenResolution.xy, pixelDistance / dot(g_cameraForward.xyz, -V), volumetricLightingLUT, noise);
+	vec4 inscatteringTransmittance = volumeTextureLookup(gl_FragCoord.xy / g_screenResolution.xy, pixelDepth, volumetricLightingLUT, noise);
 	return applyInscatteringTransmittance(color, inscatteringTransmittance);
 }
 
@@ -153,7 +153,7 @@ void main(){
 	vec3 L = normalize(g_sunDirection.xyz);
     
 	vec3 V = g_cameraPosition.xyz - passPos;
-    float pixelDistance = dot(V, -g_cameraForward.xyz); 
+    float pixelDepth = dot(V, -g_cameraForward.xyz); 
     V = normalize(V);
     
 	vec3 H = normalize(V + L);
@@ -179,7 +179,7 @@ void main(){
     float sunShadow;
     int cascadeIndex = 0;
     for(int cascade = 0; cascade < sunShadowCascadeCount - 1; cascade++){
-        cascadeIndex += int(pixelDistance >= sunShadowCascadeInfo.splits[cascade]);
+        cascadeIndex += int(pixelDepth >= sunShadowCascadeInfo.splits[cascade]);
     }
     if(cascadeIndex == 0){
         sunShadow = calcShadow(passPos, LoV, shadowMapCascade0, sunShadowCascadeInfo.lightMatrices[cascadeIndex], 0);
@@ -337,7 +337,7 @@ void main(){
 	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
 
     color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
-	color = applyVolumetricLighting(pixelDistance, V);
+	color = applyVolumetricLighting(pixelDepth, V);
 
 	//color = irradiance / pi;
 	//color = N*0.5+0.5;
