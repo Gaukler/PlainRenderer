@@ -5,7 +5,6 @@
 #include "global.inc"
 #include "sunShadowCascades.inc"
 #include "linearDepth.inc"
-#include "volumetricFroxelLighting.inc"
 
 layout(constant_id = 0) const uint sunShadowCascadeCount = 4;
 
@@ -22,6 +21,7 @@ layout(set=1, binding = 1, rg32f) uniform image2D depthMinMaxLowestMip;
 
 layout(push_constant) uniform MatrixBlock {
 	float highestCascadeExtraPadding;	//padding to extend range around camera to cover sdf trace hits outside of view
+	float highestCascadeMinFarPlane;	//volumetric lighting always needs a certain valid distance for shadows
 };
 
 
@@ -98,7 +98,7 @@ void main(){
 		//because of this it spans from the near plane to at least the volumetric lighting distance
 		if(i == sunShadowCascadeCount-1){
 			cascadeMinDepth = g_nearPlane;
-			cascadeMaxDepth = max(depthMaxLinear, maxVolumetricLightingDepth);
+			cascadeMaxDepth = max(depthMaxLinear, highestCascadeMinFarPlane);
 		}
 		
 		computeFrustumPoints(frustumPoints, cascadeMinDepth, cascadeMaxDepth);

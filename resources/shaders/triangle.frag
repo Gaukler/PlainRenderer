@@ -61,6 +61,11 @@ layout(set=1, binding = 16) uniform texture2D indirectDiffuse_CoCg;
 
 layout(set=1, binding = 18) uniform texture3D volumetricLightingLUT;
 
+layout(set=1, binding = 19) uniform SettingsBuffer {
+	VolumetricLightingSettings volumetricSettings;
+};
+
+
 layout(push_constant) uniform MatrixBlock {
 	int albedoTextureIndex;
 	int normalTextureIndex;
@@ -131,7 +136,9 @@ vec3 applyVolumetricLighting(float pixelDepth, vec3 V){
 	noise -= 0.5;
 	noise *= 0.013;
 
-	vec4 inscatteringTransmittance = volumeTextureLookup(gl_FragCoord.xy / g_screenResolution.xy, pixelDepth, volumetricLightingLUT, noise);
+	vec2 screenUV = gl_FragCoord.xy / g_screenResolution.xy;
+	screenUV += noise;
+	vec4 inscatteringTransmittance = volumeTextureLookup(screenUV, pixelDepth, volumetricLightingLUT, volumetricSettings.maxDistance);
 	return applyInscatteringTransmittance(color, inscatteringTransmittance);
 }
 

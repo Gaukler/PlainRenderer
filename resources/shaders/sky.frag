@@ -9,6 +9,10 @@
 
 layout(set=1, binding = 0) uniform texture2D skyLut;
 layout(set=1, binding = 1) uniform texture3D volumetricLightingLUT;
+layout(set=1, binding = 2) uniform SettingsBuffer {
+	VolumetricLightingSettings volumetricSettings;
+};
+
 
 layout(location = 0) in vec3 passPos;
 layout(location = 0) out vec3 color;
@@ -23,6 +27,7 @@ void main(){
 	color = ditherRGB8(color, ivec2(gl_FragCoord.xy * g_screenResolution));
 
 	//apply local volumetric contribution
-	vec4 inscatteringTransmittance = volumeTextureLookup(gl_FragCoord.xy / g_screenResolution.xy, maxVolumetricLightingDepth, volumetricLightingLUT, vec2(0));
+	vec2 screenUV = gl_FragCoord.xy / g_screenResolution.xy;
+	vec4 inscatteringTransmittance = volumeTextureLookup(screenUV, maxVolumetricLightingDepth, volumetricLightingLUT, volumetricSettings.maxDistance);
 	color = applyInscatteringTransmittance(color, inscatteringTransmittance);
 }

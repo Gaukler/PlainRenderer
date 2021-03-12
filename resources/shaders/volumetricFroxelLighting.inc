@@ -1,36 +1,48 @@
 const float maxVolumetricLightingDepth = 30.f; 
 
+struct VolumetricLightingSettings{
+	vec3 windVector;
+	float windSpeed;
+	vec3 scatteringCoefficients;
+	float absorptionCoefficient;
+	float maxDistance;
+	float sampleOffset;	
+	float baseDensity;
+	float densityNoiseRange;
+	float densityNoiseScale;
+	float phaseFunctionG;
+};
+
 //adjusts strength of exponential distribution
 //higher k results in more slices near the camera
 float k = 3.f;
 bool exponentialDepthDistribution = true;
 
-float froxelUVToDepth(float uvZ){
+float froxelUVToDepth(float uvZ, float maxDistance){
 	if(exponentialDepthDistribution){
 		float remaped = (exp(k*uvZ)-1)/(exp(k)-1);
-		return remaped * maxVolumetricLightingDepth;
+		return remaped * maxDistance;
 	}
 	else{
-		return uvZ * maxVolumetricLightingDepth;
+		return uvZ * maxDistance;
 	}
 }
 
-float depthToFroxelUVZ(float depth){
+float depthToFroxelUVZ(float depth, float maxDistance){
 	if(exponentialDepthDistribution){
-		float linear = depth / maxVolumetricLightingDepth;
+		float linear = depth / maxDistance;
 		return log(linear*(exp(k)-1)+1)/k;
 	}
 	else{
-		return depth / maxVolumetricLightingDepth;
+		return depth / maxDistance;
 	}
 }
 
-vec4 volumeTextureLookup(vec2 screenUV, float depth, texture3D froxelTexture, vec2 lookupNoiseVector){
+vec4 volumeTextureLookup(vec2 screenUV, float depth, texture3D froxelTexture, float maxDistance){
 	vec3 uv;
 	uv.xy = screenUV;
-	uv.xy += lookupNoiseVector;
 
-	uv.z = depthToFroxelUVZ(depth);
+	uv.z = depthToFroxelUVZ(depth, maxDistance);
 	return texture(sampler3D(froxelTexture, g_sampler_linearClamp), uv);
 }
 

@@ -75,6 +75,19 @@ struct AtmosphereSettings {
     float mieScatteringExponent = 0.76f;
 };
 
+struct VolumetricLightingSettings {
+	glm::vec3 windVector = glm::vec3(1.f);
+	float windSpeed = 0.1;
+	glm::vec3 scatteringCoefficients = glm::vec3(1.f);
+	float absorptionCoefficient = 1.f;
+	float maxDistance = 30.f;
+	float sampleOffset = 0.f;
+	float baseDensity = 0.01f;
+	float densityNoiseRange = 0.03f;	//how strong the noise influences density
+	float densityNoiseScale = 0.5f;		//world space scale of the noise pattern
+	float phaseFunctionG = 0.5f;		//g of henyey greenstein phase function
+};
+
 enum class ShaderResourceType { SampledImage, Sampler, StorageImage, StorageBuffer, UniformBuffer };
 
 struct DefaultTextures {
@@ -167,7 +180,7 @@ private:
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void issueSkyDrawcalls();
 	void renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const;
-	void computeVolumetricLighting() const;
+	void computeVolumetricLighting();
 
 	//returns list of passes that must be used as parent to wait for results
 	//when culling for direct visualisation hi-z culling results in artifacts
@@ -236,6 +249,7 @@ private:
     AtmosphereSettings m_atmosphereSettings;
 	SDFDebugSettings m_sdfDebugSettings;
 	SDFDiffuseTraceSettings m_sdfDiffuseTraceSettings;
+	VolumetricLightingSettings m_volumetricLightingSettings;
 
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
@@ -344,6 +358,7 @@ private:
     UniformBufferHandle m_sdfVolumeInfoBuffer;
 	UniformBufferHandle m_cameraFrustumBuffer;
 	UniformBufferHandle m_sdfTraceInfluenceRangeBuffer;
+	UniformBufferHandle m_volumetricLightingSettingsUniforms;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);

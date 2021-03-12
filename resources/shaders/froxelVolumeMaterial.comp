@@ -10,9 +10,8 @@ layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(set=1, binding = 0, rgba16f) uniform image3D materialVolume;
 layout(set=1, binding = 1) uniform texture3D noiseTexture;
-
-layout(push_constant) uniform pushConstantBlock {
-	float sampleOffset;
+layout(set=1, binding = 2) uniform SettingsBuffer {
+	VolumetricLightingSettings settings;
 };
 
 void main(){
@@ -22,24 +21,24 @@ void main(){
 		return;
 	}
 
-	vec3 uv = (iUV + 0.5f + sampleOffset) / volumeRes;
+	vec3 uv = (iUV + 0.5f + settings.sampleOffset) / volumeRes;
 	vec3 ndc = 2.f * (uv - 0.5f);
 	vec3 V = calculateViewDirectionFromPixel(ndc.xy, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 
-	vec3 posWorld = g_cameraPosition.xyz - V / dot(-V, g_cameraForward.xyz) * froxelUVToDepth(uv.z);
+	vec3 posWorld = g_cameraPosition.xyz - V / dot(-V, g_cameraForward.xyz) * froxelUVToDepth(uv.z, settings.maxDistance);
 	float noiseScale = 0.5f;
 	vec3 windVector = normalize(vec3(1, 1, 1));
-	float windSpeed = 0.1f;
+	float windSpeed = settings.windSpeed;
 	vec3 noiseSample = posWorld * noiseScale + windVector * windSpeed * g_time;
 
 	float noise = texture(sampler3D(noiseTexture, g_sampler_linearRepeat), noiseSample).r;
 
-	vec3 scatteringCoefficient = vec3(1.f);
-	float absorptionCoefficient = 1.f;
+	vec3 scatteringCoefficient = settings.scatteringCoefficients;
+	float absorptionCoefficient = settings.absorptionCoefficient;
 
-	float densityMultiplier = 0.01f;
-	densityMultiplier += 0.03 * (noise - 0.5);
-	densityMultiplier = max(densityMultiplier, 0);
+	float densityMultiplier = settings.baseDensity;
+	densityMultiplier += settings.densityNoiseRange * (noise - 0.5);
+	densityMultiplier = max(densityMultiplier, 0.f);
 	scatteringCoefficient *= densityMultiplier;
 	absorptionCoefficient *= densityMultiplier;
 

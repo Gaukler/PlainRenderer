@@ -916,6 +916,9 @@ void RenderFrontend::renderSky(const FramebufferHandle framebuffer, const Render
 			ImageResource(m_skyLut, 0, 0),
 			ImageResource(m_volumetricIntegrationVolume, 0, 1)
 		};
+		skyPassExecution.genericInfo.resources.uniformBuffers = {
+			UniformBufferResource(m_volumetricLightingSettingsUniforms, 2)
+		};
         skyPassExecution.genericInfo.parents = { parent,  m_skyLutPass, m_volumetricLightingIntegration };
         gRenderBackend.setGraphicPassExecution(skyPassExecution);
     }
@@ -1026,12 +1029,21 @@ void RenderFrontend::computeSunLightMatrices() const{
     StorageBufferResource lightMatrixBuffer(m_sunShadowInfoBuffer, false, 0);
     exe.genericInfo.resources.storageBuffers = { lightMatrixBuffer };
 
-	float highestCascadePaddingSize = m_sdfDiffuseTraceSettings.traceInfluenceRadius;
+	struct LightMatrixPushConstants {
+		float highestCascadePaddingSize;
+		float highestCascadeMinFarPlane;
+	};
+
+	LightMatrixPushConstants pushConstants;
+	pushConstants.highestCascadePaddingSize = m_sdfDiffuseTraceSettings.traceInfluenceRadius;
+	pushConstants.highestCascadeMinFarPlane = m_volumetricLightingSettings.maxDistance;
+
 	//if strict cutoff enabled all hits outside influence radius are discarded anyways
 	if (!m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff) {
-		highestCascadePaddingSize += m_sdfDiffuseTraceSettings.additionalSunShadowMapPadding;
+		pushConstants.highestCascadePaddingSize += m_sdfDiffuseTraceSettings.additionalSunShadowMapPadding;
 	}
-	exe.pushConstants = dataToCharArray(&highestCascadePaddingSize, sizeof(highestCascadePaddingSize));
+
+	exe.pushConstants = dataToCharArray(&pushConstants, sizeof(pushConstants));
 
     gRenderBackend.setComputePassExecution(exe);
 }
@@ -1261,6 +1273,9 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
         const auto shadowMapResource = ImageResource(m_shadowMaps[i], 0, 9 + i);
         mainPassExecution.genericInfo.resources.sampledImages.push_back(shadowMapResource);
     }
+	mainPassExecution.genericInfo.resources.uniformBuffers = {
+		UniformBufferResource(m_volumetricLightingSettingsUniforms, 19)
+	};
 
     mainPassExecution.genericInfo.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
     mainPassExecution.genericInfo.parents.insert(mainPassExecution.genericInfo.parents.begin(), externalDependencies.begin(), externalDependencies.end());
@@ -1427,15 +1442,18 @@ void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const
 	gRenderBackend.setComputePassExecution(exe);
 }
 
-void RenderFrontend::computeVolumetricLighting() const {
-
-	const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
+void RenderFrontend::computeVolumetricLighting() {
 
 	static int jitterIndex = 0;
 	jitterIndex++;
 	const int sampleCount = 8;
 	jitterIndex %= sampleCount;
-	const float sampleOffset = hammersley2D(jitterIndex).x - 0.5f;
+	m_volumetricLightingSettings.sampleOffset = hammersley2D(jitterIndex).x - 0.5f;
+
+	gRenderBackend.setUniformBufferData(m_volumetricLightingSettingsUniforms, 
+		(void*)&m_volumetricLightingSettings, sizeof(m_volumetricLightingSettings));
+
+	const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
 
 	//setup material volume
 	{
@@ -1447,13 +1465,14 @@ void RenderFrontend::computeVolumetricLighting() const {
 		exe.genericInfo.resources.sampledImages = {
 			ImageResource(m_perlinNoise3D, 0, 1)
 		};
+		exe.genericInfo.resources.uniformBuffers = {
+			UniformBufferResource(m_volumetricLightingSettingsUniforms, 2)
+		};
 
 		const int groupSize = 4;
 		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
 		exe.dispatchCount[1] = glm::ceil(froxelResolution.y / float(groupSize));
 		exe.dispatchCount[2] = glm::ceil(froxelResolution.z / float(groupSize));
-
-		exe.pushConstants = dataToCharArray((void*)&sampleOffset, sizeof(sampleOffset));
 
 		gRenderBackend.setComputePassExecution(exe);
 	}
@@ -1475,8 +1494,9 @@ void RenderFrontend::computeVolumetricLighting() const {
 			StorageBufferResource(m_sunShadowInfoBuffer, true, 3),
 			StorageBufferResource(m_lightBuffer, true, 4)
 		};
-
-		exe.pushConstants = dataToCharArray((void*)&sampleOffset, sizeof(sampleOffset));
+		exe.genericInfo.resources.uniformBuffers = {
+			UniformBufferResource(m_volumetricLightingSettingsUniforms, 5)
+		};
 
 		const int groupSize = 4;
 		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
@@ -1501,6 +1521,9 @@ void RenderFrontend::computeVolumetricLighting() const {
 			ImageResource(m_scatteringTransmittanceVolume, 0, 1),
 			ImageResource(reprojectionHistory, 0, 2)
 		};
+		exe.genericInfo.resources.uniformBuffers = {
+			UniformBufferResource(m_volumetricLightingSettingsUniforms, 3)
+		};
 
 		const int groupSize = 4;
 		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
@@ -1519,6 +1542,9 @@ void RenderFrontend::computeVolumetricLighting() const {
 		};
 		exe.genericInfo.resources.sampledImages = {
 			ImageResource(reprojectionTarget, 0, 1)
+		};
+		exe.genericInfo.resources.uniformBuffers = {
+			UniformBufferResource(m_volumetricLightingSettingsUniforms, 2)
 		};
 
 		const int groupSize = 8;
@@ -2649,6 +2675,12 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 		desc.size = sizeof(float);
 		m_sdfTraceInfluenceRangeBuffer = gRenderBackend.createUniformBuffer(desc);
 	}
+	//volumetric lighting settings
+	{
+		UniformBufferDescription desc;
+		desc.size = sizeof(VolumetricLightingSettings);
+		m_volumetricLightingSettingsUniforms = gRenderBackend.createUniformBuffer(desc);
+	}
 }
 
 void RenderFrontend::initMeshs() {
@@ -3393,6 +3425,18 @@ void RenderFrontend::drawUi() {
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Tonemap temporal supersample input", &m_temporalFilterSettings.filterUseTonemapping);
         ImGui::Checkbox("Use mip bias", &m_temporalFilterSettings.useMipBias);
     }
+	//volumetric lighting settings
+	if (ImGui::CollapsingHeader("Volumetric lighting settings")) {
+		ImGui::DragFloat("Wind speed", &m_volumetricLightingSettings.windSpeed, 0.1f);
+		ImGui::ColorPicker3("Scattering color", &m_volumetricLightingSettings.scatteringCoefficients.x);
+		ImGui::DragFloat("Absorption", &m_volumetricLightingSettings.absorptionCoefficient, 0.1, 0.f, 1.f);
+		ImGui::InputFloat("Max distance", &m_volumetricLightingSettings.maxDistance);
+		m_volumetricLightingSettings.maxDistance = glm::max(m_volumetricLightingSettings.maxDistance, 1.f);
+		ImGui::DragFloat("Base density", &m_volumetricLightingSettings.baseDensity, 0.01, 0.f, 1.f);
+		ImGui::DragFloat("Density noise range", &m_volumetricLightingSettings.densityNoiseRange, 0.01, 0.f, 1.f);
+		ImGui::DragFloat("Density noise scale", &m_volumetricLightingSettings.densityNoiseScale, 0.1, 0.f);
+		ImGui::DragFloat("Phase function G", &m_volumetricLightingSettings.phaseFunctionG, 0.1, -0.99f, 0.99f);
+	}
     //lighting settings
     if(ImGui::CollapsingHeader("Lighting settings")){
         ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
