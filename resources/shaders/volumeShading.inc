@@ -20,5 +20,5 @@ float cornetteShanksPhase(float VoL, float g){
 
 //reference: "Physically Based and Unified Volumetric Rendering in Frostbite", page 29
 vec3 integrateInscattering(vec3 inscattering, vec3 extinctionCoefficients, float length){
-    return (inscattering - inscattering * exp(-extinctionCoefficients * length)) / extinctionCoefficients;
+    return (inscattering - inscattering * exp(-extinctionCoefficients * length)) / max(extinctionCoefficients, 0.00001f);
 }
