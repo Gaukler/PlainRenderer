@@ -3427,6 +3427,10 @@ void RenderFrontend::drawUi() {
     }
 	//volumetric lighting settings
 	if (ImGui::CollapsingHeader("Volumetric lighting settings")) {
+		static glm::vec2 windDirection;
+		ImGui::DragFloat2("Wind direction", &windDirection.x);
+		m_volumetricLightingSettings.windVector = directionToVector(windDirection);
+
 		ImGui::DragFloat("Wind speed", &m_volumetricLightingSettings.windSpeed, 0.1f);
 		ImGui::ColorPicker3("Scattering color", &m_volumetricLightingSettings.scatteringCoefficients.x);
 		ImGui::DragFloat("Absorption", &m_volumetricLightingSettings.absorptionCoefficient, 0.1, 0.f, 1.f);
