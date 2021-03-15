@@ -3437,6 +3437,16 @@ void RenderFrontend::drawUi() {
 		ImGui::DragFloat("Density noise scale", &m_volumetricLightingSettings.densityNoiseScale, 0.1, 0.f);
 		ImGui::DragFloat("Phase function G", &m_volumetricLightingSettings.phaseFunctionG, 0.1, -0.99f, 0.99f);
 	}
+	if (ImGui::CollapsingHeader("Sky settings")) {
+		ImGui::InputFloat3("Rayleigh scattering coefficients km", &m_atmosphereSettings.scatteringRayleighGround.x);
+		ImGui::InputFloat3("Rayleigh extinction coefficients km", &m_atmosphereSettings.extinctionRayleighGround.x);
+		ImGui::InputFloat("Mie scattering coefficients km", &m_atmosphereSettings.scatteringMieGround);
+		ImGui::InputFloat("Mie extinction coefficients km", &m_atmosphereSettings.extinctionMieGround);
+		ImGui::InputFloat("Mie scattering exponent", &m_atmosphereSettings.mieScatteringExponent);
+		ImGui::InputFloat3("Ozone extinction coefficients km", &m_atmosphereSettings.ozoneExtinction.x);
+		ImGui::InputFloat("Earth radius km", &m_atmosphereSettings.earthRadius);
+		ImGui::InputFloat("Atmosphere height km", &m_atmosphereSettings.atmosphereHeight);
+	}
     //lighting settings
     if(ImGui::CollapsingHeader("Lighting settings")){
         ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
