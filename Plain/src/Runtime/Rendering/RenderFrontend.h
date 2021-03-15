@@ -76,11 +76,11 @@ struct AtmosphereSettings {
 };
 
 struct VolumetricLightingSettings {
-	glm::vec3 windVector = glm::vec3(1.f);
-	float windSpeed = 0.1;
+	glm::vec3 windSampleOffset = glm::vec3(0.f);	//offset to apply to density noise, caused by wind
+	float maxDistance = 30.f;
 	glm::vec3 scatteringCoefficients = glm::vec3(1.f);
 	float absorptionCoefficient = 1.f;
-	float maxDistance = 30.f;
+	
 	float sampleOffset = 0.f;
 	float baseDensity = 0.01f;
 	float densityNoiseRange = 0.03f;	//how strong the noise influences density
@@ -250,6 +250,9 @@ private:
 	SDFDebugSettings m_sdfDebugSettings;
 	SDFDiffuseTraceSettings m_sdfDiffuseTraceSettings;
 	VolumetricLightingSettings m_volumetricLightingSettings;
+
+	glm::vec3 m_windVector;
+	float m_windSpeed = 0.15f;
 
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;

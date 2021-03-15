@@ -1450,6 +1450,8 @@ void RenderFrontend::computeVolumetricLighting() {
 	jitterIndex %= sampleCount;
 	m_volumetricLightingSettings.sampleOffset = hammersley2D(jitterIndex).x - 0.5f;
 
+	m_volumetricLightingSettings.windSampleOffset += m_windVector * m_windSpeed * Timer::getDeltaTimeFloat();
+
 	gRenderBackend.setUniformBufferData(m_volumetricLightingSettingsUniforms, 
 		(void*)&m_volumetricLightingSettings, sizeof(m_volumetricLightingSettings));
 
@@ -3427,11 +3429,12 @@ void RenderFrontend::drawUi() {
     }
 	//volumetric lighting settings
 	if (ImGui::CollapsingHeader("Volumetric lighting settings")) {
-		static glm::vec2 windDirection;
+		static glm::vec2 windDirection = glm::vec2(100.f, 60.f);
 		ImGui::DragFloat2("Wind direction", &windDirection.x);
-		m_volumetricLightingSettings.windVector = directionToVector(windDirection);
+		m_windVector = directionToVector(windDirection);
 
-		ImGui::DragFloat("Wind speed", &m_volumetricLightingSettings.windSpeed, 0.1f);
+		ImGui::DragFloat("Wind speed", &m_windSpeed, 0.1f);
+
 		ImGui::ColorPicker3("Scattering color", &m_volumetricLightingSettings.scatteringCoefficients.x);
 		ImGui::DragFloat("Absorption", &m_volumetricLightingSettings.absorptionCoefficient, 0.1, 0.f, 1.f);
 		ImGui::InputFloat("Max distance", &m_volumetricLightingSettings.maxDistance);

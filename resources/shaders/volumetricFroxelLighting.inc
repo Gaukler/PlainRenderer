@@ -1,11 +1,10 @@
 const float maxVolumetricLightingDepth = 30.f; 
 
 struct VolumetricLightingSettings{
-	vec3 windVector;
-	float windSpeed;
+	vec3 windSampleOffset;
+	float maxDistance;
 	vec3 scatteringCoefficients;
 	float absorptionCoefficient;
-	float maxDistance;
 	float sampleOffset;	
 	float baseDensity;
 	float densityNoiseRange;

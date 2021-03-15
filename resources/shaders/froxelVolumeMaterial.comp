@@ -27,9 +27,7 @@ void main(){
 
 	vec3 posWorld = g_cameraPosition.xyz - V / dot(-V, g_cameraForward.xyz) * froxelUVToDepth(uv.z, settings.maxDistance);
 	float noiseScale = 0.5f;
-	vec3 windVector = settings.windVector;
-	float windSpeed = settings.windSpeed;
-	vec3 noiseSample = posWorld * noiseScale + windVector * windSpeed * g_time;
+	vec3 noiseSample = posWorld * noiseScale + settings.windSampleOffset;
 
 	float noise = texture(sampler3D(noiseTexture, g_sampler_linearRepeat), noiseSample).r;
 
