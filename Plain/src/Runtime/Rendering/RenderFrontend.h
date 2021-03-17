@@ -132,6 +132,12 @@ struct SDFInstance {
 	glm::mat4x4 worldToLocal;
 };
 
+struct BloomSettings {
+	bool enabled = true;
+	float strength = 0.05f;
+	float radius = 1.5f;
+};
+
 class RenderFrontend {
 public:
     RenderFrontend() {};
@@ -181,6 +187,11 @@ private:
     void issueSkyDrawcalls();
 	void renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const;
 	void computeVolumetricLighting();
+
+	//downscales and blurs screen sized target image in separate texture, then additively blends on top of targetImage
+	//returns last render pass, which must be used as parent, when accessing target image for correct ordering
+	//parent pass is used as initial parent and must be last pass that used target image
+	RenderPassHandle computeBloom(const RenderPassHandle parentPass, const ImageHandle targetImage) const;
 
 	//returns list of passes that must be used as parent to wait for results
 	//when culling for direct visualisation hi-z culling results in artifacts
@@ -250,6 +261,7 @@ private:
 	SDFDebugSettings m_sdfDebugSettings;
 	SDFDiffuseTraceSettings m_sdfDiffuseTraceSettings;
 	VolumetricLightingSettings m_volumetricLightingSettings;
+	BloomSettings m_bloomSettings;
 
 	glm::vec3 m_windVector;
 	float m_windSpeed = 0.15f;
@@ -291,6 +303,9 @@ private:
 	RenderPassHandle m_froxelScatteringTransmittancePass;
 	RenderPassHandle m_volumetricLightingIntegration;
 	RenderPassHandle m_volumetricLightingReprojection;
+	std::vector<RenderPassHandle> m_bloomDownsamplePasses;
+	std::vector<RenderPassHandle> m_bloomUpsamplePasses;
+	RenderPassHandle m_applyBloomPass;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -319,6 +334,8 @@ private:
 	ImageHandle m_volumetricLightingHistory[2];
 	ImageHandle m_volumetricIntegrationVolume;
 	ImageHandle m_perlinNoise3D;
+	ImageHandle m_bloomDownscaleTexture;
+	ImageHandle m_bloomUpscaleTexture;
 
     std::vector<ImageHandle> m_noiseTextures;
 
