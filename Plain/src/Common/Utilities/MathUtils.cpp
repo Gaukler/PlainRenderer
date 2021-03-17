@@ -18,6 +18,10 @@ uint32_t mipCountFromResolution(const uint32_t width, const uint32_t height, con
     return 1 + (uint32_t)std::floor(std::log2(std::max(std::max(width, height), depth)));
 }
 
+glm::ivec3 resolutionFromMip(const glm::ivec3 baseResolution, const int mipLevel) {
+	return glm::max(glm::ivec3(baseResolution / (int)glm::exp2(mipLevel)), 1);
+}
+
 glm::vec2 hammersley2D(const uint32_t index) {
     //reference: http://www.pbr-book.org/3ed-2018/Sampling_and_Reconstruction/The_Halton_Sampler.html
     return glm::vec2(radicalInverseBase2(index), radicalInverseBase3(index));
