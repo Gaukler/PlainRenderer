@@ -4,6 +4,7 @@
 #include "Utilities/DirectoryUtils.h"
 #include "InputManager.h"
 #include "Common/TypeConversion.h"
+#include "Common/JobSystem.h"
 
 //expected command line arguments:
 //argv[0] = executablePath
@@ -54,11 +55,15 @@ void main(int argc, char* argv[]){
 
     const CommandLineSettings settings = parseCommandLineArguments(argc, argv);
 
+	const float startTime = Timer::getTimeFloat();
+
     DirectoryUtils::init();
 
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     GLFWwindow* window = glfwCreateWindow(settings.width, settings.height, "Plain Renderer", nullptr, nullptr);
+
+	JobSystem::initJobSystem();
 
     gRenderBackend.setup(window);
     gRenderFrontend.setup(window);
@@ -66,6 +71,9 @@ void main(int argc, char* argv[]){
 
 	App app;
     app.setup(settings.sceneFilePath);
+
+	const float endTime = Timer::getTimeFloat();
+	std::cout << "Startup time: " << endTime - startTime << "s\n";
 
     while (!glfwWindowShouldClose(window)) {
         Timer::markNewFrame();

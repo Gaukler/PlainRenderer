@@ -4,6 +4,7 @@
 #include "VolumeInfo.h"
 #include "Utilities/MathUtils.h"
 #include "Common/sdfUtilities.h"
+#include "Common/JobSystem.h"
 
 // ---- private function declarations ----
 
@@ -96,41 +97,51 @@ float computePointTrianglesClosestDistance(const glm::vec3 p, const std::vector<
 std::vector<ImageDescription> computeSceneSDFTextures(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList) {
 
 	std::vector<ImageDescription> result;
-	result.reserve(meshes.size());
+	result.resize(meshes.size());
+
+	JobSystem::Counter workFinised;
+	const std::chrono::system_clock::time_point startTime = std::chrono::system_clock::now();
 
 	assert(meshes.size() == AABBList.size());
 	for (size_t i = 0; i < meshes.size(); i++) {
 
-		const MeshData& mesh = meshes[i];
-		const AxisAlignedBoundingBox meshBB = AABBList[i];
+		JobSystem::addJob([&result, &meshes, &AABBList, i]() {
+			const MeshData& mesh = meshes[i];
+			const AxisAlignedBoundingBox meshBB = AABBList[i];
 
-		const uint32_t maxSdfRes = 64;
-		const uint32_t minSdfRes = 16;
-		const float targetTexelPerMeter = 0.25f;
+			const uint32_t maxSdfRes = 64;
+			const uint32_t minSdfRes = 16;
+			const float targetTexelPerMeter = 0.25f;
 
-		glm::uvec3 sdfRes;
-		const glm::vec3 bbExtents = meshBB.max - meshBB.min;
-		for (int component = 0; component < 3; component++) {
-			const float targetRes = bbExtents[component] / targetTexelPerMeter;
+			glm::uvec3 sdfRes;
+			const glm::vec3 bbExtents = meshBB.max - meshBB.min;
+			for (int component = 0; component < 3; component++) {
+				const float targetRes = bbExtents[component] / targetTexelPerMeter;
 
-			sdfRes[component] = nextPowerOfTwo((uint32_t)targetRes);
-			sdfRes[component] = glm::clamp(sdfRes[component], minSdfRes, maxSdfRes);
-		}
+				sdfRes[component] = nextPowerOfTwo((uint32_t)targetRes);
+				sdfRes[component] = glm::clamp(sdfRes[component], minSdfRes, maxSdfRes);
+			}
 
-		ImageDescription sdfTexture;
-		sdfTexture.width	= sdfRes[0];
-		sdfTexture.height	= sdfRes[1];
-		sdfTexture.depth	= sdfRes[2];
-		sdfTexture.type = ImageType::Type3D;
-		sdfTexture.format = ImageFormat::R16_sFloat;
-		sdfTexture.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-		sdfTexture.mipCount = MipCount::One;
-		sdfTexture.autoCreateMips = false;
-		sdfTexture.initialData = computeSDF(glm::uvec3(sdfTexture.width, sdfTexture.height, sdfTexture.depth), meshBB, mesh);
+			ImageDescription sdfTexture;
+			sdfTexture.width = sdfRes[0];
+			sdfTexture.height = sdfRes[1];
+			sdfTexture.depth = sdfRes[2];
+			sdfTexture.type = ImageType::Type3D;
+			sdfTexture.format = ImageFormat::R16_sFloat;
+			sdfTexture.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+			sdfTexture.mipCount = MipCount::One;
+			sdfTexture.autoCreateMips = false;
+			sdfTexture.initialData = computeSDF(glm::uvec3(sdfTexture.width, sdfTexture.height, sdfTexture.depth), meshBB, mesh);
 
-		result.push_back(sdfTexture);
+			result[i] = sdfTexture;
+		}, &workFinised);
 	}
     
+	JobSystem::waitOnCounter(workFinised);
+
+	const std::chrono::duration<double> computationTime = std::chrono::system_clock::now() - startTime;
+	std::cout << "SDF computation time: " << computationTime.count() << "s\n";
+
     return result;
 }
 
@@ -273,16 +284,12 @@ std::vector<std::vector<TriangleInfo>> buildUniformGrid(const MeshData& mesh, co
 
 std::vector<uint8_t> computeSDF(const glm::uvec3& resolution, const AxisAlignedBoundingBox& aabb, const MeshData& mesh) {
 
-    const auto startTime = std::chrono::system_clock::now();
-
 	const AxisAlignedBoundingBox AABBPadded = padSDFBoundingBox(aabb);
-
     const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(AABBPadded);
 	
 	//build uniform grid
 	const glm::uvec3 uniformGridResolution = glm::ivec3(16);
 	const std::vector<std::vector<TriangleInfo>> uniformGrid = buildUniformGrid(mesh, sdfVolumeInfo, AABBPadded, uniformGridResolution);
-	std::cout << "Built uniform grid\n";
 
 	//if no rays hit, distance to closest triangle is computed
 	//for this a vector of all triangles is prepared
@@ -311,13 +318,8 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution, const AxisAlignedB
 
 	//for every texel
     for (uint32_t z = 0; z < resolution.z; z++) {
-		std::cout << z << std::endl;
         for (uint32_t y = 0; y < resolution.y; y++) {
             for (uint32_t x = 0; x < resolution.x; x++) {
-
-				if (x == 7 && y == 7 && z == 7) {
-					std::cout << std::endl;
-				}
 
 				const uint32_t index = flattenGridIndex(glm::ivec3(x, y, z), glm::ivec3(resolution));
                 const uint32_t byteIndex = index * bytePerPixel;
@@ -496,9 +498,6 @@ std::vector<uint8_t> computeSDF(const glm::uvec3& resolution, const AxisAlignedB
             }
         }
     }
-
-    const std::chrono::duration<double> computationTime = std::chrono::system_clock::now() - startTime;
-    std::cout << "SDF computation time: " << computationTime.count() << "s\n";
 
     return byteData;
 }

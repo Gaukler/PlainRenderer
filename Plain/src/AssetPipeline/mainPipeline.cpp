@@ -6,6 +6,7 @@
 #include "SceneSDF.h"
 #include "ImageIO.h"
 #include "sdfUtilities.h"
+#include "JobSystem.h"
 
 //expected command line arguments:
 //argv[0] = executablePath
@@ -30,6 +31,7 @@ int main(const int argc, char* argv[]) {
     CommandLineSettings settings = parseCommandLineArguments(argc, argv);
 
     DirectoryUtils::init();
+	JobSystem::initJobSystem();
 
     std::filesystem::path binaryPathRelative =  settings.modelFilePath;
     binaryPathRelative.replace_extension("plain");

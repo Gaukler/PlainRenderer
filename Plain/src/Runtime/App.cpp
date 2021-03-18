@@ -58,8 +58,6 @@ void App::setup(const std::string& sceneFilePath) {
 			m_bbs.push_back(mesh.boundingBox);
 		}
     }
-    
-	const std::vector<RenderObject> renderScene = extractRenderObjectFromScene(m_scene, m_bbs);
 }
 
 void App::runUpdate() {
