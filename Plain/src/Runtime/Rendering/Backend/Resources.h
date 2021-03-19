@@ -89,12 +89,14 @@ struct GraphicPass {
     VkRenderPass            vulkanRenderPass    = VK_NULL_HANDLE;
     VkPipeline              pipeline            = VK_NULL_HANDLE;
     VkPipelineLayout        pipelineLayout      = VK_NULL_HANDLE;
-    VkDescriptorSet         descriptorSet       = VK_NULL_HANDLE;
+	//two sets to allow updating on while other is used for rendering
+	VkDescriptorSet         descriptorSets[2]	= { VK_NULL_HANDLE, VK_NULL_HANDLE };
     VkDescriptorSetLayout   descriptorSetLayout = VK_NULL_HANDLE;
 
     VertexInputFlags                vertexInputFlags = VertexInputFlags(0);
 
-    VkCommandBuffer meshCommandBuffer;
+	//two to allow recording while gpu is working
+    VkCommandBuffer meshCommandBuffers[2];
 
     std::vector<VkClearValue> clearValues;
 
@@ -113,7 +115,8 @@ struct ComputePass {
     VkRenderPass            vulkanRenderPass    = VK_NULL_HANDLE;
     VkPipeline              pipeline            = VK_NULL_HANDLE;
     VkPipelineLayout        pipelineLayout      = VK_NULL_HANDLE;
-    VkDescriptorSet         descriptorSet       = VK_NULL_HANDLE;
+	//two sets to allow updating on while other is used for rendering
+	VkDescriptorSet         descriptorSets[2]	= { VK_NULL_HANDLE, VK_NULL_HANDLE };
     VkDescriptorSetLayout   descriptorSetLayout = VK_NULL_HANDLE;
     VkRenderPassBeginInfo   beginInfo = {};
 
