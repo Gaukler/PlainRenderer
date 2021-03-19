@@ -105,7 +105,7 @@ std::vector<ImageDescription> computeSceneSDFTextures(const std::vector<MeshData
 	assert(meshes.size() == AABBList.size());
 	for (size_t i = 0; i < meshes.size(); i++) {
 
-		JobSystem::addJob([&result, &meshes, &AABBList, i]() {
+		JobSystem::addJob([&result, &meshes, &AABBList, i](int workerIndex) {
 			const MeshData& mesh = meshes[i];
 			const AxisAlignedBoundingBox meshBB = AABBList[i];
 

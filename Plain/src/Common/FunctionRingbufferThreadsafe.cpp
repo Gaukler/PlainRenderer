@@ -7,7 +7,7 @@ FunctionRingbufferThreadsafe::FunctionRingbufferThreadsafe(const size_t bufferSi
 	m_elementCount = 0;
 }
 
-void FunctionRingbufferThreadsafe::add(const std::function<void()> function) {
+void FunctionRingbufferThreadsafe::add(const std::function<void(int)> function) {
 	std::unique_lock uniqueLock(m_mutex);
 
 	if (m_elementCount == m_buffer.size()) {
@@ -26,7 +26,7 @@ void FunctionRingbufferThreadsafe::add(const std::function<void()> function) {
 	m_emptyCondition.notify_one();
 }
 
-std::function<void()> FunctionRingbufferThreadsafe::popFront() {
+std::function<void(int)> FunctionRingbufferThreadsafe::popFront() {
 	std::unique_lock uniqueLock(m_mutex);
 
 	if (m_elementCount == 0) {
@@ -36,7 +36,7 @@ std::function<void()> FunctionRingbufferThreadsafe::popFront() {
 
 	assert(m_elementCount != 0);
 	//pop element and update info
-	std::function<void()> function = m_buffer[m_frontIndex];
+	std::function<void(int)> function = m_buffer[m_frontIndex];
 	m_elementCount--;
 	m_frontIndex = (m_frontIndex + 1) % m_buffer.size();
 

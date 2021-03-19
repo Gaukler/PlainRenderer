@@ -9,13 +9,13 @@ public:
 	FunctionRingbufferThreadsafe(const size_t bufferSize);
 
 	//appends function to end of list, waits if buffer is full
-	void add(const std::function<void()> function);
+	void add(const std::function<void(int)> function);
 
 	//removes and returns first element, waits if buffer is empty
-	std::function<void()> popFront();
+	std::function<void(int)> popFront();
 
 private:
-	std::vector<std::function<void()>> m_buffer;
+	std::vector<std::function<void(int)>> m_buffer;
 	int m_frontIndex;	//index of first element in m_buffer
 	int m_elementCount;	//number of elements currently in m_buffer
 

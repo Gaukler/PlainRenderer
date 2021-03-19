@@ -30,12 +30,12 @@ namespace JobSystem {
 		g_threadCount = std::thread::hardware_concurrency();
 		std::cout << "JobSystem thread count: " << g_threadCount << "\n\n";
 
-		for (int i = 0; i < g_threadCount; i++) {
-			std::thread worker([]() {
+		for (int workerIndex = 0; workerIndex < g_threadCount; workerIndex++) {
+			std::thread worker([workerIndex]() {
 				//function executed by worker
 				while (true) {
-					std::function<void()> job = jobRingbuffer.popFront();
-					job();
+					std::function<void(int)> job = jobRingbuffer.popFront();
+					job(workerIndex);
 				}
 			});
 			//let thread continue after worker goes out of scope
@@ -43,13 +43,13 @@ namespace JobSystem {
 		}
 	}
 
-	void addJob(const std::function<void()> job, Counter* counter) {
+	void addJob(const std::function<void(int workerIndex)> job, Counter* counter) {
 		if (counter != nullptr) {
 			incrementCounter(counter);
 
 			//add lambda that first executes job, then decrements counter
-			jobRingbuffer.add([job, counter]() {
-				job();
+			jobRingbuffer.add([job, counter](int workerIndex) {
+				job(workerIndex);
 				decrementCounter(counter);
 			});
 		}

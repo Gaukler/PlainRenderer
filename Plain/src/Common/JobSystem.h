@@ -19,7 +19,7 @@ namespace JobSystem {
 	void initJobSystem();
 	//executes job
 	//increments counter before starting and decrements counter after finishing
-	void addJob(const std::function<void()> job, Counter* counter);
+	void addJob(const std::function<void(int workerIndex)> job, Counter* counter);
 
 	void waitOnCounter(Counter& counter);
 }
