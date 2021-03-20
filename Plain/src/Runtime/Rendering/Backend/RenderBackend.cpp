@@ -629,65 +629,88 @@ RenderPassExecution getGenericRenderpassInfoFromExecutionEntry(const RenderPassE
 
 RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExecution>& graphicExecutions,
 	const std::vector<ComputePassExecution>& computeExecutions) {
+	
+	//create map and pending parent count lut to efficiently compute pass order
+	const size_t totalExecutionCount = graphicExecutions.size() + computeExecutions.size();
+	std::vector<int> pendingParentCount(totalExecutionCount, 0);
 
-	std::vector<RenderPassExecutionEntry> pendingPasses;
-	//add graphic passes to pending list
+	std::vector<std::vector<size_t>> perPassChildren(totalExecutionCount);
+
+	std::unordered_map<uint32_t, uint32_t> renderPassHandleToIndexMap;
+
+	//fill map and set pending parent count
+	for (int i = 0; i < graphicExecutions.size(); i++) {
+		const std::vector<RenderPassHandle>& parents = graphicExecutions[i].genericInfo.parents;
+		pendingParentCount[i] = parents.size();
+		renderPassHandleToIndexMap[graphicExecutions[i].genericInfo.handle.index] = i;
+	}
+	for (int i = 0; i < computeExecutions.size(); i++) {
+		const std::vector<RenderPassHandle>& parents = computeExecutions[i].genericInfo.parents;
+		const size_t passIndex = i + graphicExecutions.size();
+		pendingParentCount[passIndex] = parents.size();
+		renderPassHandleToIndexMap[computeExecutions[i].genericInfo.handle.index] = passIndex;
+	}
+
+	//collect children
+	for (int i = 0; i < graphicExecutions.size(); i++) {
+		for (const RenderPassHandle parent : graphicExecutions[i].genericInfo.parents) {
+			const uint32_t parentIndex = renderPassHandleToIndexMap[parent.index];
+			perPassChildren[parentIndex].push_back(i);
+		}
+	}
+	for (int i = 0; i < computeExecutions.size(); i++) {
+		for (const RenderPassHandle parent : computeExecutions[i].genericInfo.parents) {
+			const uint32_t parentIndex = renderPassHandleToIndexMap[parent.index];
+			const uint32_t childIndex = i + graphicExecutions.size();
+			perPassChildren[parentIndex].push_back(childIndex);
+		}
+	}
+	
+	//prepare entries beforehand
+	std::vector<RenderPassExecutionEntry> executionEntryPerPass;
+	executionEntryPerPass.reserve(totalExecutionCount);
+	//add graphic passes to list
 	for (int i = 0; i < graphicExecutions.size(); i++) {
 		RenderPassExecutionEntry entry;
 		entry.type = RenderPassType::Graphic;
 		entry.index = i;
-		pendingPasses.push_back(entry);
+		executionEntryPerPass.push_back(entry);
 	}
-	//add compute passes to pending list
+	//add compute passes to list
 	for (int i = 0; i < computeExecutions.size(); i++) {
 		RenderPassExecutionEntry entry;
 		entry.type = RenderPassType::Compute;
 		entry.index = i;
-		pendingPasses.push_back(entry);
+		executionEntryPerPass.push_back(entry);
 	}
 
-	//iterate over passes, add them if possible
-	//adding is possible if all parents have already been added
-	//index is reset if pass is added to recheck condition for previous passes
-	uint32_t passIndex = 0;
+	//add initial passes, which don't have any parents
+	std::vector<uint32_t> addablePasses;
+	for (int i = 0; i < totalExecutionCount; i++) {
+		if (pendingParentCount[i] == 0) {
+			addablePasses.push_back(i);
+		}
+	}
+
 	RenderPassExecutionOrder order;
+	order.executions.reserve(totalExecutionCount);
 
-	while (passIndex < pendingPasses.size()) {
-		const RenderPassExecutionEntry executionEntry = pendingPasses[passIndex];
-		const RenderPassExecution executionInfo = getGenericRenderpassInfoFromExecutionEntry(executionEntry,
-			graphicExecutions, computeExecutions);
-
-		bool parentsAvaible = true;
-		for (const RenderPassHandle parent : executionInfo.parents) {
-			bool parentFound = false;
-			for (const RenderPassExecutionEntry& parentCandidate : order.executions) {
-				const RenderPassExecution parentCandidateInfo = getGenericRenderpassInfoFromExecutionEntry(parentCandidate,
-					graphicExecutions, computeExecutions);
-				if (parentCandidateInfo.handle.index == parent.index) {
-					parentFound = true;
-					break;
-				}
-			}
-			if (!parentFound) {
-				parentsAvaible = false;
-				passIndex++;
-				break;
+	//continue until no further passes can be added
+	while (addablePasses.size() > 0) {
+		//take last
+		const uint32_t passIndex = addablePasses.back();
+		addablePasses.pop_back();
+		//add
+		order.executions.push_back(executionEntryPerPass[passIndex]);
+		//reduce pending parent count of every child
+		for (const size_t childIndex : perPassChildren[passIndex]) {
+			pendingParentCount[childIndex]--;
+			if (pendingParentCount[childIndex] == 0) {
+				addablePasses.push_back(childIndex); //reduced to zero, we know we can add this
 			}
 		}
-		if (!parentsAvaible) {
-			continue;
-		}
-		order.executions.push_back(executionEntry);
-
-		//remove pass from pending list by swapping with end
-		pendingPasses[passIndex] = pendingPasses.back();
-		pendingPasses.pop_back();
-
-		//restart at beginning
-		passIndex = 0;
 	}
-	assert(pendingPasses.size() == 0); //all passes must have been added
-
+	assert(order.executions.size() == totalExecutionCount); //all passes must have been added
 	return order;
 }
 
