@@ -62,7 +62,9 @@ public:
 
     //iterates over all shader files and updates the last changed time point
     //must be called before reloading out of date shaders so that out of date check is correct
-    void updateFileLastChangeTimes();
+	//maxFilesToUpdates limits number of files which are updated by one call
+	//repeated calls will rotate trough the total list of files
+    void updateFileLastChangeTimes(const int maxFilesToUpdates);
 
     std::vector<ComputePassShaderReloadInfo> reloadOutOfDateComputeShaders();
     std::vector<GraphicPassShaderReloadInfo> reloadOutOfDateGraphicShaders();
@@ -78,6 +80,9 @@ private:
     //loads GLSL shader file, parses include paths, then adds them to index set
     //outIndexSet must not be nullptr
     void addGLSLIncludesFileIndicesToSet(const fs::path& shaderPathAbsolute, std::unordered_set<size_t>* outIndexSet);
+
+	//files last update time updates are time sliced, this is the current index
+	size_t m_currentFileUpdateIndex = 0;
 
     //---- source information ----
 

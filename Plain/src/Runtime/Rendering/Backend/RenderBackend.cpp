@@ -346,7 +346,8 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
 
 void RenderBackend::updateShaderCode() {
 
-    m_shaderFileManager.updateFileLastChangeTimes();
+	const int maxShaderFilesToUpdate = 10;
+    m_shaderFileManager.updateFileLastChangeTimes(maxShaderFilesToUpdate);
 
     const std::vector<ComputePassShaderReloadInfo> computeShadersReloadInfos = m_shaderFileManager.reloadOutOfDateComputeShaders();
     const std::vector<GraphicPassShaderReloadInfo> graphicShadersReloadInfos = m_shaderFileManager.reloadOutOfDateGraphicShaders();

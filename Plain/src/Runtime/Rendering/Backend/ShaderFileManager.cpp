@@ -168,9 +168,12 @@ bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handl
     }
 }
 
-void ShaderFileManager::updateFileLastChangeTimes() {
+void ShaderFileManager::updateFileLastChangeTimes(const int maxFilesToUpdates) {
+
+	const size_t fileEndIndex = glm::min(m_filePathsAbsolute.size(), m_currentFileUpdateIndex + maxFilesToUpdates);
+
     assert(m_filePathsAbsolute.size() == m_fileLastChanges.size());
-    for (size_t i = 0; i < m_filePathsAbsolute.size(); i++) {
+    for (size_t i = m_currentFileUpdateIndex; i < fileEndIndex; i++) {
         const fs::path filePath = m_filePathsAbsolute[i];
         fs::file_time_type lastChange;
         if (checkLastChangeTime(filePath, &lastChange)) {
