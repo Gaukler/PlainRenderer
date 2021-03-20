@@ -13,6 +13,7 @@
 #include "Utilities/MathUtils.h"
 #include "VertexInputVulkan.h"
 #include "VulkanImageFormats.h"
+#include "Runtime/Timer.h"
 
 //disable ImGui warnings
 #pragma warning( push )
@@ -772,6 +773,9 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
     res = vkEndCommandBuffer(currentCommandBuffer);
     assert(res == VK_SUCCESS);
 
+	//compute cpu time after drawcall recording, but before waiting for GPU to finish
+	m_lastFrameCPUTime = Timer::getTimeFloat() - m_timeOfLastGPUSubmit;
+
 	//wait for in flight frame to render so resources are avaible
 	res = vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, UINT64_MAX);
 	assert(res == VK_SUCCESS);
@@ -810,6 +814,9 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
         presentImage(m_renderFinishedSemaphore);
         glfwPollEvents();
     }
+
+	//timestamp after presenting, which waits for vsync
+	m_timeOfLastGPUSubmit = Timer::getTimeFloat();
 
     //get timestamp results of last frame
 	{
@@ -1227,6 +1234,10 @@ void RenderBackend::getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsed
 
 std::vector<RenderPassTime> RenderBackend::getRenderpassTimings() const {
     return m_renderpassTimings;
+}
+
+float RenderBackend::getLastFrameCPUTime() const {
+	return m_lastFrameCPUTime;
 }
 
 std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers(const RenderPassExecutionOrder& executionOrder,

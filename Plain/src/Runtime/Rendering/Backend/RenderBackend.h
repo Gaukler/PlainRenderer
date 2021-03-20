@@ -509,6 +509,9 @@ private:
     VkQueryPool createQueryPool(const VkQueryType queryType, const uint32_t queryCount);
     void resetTimestampQueryPool(const int poolIndex);
 
+	float m_timeOfLastGPUSubmit;
+	float m_lastFrameCPUTime;
+
     void checkVulkanResult(const VkResult result);
 
     /*
