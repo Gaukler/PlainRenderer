@@ -204,9 +204,10 @@ public:
 
 	ImageHandle getSwapchainInputImage();
 
-	void getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsedSize);
+	void getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsedSize) const;
 
-	std::vector<RenderPassTime> getRenderpassTimings();
+	std::vector<RenderPassTime> getRenderpassTimings() const;
+	float getLastFrameCPUTime() const;
 
 private:
 
@@ -263,9 +264,7 @@ private:
 	void                        createLogicalDevice();
 	VkDebugReportCallbackEXT    setupDebugCallbacks();
 
-	/*
-	returns true if all family indices have been found, in that case indices are writen to QueueFamilies pointer
-	*/
+	//returns true if all family indices have been found, in that case indices are writen to QueueFamilies pointer
 	bool getQueueFamilies(const VkPhysicalDevice device, QueueFamilies* pOutQueueFamilies);
 
 	//debug marker use an extension and as such need to get function pointers

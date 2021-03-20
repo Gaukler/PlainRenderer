@@ -201,7 +201,7 @@ void VkMemoryAllocator::free(const VulkanAllocation& allocation) {
     poolList[allocation.poolIndex].free(allocation);
 }
 
-void VkMemoryAllocator::getMemoryStats(VkDeviceSize* outAllocatedSize, VkDeviceSize* outUsedSize) {
+void VkMemoryAllocator::getMemoryStats(VkDeviceSize* outAllocatedSize, VkDeviceSize* outUsedSize) const{
     assert(outAllocatedSize != nullptr);
     assert(outUsedSize != nullptr);
     *outAllocatedSize = 0;

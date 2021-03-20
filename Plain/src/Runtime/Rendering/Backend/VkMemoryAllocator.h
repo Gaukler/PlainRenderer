@@ -44,7 +44,7 @@ public:
     bool allocate(const VkMemoryRequirements& requirements, const VkMemoryPropertyFlags flags, VulkanAllocation* outAllocation);
     void free(const VulkanAllocation& allocation);
 
-    void getMemoryStats(VkDeviceSize* outAllocatedSize, VkDeviceSize* outUsedSize);
+    void getMemoryStats(VkDeviceSize* outAllocatedSize, VkDeviceSize* outUsedSize) const;
 private:
     uint32_t findMemoryIndex(const VkMemoryPropertyFlags flags, const uint32_t memoryTypeBitsRequirement);
 

@@ -1217,7 +1217,7 @@ ImageHandle RenderBackend::getSwapchainInputImage() {
     return m_swapchainInputImageHandle;
 }
 
-void RenderBackend::getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsedSize) {
+void RenderBackend::getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsedSize) const{
     assert(outAllocatedSize != nullptr);
     assert(outUsedSize != nullptr);
     m_vkAllocator.getMemoryStats(outAllocatedSize, outUsedSize);
@@ -1225,7 +1225,7 @@ void RenderBackend::getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsed
     *outUsedSize        += (uint32_t)m_stagingBufferSize;
 }
 
-std::vector<RenderPassTime> RenderBackend::getRenderpassTimings() {
+std::vector<RenderPassTime> RenderBackend::getRenderpassTimings() const {
     return m_renderpassTimings;
 }
 
