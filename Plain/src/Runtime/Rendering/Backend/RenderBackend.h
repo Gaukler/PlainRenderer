@@ -185,7 +185,7 @@ public:
 	void updateComputePassShaderDescription(const RenderPassHandle passHandle, const ShaderDescription& desc);
 
 	//actual rendering of frame using commands generated from drawMesh calls
-	void renderFrame(bool presentToScreen);
+	void renderFrame(const bool presentToScreen);
 
 	uint32_t getImageGlobalTextureArrayIndex(const ImageHandle image);
 

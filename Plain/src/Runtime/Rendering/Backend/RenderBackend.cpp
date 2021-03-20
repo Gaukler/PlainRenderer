@@ -689,7 +689,7 @@ RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExec
 	return order;
 }
 
-void RenderBackend::renderFrame(bool presentToScreen) {
+void RenderBackend::renderFrame(const bool presentToScreen) {
 
 	//reset doesn't work before waiting for render finished fence
 	resetTimestampQueryPool(m_frameIndexMod2);
