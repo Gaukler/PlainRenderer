@@ -4,6 +4,9 @@
 #include "Runtime/Rendering/ResourceDescriptions.h"
 #include "Runtime/Rendering/Backend/Resources.h"
 
+#include <thread>
+#include <mutex>
+
 namespace fs = std::filesystem;
 
 struct GraphicPassShaderReloadInfo {
@@ -48,6 +51,8 @@ struct GraphicShaderSourceInfo {
 //currently includes in includes are not tracked
 class ShaderFileManager {
 public:    
+	void setup();
+
     ComputeShaderHandle addComputeShader(const ShaderDescription& computeShaderDesc);
     GraphicShadersHandle addGraphicShaders(const GraphicPassShaderDescriptions& graphicShadersDesc);
 
@@ -60,15 +65,15 @@ public:
     bool loadComputeShaderSpirV(const ComputeShaderHandle handle, std::vector<uint32_t>* outSpirV) const;
     bool loadGraphicShadersSpirV(const GraphicShadersHandle handle, GraphicPassShaderSpirV* outSpirV) const;
 
-    //iterates over all shader files and updates the last changed time point
-    //must be called before reloading out of date shaders so that out of date check is correct
-	//maxFilesToUpdates limits number of files which are updated by one call
-	//repeated calls will rotate trough the total list of files
-    void updateFileLastChangeTimes(const int maxFilesToUpdates);
-
     std::vector<ComputePassShaderReloadInfo> reloadOutOfDateComputeShaders();
     std::vector<GraphicPassShaderReloadInfo> reloadOutOfDateGraphicShaders();
 private:
+
+	//iterates over all shader files and updates the last changed time point
+	void updateFileLastChangeTimes();
+	
+	void fileWatcherThread();
+
     //returns existing index if available
     //else adds entry in m_pathToFileIndex, m_filePathsAbsolute and m_fileLastChanges
     size_t addFilePath(const fs::path& filePathAbsolute);
@@ -80,9 +85,6 @@ private:
     //loads GLSL shader file, parses include paths, then adds them to index set
     //outIndexSet must not be nullptr
     void addGLSLIncludesFileIndicesToSet(const fs::path& shaderPathAbsolute, std::unordered_set<size_t>* outIndexSet);
-
-	//files last update time updates are time sliced, this is the current index
-	size_t m_currentFileUpdateIndex = 0;
 
     //---- source information ----
 
@@ -97,4 +99,10 @@ private:
 
     std::vector<fs::path> m_filePathsAbsolute;
     std::vector<fs::file_time_type> m_fileLastChanges;
+
+	std::thread m_directoryWatcher;
+
+	std::mutex m_outOfDateListsMutex;
+	std::vector<size_t> m_outOfDateComputeIndices;
+	std::vector<size_t> m_outOfDateGraphicIndices;
 };

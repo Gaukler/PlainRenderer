@@ -2,6 +2,10 @@
 #include "ShaderFileManager.h"
 #include "Common/FileIO.h"
 #include "ShaderIO.h"
+#include "Common/Utilities/DirectoryUtils.h"
+
+#define NOMINMAX
+#include <Windows.h>
 
 //not terribly robust, e.g. not checking if include is commented out, but it does it's job
 std::vector<fs::path> parseIncludePathsFromGLSL(const std::vector<char>& glslCode) {
@@ -27,6 +31,44 @@ std::vector<fs::path> parseIncludePathsFromGLSL(const std::vector<char>& glslCod
         }
     } 
     return includes;
+}
+
+void ShaderFileManager::setup() {
+	updateFileLastChangeTimes();
+	m_directoryWatcher = std::thread([this]() {
+		fileWatcherThread();
+	});
+}
+
+void ShaderFileManager::fileWatcherThread() {
+	const fs::path shaderPath = DirectoryUtils::getResourceDirectory() / getShaderDirectory();
+	HANDLE watchHandle = FindFirstChangeNotificationW((WCHAR*)shaderPath.c_str(), true, FILE_NOTIFY_CHANGE_LAST_WRITE);
+	assert(INVALID_HANDLE_VALUE);
+
+	while (true) {
+
+		WaitForSingleObject(watchHandle, INFINITE);
+		FindNextChangeNotification(watchHandle);
+
+		//writing can still be in progress when watchHandle is signaled
+		//FIXME: robust solution
+		Sleep(1);
+		updateFileLastChangeTimes();
+
+		m_outOfDateListsMutex.lock();
+		for (int i = 0; i < m_computeShaderSourceInfos.size(); i++) {
+			if (isComputeShaderCacheOutOfDate(m_computeShaderSourceInfos[i])) {
+				m_outOfDateComputeIndices.push_back(i);
+			}
+		}
+		for (int i = 0; i < m_graphicShaderSourceInfos.size(); i++) {
+			if (areGraphicShadersCachesOutOfDate(m_graphicShaderSourceInfos[i])) {
+				m_outOfDateGraphicIndices.push_back(i);
+			}
+		}
+		
+		m_outOfDateListsMutex.unlock();
+	}
 }
 
 ComputeShaderHandle ShaderFileManager::addComputeShader(const ShaderDescription& computeShaderDesc) {
@@ -168,51 +210,38 @@ bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handl
     }
 }
 
-void ShaderFileManager::updateFileLastChangeTimes(const int maxFilesToUpdates) {
-
-	const size_t fileEndIndex = glm::min(m_filePathsAbsolute.size(), m_currentFileUpdateIndex + maxFilesToUpdates);
-
-    assert(m_filePathsAbsolute.size() == m_fileLastChanges.size());
-    for (size_t i = m_currentFileUpdateIndex; i < fileEndIndex; i++) {
-        const fs::path filePath = m_filePathsAbsolute[i];
-        fs::file_time_type lastChange;
-        if (checkLastChangeTime(filePath, &lastChange)) {
-            //if compilation of spirv cache files fails the last change time is still updated to avoid failing with same problem every frame
-            //use max to avoid overwriting this date
-            m_fileLastChanges[i] = std::max(m_fileLastChanges[i], lastChange);
-        }
-    }
-}
-
 std::vector<ComputePassShaderReloadInfo> ShaderFileManager::reloadOutOfDateComputeShaders() {
     std::vector<ComputePassShaderReloadInfo> reloadList;
 	std::set<size_t> spirvCacheUpdateList;
-    //iterate over all compute shaders
-    for (ComputeShaderSourceInfo& shaderSrcInfo : m_computeShaderSourceInfos) {
-        if (isComputeShaderCacheOutOfDate(shaderSrcInfo)) {
-            //reload glsl and compile to spirv
-            fs::path shaderPathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.shaderFileIndex];
-            std::cout << "Shader out of date reloading: " << shaderPathAbsolute << "\n";
 
-            ComputePassShaderReloadInfo reloadInfo;
-            reloadInfo.renderpass = shaderSrcInfo.renderpass;
-            if (loadShader(shaderPathAbsolute, &reloadInfo.spirV)) {
-                reloadList.push_back(reloadInfo);
+	m_outOfDateListsMutex.lock();
+	for (const int passIndex : m_outOfDateComputeIndices) {
 
-                //update spirv cache
-                const fs::path spirvCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.spirvCacheFileIndex];
-                writeBinaryFile(spirvCachePathAbsolute, reloadInfo.spirV);
+		ComputeShaderSourceInfo& shaderSrcInfo = m_computeShaderSourceInfos[passIndex];
+        //reload glsl and compile to spirv
+        fs::path shaderPathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.shaderFileIndex];
+        std::cout << "Shader out of date reloading: " << shaderPathAbsolute << "\n";
 
-                //rebuild include file list to accomodate changes
-                shaderSrcInfo.includeFileIndices.clear();
-                addGLSLIncludesFileIndicesToSet(shaderPathAbsolute, &shaderSrcInfo.includeFileIndices);
-            }
-			//update latest cache update point
-			//even if load/compilation is not succesfull we don't want to keep failing every frame before problem is solved
-			//update is deferred because the same cache might be used multiple shaders
-			spirvCacheUpdateList.insert(shaderSrcInfo.loadInfo.spirvCacheFileIndex);          
+        ComputePassShaderReloadInfo reloadInfo;
+        reloadInfo.renderpass = shaderSrcInfo.renderpass;
+        if (loadShader(shaderPathAbsolute, &reloadInfo.spirV)) {
+            reloadList.push_back(reloadInfo);
+
+            //update spirv cache
+            const fs::path spirvCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.spirvCacheFileIndex];
+            writeBinaryFile(spirvCachePathAbsolute, reloadInfo.spirV);
+
+            //rebuild include file list to accomodate changes
+            shaderSrcInfo.includeFileIndices.clear();
+            addGLSLIncludesFileIndicesToSet(shaderPathAbsolute, &shaderSrcInfo.includeFileIndices);
         }
+		//update latest cache update point
+		//even if load/compilation is not succesfull we don't want to keep failing every frame before problem is solved
+		//update is deferred because the same cache might be used multiple shaders
+		spirvCacheUpdateList.insert(shaderSrcInfo.loadInfo.spirvCacheFileIndex);          
     }
+	m_outOfDateComputeIndices.clear();
+	m_outOfDateListsMutex.unlock();
 
 	//deferred update of cache files last change times
 	for (const size_t index : spirvCacheUpdateList) {
@@ -225,91 +254,109 @@ std::vector<ComputePassShaderReloadInfo> ShaderFileManager::reloadOutOfDateCompu
 std::vector<GraphicPassShaderReloadInfo> ShaderFileManager::reloadOutOfDateGraphicShaders() {
 
     std::vector<GraphicPassShaderReloadInfo> reloadList;
-    for (GraphicShaderSourceInfo& shaderSrcInfo : m_graphicShaderSourceInfos) {
+	m_outOfDateListsMutex.lock();
+    for (const int passIndex : m_outOfDateGraphicIndices) {
+
+		GraphicShaderSourceInfo& shaderSrcInfo = m_graphicShaderSourceInfos[passIndex];
 
         const bool hasGeometryShader = shaderSrcInfo.loadInfo.geometry.has_value();
         const bool hasTessellationControlShader = shaderSrcInfo.loadInfo.tessellationControl.has_value();
         const bool hasTessellationEvauluationShader = shaderSrcInfo.loadInfo.tessellationEvaluation.has_value();
 
-        if (areGraphicShadersCachesOutOfDate(shaderSrcInfo)) {
-            //reload glsl and compile to spirv
-            GraphicPassShaderReloadInfo reloadInfo;
-            reloadInfo.renderpass = shaderSrcInfo.renderpass;
+        //reload glsl and compile to spirv
+        GraphicPassShaderReloadInfo reloadInfo;
+        reloadInfo.renderpass = shaderSrcInfo.renderpass;
 
-            GraphicPassShaderPaths shaderPaths;
-            shaderPaths.vertex = m_filePathsAbsolute[shaderSrcInfo.loadInfo.vertex.shaderFileIndex];
-            shaderPaths.fragment = m_filePathsAbsolute[shaderSrcInfo.loadInfo.fragment.shaderFileIndex];
+        GraphicPassShaderPaths shaderPaths;
+        shaderPaths.vertex = m_filePathsAbsolute[shaderSrcInfo.loadInfo.vertex.shaderFileIndex];
+        shaderPaths.fragment = m_filePathsAbsolute[shaderSrcInfo.loadInfo.fragment.shaderFileIndex];
 
-            std::cout << "Graphic shaders out of date reloading:\n";
-            std::cout << shaderPaths.vertex << "\n";
-            std::cout << shaderPaths.fragment << "\n";
+        std::cout << "Graphic shaders out of date reloading:\n";
+        std::cout << shaderPaths.vertex << "\n";
+        std::cout << shaderPaths.fragment << "\n";
 
+        if (hasGeometryShader) {
+            shaderPaths.geometry = m_filePathsAbsolute[shaderSrcInfo.loadInfo.geometry.value().shaderFileIndex];
+            std::cout << shaderPaths.geometry.value() << "\n";
+        }
+        if (hasTessellationControlShader) {
+            shaderPaths.tessellationControl = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationControl.value().shaderFileIndex];
+            std::cout << shaderPaths.tessellationControl.value() << "\n";
+        }
+        if (hasTessellationEvauluationShader) {
+            shaderPaths.tessellationEvaluation = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationEvaluation.value().shaderFileIndex];
+            std::cout << shaderPaths.tessellationEvaluation.value() << "\n";
+        }
+        std::cout << "\n";
+
+        if (loadGraphicPassShaders(shaderPaths, &reloadInfo.spirV)) {
+            reloadList.push_back(reloadInfo);
+
+            //update spirv caches and include file list
+            shaderSrcInfo.includeFileIndices.clear();
+            //vertex
+            {
+                const fs::path vertexCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.vertex.spirvCacheFileIndex];
+                writeBinaryFile(vertexCachePathAbsolute, reloadInfo.spirV.vertex);
+                addGLSLIncludesFileIndicesToSet(shaderPaths.vertex, &shaderSrcInfo.includeFileIndices);
+            }
+            //fragment
+            {
+                const fs::path fragmentCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.fragment.spirvCacheFileIndex];
+                writeBinaryFile(fragmentCachePathAbsolute, reloadInfo.spirV.fragment);
+                addGLSLIncludesFileIndicesToSet(shaderPaths.fragment, &shaderSrcInfo.includeFileIndices);
+            }
+            //geometry
             if (hasGeometryShader) {
-                shaderPaths.geometry = m_filePathsAbsolute[shaderSrcInfo.loadInfo.geometry.value().shaderFileIndex];
-                std::cout << shaderPaths.geometry.value() << "\n";
+                const fs::path geometryCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.geometry.value().spirvCacheFileIndex];
+                writeBinaryFile(geometryCachePathAbsolute, reloadInfo.spirV.geometry.value());
+                addGLSLIncludesFileIndicesToSet(shaderPaths.geometry.value(), &shaderSrcInfo.includeFileIndices);
             }
+            //tessellation control
             if (hasTessellationControlShader) {
-                shaderPaths.tessellationControl = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationControl.value().shaderFileIndex];
-                std::cout << shaderPaths.tessellationControl.value() << "\n";
+                const fs::path tessellationControlCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex];
+                writeBinaryFile(tessellationControlCachePathAbsolute, reloadInfo.spirV.tessellationControl.value());
+                addGLSLIncludesFileIndicesToSet(shaderPaths.tessellationControl.value(), &shaderSrcInfo.includeFileIndices);
             }
+            //tessellation control
             if (hasTessellationEvauluationShader) {
-                shaderPaths.tessellationEvaluation = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationEvaluation.value().shaderFileIndex];
-                std::cout << shaderPaths.tessellationEvaluation.value() << "\n";
+                const fs::path tessellationEvaluationCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex];
+                writeBinaryFile(tessellationEvaluationCachePathAbsolute, reloadInfo.spirV.tessellationEvaluation.value());
+                addGLSLIncludesFileIndicesToSet(shaderPaths.tessellationEvaluation.value(), &shaderSrcInfo.includeFileIndices);
             }
-            std::cout << "\n";
-
-            if (loadGraphicPassShaders(shaderPaths, &reloadInfo.spirV)) {
-                reloadList.push_back(reloadInfo);
-
-                //update spirv caches and include file list
-                shaderSrcInfo.includeFileIndices.clear();
-                //vertex
-                {
-                    const fs::path vertexCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.vertex.spirvCacheFileIndex];
-                    writeBinaryFile(vertexCachePathAbsolute, reloadInfo.spirV.vertex);
-                    addGLSLIncludesFileIndicesToSet(shaderPaths.vertex, &shaderSrcInfo.includeFileIndices);
-                }
-                //fragment
-                {
-                    const fs::path fragmentCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.fragment.spirvCacheFileIndex];
-                    writeBinaryFile(fragmentCachePathAbsolute, reloadInfo.spirV.fragment);
-                    addGLSLIncludesFileIndicesToSet(shaderPaths.fragment, &shaderSrcInfo.includeFileIndices);
-                }
-                //geometry
-                if (hasGeometryShader) {
-                    const fs::path geometryCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.geometry.value().spirvCacheFileIndex];
-                    writeBinaryFile(geometryCachePathAbsolute, reloadInfo.spirV.geometry.value());
-                    addGLSLIncludesFileIndicesToSet(shaderPaths.geometry.value(), &shaderSrcInfo.includeFileIndices);
-                }
-                //tessellation control
-                if (hasTessellationControlShader) {
-                    const fs::path tessellationControlCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex];
-                    writeBinaryFile(tessellationControlCachePathAbsolute, reloadInfo.spirV.tessellationControl.value());
-                    addGLSLIncludesFileIndicesToSet(shaderPaths.tessellationControl.value(), &shaderSrcInfo.includeFileIndices);
-                }
-                //tessellation control
-                if (hasTessellationEvauluationShader) {
-                    const fs::path tessellationEvaluationCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex];
-                    writeBinaryFile(tessellationEvaluationCachePathAbsolute, reloadInfo.spirV.tessellationEvaluation.value());
-                    addGLSLIncludesFileIndicesToSet(shaderPaths.tessellationEvaluation.value(), &shaderSrcInfo.includeFileIndices);
-                }
-            }
-            //update latest cache update point
-            //even if load/compilation is not succesfull we don't want to keep failing every frame before problem is solved
-            m_fileLastChanges[shaderSrcInfo.loadInfo.vertex.spirvCacheFileIndex] = fs::_File_time_clock::now();
-            m_fileLastChanges[shaderSrcInfo.loadInfo.fragment.spirvCacheFileIndex] = fs::_File_time_clock::now();
-            if (hasGeometryShader) {
-                m_fileLastChanges[shaderSrcInfo.loadInfo.geometry.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
-            }
-            if (hasTessellationControlShader) {
-                m_fileLastChanges[shaderSrcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
-            }
-            if (hasTessellationEvauluationShader) {
-                m_fileLastChanges[shaderSrcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
-            }
+			else {
+				//update latest cache update point
+				//even if load/compilation is not succesfull we don't want to keep failing every frame before problem is solved
+				m_fileLastChanges[shaderSrcInfo.loadInfo.vertex.spirvCacheFileIndex] = fs::_File_time_clock::now();
+				m_fileLastChanges[shaderSrcInfo.loadInfo.fragment.spirvCacheFileIndex] = fs::_File_time_clock::now();
+				if (hasGeometryShader) {
+					m_fileLastChanges[shaderSrcInfo.loadInfo.geometry.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
+				}
+				if (hasTessellationControlShader) {
+					m_fileLastChanges[shaderSrcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
+				}
+				if (hasTessellationEvauluationShader) {
+					m_fileLastChanges[shaderSrcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
+				}
+			}
         }
     }
+	m_outOfDateGraphicIndices.clear();
+	m_outOfDateListsMutex.unlock();
     return reloadList;
+}
+
+void ShaderFileManager::updateFileLastChangeTimes() {
+	assert(m_filePathsAbsolute.size() == m_fileLastChanges.size());
+	for (size_t i = 0; i < m_filePathsAbsolute.size(); i++) {
+		const fs::path filePath = m_filePathsAbsolute[i];
+		fs::file_time_type lastChange;
+		if (checkLastChangeTime(filePath, &lastChange)) {
+			//if compilation of spirv cache files fails the last change time is still updated to avoid failing with same problem every frame
+			//use max to avoid overwriting this date
+			m_fileLastChanges[i] = std::max(m_fileLastChanges[i], lastChange);
+		}
+	}
 }
 
 size_t ShaderFileManager::addFilePath(const fs::path& filePathAbsolute) {
@@ -341,7 +388,6 @@ bool ShaderFileManager::isComputeShaderCacheOutOfDate(const ComputeShaderSourceI
     //check for latest change of spirv cache file
     const size_t spirvCacheFileIndex = shaderSrcInfo.loadInfo.spirvCacheFileIndex;
     const fs::file_time_type latestSpirvCacheChange = m_fileLastChanges[spirvCacheFileIndex];
-
 
     return latestSpirvCacheChange < latestSrcChange;
 }

@@ -157,6 +157,8 @@ void checkVulkanResult(const VkResult result) {
 
 void RenderBackend::setup(GLFWwindow* window) {
 
+	m_shaderFileManager.setup();
+
     createVulkanInstance();
     createSurface(window);
     if (m_useValidationLayers) {
@@ -345,9 +347,6 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
 }
 
 void RenderBackend::updateShaderCode() {
-
-	const int maxShaderFilesToUpdate = 10;
-    m_shaderFileManager.updateFileLastChangeTimes(maxShaderFilesToUpdate);
 
     const std::vector<ComputePassShaderReloadInfo> computeShadersReloadInfos = m_shaderFileManager.reloadOutOfDateComputeShaders();
     const std::vector<GraphicPassShaderReloadInfo> graphicShadersReloadInfos = m_shaderFileManager.reloadOutOfDateGraphicShaders();
