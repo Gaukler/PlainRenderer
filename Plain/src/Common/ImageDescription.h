@@ -16,8 +16,6 @@ ImageUsageFlags operator|(const ImageUsageFlags l, const ImageUsageFlags r);
 enum class ImageFormat { R8, RG8, RGBA8, R16_sFloat, RG16_sFloat, RG32_sFloat, RG16_sNorm, RGBA16_sFloat, RGBA16_sNorm, RGBA32_sFloat, R11G11B10_uFloat, Depth16, Depth32, BC1, BC3, BC5, BGRA8_uNorm };
 
 struct ImageDescription {
-    std::vector<uint8_t> initialData;
-
     uint32_t width = 1;
     uint32_t height = 0;
     uint32_t depth = 0;

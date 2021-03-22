@@ -108,7 +108,6 @@ DefaultTextures createDefaultTextures() {
         defaultDiffuseDesc.autoCreateMips = true;
         defaultDiffuseDesc.depth = 1;
         defaultDiffuseDesc.format = ImageFormat::RGBA8;
-        defaultDiffuseDesc.initialData = { 255, 255, 255, 255 };
         defaultDiffuseDesc.manualMipCount = 1;
         defaultDiffuseDesc.mipCount = MipCount::FullChain;
         defaultDiffuseDesc.type = ImageType::Type2D;
@@ -116,7 +115,8 @@ DefaultTextures createDefaultTextures() {
         defaultDiffuseDesc.width = 1;
         defaultDiffuseDesc.height = 1;
 
-        defaultTextures.diffuse = gRenderBackend.createImage(defaultDiffuseDesc);
+		const uint8_t initialData[4] = { 255, 255, 255, 255 };
+        defaultTextures.diffuse = gRenderBackend.createImage(defaultDiffuseDesc, initialData, sizeof(initialData));
     }
     //specular
     {
@@ -124,7 +124,6 @@ DefaultTextures createDefaultTextures() {
         defaultSpecularDesc.autoCreateMips = true;
         defaultSpecularDesc.depth = 1;
         defaultSpecularDesc.format = ImageFormat::RGBA8;
-        defaultSpecularDesc.initialData = { 0, 128, 255, 0 };
         defaultSpecularDesc.manualMipCount = 1;
         defaultSpecularDesc.mipCount = MipCount::FullChain;
         defaultSpecularDesc.type = ImageType::Type2D;
@@ -132,7 +131,8 @@ DefaultTextures createDefaultTextures() {
         defaultSpecularDesc.width = 1;
         defaultSpecularDesc.height = 1;
 
-        defaultTextures.specular = gRenderBackend.createImage(defaultSpecularDesc);
+		const uint8_t initialData[4] = { 0, 128, 255, 0 };
+        defaultTextures.specular = gRenderBackend.createImage(defaultSpecularDesc, initialData, sizeof(initialData));
     }
     //normal
     {
@@ -140,7 +140,6 @@ DefaultTextures createDefaultTextures() {
         defaultNormalDesc.autoCreateMips = true;
         defaultNormalDesc.depth = 1;
         defaultNormalDesc.format = ImageFormat::RG8;
-        defaultNormalDesc.initialData = { 128, 128 };
         defaultNormalDesc.manualMipCount = 1;
         defaultNormalDesc.mipCount = MipCount::FullChain;
         defaultNormalDesc.type = ImageType::Type2D;
@@ -148,7 +147,8 @@ DefaultTextures createDefaultTextures() {
         defaultNormalDesc.width = 1;
         defaultNormalDesc.height = 1;
 
-        defaultTextures.normal = gRenderBackend.createImage(defaultNormalDesc);
+		const uint8_t initialData[2] = { 128, 128 };
+        defaultTextures.normal = gRenderBackend.createImage(defaultNormalDesc, initialData, sizeof(initialData));
     }
     //sky
     {
@@ -156,7 +156,6 @@ DefaultTextures createDefaultTextures() {
         defaultCubemapDesc.autoCreateMips = true;
         defaultCubemapDesc.depth = 1;
         defaultCubemapDesc.format = ImageFormat::RGBA8;
-        defaultCubemapDesc.initialData = { 255, 255, 255, 255 };
         defaultCubemapDesc.manualMipCount = 1;
         defaultCubemapDesc.mipCount = MipCount::FullChain;
         defaultCubemapDesc.type = ImageType::Type2D;
@@ -164,7 +163,8 @@ DefaultTextures createDefaultTextures() {
         defaultCubemapDesc.width = 1;
         defaultCubemapDesc.height = 1;
 
-        defaultTextures.sky = gRenderBackend.createImage(defaultCubemapDesc);
+		const uint8_t initialData[4] = { 255, 255, 255, 255 };
+        defaultTextures.sky = gRenderBackend.createImage(defaultCubemapDesc, initialData, sizeof(initialData));
     }
 	//sdf
 	{
@@ -172,7 +172,6 @@ DefaultTextures createDefaultTextures() {
 		defaultSdfDesc.autoCreateMips = false;
 		defaultSdfDesc.depth = 1;
 		defaultSdfDesc.format = ImageFormat::R16_sFloat;
-		defaultSdfDesc.initialData = { 0, 0 };
 		defaultSdfDesc.manualMipCount = 1;
 		defaultSdfDesc.mipCount = MipCount::One;
 		defaultSdfDesc.type = ImageType::Type3D;
@@ -181,7 +180,8 @@ DefaultTextures createDefaultTextures() {
 		defaultSdfDesc.height = 1;
 		defaultSdfDesc.depth = 1;
 
-		defaultTextures.sdf = gRenderBackend.createImage(defaultSdfDesc);
+		const uint8_t initialData[2] = { 0, 0 };
+		defaultTextures.sdf = gRenderBackend.createImage(defaultSdfDesc, initialData, sizeof(initialData));
 	}
     return defaultTextures;
 }
@@ -1803,32 +1803,41 @@ std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<s
 	//parallel load of required images
 	JobSystem::Counter loadingFinised;
 	std::mutex mapMutex;
-	std::unordered_map<std::string, ImageDescription> pathToDescriptionMap;
+	std::unordered_map<std::string, std::pair<ImageDescription, size_t>> pathToDescriptionMap;
+	std::vector<std::vector<uint8_t>> imageDataList;
+	imageDataList.resize(requiredDataSet.size());
 
+	size_t dataIndex = 0;
 	for (const std::string &path : requiredDataSet) {
-		JobSystem::addJob([path, &pathToDescriptionMap, &mapMutex](int workerIndex) {
+		JobSystem::addJob([path, dataIndex, &pathToDescriptionMap, &mapMutex, &imageDataList](int workerIndex) {
 			ImageDescription image;
-			if (loadImage(path, true, &image)) {
+			if (loadImage(path, true, &image, &imageDataList[dataIndex])) {
 				mapMutex.lock();
-				pathToDescriptionMap[path] = image;
+				pathToDescriptionMap[path] = std::pair(image, dataIndex);
 				mapMutex.unlock();
 			}
 		}, &loadingFinised);
+		dataIndex++;
 	}
 	JobSystem::waitOnCounter(loadingFinised);
 
 	//create images and store in map
 	for (const fs::path path : requiredDataSet) {
-		m_textureMap[path.string()] = gRenderBackend.createImage(pathToDescriptionMap[path.string()]);
+		const std::pair<ImageDescription, size_t>& descriptionDataIndexPair = pathToDescriptionMap[path.string()];
+		const std::vector<uint8_t>& data = imageDataList[descriptionDataIndexPair.second];
+		m_textureMap[path.string()] = gRenderBackend.createImage(
+			descriptionDataIndexPair.first, 
+			data.data(),
+			data.size());
 	}
 
+	//build result vector
 	std::vector<ImageHandle> result;
 	result.reserve(imagePaths.size());
 
 	ImageHandle invalidHandle;
 	invalidHandle.index = invalidIndex;
-
-	//build result vector
+	
 	for (const fs::path path : imagePaths) {
 		if (path == "") {
 			result.push_back(invalidHandle);
@@ -2115,7 +2124,6 @@ void RenderFrontend::initImages() {
     //post process buffer
     {
         ImageDescription desc;
-        desc.initialData = std::vector<uint8_t>{};
         desc.width = m_screenWidth;
         desc.height = m_screenHeight;
         desc.depth = 1;
@@ -2126,8 +2134,8 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 0;
         desc.autoCreateMips = false;
 
-        m_postProcessBuffers[0] = gRenderBackend.createImage(desc);
-        m_postProcessBuffers[1] = gRenderBackend.createImage(desc);
+        m_postProcessBuffers[0] = gRenderBackend.createImage(desc, nullptr, 0);
+        m_postProcessBuffers[1] = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //history buffer for TAA
     {
@@ -2142,8 +2150,8 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_historyBuffers[0] = gRenderBackend.createImage(desc);
-        m_historyBuffers[1] = gRenderBackend.createImage(desc);
+        m_historyBuffers[0] = gRenderBackend.createImage(desc, nullptr, 0);
+        m_historyBuffers[1] = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //shadow map cascades
     {
@@ -2160,7 +2168,7 @@ void RenderFrontend::initImages() {
 
         m_shadowMaps.reserve(maxSunShadowCascadeCount);
         for (uint32_t i = 0; i < maxSunShadowCascadeCount; i++) {
-            const auto shadowMap = gRenderBackend.createImage(desc);
+            const auto shadowMap = gRenderBackend.createImage(desc, nullptr, 0);
             m_shadowMaps.push_back(shadowMap);
         }
     }
@@ -2184,7 +2192,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = m_specularSkyProbeMipCount;
         desc.autoCreateMips = false;
 
-        m_specularSkyProbe = gRenderBackend.createImage(desc);
+        m_specularSkyProbe = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //diffuse sky probe
     {
@@ -2199,7 +2207,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 0;
         desc.autoCreateMips = false;
 
-        m_diffuseSkyProbe = gRenderBackend.createImage(desc);
+        m_diffuseSkyProbe = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //sky cubemap
     {
@@ -2214,7 +2222,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 8;
         desc.autoCreateMips = false;
 
-        m_skyTexture = gRenderBackend.createImage(desc);
+        m_skyTexture = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //brdf LUT
     {
@@ -2229,7 +2237,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_brdfLut = gRenderBackend.createImage(desc);
+        m_brdfLut = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //sky transmission lut
     {
@@ -2244,7 +2252,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_skyTransmissionLut = gRenderBackend.createImage(desc);
+        m_skyTransmissionLut = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //sky multiscatter lut
     {
@@ -2259,7 +2267,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_skyMultiscatterLut = gRenderBackend.createImage(desc);
+        m_skyMultiscatterLut = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //sky lut
     {
@@ -2274,7 +2282,7 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_skyLut = gRenderBackend.createImage(desc);
+        m_skyLut = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //min/max depth pyramid
     {
@@ -2288,7 +2296,7 @@ void RenderFrontend::initImages() {
         desc.format = ImageFormat::RG32_sFloat;
         desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
 
-        m_minMaxDepthPyramid = gRenderBackend.createImage(desc);
+        m_minMaxDepthPyramid = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //scene and history luminance
     {
@@ -2303,8 +2311,8 @@ void RenderFrontend::initImages() {
         desc.manualMipCount = 1;
         desc.autoCreateMips = false;
 
-        m_sceneLuminance = gRenderBackend.createImage(desc);
-        m_lastFrameLuminance = gRenderBackend.createImage(desc);
+        m_sceneLuminance = gRenderBackend.createImage(desc, nullptr, 0);
+        m_lastFrameLuminance = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //noise textures
     for (int i = 0; i < noiseTextureCount; i++) {
@@ -2319,9 +2327,10 @@ void RenderFrontend::initImages() {
         desc.autoCreateMips = false;
 
 		const size_t channelCount = 2;
-		desc.initialData = generateBlueNoiseTexture(glm::ivec2(noiseTextureWidth, noiseTextureHeight), channelCount);
+		const std::vector<uint8_t> blueNoiseData = 
+			generateBlueNoiseTexture(glm::ivec2(noiseTextureWidth, noiseTextureHeight), channelCount);
 
-        m_noiseTextures.push_back(gRenderBackend.createImage(desc));
+        m_noiseTextures.push_back(gRenderBackend.createImage(desc, blueNoiseData.data(), sizeof(uint8_t) * blueNoiseData.size()));
 		m_globalShaderInfo.noiseTextureIndices[i] = gRenderBackend.getImageGlobalTextureArrayIndex(m_noiseTextures.back());
     }
 	//indirect diffuse Y component spherical harmonics
@@ -2337,11 +2346,11 @@ void RenderFrontend::initImages() {
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_indirectDiffuseHistory_Y_SH[0] = gRenderBackend.createImage(desc);
-		m_indirectDiffuseHistory_Y_SH[1] = gRenderBackend.createImage(desc);
+		m_indirectDiffuseHistory_Y_SH[0] = gRenderBackend.createImage(desc, nullptr, 0);
+		m_indirectDiffuseHistory_Y_SH[1] = gRenderBackend.createImage(desc, nullptr, 0);
 
-		m_indirectDiffuse_Y_SH[0] = gRenderBackend.createImage(desc);
-		m_indirectDiffuse_Y_SH[1] = gRenderBackend.createImage(desc);
+		m_indirectDiffuse_Y_SH[0] = gRenderBackend.createImage(desc, nullptr, 0);
+		m_indirectDiffuse_Y_SH[1] = gRenderBackend.createImage(desc, nullptr, 0);
 	}
 	//indirect diffuse CoCg component
 	{
@@ -2356,10 +2365,10 @@ void RenderFrontend::initImages() {
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_indirectDiffuse_CoCg[0] = gRenderBackend.createImage(desc);
-		m_indirectDiffuse_CoCg[1] = gRenderBackend.createImage(desc);
-		m_indirectDiffuseHistory_CoCg[0] = gRenderBackend.createImage(desc);
-		m_indirectDiffuseHistory_CoCg[1] = gRenderBackend.createImage(desc);
+		m_indirectDiffuse_CoCg[0] = gRenderBackend.createImage(desc, nullptr, 0);
+		m_indirectDiffuse_CoCg[1] = gRenderBackend.createImage(desc, nullptr, 0);
+		m_indirectDiffuseHistory_CoCg[0] = gRenderBackend.createImage(desc, nullptr, 0);
+		m_indirectDiffuseHistory_CoCg[1] = gRenderBackend.createImage(desc, nullptr, 0);
 	}
 	//world space normal buffer
 	{
@@ -2374,7 +2383,7 @@ void RenderFrontend::initImages() {
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_worldSpaceNormalImage = gRenderBackend.createImage(desc);
+		m_worldSpaceNormalImage = gRenderBackend.createImage(desc, nullptr, 0);
 	}
 	//half res depth
 	{
@@ -2387,7 +2396,7 @@ void RenderFrontend::initImages() {
 		desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
 		desc.mipCount = MipCount::One;
 		
-		m_depthHalfRes = gRenderBackend.createImage(desc);
+		m_depthHalfRes = gRenderBackend.createImage(desc, nullptr, 0);
 	}
 	//indirect lighting full res Y component spherical harmonics
 	{
@@ -2402,7 +2411,7 @@ void RenderFrontend::initImages() {
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_indirectLightingFullRes_Y_SH = gRenderBackend.createImage(desc);
+		m_indirectLightingFullRes_Y_SH = gRenderBackend.createImage(desc, nullptr, 0);
 	}
 	//indirect lighting full res CoCg component
 	{
@@ -2417,7 +2426,7 @@ void RenderFrontend::initImages() {
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_indirectLightingFullRes_CoCg = gRenderBackend.createImage(desc);
+		m_indirectLightingFullRes_CoCg = gRenderBackend.createImage(desc, nullptr, 0);
 	}
 	const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
 	//scattering/transmittance froxels
@@ -2433,7 +2442,7 @@ void RenderFrontend::initImages() {
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_scatteringTransmittanceVolume = gRenderBackend.createImage(desc);
+		m_scatteringTransmittanceVolume = gRenderBackend.createImage(desc, nullptr, 0);
 	}
 	//volumetric lighting integration froxels
 	{
@@ -2448,9 +2457,9 @@ void RenderFrontend::initImages() {
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_volumetricIntegrationVolume = gRenderBackend.createImage(desc);
-		m_volumetricLightingHistory[0] = gRenderBackend.createImage(desc);
-		m_volumetricLightingHistory[1] = gRenderBackend.createImage(desc);
+		m_volumetricIntegrationVolume = gRenderBackend.createImage(desc, nullptr, 0);
+		m_volumetricLightingHistory[0] = gRenderBackend.createImage(desc, nullptr, 0);
+		m_volumetricLightingHistory[1] = gRenderBackend.createImage(desc, nullptr, 0);
 	}
 	//volume material froxels
 	{
@@ -2465,7 +2474,7 @@ void RenderFrontend::initImages() {
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
 
-		m_volumeMaterialVolume = gRenderBackend.createImage(desc);
+		m_volumeMaterialVolume = gRenderBackend.createImage(desc, nullptr, 0);
 	}
 	//perlin noise 3D
 	{
@@ -2481,8 +2490,9 @@ void RenderFrontend::initImages() {
 		desc.mipCount = MipCount::One;
 		desc.manualMipCount = 1;
 		desc.autoCreateMips = false;
-		desc.initialData = generate3DPerlinNoise(glm::ivec3(noiseResolution), 8);
-		m_perlinNoise3D = gRenderBackend.createImage(desc);
+
+		const std::vector<uint8_t> perlinNoiseData = generate3DPerlinNoise(glm::ivec3(noiseResolution), 8);
+		m_perlinNoise3D = gRenderBackend.createImage(desc, perlinNoiseData.data(), sizeof(uint8_t) * perlinNoiseData.size());
 	}
 	//bloom texture
 	{
@@ -2496,8 +2506,8 @@ void RenderFrontend::initImages() {
 		desc.mipCount = MipCount::Manual;
 		desc.manualMipCount = bloomMipCount;
 		desc.autoCreateMips = false;
-		m_bloomUpscaleTexture = gRenderBackend.createImage(desc);
-		m_bloomDownscaleTexture = gRenderBackend.createImage(desc);
+		m_bloomUpscaleTexture = gRenderBackend.createImage(desc, nullptr, 0);
+		m_bloomDownscaleTexture = gRenderBackend.createImage(desc, nullptr, 0);
 	}
 }
 
@@ -2636,12 +2646,11 @@ void RenderFrontend::initRenderTargets() {
 			desc.type = ImageType::Type2D;
 			desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
 
-			m_frameRenderTargets[i].motionBuffer = gRenderBackend.createImage(desc);
+			m_frameRenderTargets[i].motionBuffer = gRenderBackend.createImage(desc, nullptr, 0);
 		}
         //color buffer
         {
             ImageDescription desc;
-            desc.initialData = std::vector<uint8_t>{};
             desc.width = m_screenWidth;
             desc.height = m_screenHeight;
             desc.depth = 1;
@@ -2652,12 +2661,11 @@ void RenderFrontend::initRenderTargets() {
             desc.manualMipCount = 0;
             desc.autoCreateMips = false;
 
-            m_frameRenderTargets[i].colorBuffer = gRenderBackend.createImage(desc);
+            m_frameRenderTargets[i].colorBuffer = gRenderBackend.createImage(desc, nullptr, 0);
         }
         //depth buffer
         {
             ImageDescription desc;
-            desc.initialData = std::vector<uint8_t>{};
             desc.width = m_screenWidth;
             desc.height = m_screenHeight;
             desc.depth = 1;
@@ -2668,7 +2676,7 @@ void RenderFrontend::initRenderTargets() {
             desc.manualMipCount = 0;
             desc.autoCreateMips = false;
 
-            m_frameRenderTargets[i].depthBuffer = gRenderBackend.createImage(desc);
+            m_frameRenderTargets[i].depthBuffer = gRenderBackend.createImage(desc, nullptr, 0);
         }
         //color framebuffer
         {

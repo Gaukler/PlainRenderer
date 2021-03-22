@@ -196,7 +196,7 @@ public:
 
 	std::vector<MeshHandle> createMeshes(const std::vector<MeshBinary>& meshes);
 
-	ImageHandle             createImage(const ImageDescription& description);
+	ImageHandle             createImage(const ImageDescription& description, const void* initialData, const size_t initialDataSize);
 	UniformBufferHandle     createUniformBuffer(const UniformBufferDescription& desc);
 	StorageBufferHandle     createStorageBuffer(const StorageBufferDescription& desc);
 	SamplerHandle           createSampler(const SamplerDescription& description);
@@ -252,7 +252,8 @@ private:
 	VkDebugReportCallbackEXT    m_debugCallback = VK_NULL_HANDLE;
 
 #ifdef USE_VK_VALIDATION_LAYERS
-	const bool m_useValidationLayers = true;
+	//const bool m_useValidationLayers = true;
+	const bool m_useValidationLayers = false;
 #else
 	const bool m_useValidationLayers = false;
 #endif

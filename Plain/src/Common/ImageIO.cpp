@@ -14,7 +14,8 @@
 //reenable
 #pragma warning( pop )
 
-bool loadImage(const std::filesystem::path& path, const bool isFullPath, ImageDescription* outImage) {
+bool loadImage(const std::filesystem::path& path, const bool isFullPath,
+	ImageDescription* outDescription, std::vector<uint8_t>* outData) {
 
     std::filesystem::path fullPath;
     if (isFullPath) {
@@ -25,7 +26,7 @@ bool loadImage(const std::filesystem::path& path, const bool isFullPath, ImageDe
     }
 
     if (path.extension().string() == ".dds") {
-        return loadDDSFile(path, outImage);
+        return loadDDSFile(path, outDescription, outData);
     }
 
 	int width, height, components;
@@ -69,41 +70,41 @@ bool loadImage(const std::filesystem::path& path, const bool isFullPath, ImageDe
         }
     }
 
-    outImage->width = (uint32_t)width;
-    outImage->height = (uint32_t)height;
-    outImage->depth = 1;
-    outImage->mipCount = MipCount::FullChain;
-    outImage->autoCreateMips = true;
-    outImage->type = ImageType::Type2D;
-    outImage->format = format;
-    outImage->autoCreateMips = true;
-    outImage->usageFlags = ImageUsageFlags::Sampled;
+    outDescription->width = (uint32_t)width;
+    outDescription->height = (uint32_t)height;
+    outDescription->depth = 1;
+    outDescription->mipCount = MipCount::FullChain;
+    outDescription->autoCreateMips = true;
+    outDescription->type = ImageType::Type2D;
+    outDescription->format = format;
+    outDescription->autoCreateMips = true;
+    outDescription->usageFlags = ImageUsageFlags::Sampled;
 
     /*
     simple copy 
     */
     if (components == 4 || components == 1 || components == 2) {
-        outImage->initialData.resize(dataSize);
-        memcpy(outImage->initialData.data(), data, dataSize);
+        outData->resize(dataSize);
+        memcpy(outData->data(), data, dataSize);
     }
     /*
     requires padding to 4 compontens
     */
     else {
-        outImage->initialData.reserve(size_t(dataSize * 1.25));
+		outData->reserve(size_t(dataSize * 1.25));
         if (isHdr) {
             for (int i = 0; i < dataSize; i += 12) {
                 /*
                 12 bytes data for rgb
                 */
                 for (int j = 0; j < 12; j++) {
-                    outImage->initialData.push_back(data[i + j]);
+					outData->push_back(data[i + j]);
                 }
                 /*
                 4 byte padding for alpha channel
                 */
                 for (int j = 0; j < 4; j++) {
-                    outImage->initialData.push_back(1);
+					outData->push_back(1);
                 }
             }
         }
@@ -112,13 +113,13 @@ bool loadImage(const std::filesystem::path& path, const bool isFullPath, ImageDe
                 /*
                 3 bytes data for rgb
                 */
-                outImage->initialData.push_back(data[i]);
-                outImage->initialData.push_back(data[i + 1]);
-                outImage->initialData.push_back(data[i + 2]);
+                outData->push_back(data[i]);
+                outData->push_back(data[i + 1]);
+                outData->push_back(data[i + 2]);
                 /*
                 single byte padding for alpha
                 */
-                outImage->initialData.push_back(0xff); //fill with 1, otherwise section will be cut out by alpha clipping
+				outData->push_back(0xff); //fill with 1, otherwise section will be cut out by alpha clipping
             }
         }
     }
@@ -351,7 +352,7 @@ namespace DDS_pixelFormatCompressionCodes {
 	const uint32_t BC5	= 0x32495441;
 }
 
-bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outImage) {
+bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outDescription, std::vector<uint8_t>* outData) {
 
     //open file
     std::fstream file;
@@ -376,25 +377,25 @@ bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outIma
     DDS_header header;
     file.read((char*)&header, sizeof(header));
     
-    outImage->width = header.width;
-    outImage->height = header.height;
-    outImage->depth = std::max(header.depth, (uint32_t)1);
-    if (outImage->depth == 1) {
-        if (outImage->height == 1) {
-            outImage->type = ImageType::Type1D;
+    outDescription->width = header.width;
+    outDescription->height = header.height;
+    outDescription->depth = std::max(header.depth, (uint32_t)1);
+    if (outDescription->depth == 1) {
+        if (outDescription->height == 1) {
+            outDescription->type = ImageType::Type1D;
         }
         else {
-            outImage->type = ImageType::Type2D;
+			outDescription->type = ImageType::Type2D;
         }
     }
     else {
-        outImage->type = ImageType::Type3D;
+		outDescription->type = ImageType::Type3D;
     }
     
-    outImage->mipCount = MipCount::Manual;
-    outImage->manualMipCount = glm::max(header.mipMapCount, uint32_t(1));
-    outImage->autoCreateMips = false;
-    outImage->usageFlags = ImageUsageFlags::Sampled;
+    outDescription->mipCount = MipCount::Manual;
+    outDescription->manualMipCount = glm::max(header.mipMapCount, uint32_t(1));
+    outDescription->autoCreateMips = false;
+    outDescription->usageFlags = ImageUsageFlags::Sampled;
 
     bool isUsingDX10Header = false;
 	const bool isCompressedFormat = header.pixelFormat.flags & DDS_pixelformatFlags::fourCC;
@@ -407,7 +408,7 @@ bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outIma
         DDS_headerDX10 headerDX10;
         file.read((char*)&headerDX10, sizeof(DDS_headerDX10));
         if (headerDX10.dxgiFormat == DXGI_FORMAT_R16_FLOAT) {
-            outImage->format = ImageFormat::R16_sFloat;
+			outDescription->format = ImageFormat::R16_sFloat;
         }
         else {
             std::cout << "DDS unsupported texture format: " << filename << std::endl;
@@ -415,13 +416,13 @@ bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outIma
         }
     }
     else if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::DXT1) {
-        outImage->format = ImageFormat::BC1;
+		outDescription->format = ImageFormat::BC1;
     }
     else if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::DXT5) {
-        outImage->format = ImageFormat::BC3;
+		outDescription->format = ImageFormat::BC3;
     }
 	else if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::BC5) {
-		outImage->format = ImageFormat::BC5;
+		outDescription->format = ImageFormat::BC5;
 	}
     else {
         std::cout << "DDS unsupported texture format: " << filename << std::endl;
@@ -435,8 +436,8 @@ bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outIma
     }
 
     //copy data
-    outImage->initialData.resize(dataSize);
-    file.read((char*)outImage->initialData.data(), dataSize);
+	outData->resize(dataSize);
+    file.read((char*)outData->data(), dataSize);
 
     file.close();
     return true;
@@ -457,9 +458,9 @@ DDS_PixelFormat getDDSPixelFormat() {
     return pixelFormat;
 }
 
-void writeDDSFile(const std::filesystem::path& pathAbsolute, const ImageDescription& imageDescription) {
+void writeDDSFile(const std::filesystem::path& pathAbsolute, const ImageDescription& imageDescription, const std::vector<uint8_t>& data) {
     //divide initialData size by four because we're going from uint8 to uint32
-    const size_t binaryDataSize = sizeof(ddsMagicNumber) + sizeof(DDS_header) + sizeof(DDS_headerDX10) + imageDescription.initialData.size() / 4;
+    const size_t binaryDataSize = sizeof(ddsMagicNumber) + sizeof(DDS_header) + sizeof(DDS_headerDX10) + data.size() / 4;
     std::vector<uint32_t> binaryData;
     binaryData.reserve(binaryDataSize);
 
@@ -567,16 +568,16 @@ void writeDDSFile(const std::filesystem::path& pathAbsolute, const ImageDescript
         binaryData.push_back((reinterpret_cast<uint32_t*>(&headerDX10))[i]);
     }
 
-    for (size_t i = 0; i < imageDescription.initialData.size(); i+=4) {
+    for (size_t i = 0; i < data.size(); i+=4) {
         union Value {
             uint32_t dword;
             uint8_t bytes[4];
         };
         Value v;
-        v.bytes[0] = imageDescription.initialData[i];
-        v.bytes[1] = imageDescription.initialData[i+1];
-        v.bytes[2] = imageDescription.initialData[i+2];
-        v.bytes[3] = imageDescription.initialData[i+3];
+        v.bytes[0] = data[i];
+        v.bytes[1] = data[i+1];
+        v.bytes[2] = data[i+2];
+        v.bytes[3] = data[i+3];
         binaryData.push_back(v.dword);
     }
 

@@ -389,7 +389,7 @@ void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const u
         m_images[image.index].desc.height = height;
         const auto imageDesc = m_images[image.index].desc;
         destroyImage(image);
-        ImageHandle newHandle = createImage(imageDesc);
+        ImageHandle newHandle = createImage(imageDesc, nullptr, 0);
         assert(newHandle.index == image.index);
     }
 
@@ -966,7 +966,7 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
     return handles;
 }
 
-ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
+ImageHandle RenderBackend::createImage(const ImageDescription& desc, const void* initialData, const size_t initialDataSize) {
 
 	const VkFormat format = imageFormatToVulkanFormat(desc.format);
 	const VkImageAspectFlagBits aspectFlag = imageFormatToVkAspectFlagBits(desc.format);
@@ -1000,7 +1000,7 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
 	if (bool(desc.usageFlags & ImageUsageFlags::Storage)) {
 		usage |= VK_IMAGE_USAGE_STORAGE_BIT;
 	}
-	if (desc.initialData.size() > 0) {
+	if (initialDataSize > 0) {
 		usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	}
 	if (desc.autoCreateMips) {
@@ -1066,8 +1066,8 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc) {
 	}
 
 	//fill with data
-	if (desc.initialData.size() != 0) {
-		transferDataIntoImage(image, desc.initialData.data(), desc.initialData.size());
+	if (initialDataSize != 0) {
+		transferDataIntoImage(image, initialData, initialDataSize);
 	}
 
 	//generate mipmaps
