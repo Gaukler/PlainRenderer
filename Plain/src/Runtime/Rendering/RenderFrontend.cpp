@@ -20,6 +20,7 @@
 #include "Common/ImageIO.h"
 #include "Common/VolumeInfo.h"
 #include "Common/sdfUtilities.h"
+#include "Common/JobSystem.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -549,6 +550,17 @@ std::vector<MeshHandleFrontend> RenderFrontend::registerMeshes(const std::vector
 	std::vector<MeshHandleFrontend> meshHandlesFrontend;
 	meshHandlesFrontend.reserve(backendHandles.size());
 	
+	std::vector<fs::path> imagePaths;
+	const size_t texturesPerMesh = 4;
+	imagePaths.reserve(meshes.size() * texturesPerMesh);
+	for (const MeshBinary& mesh : meshes) {
+		imagePaths.push_back(mesh.texturePaths.albedoTexturePath);
+		imagePaths.push_back(mesh.texturePaths.normalTexturePath);
+		imagePaths.push_back(mesh.texturePaths.specularTexturePath);
+		imagePaths.push_back(mesh.texturePaths.sdfTexturePath);
+	}
+	const std::vector<ImageHandle> meshImageHandles = loadImagesFromPaths(imagePaths);
+
 	assert(backendHandles.size() == meshes.size());
 	for (int i = 0; i < backendHandles.size(); i++) {
 		MeshHandleFrontend meshHandleFrontend;
@@ -564,20 +576,20 @@ std::vector<MeshHandleFrontend> RenderFrontend::registerMeshes(const std::vector
 		meshFrontend.meanAlbedo = mesh.meanAlbedo;
 
 		//material
-		ImageHandle albedoHandle;
-		if (!loadImageFromPath(mesh.texturePaths.albedoTexturePath, &albedoHandle)) {
+		ImageHandle albedoHandle = meshImageHandles[4 * i + 0];
+		if (albedoHandle.index == invalidIndex) {
 			albedoHandle = m_defaultTextures.diffuse;
 		}
-		ImageHandle normalHandle;
-		if (!loadImageFromPath(mesh.texturePaths.normalTexturePath, &normalHandle)) {
+		ImageHandle normalHandle = meshImageHandles[4 * i + 1];
+		if (normalHandle.index == invalidIndex) {
 			normalHandle = m_defaultTextures.normal;
 		}
-		ImageHandle specularHandle;
-		if (!loadImageFromPath(mesh.texturePaths.specularTexturePath, &specularHandle)) {
+		ImageHandle specularHandle = meshImageHandles[4 * i + 2];
+		if (specularHandle.index == invalidIndex) {
 			specularHandle = m_defaultTextures.specular;
 		}
-		ImageHandle sdfHandle;
-		if (!loadImageFromPath(mesh.texturePaths.sdfTexturePath, &sdfHandle)) {
+		ImageHandle sdfHandle = meshImageHandles[4 * i + 3];
+		if (sdfHandle.index == invalidIndex) {
 			sdfHandle = m_defaultTextures.sdf;
 		}
 
@@ -1775,27 +1787,62 @@ void RenderFrontend::resizeIndirectLightingBuffers() {
 		}, m_screenWidth / divider, m_screenHeight / divider);
 }
 
-bool RenderFrontend::loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle) {
+std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<std::filesystem::path>& imagePaths) {
 
-    if (path == "") {
-        return false;
-    }
+	//create set of paths which need to be loaded
+	std::unordered_set <std::string> requiredDataSet;
+	for (const fs::path path : imagePaths) {
+		if (path == "") {
+			continue;
+		}
+		if (m_textureMap.find(path.string()) == m_textureMap.end()) {
+			requiredDataSet.insert(path.string());
+		}
+	}
 
-    if (m_textureMap.find(path.string()) == m_textureMap.end()) {
-        ImageDescription image;
-        if (loadImage(path, true, &image)) {
-            *outImageHandle = gRenderBackend.createImage(image);
-            m_textureMap[path.string()] = *outImageHandle;
-            return true;
-        }
-        else {
-            return false;
-        }
-    }
-    else {
-        *outImageHandle = m_textureMap[path.string()];
-        return true;
-    }
+	//parallel load of required images
+	JobSystem::Counter loadingFinised;
+	std::mutex mapMutex;
+	std::unordered_map<std::string, ImageDescription> pathToDescriptionMap;
+
+	for (const std::string &path : requiredDataSet) {
+		JobSystem::addJob([path, &pathToDescriptionMap, &mapMutex](int workerIndex) {
+			ImageDescription image;
+			if (loadImage(path, true, &image)) {
+				mapMutex.lock();
+				pathToDescriptionMap[path] = image;
+				mapMutex.unlock();
+			}
+		}, &loadingFinised);
+	}
+	JobSystem::waitOnCounter(loadingFinised);
+
+	//create images and store in map
+	for (const fs::path path : requiredDataSet) {
+		m_textureMap[path.string()] = gRenderBackend.createImage(pathToDescriptionMap[path.string()]);
+	}
+
+	std::vector<ImageHandle> result;
+	result.reserve(imagePaths.size());
+
+	ImageHandle invalidHandle;
+	invalidHandle.index = invalidIndex;
+
+	//build result vector
+	for (const fs::path path : imagePaths) {
+		if (path == "") {
+			result.push_back(invalidHandle);
+		}
+
+		if (m_textureMap.find(path.string()) == m_textureMap.end()) {
+			result.push_back(m_textureMap[path.string()]);
+		}
+		else {
+			//means loading failed
+			result.push_back(m_textureMap[path.string()]);
+		}
+	}
+	return result;
 }
 
 void RenderFrontend::skyIBLConvolution() {

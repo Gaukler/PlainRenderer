@@ -202,8 +202,10 @@ private:
 
 	void resizeIndirectLightingBuffers();
 
-    //checks a map of all loaded images if it is avaible, returns existing image if possible    
-    bool loadImageFromPath(std::filesystem::path path, ImageHandle* outImageHandle);
+	//load multiple images, loading from disk is parallel
+    //checks a map of all loaded images if it is avaible, returns existing image if possible
+	//if image could not be loaded ImageHandle.index is set to invalidIndex
+	std::vector<ImageHandle> loadImagesFromPaths(const std::vector<std::filesystem::path>& imagePaths);
     std::unordered_map<std::string, ImageHandle> m_textureMap; //using string instead of path to use default string hash
 
     void computeBRDFLut();
