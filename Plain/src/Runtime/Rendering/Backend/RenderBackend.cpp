@@ -218,6 +218,7 @@ void RenderBackend::setup(GLFWwindow* window) {
 void RenderBackend::shutdown() {
 
 	waitForRenderFinished();
+	m_shaderFileManager.shutdown();
 
 	if (m_useValidationLayers) {
 		PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT =

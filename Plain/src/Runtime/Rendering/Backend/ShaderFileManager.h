@@ -52,6 +52,7 @@ struct GraphicShaderSourceInfo {
 class ShaderFileManager {
 public:    
 	void setup();
+	void shutdown();
 
     ComputeShaderHandle addComputeShader(const ShaderDescription& computeShaderDesc);
     GraphicShadersHandle addGraphicShaders(const GraphicPassShaderDescriptions& graphicShadersDesc);
@@ -101,6 +102,7 @@ private:
     std::vector<fs::file_time_type> m_fileLastChanges;
 
 	std::thread m_directoryWatcher;
+	bool m_isRunning = true;
 
 	std::mutex m_outOfDateListsMutex;
 	std::vector<size_t> m_outOfDateComputeIndices;

@@ -34,10 +34,16 @@ std::vector<fs::path> parseIncludePathsFromGLSL(const std::vector<char>& glslCod
 }
 
 void ShaderFileManager::setup() {
+	m_isRunning = true;
 	updateFileLastChangeTimes();
 	m_directoryWatcher = std::thread([this]() {
 		fileWatcherThread();
 	});
+}
+
+void ShaderFileManager::shutdown() {
+	m_isRunning = false;
+	m_directoryWatcher.join();
 }
 
 void ShaderFileManager::fileWatcherThread() {
@@ -49,29 +55,38 @@ void ShaderFileManager::fileWatcherThread() {
 	HANDLE watchHandle = FindFirstChangeNotificationW((WCHAR*)shaderPath.c_str(), true, FILE_NOTIFY_CHANGE_LAST_WRITE);
 	assert(INVALID_HANDLE_VALUE);
 
-	while (true) {
+	const DWORD waitInMs = 10;
+	while (m_isRunning) {
 
-		WaitForSingleObject(watchHandle, INFINITE);
+		const DWORD waitResult = WaitForSingleObject(watchHandle, waitInMs);
 		FindNextChangeNotification(watchHandle);
+		if (waitResult == WAIT_OBJECT_0) {
+			//event occured
+			//writing can still be in progress when watchHandle is signaled
+			//FIXME: robust solution
+			Sleep(1);
+			updateFileLastChangeTimes();
 
-		//writing can still be in progress when watchHandle is signaled
-		//FIXME: robust solution
-		Sleep(1);
-		updateFileLastChangeTimes();
+			m_outOfDateListsMutex.lock();
+			for (int i = 0; i < m_computeShaderSourceInfos.size(); i++) {
+				if (isComputeShaderCacheOutOfDate(m_computeShaderSourceInfos[i])) {
+					m_outOfDateComputeIndices.push_back(i);
+				}
+			}
+			for (int i = 0; i < m_graphicShaderSourceInfos.size(); i++) {
+				if (areGraphicShadersCachesOutOfDate(m_graphicShaderSourceInfos[i])) {
+					m_outOfDateGraphicIndices.push_back(i);
+				}
+			}
 
-		m_outOfDateListsMutex.lock();
-		for (int i = 0; i < m_computeShaderSourceInfos.size(); i++) {
-			if (isComputeShaderCacheOutOfDate(m_computeShaderSourceInfos[i])) {
-				m_outOfDateComputeIndices.push_back(i);
-			}
+			m_outOfDateListsMutex.unlock();
 		}
-		for (int i = 0; i < m_graphicShaderSourceInfos.size(); i++) {
-			if (areGraphicShadersCachesOutOfDate(m_graphicShaderSourceInfos[i])) {
-				m_outOfDateGraphicIndices.push_back(i);
-			}
+		else if(waitResult == WAIT_TIMEOUT){
+			//repeat loop			
 		}
-		
-		m_outOfDateListsMutex.unlock();
+		else if (waitResult == WAIT_FAILED) {
+			std::cout << "ShaderFileManager::fileWatcherThread Error: " << GetLastError() << "\n";
+		}
 	}
 }
 
