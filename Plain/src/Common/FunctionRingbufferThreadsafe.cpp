@@ -10,7 +10,7 @@ FunctionRingbufferThreadsafe::FunctionRingbufferThreadsafe(const size_t bufferSi
 void FunctionRingbufferThreadsafe::add(const std::function<void(int)> function) {
 	std::unique_lock uniqueLock(m_mutex);
 
-	if (m_elementCount == m_buffer.size()) {
+	while(m_elementCount == m_buffer.size()) {
 		//buffer already full, need to wait
 		m_fullCondition.wait(uniqueLock);
 	}
@@ -29,7 +29,7 @@ void FunctionRingbufferThreadsafe::add(const std::function<void(int)> function) 
 std::function<void(int)> FunctionRingbufferThreadsafe::popFront() {
 	std::unique_lock uniqueLock(m_mutex);
 
-	if (m_elementCount == 0) {
+	while(m_elementCount == 0) {
 		//buffer is empty, need to wait
 		m_emptyCondition.wait(uniqueLock);
 	}
