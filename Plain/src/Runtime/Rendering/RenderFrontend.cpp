@@ -3482,11 +3482,19 @@ glm::ivec2 RenderFrontend::computeSinglePassMipChainDispatchCount(const uint32_t
 }
 
 void RenderFrontend::drawUi() {
+
+	m_renderTimingTimeSinceLastUpdate += m_globalShaderInfo.deltaTime;
+	const bool updateTimings = m_renderTimingTimeSinceLastUpdate > m_renderTimingUpdateFrequency;
+	if (updateTimings) {
+		m_latestCPUTimeStatMs = gRenderBackend.getLastFrameCPUTime() * 1000;
+		m_latestDeltaTimeStatMs = m_globalShaderInfo.deltaTime * 1000;
+	}
+
     //rendering stats
     {
         ImGui::Begin("Rendering stats");
-        ImGui::Text(("DeltaTime: " + std::to_string(m_globalShaderInfo.deltaTime * 1000) + "ms").c_str());
-		ImGui::Text(("CPU Time: " + std::to_string(gRenderBackend.getLastFrameCPUTime() * 1000) + "ms").c_str());
+        ImGui::Text(("DeltaTime: " + std::to_string(m_latestDeltaTimeStatMs) + "ms").c_str());
+		ImGui::Text(("CPU Time: " + std::to_string(m_latestCPUTimeStatMs) + "ms").c_str());
         ImGui::Text(("Mesh count: " + std::to_string(m_currentMeshCount)).c_str());
         ImGui::Text(("Main pass drawcalls: " + std::to_string(m_currentMainPassDrawcallCount)).c_str());
         ImGui::Text(("Shadow map drawcalls: " + std::to_string(m_currentShadowPassDrawcallCount)).c_str());
@@ -3505,8 +3513,7 @@ void RenderFrontend::drawUi() {
 
     //pass timings shown in columns
     {
-        m_renderTimingTimeSinceLastUpdate += m_globalShaderInfo.deltaTime;
-        if (m_renderTimingTimeSinceLastUpdate > m_renderTimingUpdateFrequency) {
+        if (updateTimings) {
             m_currentRenderTimings = gRenderBackend.getRenderpassTimings();
             m_renderTimingTimeSinceLastUpdate = 0.f;
         }

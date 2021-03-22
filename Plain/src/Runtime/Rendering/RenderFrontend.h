@@ -227,6 +227,8 @@ private:
     std::vector<RenderPassTime> m_currentRenderTimings;
     float m_renderTimingUpdateFrequency = 0.2f;
     float m_renderTimingTimeSinceLastUpdate = 0.f;
+	float m_latestCPUTimeStatMs = 0.f;		//not updated every frame, only use as performance metric
+	float m_latestDeltaTimeStatMs = 0.f;	//not updated every frame, only use as performance metric
 
 	glm::ivec3 m_sceneSDFResolution = glm::ivec3(1);
 
