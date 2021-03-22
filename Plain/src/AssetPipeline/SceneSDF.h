@@ -3,4 +3,8 @@
 #include "Common/MeshData.h"
 #include "ImageDescription.h"
 
-std::vector<ImageDescription> computeSceneSDFTextures(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList);
+struct SceneSDFTextures {
+	std::vector<ImageDescription> descriptions;
+	std::vector<std::vector<uint8_t>> data;
+};
+SceneSDFTextures computeSceneSDFTextures(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList);

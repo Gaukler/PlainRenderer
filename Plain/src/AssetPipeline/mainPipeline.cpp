@@ -48,14 +48,15 @@ int main(const int argc, char* argv[]) {
         std::cout << "Saved binary file: " << binaryPathRelative << "\n";
 
         std::cout << "Computing signed distance fields...\n";
-        const std::vector<ImageDescription> sceneSDFTextures = computeSceneSDFTextures(scene.meshes, AABBList);
+        const SceneSDFTextures sceneSDFTextures = computeSceneSDFTextures(scene.meshes, AABBList);
 
-		assert(sceneSDFTextures.size() == scene.meshes.size());
-		for (size_t i = 0; i < sceneSDFTextures.size(); i++) {
-			const ImageDescription sdfTexture = sceneSDFTextures[i];
+		assert(sceneSDFTextures.descriptions.size() == scene.meshes.size());
+		assert(sceneSDFTextures.descriptions.size() == sceneSDFTextures.data.size());
+
+		for (size_t i = 0; i < sceneSDFTextures.descriptions.size(); i++) {
 			const std::filesystem::path sdfTexturePath = scene.meshes[i].texturePaths.sdfTexturePath;
 			//FIXME: writing fails if target folder ("sdfTextures") does not exist
-			writeDDSFile(sdfTexturePath, sdfTexture);
+			writeDDSFile(sdfTexturePath, sceneSDFTextures.descriptions[i], sceneSDFTextures.data[i]);
 			std::cout << "Saved SDF texture: "<< sdfTexturePath << "\n";
 		}
     }

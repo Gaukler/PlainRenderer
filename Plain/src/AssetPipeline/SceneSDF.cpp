@@ -94,10 +94,11 @@ float computePointTrianglesClosestDistance(const glm::vec3 p, const std::vector<
 	return sqrt(abs(closestD));
 }
 
-std::vector<ImageDescription> computeSceneSDFTextures(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList) {
+SceneSDFTextures computeSceneSDFTextures(const std::vector<MeshData>& meshes, const std::vector<AxisAlignedBoundingBox>& AABBList) {
 
-	std::vector<ImageDescription> result;
-	result.resize(meshes.size());
+	SceneSDFTextures result;
+	result.descriptions.resize(meshes.size());
+	result.data.resize(meshes.size());
 
 	JobSystem::Counter workFinised;
 	const std::chrono::system_clock::time_point startTime = std::chrono::system_clock::now();
@@ -131,9 +132,9 @@ std::vector<ImageDescription> computeSceneSDFTextures(const std::vector<MeshData
 			sdfTexture.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
 			sdfTexture.mipCount = MipCount::One;
 			sdfTexture.autoCreateMips = false;
-			sdfTexture.initialData = computeSDF(glm::uvec3(sdfTexture.width, sdfTexture.height, sdfTexture.depth), meshBB, mesh);
 
-			result[i] = sdfTexture;
+			result.descriptions[i] = sdfTexture;
+			result.data[i] = computeSDF(glm::uvec3(sdfTexture.width, sdfTexture.height, sdfTexture.depth), meshBB, mesh);
 		}, &workFinised);
 	}
     
