@@ -252,8 +252,7 @@ private:
 	VkDebugReportCallbackEXT    m_debugCallback = VK_NULL_HANDLE;
 
 #ifdef USE_VK_VALIDATION_LAYERS
-	//const bool m_useValidationLayers = true;
-	const bool m_useValidationLayers = false;
+	const bool m_useValidationLayers = true;
 #else
 	const bool m_useValidationLayers = false;
 #endif
