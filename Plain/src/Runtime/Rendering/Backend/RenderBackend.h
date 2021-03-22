@@ -330,7 +330,7 @@ private:
 	VkDeviceSize m_stagingBufferSize = 1048576; //1mb
 	Buffer m_stagingBuffer;
 
-	VkImageView createImageView(const Image image, const VkImageViewType viewType, const uint32_t baseMip, const uint32_t mipLevels, const VkImageAspectFlags aspectMask);
+	VkImageView createImageView(const Image& image, const VkImageViewType viewType, const uint32_t baseMip, const uint32_t mipLevels, const VkImageAspectFlags aspectMask);
 	Buffer      createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
 
 	VkImageSubresourceLayers createSubresourceLayers(const Image& image, const uint32_t mipLevel);

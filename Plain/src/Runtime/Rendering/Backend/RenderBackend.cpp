@@ -2066,7 +2066,7 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
     }
 }
 
-VkImageView RenderBackend::createImageView(const Image image, const VkImageViewType viewType, 
+VkImageView RenderBackend::createImageView(const Image& image, const VkImageViewType viewType, 
     const uint32_t baseMip, const uint32_t mipLevels, const VkImageAspectFlags aspectMask) {
 
     VkImageViewCreateInfo viewInfo = {};
