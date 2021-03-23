@@ -21,8 +21,8 @@ struct ComputePassShaderReloadInfo {
 
 struct ShaderLoadInfo {
     //indices index into m_filePaths and m_fileLastChanges
-    size_t shaderFileIndex;
-    size_t spirvCacheFileIndex;
+    size_t shaderFileIndex = 0;
+    size_t spirvCacheFileIndex = 0;
 };
 
 struct GraphicShadersLoadInfo {

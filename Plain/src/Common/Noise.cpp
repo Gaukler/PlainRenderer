@@ -366,7 +366,7 @@ std::vector<uint8_t> generate2DPerlinNoise(const glm::ivec2& resolution, const i
 
 	const int dimensions = 2;
 	const float maxAbsValue = computePerlineAbsMax(dimensions);
-	std::vector<uint8_t> noise(resolution.x * resolution.y);
+	std::vector<uint8_t> noise((size_t)resolution.x * resolution.y);
 
 	//compute value of every pixel
 	for (int y = 0; y < resolution.y; y++) {
@@ -401,7 +401,7 @@ std::vector<uint8_t> generate2DPerlinNoise(const glm::ivec2& resolution, const i
 			value = glm::clamp(value, 0.f, 1.f);
 
 			//store as short, which is integer in range [0, 255]
-			noise[x + y * resolution.x] = (uint8_t)(value * 255);
+			noise[(size_t)x + (size_t)y * resolution.x] = (uint8_t)(value * 255);
 		}
 	}
 
@@ -448,7 +448,7 @@ std::vector<uint8_t> generate3DPerlinNoise(const glm::ivec3& resolution, const i
 
 	const int dimensions = 3;
 	const float maxAbsValue = computePerlineAbsMax(dimensions);
-	std::vector<uint8_t> noise(resolution.x * resolution.y * resolution.z);
+	std::vector<uint8_t> noise((size_t)resolution.x * resolution.y * resolution.z);
 
 	//compute value of every pixel
 	for (int y = 0; y < resolution.y; y++) {
@@ -488,7 +488,7 @@ std::vector<uint8_t> generate3DPerlinNoise(const glm::ivec3& resolution, const i
 				value = glm::clamp(value, 0.f, 1.f);
 
 				//store as short, which is integer in range [0, 255]
-				noise[x + y * resolution.x + z * resolution.x * resolution.y] = (uint8_t)(value * 255);
+				noise[(size_t)x + (size_t)y * resolution.x + (size_t)z * resolution.x * resolution.y] = (uint8_t)(value * 255);
 			}
 		}
 	}
