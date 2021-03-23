@@ -61,7 +61,7 @@ const uint32_t noiseTextureHeight = 32;
 
 const uint32_t shadowSampleCount = 8;
 
-const uint32_t maxObjectCountMainScene = 300;
+const uint32_t maxObjectCountMainScene = 1200;
 
 const size_t sdfCameraCullingTileSize = 32;
 const size_t maxSdfObjectsPerTile = 100;
