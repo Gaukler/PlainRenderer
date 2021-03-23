@@ -622,6 +622,8 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
         return;
     }
 
+	assert(scene.size() < maxObjectCountMainScene);
+
 	//sdf scene
 	{
 		struct GPUBoundingBox {
@@ -1834,12 +1836,14 @@ std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<s
 
 	//create images and store in map
 	for (const fs::path path : requiredDataSet) {
-		const std::pair<ImageDescription, size_t>& descriptionDataIndexPair = pathToDescriptionMap[path.string()];
-		const std::vector<uint8_t>& data = imageDataList[descriptionDataIndexPair.second];
-		m_textureMap[path.string()] = gRenderBackend.createImage(
-			descriptionDataIndexPair.first, 
-			data.data(),
-			data.size());
+		if (pathToDescriptionMap.find(path.string()) != pathToDescriptionMap.end()) {
+			const std::pair<ImageDescription, size_t>& descriptionDataIndexPair = pathToDescriptionMap[path.string()];
+			const std::vector<uint8_t>& data = imageDataList[descriptionDataIndexPair.second];
+			m_textureMap[path.string()] = gRenderBackend.createImage(
+				descriptionDataIndexPair.first,
+				data.data(),
+				data.size());
+		}
 	}
 
 	//build result vector
