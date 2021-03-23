@@ -30,7 +30,7 @@ namespace JobSystem {
 		g_threadCount = std::thread::hardware_concurrency();
 		std::cout << "JobSystem thread count: " << g_threadCount << "\n\n";
 
-		for (int workerIndex = 0; workerIndex < g_threadCount; workerIndex++) {
+		for (unsigned int workerIndex = 0; workerIndex < g_threadCount; workerIndex++) {
 			std::thread worker([workerIndex]() {
 				//function executed by worker
 				while (true) {

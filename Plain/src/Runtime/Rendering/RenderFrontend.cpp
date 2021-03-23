@@ -562,9 +562,9 @@ std::vector<MeshHandleFrontend> RenderFrontend::registerMeshes(const std::vector
 	const std::vector<ImageHandle> meshImageHandles = loadImagesFromPaths(imagePaths);
 
 	assert(backendHandles.size() == meshes.size());
-	for (int i = 0; i < backendHandles.size(); i++) {
+	for (size_t i = 0; i < backendHandles.size(); i++) {
 		MeshHandleFrontend meshHandleFrontend;
-		meshHandleFrontend.index = m_frontendMeshes.size();
+		meshHandleFrontend.index = (uint32_t)m_frontendMeshes.size();
 		meshHandlesFrontend.push_back(meshHandleFrontend);
 
 		MeshFrontend meshFrontend;
@@ -575,20 +575,22 @@ std::vector<MeshHandleFrontend> RenderFrontend::registerMeshes(const std::vector
 		meshFrontend.localBB = mesh.boundingBox;
 		meshFrontend.meanAlbedo = mesh.meanAlbedo;
 
+		const size_t baseIndex = (size_t)4 * i;
+
 		//material
-		ImageHandle albedoHandle = meshImageHandles[4 * i + 0];
+		ImageHandle albedoHandle = meshImageHandles[baseIndex + 0];
 		if (albedoHandle.index == invalidIndex) {
 			albedoHandle = m_defaultTextures.diffuse;
 		}
-		ImageHandle normalHandle = meshImageHandles[4 * i + 1];
+		ImageHandle normalHandle = meshImageHandles[baseIndex + 1];
 		if (normalHandle.index == invalidIndex) {
 			normalHandle = m_defaultTextures.normal;
 		}
-		ImageHandle specularHandle = meshImageHandles[4 * i + 2];
+		ImageHandle specularHandle = meshImageHandles[baseIndex + 2];
 		if (specularHandle.index == invalidIndex) {
 			specularHandle = m_defaultTextures.specular;
 		}
-		ImageHandle sdfHandle = meshImageHandles[4 * i + 3];
+		ImageHandle sdfHandle = meshImageHandles[baseIndex + 3];
 		if (sdfHandle.index == invalidIndex) {
 			sdfHandle = m_defaultTextures.sdf;
 		}
@@ -657,8 +659,8 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 			instanceData.push_back(instance);
 		}
 		std::vector<uint8_t> bufferData(sizeof(SDFInstance) * instanceData.size() + sizeof(uint32_t) * 4);
-		m_currentSDFInstanceCount = instanceData.size();
-		uint32_t padding[3];
+		m_currentSDFInstanceCount = (uint32_t)instanceData.size();
+		uint32_t padding[3] = { 0, 0, 0 };
 		memcpy(bufferData.data(), &m_currentSDFInstanceCount, sizeof(uint32_t));
 		memcpy(bufferData.data() + sizeof(uint32_t), &padding, sizeof(uint32_t) * 3);
 		memcpy(bufferData.data() + sizeof(uint32_t) * 4, instanceData.data(), sizeof(SDFInstance) * instanceData.size());
@@ -699,7 +701,7 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 				meshPushConstants.albedoTextureIndex = meshFrontend.material.albedoTextureIndex;
 				meshPushConstants.normalTextureIndex = meshFrontend.material.normalTextureIndex;
 				meshPushConstants.specularTextureIndex = meshFrontend.material.specularTextureIndex;
-				meshPushConstants.transformIndex = mainPassMatrices.size();
+				meshPushConstants.transformIndex = (uint32_t)mainPassMatrices.size();
 				pushConstants.push_back(meshPushConstants);
 
 				MainPassMatrices matrices;
@@ -757,13 +759,13 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 
 				ShadowPushConstants pushConstants;
 				pushConstants.albedoTextureIndex = mesh.material.albedoTextureIndex;
-				pushConstants.transformIndex = modelMatrices.size();
+				pushConstants.transformIndex = (uint32_t)modelMatrices.size();
 				pushConstantData.push_back(pushConstants);
 
 				modelMatrices.push_back(obj.modelMatrix);
             }
         }
-        for (uint32_t shadowPass = 0; shadowPass < m_shadingConfig.sunShadowCascadeCount; shadowPass++) {
+        for (int shadowPass = 0; shadowPass < m_shadingConfig.sunShadowCascadeCount; shadowPass++) {
             gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstantData.data(), m_shadowPasses[shadowPass]);
         }
 		gRenderBackend.setStorageBufferData(m_shadowPassTransformsBuffer, modelMatrices.data(),
@@ -783,7 +785,7 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 				const glm::mat4 translationMatrix = glm::translate(glm::mat4(1.f), offset);
 				const glm::mat4 scaleMatrix = glm::scale(glm::mat4(1.f), (obj.bbWorld.max - obj.bbWorld.min) * 0.5f);
 				const glm::mat4 bbMatrix = m_globalShaderInfo.viewProjection * translationMatrix * scaleMatrix;
-				pushConstantData.push_back(boundingBoxMatrices.size());
+				pushConstantData.push_back((uint32_t)boundingBoxMatrices.size());
 				boundingBoxMatrices.push_back(bbMatrix);
 				meshHandles.push_back(m_boundingBoxMesh);
 			}
@@ -957,7 +959,7 @@ void RenderFrontend::renderSky(const FramebufferHandle framebuffer, const Render
 }
 
 void RenderFrontend::renderSunShadowCascades() const {
-    for (uint32_t i = 0; i < m_shadingConfig.sunShadowCascadeCount; i++) {
+    for (int i = 0; i < m_shadingConfig.sunShadowCascadeCount; i++) {
 		GraphicPassExecution shadowPassExecution;
         shadowPassExecution.genericInfo.handle = m_shadowPasses[i];
         shadowPassExecution.genericInfo.parents = { m_lightMatrixPass };
@@ -3645,13 +3647,13 @@ void RenderFrontend::drawUi() {
 		ImGui::DragFloat("Wind speed", &m_windSpeed, 0.1f);
 
 		ImGui::ColorPicker3("Scattering color", &m_volumetricLightingSettings.scatteringCoefficients.x);
-		ImGui::DragFloat("Absorption", &m_volumetricLightingSettings.absorptionCoefficient, 0.1, 0.f, 1.f);
+		ImGui::DragFloat("Absorption", &m_volumetricLightingSettings.absorptionCoefficient, 0.1f, 0.f, 1.f);
 		ImGui::InputFloat("Max distance", &m_volumetricLightingSettings.maxDistance);
 		m_volumetricLightingSettings.maxDistance = glm::max(m_volumetricLightingSettings.maxDistance, 1.f);
-		ImGui::DragFloat("Base density", &m_volumetricLightingSettings.baseDensity, 0.01, 0.f, 1.f);
-		ImGui::DragFloat("Density noise range", &m_volumetricLightingSettings.densityNoiseRange, 0.01, 0.f, 1.f);
-		ImGui::DragFloat("Density noise scale", &m_volumetricLightingSettings.densityNoiseScale, 0.1, 0.f);
-		ImGui::DragFloat("Phase function G", &m_volumetricLightingSettings.phaseFunctionG, 0.1, -0.99f, 0.99f);
+		ImGui::DragFloat("Base density", &m_volumetricLightingSettings.baseDensity, 0.01f, 0.f, 1.f);
+		ImGui::DragFloat("Density noise range", &m_volumetricLightingSettings.densityNoiseRange, 0.01f, 0.f, 1.f);
+		ImGui::DragFloat("Density noise scale", &m_volumetricLightingSettings.densityNoiseScale, 0.1f, 0.f);
+		ImGui::DragFloat("Phase function G", &m_volumetricLightingSettings.phaseFunctionG, 0.1f, -0.99f, 0.99f);
 	}
 	if (ImGui::CollapsingHeader("Sky settings")) {
 		ImGui::InputFloat3("Rayleigh scattering coefficients km", &m_atmosphereSettings.scatteringRayleighGround.x);

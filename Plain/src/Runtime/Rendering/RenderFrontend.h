@@ -111,15 +111,15 @@ struct FrameRenderTargets {
 
 //texture indices for direct use in shader, index into global texture array
 struct Material {
-	uint32_t albedoTextureIndex;
-	uint32_t normalTextureIndex;
-	uint32_t specularTextureIndex;
+	uint32_t albedoTextureIndex = 0;
+	uint32_t normalTextureIndex = 0;
+	uint32_t specularTextureIndex = 0;
 };
 
 struct MeshFrontend {
 	MeshHandle				backendHandle;
-	uint32_t				sdfTextureIndex;
-	glm::vec3				meanAlbedo;
+	uint32_t				sdfTextureIndex = 0;
+	glm::vec3				meanAlbedo = glm::vec3(0.5f);
 	Material				material;
 	AxisAlignedBoundingBox	localBB;
 };
@@ -267,7 +267,7 @@ private:
 	VolumetricLightingSettings m_volumetricLightingSettings;
 	BloomSettings m_bloomSettings;
 
-	glm::vec3 m_windVector;
+	glm::vec3 m_windVector = glm::vec3(0.f);
 	float m_windSpeed = 0.15f;
 
     RenderPassHandle m_mainPass;

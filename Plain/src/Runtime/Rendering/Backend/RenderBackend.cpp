@@ -550,7 +550,7 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const 
 				pass.pipelineLayout,
 				pushConstantStageFlags,
 				0,
-				pass.pushConstantSize,
+				(uint32_t)pass.pushConstantSize,
 				pushConstantData + i * pass.pushConstantSize);
 		}
 
@@ -632,11 +632,11 @@ RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExec
 	
 	//create map and pending parent count lut to efficiently compute pass order
 	const size_t totalExecutionCount = graphicExecutions.size() + computeExecutions.size();
-	std::vector<int> pendingParentCount(totalExecutionCount, 0);
+	std::vector<size_t> pendingParentCount(totalExecutionCount, 0);
 
 	std::vector<std::vector<size_t>> perPassChildren(totalExecutionCount);
 
-	std::unordered_map<uint32_t, uint32_t> renderPassHandleToIndexMap;
+	std::unordered_map<uint32_t, size_t> renderPassHandleToIndexMap;
 
 	//fill map and set pending parent count
 	for (int i = 0; i < graphicExecutions.size(); i++) {
@@ -660,8 +660,8 @@ RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExec
 	}
 	for (int i = 0; i < computeExecutions.size(); i++) {
 		for (const RenderPassHandle parent : computeExecutions[i].genericInfo.parents) {
-			const uint32_t parentIndex = renderPassHandleToIndexMap[parent.index];
-			const uint32_t childIndex = i + graphicExecutions.size();
+			const size_t parentIndex = renderPassHandleToIndexMap[parent.index];
+			const size_t childIndex = i + graphicExecutions.size();
 			perPassChildren[parentIndex].push_back(childIndex);
 		}
 	}
@@ -685,7 +685,7 @@ RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExec
 	}
 
 	//add initial passes, which don't have any parents
-	std::vector<uint32_t> addablePasses;
+	std::vector<size_t> addablePasses;
 	for (int i = 0; i < totalExecutionCount; i++) {
 		if (pendingParentCount[i] == 0) {
 			addablePasses.push_back(i);
@@ -1108,7 +1108,7 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc, const void*
 			m_globalTextureArrayDescriptorSetFreeTextureIndices.pop_back();
 		}
 		else {
-			image.globalDescriptorSetIndex = m_globalTextureArrayDescriptorSetTextureCount;
+			image.globalDescriptorSetIndex = (int32_t)m_globalTextureArrayDescriptorSetTextureCount;
 			m_globalTextureArrayDescriptorSetTextureCount++;
 		}
 
@@ -1472,8 +1472,13 @@ void RenderBackend::submitComputePass(const ComputePassExecution& execution,
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
 	if (execution.pushConstants.size() > 0) {
-		vkCmdPushConstants(commandBuffer, pass.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
-			sizeof(char) * execution.pushConstants.size(), execution.pushConstants.data());
+		vkCmdPushConstants(
+			commandBuffer, 
+			pass.pipelineLayout, 
+			VK_SHADER_STAGE_COMPUTE_BIT, 
+			0,
+			sizeof(char) * (uint32_t)execution.pushConstants.size(), 
+			execution.pushConstants.data());
 	}
 
 	vkCmdDispatch(commandBuffer, execution.dispatchCount[0], execution.dispatchCount[1], execution.dispatchCount[2]);
@@ -2831,7 +2836,7 @@ VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout
 	if (pushConstantSize > 0) {
 		pushConstantRange.stageFlags = stageFlags;
 		pushConstantRange.offset = 0;
-		pushConstantRange.size = pushConstantSize;
+		pushConstantRange.size = (uint32_t)pushConstantSize;
 		layoutInfo.pPushConstantRanges = &pushConstantRange;
 		layoutInfo.pushConstantRangeCount = 1;
 	}
