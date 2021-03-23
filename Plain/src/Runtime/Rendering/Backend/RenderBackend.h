@@ -216,10 +216,10 @@ private:
 	VkDescriptorSetLayout m_globalTextureArrayDescriporSetLayout = VK_NULL_HANDLE;
 	void initGlobalTextureArrayDescriptorSetLayout();
 
-	VkDescriptorSet m_globalTextureArrayDescriptorSet;
+	VkDescriptorSet m_globalTextureArrayDescriptorSet = VK_NULL_HANDLE;
 	void initGlobalTextureArrayDescriptorSet();
 
-	VkDescriptorPool m_globalTextureArrayDescriptorPool;
+	VkDescriptorPool m_globalTextureArrayDescriptorPool = VK_NULL_HANDLE;
 
 	void setGlobalTextureArrayDescriptorSetTexture(const VkImageView imageView, const uint32_t index);
 
@@ -509,8 +509,8 @@ private:
     VkQueryPool createQueryPool(const VkQueryType queryType, const uint32_t queryCount);
     void resetTimestampQueryPool(const int poolIndex);
 
-	float m_timeOfLastGPUSubmit;
-	float m_lastFrameCPUTime;
+	float m_timeOfLastGPUSubmit = 0.f;
+	float m_lastFrameCPUTime = 0.f;
 
     void checkVulkanResult(const VkResult result);
 

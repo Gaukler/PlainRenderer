@@ -234,7 +234,7 @@ std::vector<ComputePassShaderReloadInfo> ShaderFileManager::reloadOutOfDateCompu
 	std::set<size_t> spirvCacheUpdateList;
 
 	m_outOfDateListsMutex.lock();
-	for (const int passIndex : m_outOfDateComputeIndices) {
+	for (const size_t passIndex : m_outOfDateComputeIndices) {
 
 		ComputeShaderSourceInfo& shaderSrcInfo = m_computeShaderSourceInfos[passIndex];
         //reload glsl and compile to spirv
@@ -274,7 +274,7 @@ std::vector<GraphicPassShaderReloadInfo> ShaderFileManager::reloadOutOfDateGraph
 
     std::vector<GraphicPassShaderReloadInfo> reloadList;
 	m_outOfDateListsMutex.lock();
-    for (const int passIndex : m_outOfDateGraphicIndices) {
+    for (const size_t passIndex : m_outOfDateGraphicIndices) {
 
 		GraphicShaderSourceInfo& shaderSrcInfo = m_graphicShaderSourceInfos[passIndex];
 

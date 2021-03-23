@@ -397,11 +397,11 @@ std::vector<uint8_t> generate2DPerlinNoise(const glm::ivec2& resolution, const i
 			value /= maxAbsValue;
 
 			//bring to range [0, 1]
-			value = value * 0.5 + 0.5;
+			value = value * 0.5f + 0.5f;
 			value = glm::clamp(value, 0.f, 1.f);
 
 			//store as short, which is integer in range [0, 255]
-			noise[x + y * resolution.x] = value * 255;
+			noise[x + y * resolution.x] = (uint8_t)(value * 255);
 		}
 	}
 
@@ -484,11 +484,11 @@ std::vector<uint8_t> generate3DPerlinNoise(const glm::ivec3& resolution, const i
 				value /= maxAbsValue;
 
 				//bring to range [0, 1]
-				value = value * 0.5 + 0.5;
+				value = value * 0.5f + 0.5f;
 				value = glm::clamp(value, 0.f, 1.f);
 
 				//store as short, which is integer in range [0, 255]
-				noise[x + y * resolution.x + z * resolution.x * resolution.y] = value * 255;
+				noise[x + y * resolution.x + z * resolution.x * resolution.y] = (uint8_t)(value * 255);
 			}
 		}
 	}
