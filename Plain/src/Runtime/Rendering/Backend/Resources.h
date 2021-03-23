@@ -96,7 +96,7 @@ struct GraphicPass {
     VertexInputFlags                vertexInputFlags = VertexInputFlags(0);
 
 	//two to allow recording while gpu is working
-    VkCommandBuffer meshCommandBuffers[2];
+	VkCommandBuffer meshCommandBuffers[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
 
     std::vector<VkClearValue> clearValues;
 
@@ -104,7 +104,7 @@ struct GraphicPass {
     std::string shaderCachePathAbsolute;
     std::string shaderSrcPathAbsolute;
 
-	size_t pushConstantSize;
+	size_t pushConstantSize = 0;
 };
 
 struct ComputePass {

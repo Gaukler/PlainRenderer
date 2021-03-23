@@ -31,6 +31,10 @@ bool getGltfAttributeIndex(const std::map<std::string, int> attributeMap, const 
 	}
 }
 
+//disable unused parameter warning, tinyGltfExpectedType and tinyGltfExpectedComponentType only used for assert in debug builds
+#pragma warning( push )
+#pragma warning( disable : 4100)
+
 std::vector<char> loadGltfAttribute(const tinygltf::Model& model, const int attributeIndex,
 	const size_t typeSize, const int tinyGltfExpectedType, const int tinyGltfExpectedComponentType) {	
 
@@ -48,6 +52,9 @@ std::vector<char> loadGltfAttribute(const tinygltf::Model& model, const int attr
 	memcpy(byteData.data(), buffer.data.data() + bufferView.byteOffset, byteCount);
 	return byteData;
 }
+
+//reenable warning
+#pragma warning( pop )
 
 glm::mat4 computeNodeMatrix(const tinygltf::Node& node) {
 	glm::mat4 rotation(1.f);
