@@ -625,9 +625,9 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 	//sdf scene
 	{
 		struct GPUBoundingBox {
-			glm::vec3 min;
+			glm::vec3 min = glm::vec3(0);
 			float padding1 = 0.f;
-			glm::vec3 max;
+			glm::vec3 max = glm::vec3(0);
 			float padding2 = 0.f;
 		};
 		std::vector<GPUBoundingBox> instanceWorldBBs;
@@ -1231,8 +1231,8 @@ void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFram
 		};
 
 		const float localThreadSize = 8.f;
-		exe.dispatchCount[0] = glm::ceil(m_screenWidth / localThreadSize);
-		exe.dispatchCount[1] = glm::ceil(m_screenHeight / localThreadSize);
+		exe.dispatchCount[0] = (uint32_t)glm::ceil(m_screenWidth / localThreadSize);
+		exe.dispatchCount[1] = (uint32_t)glm::ceil(m_screenHeight / localThreadSize);
 		exe.dispatchCount[2] = 1;
 
 		gRenderBackend.setComputePassExecution(exe);
@@ -1493,9 +1493,9 @@ void RenderFrontend::computeVolumetricLighting() {
 		};
 
 		const int groupSize = 4;
-		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
-		exe.dispatchCount[1] = glm::ceil(froxelResolution.y / float(groupSize));
-		exe.dispatchCount[2] = glm::ceil(froxelResolution.z / float(groupSize));
+		exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
+		exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
+		exe.dispatchCount[2] = (uint32_t)glm::ceil(froxelResolution.z / float(groupSize));
 
 		gRenderBackend.setComputePassExecution(exe);
 	}
@@ -1522,9 +1522,9 @@ void RenderFrontend::computeVolumetricLighting() {
 		};
 
 		const int groupSize = 4;
-		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
-		exe.dispatchCount[1] = glm::ceil(froxelResolution.y / float(groupSize));
-		exe.dispatchCount[2] = glm::ceil(froxelResolution.z / float(groupSize));
+		exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
+		exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
+		exe.dispatchCount[2] = (uint32_t)glm::ceil(froxelResolution.z / float(groupSize));
 
 		gRenderBackend.setComputePassExecution(exe);
 	}
@@ -1549,9 +1549,9 @@ void RenderFrontend::computeVolumetricLighting() {
 		};
 
 		const int groupSize = 4;
-		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
-		exe.dispatchCount[1] = glm::ceil(froxelResolution.y / float(groupSize));
-		exe.dispatchCount[2] = glm::ceil(froxelResolution.z / float(groupSize));
+		exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
+		exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
+		exe.dispatchCount[2] = (uint32_t)glm::ceil(froxelResolution.z / float(groupSize));
 
 		gRenderBackend.setComputePassExecution(exe);
 	}
@@ -1571,8 +1571,8 @@ void RenderFrontend::computeVolumetricLighting() {
 		};
 
 		const int groupSize = 8;
-		exe.dispatchCount[0] = glm::ceil(froxelResolution.x / float(groupSize));
-		exe.dispatchCount[1] = glm::ceil(froxelResolution.y / float(groupSize));
+		exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
+		exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
 		exe.dispatchCount[2] = 1;
 
 		gRenderBackend.setComputePassExecution(exe);
@@ -1604,8 +1604,8 @@ RenderPassHandle RenderFrontend::computeBloom(const RenderPassHandle parentPass,
 		const glm::ivec2 targetResolution = resolutionFromMip(glm::ivec3(baseResolution, 1), targetMip);
 
 		const int groupSize = 8;
-		exe.dispatchCount[0] = glm::ceil(targetResolution.x / float(groupSize));
-		exe.dispatchCount[1] = glm::ceil(targetResolution.y / float(groupSize));
+		exe.dispatchCount[0] = (uint32_t)glm::ceil(targetResolution.x / float(groupSize));
+		exe.dispatchCount[1] = (uint32_t)glm::ceil(targetResolution.y / float(groupSize));
 		exe.dispatchCount[2] = 1;
 
 		gRenderBackend.setComputePassExecution(exe);
@@ -1633,8 +1633,8 @@ RenderPassHandle RenderFrontend::computeBloom(const RenderPassHandle parentPass,
 		const glm::ivec2 targetResolution = resolutionFromMip(glm::ivec3(baseResolution, 1), targetMip);
 
 		const int groupSize = 8;
-		exe.dispatchCount[0] = glm::ceil(targetResolution.x / float(groupSize));
-		exe.dispatchCount[1] = glm::ceil(targetResolution.y / float(groupSize));
+		exe.dispatchCount[0] = (uint32_t)glm::ceil(targetResolution.x / float(groupSize));
+		exe.dispatchCount[1] = (uint32_t)glm::ceil(targetResolution.y / float(groupSize));
 		exe.dispatchCount[2] = 1;
 
 		exe.pushConstants = dataToCharArray((void*)&m_bloomSettings.radius, sizeof(m_bloomSettings.radius));
@@ -1657,8 +1657,8 @@ RenderPassHandle RenderFrontend::computeBloom(const RenderPassHandle parentPass,
 		};
 
 		const int groupSize = 8;
-		exe.dispatchCount[0] = glm::ceil(m_screenWidth / float(groupSize));
-		exe.dispatchCount[1] = glm::ceil(m_screenHeight / float(groupSize));
+		exe.dispatchCount[0] = (uint32_t)glm::ceil(m_screenWidth / float(groupSize));
+		exe.dispatchCount[1] = (uint32_t)glm::ceil(m_screenHeight / float(groupSize));
 		exe.dispatchCount[2] = 1;
 
 		exe.pushConstants = dataToCharArray((void*)&m_bloomSettings.strength, sizeof(m_bloomSettings.strength));
@@ -1758,7 +1758,7 @@ std::vector<RenderPassHandle> RenderFrontend::sdfInstanceCulling(const float sdf
 		};
 
 		//-1 because pyramid is already half of screen resolution at base mip
-		const int depthPyramidMipLevel = glm::log2(glm::ceil(float(sdfCameraCullingTileSize))) - 1;
+		const int depthPyramidMipLevel = (int)glm::log2(glm::ceil(float(sdfCameraCullingTileSize))) - 1;
 		assert(depthPyramidMipLevel == 4);
 		exe.genericInfo.resources.sampledImages = {
 			ImageResource(m_minMaxDepthPyramid, depthPyramidMipLevel, 4)
@@ -2834,7 +2834,7 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 		//FIXME: handle bigger resolutions and don't allocate for worst case
 		const size_t maxWidth = 1920;
 		const size_t maxHeight = 1080;
-		const size_t tileCount = glm::ceil(maxWidth / sdfCameraCullingTileSize) * glm::ceil(maxHeight / sdfCameraCullingTileSize);
+		const size_t tileCount = (size_t)glm::ceil(maxWidth / sdfCameraCullingTileSize) * (size_t)glm::ceil(maxHeight / sdfCameraCullingTileSize);
 		const size_t tileSize = maxSdfObjectsPerTile * sizeof(uint32_t) + sizeof(uint32_t); //one uint index per object + object count
 		desc.size = tileCount * tileSize;
 		m_sdfCameraCulledTiles = gRenderBackend.createStorageBuffer(desc);
@@ -2973,12 +2973,13 @@ void RenderFrontend::initMeshs() {
 
 		MeshBinary binary;
 		binary.boundingBox = normalizedBB;
-		binary.indexCount = indices.size();
-		binary.vertexCount = positions.size();
+		binary.indexCount  = (uint32_t)indices.size();
+		binary.vertexCount = (uint32_t)positions.size();
 		binary.vertexBuffer.resize(sizeof(glm::vec3) * positions.size());
 		memcpy(binary.vertexBuffer.data(), positions.data(), binary.vertexBuffer.size());
+		//conversion to 16 bit index
 		for (const uint32_t& index : indices) {
-			binary.indexBuffer.push_back(index);	//conversion to 16 bit index
+			binary.indexBuffer.push_back((uint16_t)index);
 		}
 
 		m_boundingBoxMesh = gRenderBackend.createMeshes({ binary }).back();
@@ -3667,8 +3668,8 @@ void RenderFrontend::drawUi() {
 	}
 	if (ImGui::CollapsingHeader("Bloom settings")) {
 		ImGui::Checkbox("Bloom enabled", &m_bloomSettings.enabled);
-		ImGui::DragFloat("Bloom strength", &m_bloomSettings.strength, 0.05, 0, 1);
-		ImGui::DragFloat("Bloom blur radius", &m_bloomSettings.radius, 0.1, 0, 5);
+		ImGui::DragFloat("Bloom strength", &m_bloomSettings.strength, 0.05f, 0.f, 1.f);
+		ImGui::DragFloat("Bloom blur radius", &m_bloomSettings.radius, 0.1f, 0.f, 5.f);
 	}
     //lighting settings
     if(ImGui::CollapsingHeader("Lighting settings")){

@@ -654,7 +654,7 @@ RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExec
 	//collect children
 	for (int i = 0; i < graphicExecutions.size(); i++) {
 		for (const RenderPassHandle parent : graphicExecutions[i].genericInfo.parents) {
-			const uint32_t parentIndex = renderPassHandleToIndexMap[parent.index];
+			const size_t parentIndex = renderPassHandleToIndexMap[parent.index];
 			perPassChildren[parentIndex].push_back(i);
 		}
 	}
@@ -698,7 +698,7 @@ RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExec
 	//continue until no further passes can be added
 	while (addablePasses.size() > 0) {
 		//take last
-		const uint32_t passIndex = addablePasses.back();
+		const size_t passIndex = addablePasses.back();
 		addablePasses.pop_back();
 		//add
 		order.executions.push_back(executionEntryPerPass[passIndex]);
