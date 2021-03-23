@@ -156,7 +156,10 @@ void main(){
     r = max(r * r, 0.0045f);
     vec3 albedo = sRGBToLinear(albedoTexel);
 
-	vec3 N = normalize(passTBN * normalTexelReconstructed); 
+	vec3 N = normalize(passTBN * normalTexelReconstructed);
+	if(any(isnan(N))){
+		N = passTBN[2];	//fix for broken (bi)tangents on tree assets
+	}
 	vec3 L = normalize(g_sunDirection.xyz);
     
 	vec3 V = g_cameraPosition.xyz - passPos;
