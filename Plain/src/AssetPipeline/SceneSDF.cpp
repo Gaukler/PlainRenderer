@@ -106,6 +106,10 @@ SceneSDFTextures computeSceneSDFTextures(const std::vector<MeshData>& meshes, co
 	assert(meshes.size() == AABBList.size());
 	for (size_t i = 0; i < meshes.size(); i++) {
 
+		//disable workerIndex unused parameter warning
+		#pragma warning( push )
+		#pragma warning( disable : 4100)
+
 		JobSystem::addJob([&result, &meshes, &AABBList, i](int workerIndex) {
 			const MeshData& mesh = meshes[i];
 			const AxisAlignedBoundingBox meshBB = AABBList[i];
@@ -136,6 +140,9 @@ SceneSDFTextures computeSceneSDFTextures(const std::vector<MeshData>& meshes, co
 			result.descriptions[i] = sdfTexture;
 			result.data[i] = computeSDF(glm::uvec3(sdfTexture.width, sdfTexture.height, sdfTexture.depth), meshBB, mesh);
 		}, &workFinised);
+
+		//reenable warning
+		#pragma warning( pop )
 	}
     
 	JobSystem::waitOnCounter(workFinised);

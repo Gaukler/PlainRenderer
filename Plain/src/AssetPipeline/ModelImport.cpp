@@ -56,7 +56,7 @@ glm::mat4 computeNodeMatrix(const tinygltf::Node& node) {
 	if (node.rotation.size() == 4) {
 		//gltf stores quaternion  (x, y, z, w)
 		//glm constructor expects (w, x, y, z)
-		glm::quat q(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]);
+		glm::quat q((float)node.rotation[3], (float)node.rotation[0], (float)node.rotation[1], (float)node.rotation[2]);
 		rotation = glm::toMat4(q);
 	}
 	if (node.translation.size() == 3) {
@@ -92,9 +92,9 @@ glm::vec3 computeMeanAlbedo(const tinygltf::Image& image) {
 		const size_t blue = image.image[i+2];
 		const float alpha = image.image[i+3] / maxValue;
 
-		redTotal	+= red	 * alpha;
-		greenTotal	+= green * alpha;
-		blueTotal	+= blue	 * alpha;
+		redTotal	+= (size_t)(red	  * alpha);
+		greenTotal	+= (size_t)(green * alpha);
+		blueTotal	+= (size_t)(blue  * alpha);
 	}
 
 	const size_t pixelCount = image.image.size() / 4;
