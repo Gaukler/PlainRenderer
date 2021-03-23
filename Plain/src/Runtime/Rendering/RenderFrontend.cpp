@@ -1811,6 +1811,11 @@ std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<s
 
 	size_t dataIndex = 0;
 	for (const std::string &path : requiredDataSet) {
+
+		//disable workerIndex unused parameter warning
+		#pragma warning( push )
+		#pragma warning( disable : 4100)
+
 		JobSystem::addJob([path, dataIndex, &pathToDescriptionMap, &mapMutex, &imageDataList](int workerIndex) {
 			ImageDescription image;
 			if (loadImage(path, true, &image, &imageDataList[dataIndex])) {
@@ -1819,6 +1824,10 @@ std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<s
 				mapMutex.unlock();
 			}
 		}, &loadingFinised);
+
+		//reenable warning
+		#pragma warning( pop )
+
 		dataIndex++;
 	}
 	JobSystem::waitOnCounter(loadingFinised);
