@@ -99,7 +99,8 @@ void main(){
 
 	vec3 color = vec3(0.f);
 
-	if(traceResult.hit){
+	//camera tile usage(debugMode == 2) should always be drawn, regardless of intersection
+	if(traceResult.hit || debugMode == 2){
 
 		//sdf visualisation
 		if(debugMode == 1){
