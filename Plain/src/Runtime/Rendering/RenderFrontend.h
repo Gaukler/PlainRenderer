@@ -95,7 +95,6 @@ struct DefaultTextures {
     ImageHandle specular;
     ImageHandle normal;
     ImageHandle sky;
-	ImageHandle sdf;
 };
 
 //simple wrapper to keep all images and framebuffers used in a frame in one place
@@ -118,7 +117,7 @@ struct Material {
 
 struct MeshFrontend {
 	MeshHandle				backendHandle;
-	uint32_t				sdfTextureIndex = 0;
+	int						sdfTextureIndex = 0;
 	glm::vec3				meanAlbedo = glm::vec3(0.5f);
 	Material				material;
 	AxisAlignedBoundingBox	localBB;

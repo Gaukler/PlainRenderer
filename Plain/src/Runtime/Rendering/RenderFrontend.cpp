@@ -166,23 +166,6 @@ DefaultTextures createDefaultTextures() {
 		const uint8_t initialData[4] = { 255, 255, 255, 255 };
         defaultTextures.sky = gRenderBackend.createImage(defaultCubemapDesc, initialData, sizeof(initialData));
     }
-	//sdf
-	{
-		ImageDescription defaultSdfDesc;
-		defaultSdfDesc.autoCreateMips = false;
-		defaultSdfDesc.depth = 1;
-		defaultSdfDesc.format = ImageFormat::R16_sFloat;
-		defaultSdfDesc.manualMipCount = 1;
-		defaultSdfDesc.mipCount = MipCount::One;
-		defaultSdfDesc.type = ImageType::Type3D;
-		defaultSdfDesc.usageFlags = ImageUsageFlags::Sampled;
-		defaultSdfDesc.width = 1;
-		defaultSdfDesc.height = 1;
-		defaultSdfDesc.depth = 1;
-
-		const uint8_t initialData[2] = { 0, 0 };
-		defaultTextures.sdf = gRenderBackend.createImage(defaultSdfDesc, initialData, sizeof(initialData));
-	}
     return defaultTextures;
 }
 
@@ -591,14 +574,17 @@ std::vector<MeshHandleFrontend> RenderFrontend::registerMeshes(const std::vector
 			specularHandle = m_defaultTextures.specular;
 		}
 		ImageHandle sdfHandle = meshImageHandles[baseIndex + 3];
-		if (sdfHandle.index == invalidIndex) {
-			sdfHandle = m_defaultTextures.sdf;
-		}
 
 		meshFrontend.material.albedoTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(albedoHandle);
 		meshFrontend.material.normalTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(normalHandle);
 		meshFrontend.material.specularTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(specularHandle);
-		meshFrontend.sdfTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(sdfHandle);
+
+		if (sdfHandle.index == invalidIndex) {
+			meshFrontend.sdfTextureIndex = -1;
+		}
+		else {
+			meshFrontend.sdfTextureIndex = (int)gRenderBackend.getImageGlobalTextureArrayIndex(sdfHandle);
+		}
 
 		m_frontendMeshes.push_back(meshFrontend);
 	}
@@ -638,6 +624,12 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 		instanceWorldBBs.reserve(scene.size());
 		for (const RenderObject& obj : scene) {
 
+			const MeshFrontend& mesh = m_frontendMeshes[obj.mesh.index];
+			//skip meshes without sdf
+			if (mesh.sdfTextureIndex < 0) {
+				continue;
+			}
+
 			//culling requires the padded bounding box, used for rendering and computation
 			const AxisAlignedBoundingBox paddedWorldBB = padSDFBoundingBox(obj.bbWorld);
 			GPUBoundingBox worldBB;
@@ -646,7 +638,6 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 			instanceWorldBBs.push_back(worldBB);
 
 			SDFInstance instance;
-			const MeshFrontend& mesh = m_frontendMeshes[obj.mesh.index];
 			instance.sdfTextureIndex = mesh.sdfTextureIndex;
 
 			const AxisAlignedBoundingBox paddedLocalBB = padSDFBoundingBox(mesh.localBB);
@@ -1854,15 +1845,10 @@ std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<s
 	invalidHandle.index = invalidIndex;
 	
 	for (const fs::path path : imagePaths) {
-		if (path == "") {
+		if (path == "" || m_textureMap.find(path.string()) == m_textureMap.end()) {
 			result.push_back(invalidHandle);
 		}
-
-		if (m_textureMap.find(path.string()) == m_textureMap.end()) {
-			result.push_back(m_textureMap[path.string()]);
-		}
 		else {
-			//means loading failed
 			result.push_back(m_textureMap[path.string()]);
 		}
 	}

@@ -55,6 +55,9 @@ int main(const int argc, char* argv[]) {
 
 		for (size_t i = 0; i < sceneSDFTextures.descriptions.size(); i++) {
 			const std::filesystem::path sdfTexturePath = scene.meshes[i].texturePaths.sdfTexturePath;
+			if (sdfTexturePath.empty()) {
+				continue;
+			}
 			//FIXME: writing fails if target folder ("sdfTextures") does not exist
 			writeDDSFile(sdfTexturePath, sceneSDFTextures.descriptions[i], sceneSDFTextures.data[i]);
 			std::cout << "Saved SDF texture: "<< sdfTexturePath << "\n";

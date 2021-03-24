@@ -110,6 +110,9 @@ SceneSDFTextures computeSceneSDFTextures(const std::vector<MeshData>& meshes, co
 		#pragma warning( push )
 		#pragma warning( disable : 4100)
 
+		if (meshes[i].texturePaths.sdfTexturePath.empty()) {
+			continue;
+		}
 		JobSystem::addJob([&result, &meshes, &AABBList, i](int workerIndex) {
 			const MeshData& mesh = meshes[i];
 			const AxisAlignedBoundingBox meshBB = AABBList[i];

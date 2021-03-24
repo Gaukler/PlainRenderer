@@ -216,12 +216,23 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 			data.texturePaths.specularTexturePath	= modelDirectory / model.images[model.textures[material.pbrMetallicRoughness.metallicRoughnessTexture.index].source].uri;
 			data.texturePaths.normalTexturePath		= modelDirectory / model.images[model.textures[material.normalTexture.index].source].uri;
 
+			bool computeSDF = true;
+
+			if (mesh.extras.IsObject() && mesh.extras.Has("noSDF")) {
+				computeSDF = false;
+			}
+
 			//sdf texture path
-			const size_t primitiveIndex = primitiveList.size();
-			std::string primitiveName = mesh.name;
-			primitiveName += primitiveIndex > 0 ? "_" + std::to_string(primitiveIndex) : "";
-			data.texturePaths.sdfTexturePath = modelDirectory / "sdfTextures" / primitiveName;
-			data.texturePaths.sdfTexturePath += ".dds";
+			if (computeSDF) {
+				const size_t primitiveIndex = primitiveList.size();
+				std::string primitiveName = mesh.name;
+				primitiveName += primitiveIndex > 0 ? "_" + std::to_string(primitiveIndex) : "";
+				data.texturePaths.sdfTexturePath = modelDirectory / "sdfTextures" / primitiveName;
+				data.texturePaths.sdfTexturePath += ".dds";
+			}
+			else {
+				data.texturePaths.sdfTexturePath.clear();
+			}
 
 			primitiveList.push_back(outScene->meshes.size());
 			outScene->meshes.push_back(data);
