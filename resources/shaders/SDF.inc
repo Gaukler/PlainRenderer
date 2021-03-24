@@ -107,7 +107,7 @@ void traceRayTroughSDFInstance(SDFInstance instance, vec3 rayStartWorld, texture
 	vec3 sdfMaxLocal = instance.localExtends * 0.5;
 	vec3 sdfMinLocal = -sdfMaxLocal;
 
-	float hitDistance = 0.f;
+	float hitDistanceLocal = 0.f;
 
 	if(!isPointInAABB(rayStartLocal, sdfMinLocal, sdfMaxLocal)){
 		HitResult aabbHit = rayAABBIntersection(rayStartLocal, rayDirection, sdfMinLocal, sdfMaxLocal);
@@ -115,7 +115,7 @@ void traceRayTroughSDFInstance(SDFInstance instance, vec3 rayStartWorld, texture
 		if(aabbHit.hit){
 			//move sample point to intersection
 			rayStartLocal += (aabbHit.t) * rayDirection;
-			hitDistance = aabbHit.t;
+			hitDistanceLocal = aabbHit.t;
 		}
 		else{
 			//ray missed AABB
@@ -150,6 +150,8 @@ void traceRayTroughSDFInstance(SDFInstance instance, vec3 rayStartWorld, texture
 		}
 	}
 
+	float localToGlobalScale = 1.f / length(instance.worldToLocal[0].xyz);
+
 	for(int i = 0; i < 128; i++){
 		
 		vec3 localExtendsHalf = instance.localExtends * 0.5;
@@ -166,25 +168,28 @@ void traceRayTroughSDFInstance(SDFInstance instance, vec3 rayStartWorld, texture
 		if(d < distanceThreshold){
 			traceResult.hit = true;
 			
-			if(hitDistance < traceResult.closestHitDistance){
-				traceResult.closestHitDistance = hitDistance;
+			float distanceGlobal = hitDistanceLocal * localToGlobalScale;
+
+			if(distanceGlobal < traceResult.closestHitDistance){
+				traceResult.closestHitDistance = distanceGlobal;
 				traceResult.hitCount = i;
 
-				float lastStepSize = d / (1.f - (d - dLast));
+				float lastStepSizeLocal = d / (1.f - (d - dLast));
 
 				//assume surface is planar and calculate hit using geometric series
 				//see: "GPU-based clay simulation and ray-tracing tech in Claybook", page 25
-				localSamplePos += rayDirection * lastStepSize;
+				localSamplePos += rayDirection * lastStepSizeLocal;
 				sampleUV = localSamplePos / instance.localExtends + 0.5;
 
 				traceResult.N = normalFromSDF(sampleUV, instance.localExtends, sdfTexture);
 				traceResult.N = transpose(mat3(instance.worldToLocal)) * traceResult.N;	//worldToLocal is rotation matrix, so transpose is inverse
 				traceResult.albedo = pow(instance.meanAlbedo, vec3(2.2f));
-				traceResult.hitPos = rayStartWorld + rayDirectionWorld * (hitDistance + lastStepSize);
+				float lastStepSizeGlobal = lastStepSizeLocal * localToGlobalScale;
+				traceResult.hitPos = rayStartWorld + rayDirectionWorld * (distanceGlobal + lastStepSizeGlobal);
 			}
 			break;
 		}
 		localSamplePos += rayDirection * abs(d);
-		hitDistance += abs(d);
+		hitDistanceLocal += abs(d);
 	}
 }
