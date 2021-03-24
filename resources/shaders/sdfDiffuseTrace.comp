@@ -167,6 +167,14 @@ void main(){
 		sunLight *= shadow; 
 		float NoL = clamp(dot(traceResult.N, g_sunDirection.xyz), 0, 1);
 		hitColor = traceResult.albedo * sunLight * NoL;
+
+		//reject out of range hits
+		bool hitInRange = traceResult.closestHitDistance < influenceRange;
+		//accept hit regardless of distance, if not using strict influence radius cutoff
+		hitInRange = hitInRange || !strictInfluenceRadiusCutoff;
+		if(!hitInRange){
+			hitColor = vec3(0);
+		}
 	}
 	else{
 		hitColor = sampleSkyLut(L, skyLut);
@@ -175,14 +183,6 @@ void main(){
 	if(traceResult.selfIntersection){
 		hitColor = vec3(0);
 		//hitColor = vec3(1, 0, 0);	//visualize self intersecting pixels in red 
-	}
-
-	//reject out of range hits
-	bool hitInRange = traceResult.closestHitDistance < influenceRange;
-	//accept hit regardless of distance, if not using strict influence radius cutoff
-	hitInRange = hitInRange || !strictInfluenceRadiusCutoff;
-	if(!hitInRange){
-		hitColor = vec3(0);
 	}
 
 	hitColor = resolveColor(hitColor, N, depthLinear);
