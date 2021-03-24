@@ -2,14 +2,18 @@
 
 bool checkLastChangeTime(const fs::path path, fs::file_time_type* outLastChangeTime) {
     std::error_code exception;
-    const fs::file_time_type lastWriteTimeSrc = std::filesystem::last_write_time(path, exception);
-    if (exception.value() != 0) {
-        std::cout << "Failed to to read file last change time\n";
-        std::cout << exception.message() << std::endl;
-        return false;
-    }
-    *outLastChangeTime = lastWriteTimeSrc;
-    return true;
+	//sometime quering last write time randomly fails, try a few times for more consistent success
+	const int tries = 3;
+	for (int i = 0; i < tries; i++) {
+		const fs::file_time_type lastWriteTimeSrc = std::filesystem::last_write_time(path, exception);
+		if (exception.value() == 0) {
+			*outLastChangeTime = lastWriteTimeSrc;
+			return true;
+		}
+	}
+	std::cout << "Failed to to read file last change time\n";
+	std::cout << exception.message() << std::endl;
+	return false;
 }
 
 bool loadTextFile(const std::filesystem::path& absolutePath, std::vector<char>* outText) {
