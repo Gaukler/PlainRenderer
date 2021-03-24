@@ -82,10 +82,10 @@ struct VolumetricLightingSettings {
 	float absorptionCoefficient = 1.f;
 	
 	float sampleOffset = 0.f;
-	float baseDensity = 0.01f;
-	float densityNoiseRange = 0.03f;	//how strong the noise influences density
+	float baseDensity = 0.003f;
+	float densityNoiseRange = 0.008f;	//how strong the noise influences density
 	float densityNoiseScale = 0.5f;		//world space scale of the noise pattern
-	float phaseFunctionG = 0.5f;		//g of henyey greenstein phase function
+	float phaseFunctionG = 0.2f;		//g of henyey greenstein phase function
 };
 
 enum class ShaderResourceType { SampledImage, Sampler, StorageImage, StorageBuffer, UniformBuffer };
