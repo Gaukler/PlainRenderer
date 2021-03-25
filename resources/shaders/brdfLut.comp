@@ -51,8 +51,8 @@ void main(){
                 
                 float k = Vis * VoH * NoL / NoH;
                 
-                result.x += (1.f - F_c) * k;
-                result.y += F_c * k;
+                result.x += F_c * k;
+                result.y += k;
             }
         }
         

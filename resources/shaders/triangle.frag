@@ -121,7 +121,9 @@ float calcShadow(vec3 pos, float LoV, texture2D shadowMap, mat4 lightMatrix, int
 
 //mathematical fit from: "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
 float ReflectedEnergyAverage(float roughness){
-    float smoothness = 1.f - pow(roughness, 0.25f);
+	//function is fitted to smoothness, must calculate from roughness
+	//r = sqrt(1 - smoothness)
+    float smoothness = 1.f - sqrt(roughness);
     float r = -0.0761947f - 0.383026f * smoothness;
           r = 1.04997f + smoothness * r;
           r = 0.409255f + smoothness * r;
@@ -143,20 +145,18 @@ vec3 applyVolumetricLighting(float pixelDepth, vec3 V){
 
 vec3 computeSpecularMultiscatteringLobe(float r, float NoL, vec3 f0, vec3 singleScatteringLobe, vec3 brdfLut){
 	vec3 multiScatteringLobe;
-	float energyOutgoing = brdfLut.x + brdfLut.y;
-	vec3 fresnelAverage = f0 + (1-f0) / 21.f;
+	float energyOutgoing = brdfLut.y;
+	vec3 fresnelAverage = f0 + (1.f - f0) / 21.f;
 
 	//multiscattering formulation from "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
 	if(directMultiscatterBRDF == 0){
         float energyAverage = ReflectedEnergyAverage(r);
-    
-        vec2 brdfLutIncoming = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r, NoL)).rg;
-        float energyIncoming = brdfLutIncoming.x + brdfLutIncoming.y;
-        
-        float multiScatteringLobeFloat = (1.f - energyIncoming) * (1.f - energyOutgoing) / (3.1415f * (1.f - energyAverage));
+        float energyIncoming = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r, NoL)).y;
+
+        float multiScatteringLobeUnscaled = (1.f - energyIncoming) * (1.f - energyOutgoing) / (3.1415f * (1.f - energyAverage));
         vec3 multiScatteringScaling = (fresnelAverage * fresnelAverage * energyAverage) / (1.f - fresnelAverage * (1.f - energyAverage));
-        
-        multiScatteringLobe = multiScatteringLobeFloat * multiScatteringScaling;
+
+        multiScatteringLobe = multiScatteringLobeUnscaled * multiScatteringScaling;
     }
     //this is the above but approximating E_avg = E_o, simplifying the equation
     else if(directMultiscatterBRDF == 1){
@@ -166,8 +166,7 @@ vec3 computeSpecularMultiscatteringLobe(float r, float NoL, vec3 f0, vec3 single
     }
     else if(directMultiscatterBRDF == 2){ 
         //simple multiscattering achieved by adding scaled singe scattering lobe, see PBR Filament document
-        //not using alternative LUT formulation, but this should be equal? Formulation also used by indirect multi scattering paper
-        multiScatteringLobe = f0 * (1.f - energyOutgoing) / energyOutgoing * singleScatteringLobe;
+		multiScatteringLobe = f0 * (1.f / energyOutgoing - 1.f) * singleScatteringLobe;
     }   
     else {
         multiScatteringLobe = vec3(0.f);
@@ -315,9 +314,10 @@ void main(){
 		float NoL_indirect = max(dot(N, L_indirect), 0.f);
 		float VoH_indirect = max(dot(V, H_indirect), 0.f);
 
-		vec3 brdf = GGXSingleScattering(r_indirect, f0, NoH_indirect, NoV, VoH_indirect, NoL_indirect);
+		vec3 singleScattering_indirect = GGXSingleScattering(r_indirect, f0, NoH_indirect, NoV, VoH_indirect, NoL_indirect);
+		vec3 multiScattering_indirect = computeSpecularMultiscatteringLobe(r_indirect, NoL_indirect, f0, singleScattering_indirect, brdfLut);
 
-		vec3 specularIndirect = brdf * YCoCgToLinear(vec3(irradiance_Y_SH.x, irradiance_CoCg));
+		vec3 specularIndirect = (singleScattering_indirect + multiScattering_indirect) * YCoCgToLinear(vec3(irradiance_Y_SH.x, irradiance_CoCg)); 
 		lightingIndirect = diffuseIndirect + specularIndirect;
 	}
 	//constant ambient
@@ -326,7 +326,7 @@ void main(){
 		vec3 irradiance	= vec3(ambientStrength) * lightBuffer.sunStrengthExposed;
 		vec3 reflection	= vec3(ambientStrength) * lightBuffer.sunStrengthExposed;
 
-		vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y);
+		vec3 singleScattering = mix(vec3(brdfLut.x), vec3(brdfLut.y), f0);
 		vec3 diffuseIndirect = irradiance * diffuseColor * diffuseBRDFIntegral;
 		vec3 specularIndirect = singleScattering * reflection;
 		lightingIndirect = diffuseIndirect + specularIndirect;
