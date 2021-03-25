@@ -4,9 +4,7 @@ float D_GGX(const float NoH, const float r){
     return k * k * (1.0 / pi);
 }
 
-/*
-geometric occlusion function
-*/
+//geometric occlusion function
 float G_GGX(const float r, const float XoN){
 	const float r_2 = r * r;
 	const float nom = XoN * 2.f;
@@ -14,11 +12,9 @@ float G_GGX(const float r, const float XoN){
 	return nom / denom;
 }
 
-/*
-visibility function
-combines G with denominator
-uses height correlated Smith
-*/
+//visibility function
+//combines G with denominator
+//uses height correlated Smith
 float Visibility(const float NoV, const float NoL, const float r){
 	const float r_2 = r * r;
 	const float v1 = NoL * sqrt(NoV * NoV * (1.f - r_2) + r_2);
@@ -26,10 +22,8 @@ float Visibility(const float NoV, const float NoL, const float r){
 	return 0.5f / (v1 + v2);
 }
 
-/*
-combination of viewer occlusion and facet shadowing
-uncorrelated smith
-*/
+//combination of viewer occlusion and facet shadowing
+//uncorrelated smith
 float G_Smith(const float r, const float NoV, const float NoL){
 	return G_GGX(r, NoV) * G_GGX(r, NoL);
 }
@@ -72,4 +66,11 @@ vec3 Titanfall2Diffuse(vec3 diffuseColor, float NoL, float LoV, float NoV, float
     float single = Titanfall2DiffuseSingleComponent(NoL, LoV, NoV, NoH, r);
     float multi = 0.1159f * r;
     return diffuseColor * (single + diffuseColor * multi);
+}
+
+vec3 GGXSingleScattering(float r, vec3 f0, float NoH, float NoV, float VoH, float NoL){
+	const float D = D_GGX(NoH, r);
+	const float Vis = Visibility(NoV, NoL, r);
+	const vec3 F = F_Schlick(f0, vec3(1.f), VoH);
+	return D * Vis * F;
 }

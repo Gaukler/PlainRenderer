@@ -13,9 +13,7 @@
 #include "SphericalHarmonics.inc"
 #include "volumetricFroxelLighting.inc"
 
-/*
-specialisation constants
-*/
+//---- specialisation constants ----
 
 //0: lambert
 //1: disney
@@ -34,6 +32,8 @@ layout(constant_id = 2) const bool geometricAA = false;
 //1: constant ambient
 layout(constant_id = 3) const int indirectLightingTech = 0;
 layout(constant_id = 4) const uint sunShadowCascadeCount = 4;
+
+//---- resource bindings ----
 
 layout(set=1, binding = 1) 	uniform textureCube	diffuseProbe;
 
@@ -71,11 +71,15 @@ layout(push_constant) uniform MatrixBlock {
 
 layout(set=2, binding = 0) uniform texture2D[] textures;
 
+//---- in/out variables ----
+
 layout(location = 0) in vec2 passUV;
 layout(location = 1) in vec3 passPos;
 layout(location = 2) in mat3 passTBN; 
 
 layout(location = 0) out vec3 color;
+
+//---- functions ----
 
 float shadowTest(texture2D shadowMap, vec2 uv, float actualDepth){
     float depthTexel = texture(sampler2D(shadowMap, g_sampler_nearestBlackBorder), uv, 0).r;
@@ -116,13 +120,12 @@ float calcShadow(vec3 pos, float LoV, texture2D shadowMap, mat4 lightMatrix, int
 }
 
 //mathematical fit from: "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
-float EnergyAverage(float roughness){
+float ReflectedEnergyAverage(float roughness){
     float smoothness = 1.f - pow(roughness, 0.25f);
     float r = -0.0761947f - 0.383026f * smoothness;
           r = 1.04997f + smoothness * r;
           r = 0.409255f + smoothness * r;
     return min(0.999f, r);
-
 }
 
 vec3 applyVolumetricLighting(float pixelDepth, vec3 V){
@@ -136,6 +139,40 @@ vec3 applyVolumetricLighting(float pixelDepth, vec3 V){
 	screenUV += noise;
 	vec4 inscatteringTransmittance = volumeTextureLookup(screenUV, pixelDepth, volumetricLightingLUT, volumetricSettings.maxDistance);
 	return applyInscatteringTransmittance(color, inscatteringTransmittance);
+}
+
+vec3 computeSpecularMultiscatteringLobe(float r, float NoL, vec3 f0, vec3 singleScatteringLobe, vec3 brdfLut){
+	vec3 multiScatteringLobe;
+	float energyOutgoing = brdfLut.x + brdfLut.y;
+	vec3 fresnelAverage = f0 + (1-f0) / 21.f;
+
+	//multiscattering formulation from "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
+	if(directMultiscatterBRDF == 0){
+        float energyAverage = ReflectedEnergyAverage(r);
+    
+        vec2 brdfLutIncoming = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r, NoL)).rg;
+        float energyIncoming = brdfLutIncoming.x + brdfLutIncoming.y;
+        
+        float multiScatteringLobeFloat = (1.f - energyIncoming) * (1.f - energyOutgoing) / (3.1415f * (1.f - energyAverage));
+        vec3 multiScatteringScaling = (fresnelAverage * fresnelAverage * energyAverage) / (1.f - fresnelAverage * (1.f - energyAverage));
+        
+        multiScatteringLobe = multiScatteringLobeFloat * multiScatteringScaling;
+    }
+    //this is the above but approximating E_avg = E_o, simplifying the equation
+    else if(directMultiscatterBRDF == 1){
+        multiScatteringLobe = vec3((1.f - energyOutgoing) / pi);
+        vec3 multiScatteringScaling = (fresnelAverage * fresnelAverage * energyOutgoing) / (1.f - fresnelAverage * (1.f - energyOutgoing));
+        multiScatteringLobe *= multiScatteringScaling;
+    }
+    else if(directMultiscatterBRDF == 2){ 
+        //simple multiscattering achieved by adding scaled singe scattering lobe, see PBR Filament document
+        //not using alternative LUT formulation, but this should be equal? Formulation also used by indirect multi scattering paper
+        multiScatteringLobe = f0 * (1.f - energyOutgoing) / energyOutgoing * singleScatteringLobe;
+    }   
+    else {
+        multiScatteringLobe = vec3(0.f);
+    }
+	return multiScatteringLobe;
 }
 
 void main(){
@@ -202,14 +239,7 @@ void main(){
         sunShadow = calcShadow(passPos, LoV, shadowMapCascade3, sunShadowCascadeInfo.lightMatrices[cascadeIndex], 3);
     }
 	vec3 directLighting = max(dot(N, L), 0.f) * sunShadow * lightBuffer.sunColor;
-    
-    vec3 fresnelAverage = f0 + (1-f0) / 21.f;
-
-    vec3 irradiance;
-	vec3 environmentSample;
-	float r_indirect = r;	//roughness for indirect lighting might be modified to approximate look of more ambient light
-
-	vec3 brdfLut = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r_indirect, NoV)).rgb;
+	vec3 brdfLut = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r, NoV)).rgb;
 
 	//direct diffuse    
     vec3 diffuseDirect;
@@ -255,6 +285,11 @@ void main(){
     //see: https://seblagarde.wordpress.com/2011/08/17/hello-world/#comment-2405
     diffuseDirect *= (1.f - F_Schlick(f0, vec3(1.f), NoV)) * (1.f - (F_Schlick(f0, vec3(1.f), NoL)));
 
+    //direct specular
+    vec3 singleScatteringLobe = GGXSingleScattering(r, f0, NoH, NoV, VoH, NoL);
+    vec3 multiScatteringLobe = computeSpecularMultiscatteringLobe(r, NoL, f0, singleScatteringLobe, brdfLut);
+	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
+
 	vec3 lightingIndirect;
 
 	//indirect lighting is traced into texture
@@ -264,7 +299,7 @@ void main(){
 		vec4 irradiance_Y_SH = texture(sampler2D(indirectDiffuse_Y_SH, g_sampler_nearestClamp), screenUV);
 		float irradiance_Y = dot(irradiance_Y_SH, directionToSH_L1(N));
 		vec2 irradiance_CoCg = texture(sampler2D(indirectDiffuse_CoCg, g_sampler_nearestClamp), screenUV).rg;
-		irradiance = YCoCgToLinear(vec3(irradiance_Y, irradiance_CoCg));
+		vec3 irradiance = YCoCgToLinear(vec3(irradiance_Y, irradiance_CoCg));
 
 		vec3 diffuseIndirect = irradiance * diffuseColor * diffuseBRDFIntegral;
 
@@ -272,7 +307,7 @@ void main(){
 		vec3 dominantDirection = dominantDirectionFromSH_L1(irradiance_Y_SH);
 		float dominantDirectionLength = length(dominantDirection);
 		dominantDirectionLength = clamp(dominantDirectionLength, 0.01, 1);
-		r_indirect = mix(1, r, sqrt(dominantDirectionLength));
+		float r_indirect = mix(1, r, sqrt(dominantDirectionLength));
 
 		vec3 L_indirect = dominantDirection / dominantDirectionLength;
 		vec3 H_indirect = normalize(L_indirect+V);
@@ -280,65 +315,26 @@ void main(){
 		float NoL_indirect = max(dot(N, L_indirect), 0.f);
 		float VoH_indirect = max(dot(V, H_indirect), 0.f);
 
-		const float D = D_GGX(NoH_indirect, r_indirect);
-		const float Vis = Visibility(NoV, NoL_indirect, r_indirect);
-		const vec3 F = F_Schlick(f0, vec3(1.f), VoH_indirect);
-		vec3 specularIndirect = D * Vis * F * YCoCgToLinear(vec3(irradiance_Y_SH.x, irradiance_CoCg));
+		vec3 brdf = GGXSingleScattering(r_indirect, f0, NoH_indirect, NoV, VoH_indirect, NoL_indirect);
+
+		vec3 specularIndirect = brdf * YCoCgToLinear(vec3(irradiance_Y_SH.x, irradiance_CoCg));
 		lightingIndirect = diffuseIndirect + specularIndirect;
 	}
 	//constant ambient
 	else {
 		float ambientStrength = 0.003f;
-		irradiance			= vec3(ambientStrength) * lightBuffer.sunStrengthExposed;
-		environmentSample	= vec3(ambientStrength) * lightBuffer.sunStrengthExposed;
+		vec3 irradiance	= vec3(ambientStrength) * lightBuffer.sunStrengthExposed;
+		vec3 reflection	= vec3(ambientStrength) * lightBuffer.sunStrengthExposed;
 
 		vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y);
 		vec3 diffuseIndirect = irradiance * diffuseColor * diffuseBRDFIntegral;
-		vec3 specularIndirect = singleScattering * environmentSample;
+		vec3 specularIndirect = singleScattering * reflection;
 		lightingIndirect = diffuseIndirect + specularIndirect;
 	}
-
-    //direct specular
-	const float D = D_GGX(NoH, r);
-	const float Vis = Visibility(NoV, NoL, r);
-	const vec3 F = F_Schlick(f0, vec3(1.f), VoH);
-    vec3 singleScatteringLobe = D * Vis * F;
-    
-    float energyOutgoing = brdfLut.x + brdfLut.y;
-    
-    //multiscattering formulation from "A Journey Through Implementing Multiscattering BRDFs & Area Lights"
-    vec3 multiScatteringLobe;
-    if(directMultiscatterBRDF == 0){
-        float energyAverage = EnergyAverage(r);
-    
-        vec2 brdfLutIncoming = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r, NoL)).rg;
-        float energyIncoming = brdfLutIncoming.x + brdfLutIncoming.y;
-        
-        float multiScatteringLobeFloat = (1.f - energyIncoming) * (1.f - energyOutgoing) / (3.1415f * (1.f - energyAverage));
-        vec3 multiScatteringScaling = (fresnelAverage * fresnelAverage * energyAverage) / (1.f - fresnelAverage * (1.f - energyAverage));
-        
-        multiScatteringLobe = multiScatteringLobeFloat * multiScatteringScaling;
-    }
-    //this is the above but approximating E_avg = E_o, simplifying the equation
-    else if(directMultiscatterBRDF == 1){
-        multiScatteringLobe = vec3((1.f - energyOutgoing) / pi);
-        vec3 multiScatteringScaling = (fresnelAverage * fresnelAverage * energyOutgoing) / (1.f - fresnelAverage * (1.f - energyOutgoing));
-        multiScatteringLobe *= multiScatteringScaling;
-    }
-    else if(directMultiscatterBRDF == 2){ 
-        //simple multiscattering achieved by adding scaled singe scattering lobe, see PBR Filament document
-        //not using alternative LUT formulation, but this should be equal? Formulation also used by indirect multi scattering paper
-        multiScatteringLobe = f0 * (1.f - energyOutgoing) / energyOutgoing * singleScatteringLobe;
-    }   
-    else {
-        multiScatteringLobe = vec3(0.f);
-    }
-	vec3 specularDirect = directLighting * (singleScatteringLobe + multiScatteringLobe);
 
     color = (diffuseDirect + specularDirect) * lightBuffer.sunStrengthExposed + lightingIndirect;
 	color = applyVolumetricLighting(pixelDepth, V);
 
-	//color = irradiance / pi;
 	//color = N*0.5+0.5;
 	//color = passPos;
 	//color = sunShadowCascadeDebugColors(cascadeIndex);
