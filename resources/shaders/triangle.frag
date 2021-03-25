@@ -28,15 +28,12 @@ layout(constant_id = 0) const int diffuseBRDF = 0;
 //2: scaled GGX lobe
 //3: none
 layout(constant_id = 1) const int directMultiscatterBRDF = 0;
-
-layout(constant_id = 2) const bool indirectMultiscatterBRDF = false;
-layout(constant_id = 3) const bool geometricAA = false;
-layout(constant_id = 4) const uint specularProbeMipCount = 0;
+layout(constant_id = 2) const bool geometricAA = false;
 
 //0: traced into textures
 //1: constant ambient
-layout(constant_id = 5) const int indirectLightingTech = 0;
-layout(constant_id = 6) const uint sunShadowCascadeCount = 4;
+layout(constant_id = 3) const int indirectLightingTech = 0;
+layout(constant_id = 4) const uint sunShadowCascadeCount = 4;
 
 layout(set=1, binding = 1) 	uniform textureCube	diffuseProbe;
 
@@ -64,7 +61,6 @@ layout(set=1, binding = 18) uniform texture3D volumetricLightingLUT;
 layout(set=1, binding = 19) uniform SettingsBuffer {
 	VolumetricLightingSettings volumetricSettings;
 };
-
 
 layout(push_constant) uniform MatrixBlock {
 	int albedoTextureIndex;
@@ -156,6 +152,8 @@ void main(){
     r = max(r * r, 0.0045f);
     vec3 albedo = sRGBToLinear(albedoTexel);
 
+	vec3 diffuseColor = (1.f - metalic) * albedo;
+
 	vec3 N = normalize(passTBN * normalTexelReconstructed);
 	if(any(isnan(N))){
 		N = passTBN[2];	//fix for broken (bi)tangents on tree assets
@@ -211,33 +209,9 @@ void main(){
 	vec3 environmentSample;
 	float r_indirect = r;	//roughness for indirect lighting might be modified to approximate look of more ambient light
 
-	//indirect lighting is traced into texture
-	if(indirectLightingTech == 0){
-		//diffuse
-		vec2 screenUV = gl_FragCoord.xy / g_screenResolution;
-		vec4 irradiance_Y_SH = texture(sampler2D(indirectDiffuse_Y_SH, g_sampler_nearestClamp), screenUV);
-		float irradiance_Y = dot(irradiance_Y_SH, directionToSH_L1(N));
-		vec2 irradiance_CoCg = texture(sampler2D(indirectDiffuse_CoCg, g_sampler_nearestClamp), screenUV).rg;
-		irradiance = YCoCgToLinear(vec3(irradiance_Y, irradiance_CoCg));
-
-		//specular
-		float SHDirectionLength = length(irradiance_Y_SH.wyz);
-		vec3 SHDirection = irradiance_Y_SH.wyz / SHDirectionLength;
-		SHDirectionLength = clamp(SHDirectionLength, 0.01, 1);
-		r_indirect = mix(r, 1, sqrt(SHDirectionLength));
-
-		environmentSample = YCoCgToLinear(vec3(max(dot(directionToSH_L1(R), irradiance_Y_SH), 0), irradiance_CoCg));
-	}
-	//constant ambient
-	else {
-		irradiance			= vec3(0.01f) * lightBuffer.sunStrengthExposed;
-		environmentSample	= vec3(0.01f) * lightBuffer.sunStrengthExposed;
-	}
-
 	vec3 brdfLut = texture(sampler2D(brdfLutTexture, g_sampler_linearClamp), vec2(r_indirect, NoV)).rgb;
 
 	//direct diffuse    
-	vec3 diffuseColor = (1.f - metalic) * albedo;
     vec3 diffuseDirect;
     vec3 diffuseBRDFIntegral = vec3(1.f);
     
@@ -281,31 +255,48 @@ void main(){
     //see: https://seblagarde.wordpress.com/2011/08/17/hello-world/#comment-2405
     diffuseDirect *= (1.f - F_Schlick(f0, vec3(1.f), NoV)) * (1.f - (F_Schlick(f0, vec3(1.f), NoL)));
 
-    vec3 diffuseIndirect;
-    vec3 specularIndirect;
-    if(indirectMultiscatterBRDF){
-        //multi scattering for IBL from "A Multiple-Scattering Microfacet Model for Real-Time Image-based Lighting"
-        vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y); //includes fresnel and energy
-        
-        float energySingleScattering = brdfLut.x + brdfLut.y;
-        float energyMultiScattering = 1 - energySingleScattering;
-        vec3 fresnelMultiScattering = singleScattering * fresnelAverage / (1.f - (1.f - energySingleScattering) * fresnelAverage);
-        vec3 multiScattering = energyMultiScattering * fresnelMultiScattering;
-        
-        vec3 energyDiffuseMultiScattering = 1.f - (singleScattering + multiScattering);
-        vec3 diffuseCorrection = diffuseColor * energyDiffuseMultiScattering;
-        
-        diffuseIndirect = diffuseCorrection * diffuseBRDFIntegral * irradiance;
-        specularIndirect = singleScattering * environmentSample + multiScattering * irradiance;
-    }
-    else {
-        //single scattering only
-        vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y);
-        diffuseIndirect = irradiance * diffuseColor * diffuseBRDFIntegral;
-        specularIndirect = singleScattering * environmentSample;
-    }
+	vec3 lightingIndirect;
 
-    vec3 lightingIndirect = diffuseIndirect + specularIndirect;
+	//indirect lighting is traced into texture
+	if(indirectLightingTech == 0){
+		//diffuse
+		vec2 screenUV = gl_FragCoord.xy / g_screenResolution;
+		vec4 irradiance_Y_SH = texture(sampler2D(indirectDiffuse_Y_SH, g_sampler_nearestClamp), screenUV);
+		float irradiance_Y = dot(irradiance_Y_SH, directionToSH_L1(N));
+		vec2 irradiance_CoCg = texture(sampler2D(indirectDiffuse_CoCg, g_sampler_nearestClamp), screenUV).rg;
+		irradiance = YCoCgToLinear(vec3(irradiance_Y, irradiance_CoCg));
+
+		vec3 diffuseIndirect = irradiance * diffuseColor * diffuseBRDFIntegral;
+
+		//specular
+		vec3 dominantDirection = dominantDirectionFromSH_L1(irradiance_Y_SH);
+		float dominantDirectionLength = length(dominantDirection);
+		dominantDirectionLength = clamp(dominantDirectionLength, 0.01, 1);
+		r_indirect = mix(1, r, sqrt(dominantDirectionLength));
+
+		vec3 L_indirect = dominantDirection / dominantDirectionLength;
+		vec3 H_indirect = normalize(L_indirect+V);
+		float NoH_indirect = max(dot(N, H_indirect), 0.f);
+		float NoL_indirect = max(dot(N, L_indirect), 0.f);
+		float VoH_indirect = max(dot(V, H_indirect), 0.f);
+
+		const float D = D_GGX(NoH_indirect, r_indirect);
+		const float Vis = Visibility(NoV, NoL_indirect, r_indirect);
+		const vec3 F = F_Schlick(f0, vec3(1.f), VoH_indirect);
+		vec3 specularIndirect = D * Vis * F * YCoCgToLinear(vec3(irradiance_Y_SH.x, irradiance_CoCg));
+		lightingIndirect = diffuseIndirect + specularIndirect;
+	}
+	//constant ambient
+	else {
+		float ambientStrength = 0.003f;
+		irradiance			= vec3(ambientStrength) * lightBuffer.sunStrengthExposed;
+		environmentSample	= vec3(ambientStrength) * lightBuffer.sunStrengthExposed;
+
+		vec3 singleScattering = (brdfLut.x * f0 + brdfLut.y);
+		vec3 diffuseIndirect = irradiance * diffuseColor * diffuseBRDFIntegral;
+		vec3 specularIndirect = singleScattering * environmentSample;
+		lightingIndirect = diffuseIndirect + specularIndirect;
+	}
 
     //direct specular
 	const float D = D_GGX(NoH, r);
@@ -334,11 +325,9 @@ void main(){
         vec3 multiScatteringScaling = (fresnelAverage * fresnelAverage * energyOutgoing) / (1.f - fresnelAverage * (1.f - energyOutgoing));
         multiScatteringLobe *= multiScatteringScaling;
     }
-    else if(directMultiscatterBRDF == 2){
-        /* 
-        simple multiscattering achieved by adding scaled singe scattering lobe, see PBR Filament document
-        not using alternative LUT formulation, but this should be equal? Formulation also used by indirect multi scattering paper
-        */
+    else if(directMultiscatterBRDF == 2){ 
+        //simple multiscattering achieved by adding scaled singe scattering lobe, see PBR Filament document
+        //not using alternative LUT formulation, but this should be equal? Formulation also used by indirect multi scattering paper
         multiScatteringLobe = f0 * (1.f - energyOutgoing) / energyOutgoing * singleScatteringLobe;
     }   
     else {

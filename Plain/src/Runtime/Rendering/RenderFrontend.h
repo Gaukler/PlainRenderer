@@ -26,7 +26,6 @@ struct ShadingConfig {
     DiffuseBRDF diffuseBRDF = DiffuseBRDF::CoDWWII;
     DirectSpecularMultiscattering directMultiscatter = DirectSpecularMultiscattering::McAuley;
 	IndirectLightingTech indirectLightingTech = IndirectLightingTech::SDFTrace;
-    bool useIndirectMultiscatter = true;
     bool useGeometryAA = true;
 	bool indirectLightingHalfRes = true;
 	int sunShadowCascadeCount = 3;

@@ -6,3 +6,7 @@ vec4 directionToSH_L1(vec3 V){
 		 sqrt(3.f) * V.z / (2.f * sqrt(pi)),
 		-sqrt(3.f) * V.x / (2.f * sqrt(pi))));
 }
+
+vec3 dominantDirectionFromSH_L1(vec4 c){
+	return vec3(-c.w, -c.y, c.z);
+}

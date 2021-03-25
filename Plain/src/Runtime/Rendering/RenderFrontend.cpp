@@ -1953,29 +1953,19 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
             1,                                                                                      //location
             dataToCharArray((void*)&config.directMultiscatter, sizeof(config.directMultiscatter))   //value
             });
-        //use indirect multiscattering
-        constants.push_back({
-            2,                                                                                              //location
-            dataToCharArray((void*)&config.useIndirectMultiscatter, sizeof(config.useIndirectMultiscatter)) //value
-            });
         //use geometry AA
         constants.push_back({
-            3,                                                                          //location
+            2,                                                                          //location
             dataToCharArray((void*)&config.useGeometryAA, sizeof(config.useGeometryAA)) //value
-            });
-        //specular probe mip count
-        constants.push_back({
-            4,																							//location
-            dataToCharArray((void*)&m_specularSkyProbeMipCount, sizeof(m_specularSkyProbeMipCount))		//value
             });
 		//indirect lighting tech
 		constants.push_back({
-				5,																											//location
+				3,																											//location
 				dataToCharArray((void*)&m_shadingConfig.indirectLightingTech, sizeof(m_shadingConfig.indirectLightingTech)) //value
 			});
 		//sun shadow cascade count
 		constants.push_back({
-				6,																											  //location
+				4,																											  //location
 				dataToCharArray((void*)&m_shadingConfig.sunShadowCascadeCount, sizeof(m_shadingConfig.sunShadowCascadeCount)) //value
 			});
     }
@@ -3679,7 +3669,6 @@ void RenderFrontend::drawUi() {
     }
     //shading settings
     if (ImGui::CollapsingHeader("Shading settings")) {
-        m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Indirect Multiscatter BRDF", &m_shadingConfig.useIndirectMultiscatter);
 
         //naming and values rely on enum values being ordered same as names and indices being [0,3]
         const char* diffuseBRDFOptions[] = { "Lambert", "Disney", "CoD WWII", "Titanfall 2" };
