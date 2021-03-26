@@ -370,7 +370,9 @@ void ShaderFileManager::updateFileLastChangeTimes() {
 	for (size_t i = 0; i < m_filePathsAbsolute.size(); i++) {
 		const fs::path filePath = m_filePathsAbsolute[i];
 		fs::file_time_type lastChange;
-		if (checkLastChangeTime(filePath, &lastChange)) {
+		const int lastChangeTimeTries = 3;
+		const int lastChangeTimeWaitTimeMs = 1;
+		if (checkLastChangeTimeSlow(filePath, &lastChange, lastChangeTimeTries, lastChangeTimeWaitTimeMs)) {
 			//if compilation of spirv cache files fails the last change time is still updated to avoid failing with same problem every frame
 			//use max to avoid overwriting this date
 			m_fileLastChanges[i] = std::max(m_fileLastChanges[i], lastChange);
