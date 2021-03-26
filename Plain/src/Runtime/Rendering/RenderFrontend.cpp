@@ -611,6 +611,7 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 	assert(scene.size() < maxObjectCountMainScene);
 
 	//sdf scene
+	//TODO: instead of updating complete scene transforms every frame, track dirty transforms and ony write changes using compute shader
 	{
 		struct GPUBoundingBox {
 			glm::vec3 min = glm::vec3(0);
@@ -668,16 +669,18 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 	const bool renderingSDFVisualisation = m_sdfDebugSettings.visualisationMode != SDFVisualisationMode::None;
 
     //main and prepass
-    {
-		struct MainPassPushConstants {
-			uint32_t albedoTextureIndex;
-			uint32_t normalTextureIndex;
-			uint32_t specularTextureIndex;
-			uint32_t transformIndex;
-		};
+	JobSystem::Counter recordingFinished;
 
-        std::vector<MeshHandle> culledMeshes;
-		std::vector<MainPassPushConstants> pushConstants;
+	struct MainPassPushConstants {
+		uint32_t albedoTextureIndex;
+		uint32_t normalTextureIndex;
+		uint32_t specularTextureIndex;
+		uint32_t transformIndex;
+	};
+	//data needed in outer scope to keep data pointer in scope when executing job
+	std::vector<MainPassPushConstants> mainPassPushConstants;	
+	std::vector<MeshHandle> mainPassCulledMeshes;
+    {
 		std::vector<MainPassMatrices> mainPassMatrices;
 
         //frustum culling
@@ -688,14 +691,14 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
             if (isVisible) {
                 m_currentMainPassDrawcallCount++;
 				MeshFrontend meshFrontend = m_frontendMeshes[obj.mesh.index];
-                culledMeshes.push_back(meshFrontend.backendHandle);
+                mainPassCulledMeshes.push_back(meshFrontend.backendHandle);
 
 				MainPassPushConstants meshPushConstants;
 				meshPushConstants.albedoTextureIndex = meshFrontend.material.albedoTextureIndex;
 				meshPushConstants.normalTextureIndex = meshFrontend.material.normalTextureIndex;
 				meshPushConstants.specularTextureIndex = meshFrontend.material.specularTextureIndex;
 				meshPushConstants.transformIndex = (uint32_t)mainPassMatrices.size();
-				pushConstants.push_back(meshPushConstants);
+				mainPassPushConstants.push_back(meshPushConstants);
 
 				MainPassMatrices matrices;
 				matrices.model = obj.modelMatrix;
@@ -706,27 +709,30 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
         }
 		//only prepass drawcalls needed for sdf debug visualisation
 		if (renderingSDFVisualisation) {
-			gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstants.data(), m_depthPrePass);
+			JobSystem::addJob([this, &mainPassCulledMeshes, &mainPassPushConstants](int workerIndex) {
+				gRenderBackend.drawMeshes(mainPassCulledMeshes, (char*)mainPassPushConstants.data(), m_depthPrePass, 0);
+			}, &recordingFinished);
 		}
 		else {
-			gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstants.data(), m_mainPass);
-			gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstants.data(), m_depthPrePass);
+			JobSystem::addJob([this, &mainPassCulledMeshes, &mainPassPushConstants](int workerIndex) {
+				gRenderBackend.drawMeshes(mainPassCulledMeshes, (char*)mainPassPushConstants.data(), m_mainPass, workerIndex);
+			}, &recordingFinished);
+			JobSystem::addJob([this, &mainPassCulledMeshes, &mainPassPushConstants](int workerIndex) {
+				gRenderBackend.drawMeshes(mainPassCulledMeshes, (char*)mainPassPushConstants.data(), m_depthPrePass, workerIndex);
+			}, &recordingFinished);
 		}
 		gRenderBackend.setStorageBufferData(m_mainPassTransformsBuffer, mainPassMatrices.data(), 
 			sizeof(MainPassMatrices) * mainPassMatrices.size());
     }
-
+	
     //shadow pass
+	struct ShadowPushConstants {
+		uint32_t albedoTextureIndex;
+		uint32_t transformIndex;
+	};
+	std::vector<MeshHandle> shadowCulledMeshes;
+	std::vector<ShadowPushConstants> shadowPushConstantData;
     {
-		struct ShadowPushConstants {
-			uint32_t albedoTextureIndex;
-			uint32_t transformIndex;
-		};
-
-        std::vector<MeshHandle> culledMeshes;
-		std::vector<glm::mat4> modelMatrices;
-		std::vector<ShadowPushConstants> pushConstantData;
-
         const glm::vec3 sunDirection = directionToVector(m_sunDirection);
         //we must not cull behind the shadow frustum near plane, as objects there cast shadows into the visible area
         //for now we simply offset the near plane points very far into the light direction
@@ -738,6 +744,8 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
         m_sunShadowFrustum.points.l_u_n += nearPlaneOffset;
         m_sunShadowFrustum.points.r_u_n += nearPlaneOffset;
 
+		std::vector<glm::mat4> shadowModelMatrices;
+
         //coarse frustum culling for shadow rendering, assuming shadow frustum if fitted to camera frustum
         //actual frustum is fitted tightly to depth buffer values, but that is done on the GPU
         for (const RenderObject& obj : scene) {
@@ -748,27 +756,31 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
                 m_currentShadowPassDrawcallCount++;
 
 				const MeshFrontend mesh = m_frontendMeshes[obj.mesh.index];
-                culledMeshes.push_back(mesh.backendHandle);
+                shadowCulledMeshes.push_back(mesh.backendHandle);
 
 				ShadowPushConstants pushConstants;
 				pushConstants.albedoTextureIndex = mesh.material.albedoTextureIndex;
-				pushConstants.transformIndex = (uint32_t)modelMatrices.size();
-				pushConstantData.push_back(pushConstants);
+				pushConstants.transformIndex = (uint32_t)shadowModelMatrices.size();
+				shadowPushConstantData.push_back(pushConstants);
 
-				modelMatrices.push_back(obj.modelMatrix);
+				shadowModelMatrices.push_back(obj.modelMatrix);
             }
         }
         for (int shadowPass = 0; shadowPass < m_shadingConfig.sunShadowCascadeCount; shadowPass++) {
-            gRenderBackend.drawMeshes(culledMeshes, (char*)pushConstantData.data(), m_shadowPasses[shadowPass]);
+			JobSystem::addJob([this, shadowPass, &shadowCulledMeshes, &shadowPushConstantData](int workerIndex) {
+				gRenderBackend.drawMeshes(shadowCulledMeshes, (char*)shadowPushConstantData.data(), m_shadowPasses[shadowPass], workerIndex);
+			}, & recordingFinished);
         }
-		gRenderBackend.setStorageBufferData(m_shadowPassTransformsBuffer, modelMatrices.data(),
-			sizeof(glm::mat4) * modelMatrices.size());
+		gRenderBackend.setStorageBufferData(m_shadowPassTransformsBuffer, shadowModelMatrices.data(),
+			sizeof(glm::mat4) * shadowModelMatrices.size());
     }
+
+	//bounding boxes
+	std::vector<MeshHandle> bbMeshHandles;
+	std::vector<uint32_t> bbPushConstantData; //contains index to matrix
 
 	if (m_renderBoundingBoxes && !renderingSDFVisualisation) {
 		std::vector<glm::mat4> boundingBoxMatrices;
-		std::vector<MeshHandle> meshHandles;
-		std::vector<uint32_t> pushConstantData; //contains index to matrix
 		for (const RenderObject& obj : scene) {
 			//culling again is repeating work
 			//but keeps code nicely separated and is for debugging only
@@ -778,15 +790,18 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 				const glm::mat4 translationMatrix = glm::translate(glm::mat4(1.f), offset);
 				const glm::mat4 scaleMatrix = glm::scale(glm::mat4(1.f), (obj.bbWorld.max - obj.bbWorld.min) * 0.5f);
 				const glm::mat4 bbMatrix = m_globalShaderInfo.viewProjection * translationMatrix * scaleMatrix;
-				pushConstantData.push_back((uint32_t)boundingBoxMatrices.size());
+				bbPushConstantData.push_back((uint32_t)boundingBoxMatrices.size());
 				boundingBoxMatrices.push_back(bbMatrix);
-				meshHandles.push_back(m_boundingBoxMesh);
+				bbMeshHandles.push_back(m_boundingBoxMesh);
 			}
 		}
-		gRenderBackend.drawMeshes(meshHandles, (char*)pushConstantData.data(), m_debugGeoPass);
+		JobSystem::addJob([this, &bbMeshHandles, &bbPushConstantData](int workerIndex) {
+			gRenderBackend.drawMeshes(bbMeshHandles, (char*)bbPushConstantData.data(), m_debugGeoPass, workerIndex);
+		}, & recordingFinished);
 		const size_t bbMatricesSize = boundingBoxMatrices.size() * sizeof(glm::mat4);
 		gRenderBackend.setStorageBufferData(m_boundingBoxDebugRenderMatrices, (char*)boundingBoxMatrices.data(), bbMatricesSize);
 	}
+	JobSystem::waitOnCounter(recordingFinished);
 }
 
 void RenderFrontend::renderFrame() {
@@ -1397,7 +1412,7 @@ void RenderFrontend::renderDebugGeometry(const FramebufferHandle framebuffer) co
 }
 
 void RenderFrontend::issueSkyDrawcalls() {
-    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, nullptr, m_skyPass);
+    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, nullptr, m_skyPass, 0);
 
     const float lattitudeOffsetAngle = 90;
     const float longitudeOffsetAngle = -90;
@@ -1415,7 +1430,7 @@ void RenderFrontend::issueSkyDrawcalls() {
 	sunSpriteMatrices.model = spriteLongitudeRotation * spriteLattitudeRotation * spriteScaleMatrix;
 	sunSpriteMatrices.mvp = m_viewProjectionMatrix * sunSpriteMatrices.model;
 
-    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, (char*)&sunSpriteMatrices, m_sunSpritePass);
+    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, (char*)&sunSpriteMatrices, m_sunSpritePass, 0);
 }
 
 void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const{

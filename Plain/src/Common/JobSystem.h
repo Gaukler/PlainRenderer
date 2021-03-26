@@ -22,4 +22,5 @@ namespace JobSystem {
 	void addJob(const std::function<void(int workerIndex)> job, Counter* counter);
 
 	void waitOnCounter(Counter& counter);
+	int getWorkerCount();
 }

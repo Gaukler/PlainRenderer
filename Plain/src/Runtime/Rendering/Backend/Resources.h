@@ -95,8 +95,10 @@ struct GraphicPass {
 
     VertexInputFlags                vertexInputFlags = VertexInputFlags(0);
 
-	//two to allow recording while gpu is working
-	VkCommandBuffer meshCommandBuffers[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+	//frameCount * workerCount command buffers
+	//every frame can be recorded while the other is executed
+	//and commands can be recorded in parallel on every worker thread
+	std::vector<VkCommandBuffer> meshCommandBuffers;
 
     std::vector<VkClearValue> clearValues;
 

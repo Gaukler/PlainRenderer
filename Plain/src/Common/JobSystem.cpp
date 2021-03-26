@@ -69,6 +69,10 @@ namespace JobSystem {
 		}
 	}
 
+	int getWorkerCount() {
+		return g_threadCount;
+	}
+
 	void incrementCounter(Counter* counter) {
 		assert(counter != nullptr);
 		std::unique_lock uniqueLock(counter->mutex);

@@ -14,6 +14,7 @@
 #include "VertexInputVulkan.h"
 #include "VulkanImageFormats.h"
 #include "Runtime/Timer.h"
+#include "JobSystem.h"
 
 //disable ImGui warnings
 #pragma warning( push )
@@ -183,6 +184,12 @@ void RenderBackend::setup(GLFWwindow* window) {
     acquireDebugUtilsExtFunctionsPointers();
 
     m_commandPool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+	
+	for (int i = 0; i < JobSystem::getWorkerCount(); i++) {
+		const VkCommandPool pool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+		m_drawcallCommandPools.push_back(pool);
+	}
+
     m_transientCommandPool = createCommandPool(vkContext.queueFamilies.transferQueueFamilyIndex, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
 
     m_swapchain.imageAvaible = createSemaphore();
@@ -203,8 +210,8 @@ void RenderBackend::setup(GLFWwindow* window) {
             stagingBufferMemoryFlags);
     }
 
-    m_commandBuffers[0] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
-    m_commandBuffers[1] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+    m_commandBuffers[0] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_commandPool);
+    m_commandBuffers[1] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_commandPool);
 
     initGlobalTextureArrayDescriptorSetLayout();
 	initGlobalTextureArrayDescriptorSet();
@@ -285,6 +292,10 @@ void RenderBackend::shutdown() {
 
 	vkDestroyCommandPool(vkContext.device, m_commandPool, nullptr);
 	vkDestroyCommandPool(vkContext.device, m_transientCommandPool, nullptr);
+
+	for (const VkCommandPool pool : m_drawcallCommandPools) {
+		vkDestroyCommandPool(vkContext.device, pool, nullptr);
+	}
 
 	vkDestroySemaphore(vkContext.device, m_renderFinishedSemaphore, nullptr);
 	vkDestroySemaphore(vkContext.device, m_swapchain.imageAvaible, nullptr);
@@ -445,14 +456,9 @@ void RenderBackend::newFrame() {
 void RenderBackend::startDrawcallRecording() {
     //iterate over graphic passes that will be executed
     for (const GraphicPassExecution execution : m_graphicPassExecutions) {
+
         const RenderPassHandle passHandle = execution.genericInfo.handle;
-
         const GraphicPass pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-
-		const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[m_frameIndexMod2];
-        const auto res = vkResetCommandBuffer(meshCommandBuffer, 0);
-        assert(res == VK_SUCCESS);
-
         const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
 
         VkCommandBufferInheritanceInfo inheritanceInfo;
@@ -471,32 +477,43 @@ void RenderBackend::startDrawcallRecording() {
         cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
         cmdBeginInfo.pInheritanceInfo = &inheritanceInfo;
 
-        vkBeginCommandBuffer(meshCommandBuffer, &cmdBeginInfo);
-        vkCmdBindPipeline(meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipeline);
+		const int poolCount = m_drawcallCommandPools.size();
+		for (int cmdBufferIndex = 0; cmdBufferIndex < poolCount; cmdBufferIndex++) {
+			const int finalIndex = cmdBufferIndex + m_frameIndexMod2 * poolCount;
+			const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[finalIndex];
+			const auto res = vkResetCommandBuffer(meshCommandBuffer, 0);
+			assert(res == VK_SUCCESS);
 
-        const glm::ivec2 resolution = resolutionFromFramebufferTargets(framebuffer.desc.targets);
+			//reset command buffer
+			vkBeginCommandBuffer(meshCommandBuffer, &cmdBeginInfo);
 
-        //set viewport
-        {
-            VkViewport viewport;
-            viewport.x = 0;
-            viewport.y = 0;
-            viewport.width = (float)resolution.x;
-            viewport.height = (float)resolution.y;
-            viewport.minDepth = 0.f;
-            viewport.maxDepth = 1.f;
+			//prepare for drawcall recording
+			vkCmdBindPipeline(meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipeline);
 
-            vkCmdSetViewport(meshCommandBuffer, 0, 1, &viewport);
-        }
-        //set scissor
-        {
-            VkRect2D scissor;
-            scissor.offset = { 0, 0 };
-            scissor.extent.width = resolution.x;
-            scissor.extent.height = resolution.y;
+			const glm::ivec2 resolution = resolutionFromFramebufferTargets(framebuffer.desc.targets);
 
-            vkCmdSetScissor(meshCommandBuffer, 0, 1, &scissor);
-        }
+			//set viewport
+			{
+				VkViewport viewport;
+				viewport.x = 0;
+				viewport.y = 0;
+				viewport.width = (float)resolution.x;
+				viewport.height = (float)resolution.y;
+				viewport.minDepth = 0.f;
+				viewport.maxDepth = 1.f;
+
+				vkCmdSetViewport(meshCommandBuffer, 0, 1, &viewport);
+			}
+			//set scissor
+			{
+				VkRect2D scissor;
+				scissor.offset = { 0, 0 };
+				scissor.extent.width = resolution.x;
+				scissor.extent.height = resolution.y;
+
+				vkCmdSetScissor(meshCommandBuffer, 0, 1, &scissor);
+			}
+		}
     }
 }
 
@@ -522,7 +539,7 @@ void RenderBackend::setComputePassExecution(const ComputePassExecution& executio
 	m_computePassExecutions.push_back(execution);
 }
 
-void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData,const RenderPassHandle passHandle) {
+void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData,const RenderPassHandle passHandle, const int workerIndex) {
     const GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
 
 	VkShaderStageFlags pushConstantStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -530,7 +547,10 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const 
 		pushConstantStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
 	}
 
-	const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[m_frameIndexMod2];
+	const int poolCount = m_drawcallCommandPools.size();
+	const int poolIndex = workerIndex + poolCount * m_frameIndexMod2;
+
+	const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[poolIndex];
 	const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSets[m_frameIndexMod2], m_globalTextureArrayDescriptorSet };
 	vkCmdBindDescriptorSets(meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
@@ -1437,13 +1457,17 @@ void RenderBackend::submitGraphicPass(const GraphicPassExecution& execution,
 	//prepare pass
 	vkCmdBeginRenderPass(commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
-	const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[m_frameIndexMod2];
+	const int poolCount = m_drawcallCommandPools.size();
+	for (int poolIndex = 0; poolIndex < poolCount; poolIndex++) {
+		const int cmdBufferIndex = poolIndex + m_frameIndexMod2 * poolCount;
+		const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[cmdBufferIndex];
 
-	//stop recording mesh commands
-	vkEndCommandBuffer(meshCommandBuffer);
-
+		//stop recording mesh commands
+		vkEndCommandBuffer(meshCommandBuffer);
+	}
 	//execute mesh commands
-	vkCmdExecuteCommands(commandBuffer, 1, &meshCommandBuffer);
+	const int cmdBufferIndexOffset = m_frameIndexMod2 * poolCount;
+	vkCmdExecuteCommands(commandBuffer, poolCount, &pass.meshCommandBuffers[cmdBufferIndexOffset]);
 
 	vkCmdEndRenderPass(commandBuffer);
 
@@ -2447,12 +2471,12 @@ VkCommandPool RenderBackend::createCommandPool(const uint32_t queueFamilyIndex, 
     return pool;
 }
 
-VkCommandBuffer RenderBackend::allocateCommandBuffer(const VkCommandBufferLevel level) {
+VkCommandBuffer RenderBackend::allocateCommandBuffer(const VkCommandBufferLevel level, const VkCommandPool& pool) {
 
     VkCommandBufferAllocateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     bufferInfo.pNext = nullptr;
-    bufferInfo.commandPool = m_commandPool;
+    bufferInfo.commandPool = pool;
     bufferInfo.level = level;
     bufferInfo.commandBufferCount = 1;
 
@@ -2976,8 +3000,13 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
     GraphicPass pass;
     pass.graphicPassDesc = desc;
-	pass.meshCommandBuffers[0] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY);
-	pass.meshCommandBuffers[1] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+
+	for (int frameIndex = 0; frameIndex < 2; frameIndex++) {
+		for (int poolIndex = 0; poolIndex < m_drawcallCommandPools.size(); poolIndex++) {
+			const VkCommandPool pool = m_drawcallCommandPools[poolIndex];
+			pass.meshCommandBuffers.push_back(allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY, pool));
+		}
+	}
 
     const VkShaderModule vertexModule   = createShaderModule(spirV.vertex);
     const VkShaderModule fragmentModule = createShaderModule(spirV.fragment);

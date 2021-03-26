@@ -165,7 +165,7 @@ public:
 	void startDrawcallRecording();
 
 	//must be called after startDrawcallRecording
-	void drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData, const RenderPassHandle passHandle);
+	void drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData, const RenderPassHandle passHandle, const int workerIndex);
 
 	//actual copy is deferred to before submitting, to avoid stalling cpu until previous frame is finished rendering
 	//results in an extra copy of data
@@ -352,12 +352,14 @@ private:
 	commands
 	=========
 	*/
+
+	std::vector<VkCommandPool> m_drawcallCommandPools;
+
 	VkCommandPool   m_commandPool = VK_NULL_HANDLE;
 	VkCommandPool   m_transientCommandPool = VK_NULL_HANDLE; //used for short lived copy command buffer and such
-	/*
-	primary command buffers used for all rendering
-	two so one can be filled while the other is still rendering
-	*/
+	
+	//primary command buffers used for all rendering
+	//two so one can be filled while the other is still rendering
 	VkCommandBuffer m_commandBuffers[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
 
 	uint32_t m_frameIndex = 0;
@@ -365,20 +367,14 @@ private:
 
 
 	VkCommandPool   createCommandPool(const uint32_t queueFamilyIndex, const VkCommandPoolCreateFlagBits flags);
+	VkCommandBuffer allocateCommandBuffer(const VkCommandBufferLevel level, const VkCommandPool& pool);
 
-	//allocates a single primary command buffer from m_commandPool
-	VkCommandBuffer allocateCommandBuffer(const VkCommandBufferLevel level);
-
-	/*
-	allocate and begin a one time use command buffer
-	returned command buffer must be manually destroyed
-	*/
+	//allocate and begin a one time use command buffer
+	//returned command buffer must be manually destroyed	
 	VkCommandBuffer beginOneTimeUseCommandBuffer();
 
-	/*
-	Queue recording must have been ended before
-	returned fence must be manually destroyed
-	*/
+	//Queue recording must have been ended before
+	//returned fence must be manually destroyed
 	VkFence submitOneTimeUseCmdBuffer(VkCommandBuffer cmdBuffer, VkQueue queue);
 
 	void startDebugLabel(const VkCommandBuffer cmdBuffer, const std::string& name);
@@ -433,10 +429,8 @@ private:
 	=========
 	*/
 
-	/*
-	actual creation of internal objects
-	split from public function to allow use when reloading shader
-	*/
+	//actual creation of internal objects
+	//split from public function to allow use when reloading shader	
 	ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
 	GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
