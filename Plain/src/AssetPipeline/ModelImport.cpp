@@ -208,13 +208,32 @@ bool loadModelGLTF(const std::filesystem::path& filename, Scene* outScene) {
 			const std::filesystem::path modelDirectory = fullPath.parent_path();
 			const tinygltf::Material material = model.materials[primitive.material];
 
-			const tinygltf::Image albedoImage = model.images[model.textures[material.pbrMetallicRoughness.baseColorTexture.index].source];
+			const int baseColorTextureIndex = material.pbrMetallicRoughness.baseColorTexture.index;
+			if (baseColorTextureIndex >= 0) {
+				const tinygltf::Image albedoImage = model.images[model.textures[baseColorTextureIndex].source];
+				data.meanAlbedo = computeMeanAlbedo(albedoImage);
+				data.texturePaths.albedoTexturePath = modelDirectory / albedoImage.uri;
+			}
+			else {
+				data.meanAlbedo = glm::vec3(0.5f);
+				data.texturePaths.albedoTexturePath = "";
+			}
 			
-			data.meanAlbedo = computeMeanAlbedo(albedoImage);
+			const int metalRoughnessTextureIndex = material.pbrMetallicRoughness.metallicRoughnessTexture.index;
+			if (metalRoughnessTextureIndex >= 0) {
+				data.texturePaths.specularTexturePath = modelDirectory / model.images[model.textures[metalRoughnessTextureIndex].source].uri;
+			}
+			else {
+				data.texturePaths.specularTexturePath = "";
+			}
 
-			data.texturePaths.albedoTexturePath		= modelDirectory / albedoImage.uri;
-			data.texturePaths.specularTexturePath	= modelDirectory / model.images[model.textures[material.pbrMetallicRoughness.metallicRoughnessTexture.index].source].uri;
-			data.texturePaths.normalTexturePath		= modelDirectory / model.images[model.textures[material.normalTexture.index].source].uri;
+			const int normalTextureIndex = material.normalTexture.index;
+			if (normalTextureIndex >= 0) {
+				data.texturePaths.normalTexturePath = modelDirectory / model.images[model.textures[normalTextureIndex].source].uri;
+			}
+			else {
+				data.texturePaths.normalTexturePath = "";
+			}
 
 			bool computeSDF = true;
 
