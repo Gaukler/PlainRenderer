@@ -573,7 +573,6 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const 
 				(uint32_t)pass.pushConstantSize,
 				pushConstantData + i * pass.pushConstantSize);
 		}
-
         vkCmdDrawIndexed(meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
     }
 }

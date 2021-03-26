@@ -710,7 +710,7 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 		//only prepass drawcalls needed for sdf debug visualisation
 		if (renderingSDFVisualisation) {
 			JobSystem::addJob([this, &mainPassCulledMeshes, &mainPassPushConstants](int workerIndex) {
-				gRenderBackend.drawMeshes(mainPassCulledMeshes, (char*)mainPassPushConstants.data(), m_depthPrePass, 0);
+				gRenderBackend.drawMeshes(mainPassCulledMeshes, (char*)mainPassPushConstants.data(), m_depthPrePass, workerIndex);
 			}, &recordingFinished);
 		}
 		else {
