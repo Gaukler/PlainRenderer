@@ -40,7 +40,7 @@ The renderer takes three command line arguments:
 
 * Real time diffuse GI, by tracing SDF representation of scene and denoising
 * Cook-Torrance BRDF using GGX-distribution, correlated smith geometry term and multiscattering approximation
-* Temporal Anti Aliasing using an exponential history buffer and efficient bicubic sampling
+* Temporal Anti Aliasing using an exponential history buffer and bicubic sampling
 * Physically based sky rendering using luts and multiscattering approximation
 * Physically based light and camera units and histogram based automatic exposure 
 * Volumetric lighting using froxels
@@ -55,3 +55,25 @@ The renderer takes three command line arguments:
 Add a bunch of pictures here
 
 ## References
+
+This list is a non-exhaustive. 
+
+[Hi20] Hillaire, Sébastien. (2020). A Scalable and Production Ready Sky and Atmosphere Rendering Technique. Computer Graphics Forum. 39. 13-22. 10.1111/cgf.14050. 
+
+[MA19] McAuley, Stephen. (2019). A Journey Through Implementing Multiscattering BRDFs and Area Lights. Advances in RealTime Rendering, ACM SIGGRAPH 2019 Courses.  
+
+[La18] Lagarde, Sébastien. (2018). The Road toward Unified Rendering with Unity’s High Definition Render Pipeline. Advances in RealTime Rendering, ACM SIGGRAPH 2018 Courses.  
+ 
+[Wr15] Wright, Daniel. (2015). Dynamic Occlusion with Signed Distance Fields. Advances in RealTime Rendering, ACM SIGGRAPH 2015 Courses.  
+ 
+[Ar19] Archard, Ben. (2019). Exploring the Ray Traced Future in 'Metro Exodus' (Presented by NVIDIA). Game Developers Conference.
+ 
+[Ka14] Karis, Brian. (2014). High-Quality Temporal Supersampling. Advances in RealTime Rendering, ACM SIGGRAPH 2014 Courses.  
+ 
+[Ji16] Jimenez Jorge. (2016). Filmic SMAA: Sharp Morphological and Temporal Antialiasing. Advances in RealTime Rendering, ACM SIGGRAPH 2016 Courses.  
+
+[Ji17] Jimenez Jorge. (2017). Dynamic Temporal Antialiasing in Call of Duty: Infinite Warfare. Advances in RealTime Rendering, ACM SIGGRAPH 2017 Courses.  
+ 
+[Ch18] Chan, Danny. (2018). Real-World Measurements forCall of Duty: Advanced Warfare. 
+
+[Hi15] Hillaire, Sébastien. (2015). Towards Unified and Physically-Based Volumetric Lighting in Frostbite. Advances in RealTime Rendering, ACM SIGGRAPH 2015 Courses.  
