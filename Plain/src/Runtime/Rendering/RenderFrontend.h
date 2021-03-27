@@ -53,7 +53,7 @@ struct SDFDiffuseTraceSettings {
 
 struct TemporalFilterSettings {
     bool enabled = true;
-    bool useSeparateSupersampling = true;
+    bool useSeparateSupersampling = false;
     bool useClipping = true;
     bool useMotionVectorDilation = true;
     HistorySamplingTech historySamplingTech = HistorySamplingTech::Bicubic1Tap;
