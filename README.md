@@ -8,7 +8,7 @@ Add one or two pictures here
 
 ## Platforms
 
-The Plain renderer has been written and tested in c++ 17 using Visual Studio 19 on Windows 10.
+The project has been written and tested in C++ 17 using Visual Studio 19 on Windows 10.
 
 ## Build instructions
 
@@ -17,7 +17,8 @@ Download the project with submodules using:
 ```
 git clone https://github.com/Gaukler/PlainRenderer.git -recursive
 ```
-Then build using Cmake (details?).
+Then build the Visual Studio solution using Cmake.  
+Besides ```Debug``` and ```Release``` modes there is a ```Development``` mode which uses optimizations, but retains debug symbols and keeps the Vulkan validation layers enabled.
 
 ## Usage
 
