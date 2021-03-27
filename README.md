@@ -37,6 +37,9 @@ The renderer takes three command line arguments:
  2. initial window height in pixels
  3. path to the ```.plain``` scene file to load 
 
+Scenes should be divided into single meshes, as the SDF is computed per mesh. If the entire scene consists of a single mesh the scene's SDF representation will have a low effective resolution.  
+If the scene uses many copied objects, instancing should be used to lessen the memory footpring of the SDFs. If the scene uses many small objects, which don't contribute much to the indirect lighting, they should be tagged with the custom 'noSDF' attribute, as the indirect lighting's tracing cost scales with the number of SDF instances.
+
 ## Features
 
 * Real time diffuse GI, by tracing SDF representation of scene and denoising
