@@ -9,7 +9,7 @@ CameraExtrinsic CameraController::getExtrinsic() {
 
 void CameraController::update() {
 	//look
-	if (gInputManager.getMouseButton(MouseButton::right)) {
+	if (gInputManager.isMouseButtonDown(MouseButton::right)) {
         const glm::vec2 mouseMovement = gInputManager.getMouseMovement();
 		m_yaw   += m_mouseSensitivity * mouseMovement.x;
 		m_pitch -= m_mouseSensitivity * mouseMovement.y;
@@ -36,22 +36,22 @@ void CameraController::update() {
     }
     //movement
     float speedFactor = 1.f;
-    if (gInputManager.getKeyboardKey(KeyboardKey::keyShiftLeft)) {
+    if (gInputManager.isKeyboardKeyDown(KeyboardKey::keyShiftLeft)) {
         speedFactor = m_sprintSpeedFactor;
     }
 
     float deltaTime = Timer::getDeltaTimeFloat();
     //camera looks toward negative z-axis so to go into view direction -> position -= forward
-    if (gInputManager.getKeyboardKey(KeyboardKey::keyW)) {
+    if (gInputManager.isKeyboardKeyDown(KeyboardKey::keyW)) {
         m_extrinsic.position += m_extrinsic.forward * m_movementSpeed * deltaTime * speedFactor;
     }
-    if (gInputManager.getKeyboardKey(KeyboardKey::keyS)) {
+    if (gInputManager.isKeyboardKeyDown(KeyboardKey::keyS)) {
         m_extrinsic.position -= m_extrinsic.forward * m_movementSpeed * deltaTime * speedFactor;
     }
-    if (gInputManager.getKeyboardKey(KeyboardKey::keyD)) {
+    if (gInputManager.isKeyboardKeyDown(KeyboardKey::keyD)) {
         m_extrinsic.position += m_extrinsic.right * m_movementSpeed * deltaTime * speedFactor;
     }
-    if (gInputManager.getKeyboardKey(KeyboardKey::keyA)) {
+    if (gInputManager.isKeyboardKeyDown(KeyboardKey::keyA)) {
         m_extrinsic.position -= m_extrinsic.right * m_movementSpeed * deltaTime * speedFactor;
     }
 }

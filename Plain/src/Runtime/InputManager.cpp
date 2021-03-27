@@ -5,6 +5,10 @@
 //definition of extern variable from header
 InputManager gInputManager;
 
+//---- private function delcarations ----
+KeyState keystateFromBoolAndPreviousState(const bool isKeyDown, const KeyState previousState);
+
+//---- implementation ----
 
 InputManager::InputManager() {
     m_window = nullptr;
@@ -16,6 +20,20 @@ void InputManager::setup(GLFWwindow* window) {
 
 void InputManager::shutdown() {
 
+}
+
+KeyState keystateFromBoolAndPreviousState(const bool isKeyDown, const KeyState previousState) {
+	if (isKeyDown) {
+		if (previousState == KeyState::Released) {
+			return KeyState::Pressed;
+		}
+		else {
+			return KeyState::Held;
+		}
+	}
+	else {
+		return KeyState::Released;
+	}
 }
 
 void InputManager::update() {
@@ -34,11 +52,14 @@ void InputManager::update() {
     }
     //mouse buttons
     for (int i = 0; i < MOUSE_BUTTON_COUNT; i++) {
-        m_mouseButtonStatus[i] = glfwGetMouseButton(m_window, mouseButtonCodeToGLFW[i]) == GLFW_PRESS;
+		const bool isKeyDown = glfwGetMouseButton(m_window, mouseButtonCodeToGLFW[i]) == GLFW_PRESS;
+		m_mouseButtonStatus[i] = keystateFromBoolAndPreviousState(isKeyDown, m_mouseButtonStatus[i]);
+		
     }
     //keyboard buttons
     for (int i = 0; i < KEYBOARD_KEY_COUNT; i++) {
-        m_keyboardStatus[i] = glfwGetKey(m_window, keyCodeToGLFW[i]) == GLFW_PRESS;
+        const bool isKeyDown = glfwGetKey(m_window, keyCodeToGLFW[i]) == GLFW_PRESS;
+		m_keyboardStatus[i] = keystateFromBoolAndPreviousState(isKeyDown, m_keyboardStatus[i]);
     }
 }
 
@@ -50,12 +71,22 @@ glm::vec2 InputManager::getMousePosition() {
     return m_mousePosition;
 }
 
-bool InputManager::getMouseButton(const MouseButton button) {
+KeyState InputManager::getMouseButtonState(const MouseButton button) {
     assert((size_t)button < MOUSE_BUTTON_COUNT);
     return m_mouseButtonStatus[(size_t)button];
 }
 
-bool InputManager::getKeyboardKey(const KeyboardKey key) {
+KeyState InputManager::getKeyboardKeyState(const KeyboardKey key) {
     assert((size_t)key < KEYBOARD_KEY_COUNT);
     return m_keyboardStatus[(size_t)key];
+}
+
+bool InputManager::isMouseButtonDown(const MouseButton button) {
+	assert((size_t)button < MOUSE_BUTTON_COUNT);
+	return m_mouseButtonStatus[(size_t)button] != KeyState::Released;
+}
+
+bool InputManager::isKeyboardKeyDown(const KeyboardKey key) {
+	assert((size_t)key < KEYBOARD_KEY_COUNT);
+	return m_keyboardStatus[(size_t)key] != KeyState::Released;
 }

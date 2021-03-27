@@ -107,6 +107,8 @@ inline int mouseButtonCodeToGLFW[MOUSE_BUTTON_COUNT] = {
     GLFW_MOUSE_BUTTON_2,
 };
 
+enum class KeyState { Pressed, Held, Released };
+
 class InputManager {
 public:
     InputManager();
@@ -116,12 +118,15 @@ public:
 
     glm::vec2 getMouseMovement();
     glm::vec2 getMousePosition();
-    bool getMouseButton(const MouseButton button);
-    bool getKeyboardKey(const KeyboardKey key);
+	KeyState getMouseButtonState(const MouseButton button);
+	KeyState getKeyboardKeyState(const KeyboardKey key);
+	bool isMouseButtonDown(const MouseButton button);
+	bool isKeyboardKeyDown(const KeyboardKey key);
+
 private:
     GLFWwindow* m_window;
-    bool m_keyboardStatus[KEYBOARD_KEY_COUNT];
-    bool m_mouseButtonStatus[MOUSE_BUTTON_COUNT];
+    KeyState m_keyboardStatus[KEYBOARD_KEY_COUNT];
+    KeyState m_mouseButtonStatus[MOUSE_BUTTON_COUNT];
 
     glm::vec2 m_mousePosition;
     glm::vec2 m_mouseMovement;
