@@ -9,6 +9,7 @@
 #include "ImageIO.h"
 #include "RuntimeScene.h"
 #include "AABB.h"
+#include "InputManager.h"
 
 std::vector<RenderObject> extractRenderObjectFromScene(const std::vector<SceneObject>& scene,
 	const std::vector<AxisAlignedBoundingBox>& bbs);
@@ -62,7 +63,10 @@ void App::setup(const std::string& sceneFilePath) {
 
 void App::runUpdate() {
     m_cameraController.update();
-    gRenderFrontend.setCameraExtrinsic(m_cameraController.getExtrinsic());    
+    gRenderFrontend.setCameraExtrinsic(m_cameraController.getExtrinsic());
+	if (gInputManager.getKeyboardKeyState(KeyboardKey::keyI) == KeyState::Pressed) {
+		gRenderFrontend.toggleUI();
+	}
     gRenderFrontend.prepareForDrawcalls();
 
 	const std::vector<RenderObject> renderScene = extractRenderObjectFromScene(m_scene, m_bbs);

@@ -154,6 +154,8 @@ public:
     void renderScene(const std::vector<RenderObject>& scene);
     void renderFrame();
 
+	void toggleUI();
+
 private:
 
     void setupGlobalShaderInfoLayout();
@@ -235,6 +237,7 @@ private:
     bool m_didResolutionChange = false;
     bool m_minimized = false;
 	bool m_renderBoundingBoxes = false;
+	bool m_drawUI = true;
 
     //stored for resizing
     GLFWwindow* m_window = nullptr;

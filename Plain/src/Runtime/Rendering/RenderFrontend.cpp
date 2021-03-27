@@ -334,7 +334,9 @@ void RenderFrontend::prepareNewFrame() {
     m_sceneLuminance = m_lastFrameLuminance;
     m_lastFrameLuminance = tempImage;
 
-    drawUi();
+	if (m_drawUI) {
+		drawUi();
+	}
     prepareRenderpasses();
     gRenderBackend.startDrawcallRecording();
 
@@ -872,6 +874,10 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
 
         gRenderBackend.setComputePassExecution(histogramCombineTilesExecution);
     }
+}
+
+void RenderFrontend::toggleUI() {
+	m_drawUI = !m_drawUI;
 }
 
 void RenderFrontend::updateSkyLut() const {
