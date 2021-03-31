@@ -44,9 +44,11 @@ enum class KeyboardKey : uint8_t {
     keyShiftLeft = 36,
     keySpacebar = 37,
     keyEsc = 38,
+	keyLeftAlt = 39,
+	keyEnter = 40
 };
 
-#define KEYBOARD_KEY_COUNT 39
+#define KEYBOARD_KEY_COUNT 41
 
 //must match indices from KeyboardKey
 inline int keyCodeToGLFW[KEYBOARD_KEY_COUNT] = {
@@ -91,6 +93,8 @@ inline int keyCodeToGLFW[KEYBOARD_KEY_COUNT] = {
     GLFW_KEY_LEFT_SHIFT,
     GLFW_KEY_SPACE,
     GLFW_KEY_ESCAPE,
+	GLFW_KEY_LEFT_ALT,
+	GLFW_KEY_ENTER
 };
 
 
