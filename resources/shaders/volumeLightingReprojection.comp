@@ -46,9 +46,13 @@ void main(){
 	vec4 history = texture(sampler3D(historyVolume, g_sampler_linearClamp), historyUV);
 
 	float alpha = 0.95f;
-	if(any(greaterThan(historyUV, vec3(1))) || any(lessThan(historyUV, vec3(0))) || g_cameraCut){
+	if(any(greaterThan(historyUV, vec3(1))) || any(lessThan(historyUV, vec3(0)))){
 		//reprojection outside of frustum
 		alpha = 0;
+	}
+
+	if(g_cameraCut){
+		history = current;	//setting alpha to 0 doesn't solve nans which can occur when resizing framebuffer
 	}
 
 	//exponential moving average
