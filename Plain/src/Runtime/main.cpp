@@ -5,6 +5,7 @@
 #include "InputManager.h"
 #include "Common/TypeConversion.h"
 #include "Common/JobSystem.h"
+#include "Window.h"
 
 //expected command line arguments:
 //argv[0] = executablePath
@@ -59,9 +60,8 @@ void main(int argc, char* argv[]){
 
     DirectoryUtils::init();
 
-    glfwInit();
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    GLFWwindow* window = glfwCreateWindow(settings.width, settings.height, "Plain Renderer", nullptr, nullptr);
+	Window::initWindowSystem();
+	GLFWwindow* window = Window::createWindow(settings.width, settings.height);
 
 	JobSystem::initJobSystem();
 
@@ -77,8 +77,11 @@ void main(int argc, char* argv[]){
 
     while (!glfwWindowShouldClose(window)) {
         Timer::markNewFrame();
+		gInputManager.update();
+		if (gInputManager.getKeyboardKeyState(KeyboardKey::keyEnter) == KeyState::Pressed && gInputManager.isKeyboardKeyDown(KeyboardKey::keyLeftAlt)) {
+			Window::toggleFullscreen();
+		}
         gRenderFrontend.prepareNewFrame();
-        gInputManager.update();
         app.runUpdate();
         gRenderFrontend.renderFrame();
         glfwPollEvents();

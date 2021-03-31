@@ -1,10 +1,5 @@
 #pragma once
 #include "pch.h"
-
-#define GLFW_INCLUDE_VULKAN
-#include "GLFW/glfw3.h"
-#include <vulkan/vulkan.h>
-
 #include "Rendering/RenderFrontend.h"
 #include "CameraController.h"
 
