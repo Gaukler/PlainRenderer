@@ -55,6 +55,7 @@ If the scene uses many copied objects, instancing should be used to lessen the m
 * Cascaded shadow maps for the sun, tightly fitted to depth buffer
 * Blue noise generation using the void and cluster method
 * 3D perlin noise generation
+* Separate asset pipeline producing mesh data in a binary format for efficient loading and SDF generation 
 
 ## Gallery
 
