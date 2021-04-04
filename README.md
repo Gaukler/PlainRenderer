@@ -48,13 +48,13 @@ If the scene uses many copied objects, instancing should be used to lessen the m
 * Physically based sky rendering using luts and a multiscattering approximation according to [[Hi20]](#hi20)
 * Physically based light and camera units and histogram based automatic exposure [[Ch18]](#ch18)
 * Volumetric lighting using froxels [[Hi15]](hi15)
-* Simple job system for multithreading, used for accelerating SDF generation, texture loading and multithreaded drawcall recording
-* Custom Vulkan memory allocator
 * Bloom and tonemapping
 * Single pass min/max hierarchical depth buffer generation
 * Cascaded shadow maps for the sun, tightly fitted to depth buffer
 * Blue noise generation using the void and cluster method
 * 3D perlin noise generation
+* Simple job system for multithreading, used for accelerating SDF generation, texture loading and multithreaded drawcall recording
+* Custom Vulkan memory allocator
 * Separate asset pipeline producing mesh data in a binary format for efficient loading and SDF generation 
 
 ## Gallery
