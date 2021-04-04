@@ -56,6 +56,7 @@ If the scene uses many copied objects, instancing should be used to lessen the m
 * Simple job system for multithreading, used for accelerating SDF generation, texture loading and multithreaded drawcall recording
 * Custom Vulkan memory allocator
 * Separate asset pipeline producing mesh data in a binary format for efficient loading and SDF generation 
+* Shader hot reloading
 
 ## Gallery
 
