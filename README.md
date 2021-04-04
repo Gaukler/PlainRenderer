@@ -53,6 +53,8 @@ If the scene uses many copied objects, instancing should be used to lessen the m
 * Bloom and tonemapping
 * Single pass min/max hierarchical depth buffer generation
 * Cascaded shadow maps for the sun, tightly fitted to depth buffer
+* Blue noise generation using the void and cluster method
+* 3D perlin noise generation
 
 ## Gallery
 
