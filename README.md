@@ -4,7 +4,7 @@ Plain renderer is a personal real-time C++ Vulkan renderer, written for educatio
 It features modern rendering features such as TAA, signed distance field based diffuse global illumination and physically based sky rendering. 
 A separate asset pipeline is used for preprocessing of meshes and SDF creation.
 
-Add one or two pictures here
+![Sponza screenshot](https://raw.githubusercontent.com/Gaukler/gaukler.github.io/gh-pages/docs/images/Plain/sponza01.png)
 
 ## Platforms
 
@@ -60,7 +60,8 @@ If the scene uses many copied objects, instancing should be used to lessen the m
 
 ## Gallery
 
-Add a bunch of pictures here
+![Sky screenshot](https://raw.githubusercontent.com/Gaukler/gaukler.github.io/gh-pages/docs/images/Plain/sky.png)
+![Indirect lighting gif](https://raw.githubusercontent.com/Gaukler/gaukler.github.io/gh-pages/docs/images/Plain/indirectLighting.gif)
 
 ## References
 
