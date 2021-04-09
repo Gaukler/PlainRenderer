@@ -1,6 +1,6 @@
 # Plain renderer
 
-Plain renderer is a personal real-time C++ Vulkan renderer, written for educational purposes and for fun.  
+Plain renderer is a real-time C++ Vulkan renderer, written for educational purposes and for fun.  
 It features modern rendering features such as TAA, signed distance field based diffuse global illumination and physically based sky rendering. 
 A separate asset pipeline is used for preprocessing of meshes and SDF creation.
 
