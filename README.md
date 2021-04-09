@@ -15,7 +15,7 @@ The project has been written and tested in C++ 17 using Visual Studio 19 on Wind
 The project is build using Cmake, requiring at least version 3.16. 
 Download the project with submodules using: 
 ```
-git clone https://github.com/Gaukler/PlainRenderer.git -recursive
+git clone https://github.com/Gaukler/PlainRenderer.git --recursive
 ```
 Then build the Visual Studio solution using Cmake.  
 Besides ```Debug``` and ```Release``` modes there is a ```Development``` mode which uses optimizations, but retains debug symbols and keeps the Vulkan validation layers enabled.
