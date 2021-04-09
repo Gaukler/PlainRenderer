@@ -17,7 +17,7 @@ Download the project with submodules using:
 ```
 git clone https://github.com/Gaukler/PlainRenderer.git --recursive
 ```
-Then build the Visual Studio solution using Cmake.  
+Then build the Visual Studio solution using Cmake. The Vulkan SDK must be installed.  
 Besides ```Debug``` and ```Release``` modes there is a ```Development``` mode which uses optimizations, but retains debug symbols and keeps the Vulkan validation layers enabled.
 
 ## Usage
