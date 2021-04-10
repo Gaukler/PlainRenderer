@@ -34,9 +34,9 @@ void main(){
         vec3 H = importanceSampleGGX(xi, r, N);
         vec3 L = normalize(2.f * dot(V, H ) * H - V); 
 
-    float NoL = max(dot(N, L), 0.f);
-    float NoH = max(dot(N, H), 0.f);
-    float VoH = max(dot(V, H), 0.f);
+        float NoL = max(dot(N, L), 0.f);
+        float NoH = max(dot(N, H), 0.f);
+        float VoH = max(dot(V, H), 0.f);
 
         if(NoL > 0.f){
             float K = 4.f;
