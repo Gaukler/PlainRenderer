@@ -18,44 +18,44 @@ layout(set=1, binding = 0, rgba16f) uniform image2D lut;
 layout(constant_id = 0) const int diffuseBRDF = 0;
 
 void main(){
-	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
-	
-	float r = uv.x / float(imageSize(lut).x);
-	r = max(r, 0.0001f);
-	
-	float NoV = max(float(uv.y), 0.1f) / float(imageSize(lut).y);
-	
-	vec3 V = vec3(sqrt( 1.0f - NoV * NoV ), 0.f, NoV);
-	vec3 N = vec3(0.f, 0.f, 1.f);
-	
-	int samples = 1024;
-	
-	vec3 result = vec3(0.f);
-	for(int i = 0; i < samples; i++){
-        
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+
+    float r = uv.x / float(imageSize(lut).x);
+    r = max(r, 0.0001f);
+
+    float NoV = max(float(uv.y), 0.1f) / float(imageSize(lut).y);
+
+    vec3 V = vec3(sqrt( 1.0f - NoV * NoV ), 0.f, NoV);
+    vec3 N = vec3(0.f, 0.f, 1.f);
+
+    int samples = 1024;
+
+    vec3 result = vec3(0.f);
+    for(int i = 0; i < samples; i++){
+
         vec2 xi = hammersley2d(i, samples);
-        
+
         //specular
         {
             vec3 H = importanceSampleGGX(xi, r, N);
 
             vec3 L = 2.f * dot(V, H ) * H - V;
-            
+
             float VoH = max(dot(V, H), 0.f);
             float NoH = max(H.z, 0);
             float NoL = max(L.z, 0);
-            
+
             if(NoL > 0.f){
                 float F_c = pow(1.f - VoH, 5.f);
                 float Vis = Visibility(NoV, NoL, r);
-                
+
                 float k = Vis * VoH * NoL / NoH;
-                
+
                 result.x += F_c * k;
                 result.y += k;
             }
         }
-        
+
         //diffuse
         {
             vec3 L = importanceSampleCosine(xi, N);
@@ -63,8 +63,7 @@ void main(){
             float VoH = clamp(dot(V, H), 0.f, 1.f);
             float NoL = max(L.z, 0);
             float NoH = max(H.z, 0);
-            
-            
+
             //DisneyDiffuse and CoDWWIIDiffuse return vec3 but that is just multiplication with the diffuse color, so just take one component
             //diffuse color is effectively ignored by setting it to (1, 1, 1) and is added back when shading 
             //ingoing and outgoing fresnel must be taken into account
@@ -92,11 +91,11 @@ void main(){
                 result.z += Titanfall2DiffuseSingleComponent(NoL, LoV, NoV, NoH, r) * fresnelInOut;
             }
         }
-	}
-	result /= float(samples);
-    
+    }
+    result /= float(samples);
+
     //must compensate divison by 4 from visibility term
     result.xy *= 4.f;
-    
-	imageStore(lut, uv, vec4(result, 0.f));
+
+    imageStore(lut, uv, vec4(result, 0.f));
 }

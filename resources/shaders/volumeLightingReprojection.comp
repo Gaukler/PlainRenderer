@@ -13,50 +13,50 @@ layout(set=1, binding = 1) uniform texture3D inputVolume;
 layout(set=1, binding = 2) uniform texture3D historyVolume;
 
 layout(set=1, binding = 3) uniform SettingsBuffer {
-	VolumetricLightingSettings settings;
+    VolumetricLightingSettings settings;
 };
 
 void main(){
-	uvec3 iUV = gl_GlobalInvocationID.xyz;
-	uvec3 volumeRes = imageSize(targetImage);
-	if(any(greaterThanEqual(iUV, volumeRes))){
-		return;
-	}
+    uvec3 iUV = gl_GlobalInvocationID.xyz;
+    uvec3 volumeRes = imageSize(targetImage);
+    if(any(greaterThanEqual(iUV, volumeRes))){
+        return;
+    }
 
-	vec4 current = texelFetch(sampler3D(inputVolume, g_sampler_nearestClamp), ivec3(iUV), 0);
+    vec4 current = texelFetch(sampler3D(inputVolume, g_sampler_nearestClamp), ivec3(iUV), 0);
 
-	//to world
-	vec3 uv = (iUV + 0.5f) / volumeRes;
-	vec3 ndc = 2.f * (uv - 0.5f);
-	vec3 V = calculateViewDirectionFromPixel(ndc.xy, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
+    //to world
+    vec3 uv = (iUV + 0.5f) / volumeRes;
+    vec3 ndc = 2.f * (uv - 0.5f);
+    vec3 V = calculateViewDirectionFromPixel(ndc.xy, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 
-	vec3 windVector = normalize(vec3(1, 1, 1));
-	float windSpeed = 0.3f;
+    vec3 windVector = normalize(vec3(1, 1, 1));
+    float windSpeed = 0.3f;
 
-	vec3 posWorld = g_cameraPosition.xyz - V / dot(-V, g_cameraForward.xyz) * froxelUVToDepth(uv.z, settings.maxDistance);
+    vec3 posWorld = g_cameraPosition.xyz - V / dot(-V, g_cameraForward.xyz) * froxelUVToDepth(uv.z, settings.maxDistance);
 
-	//reproject into previous frustum
-	vec4 ndcPrevious = g_viewProjectionPrevious * vec4(posWorld, 1.f);
-	ndcPrevious.xyz /= ndcPrevious.w;
-	vec3 V_history = normalize(g_cameraPositionPrevious.xyz - posWorld);
-	float historyDistance = distance(posWorld, g_cameraPositionPrevious.xyz);
-	float historyDepth = historyDistance * dot(-V_history, g_cameraForwardPrevious.xyz);
-	vec3 historyUV = vec3(ndcPrevious.xy * 0.5 + 0.5, depthToFroxelUVZ(historyDepth, settings.maxDistance));
+    //reproject into previous frustum
+    vec4 ndcPrevious = g_viewProjectionPrevious * vec4(posWorld, 1.f);
+    ndcPrevious.xyz /= ndcPrevious.w;
+    vec3 V_history = normalize(g_cameraPositionPrevious.xyz - posWorld);
+    float historyDistance = distance(posWorld, g_cameraPositionPrevious.xyz);
+    float historyDepth = historyDistance * dot(-V_history, g_cameraForwardPrevious.xyz);
+    vec3 historyUV = vec3(ndcPrevious.xy * 0.5 + 0.5, depthToFroxelUVZ(historyDepth, settings.maxDistance));
 
-	vec4 history = texture(sampler3D(historyVolume, g_sampler_linearClamp), historyUV);
+    vec4 history = texture(sampler3D(historyVolume, g_sampler_linearClamp), historyUV);
 
-	float alpha = 0.95f;
-	if(any(greaterThan(historyUV, vec3(1))) || any(lessThan(historyUV, vec3(0)))){
-		//reprojection outside of frustum
-		alpha = 0;
-	}
+    float alpha = 0.95f;
+    if(any(greaterThan(historyUV, vec3(1))) || any(lessThan(historyUV, vec3(0)))){
+        //reprojection outside of frustum
+        alpha = 0;
+    }
 
-	if(g_cameraCut){
-		history = current;	//setting alpha to 0 doesn't solve nans which can occur when resizing framebuffer
-	}
+    if(g_cameraCut){
+        history = current;	//setting alpha to 0 doesn't solve nans which can occur when resizing framebuffer
+    }
 
-	//exponential moving average
-	vec4 result = mix(current, history, alpha);
+    //exponential moving average
+    vec4 result = mix(current, history, alpha);
 
-	imageStore(targetImage, ivec3(iUV), result);
+    imageStore(targetImage, ivec3(iUV), result);
 }

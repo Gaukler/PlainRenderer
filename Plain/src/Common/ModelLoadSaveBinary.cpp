@@ -8,7 +8,7 @@ const uint32_t binaryModelMagicNumber = *(uint32_t*)"PlMB"; //stands for Plain M
 
 struct ModelFileHeader {
     uint32_t magicNumber;   //for verification
-	size_t objectCount;
+    size_t objectCount;
     size_t meshCount;
 };
 
@@ -38,7 +38,7 @@ size_t copyToBuffer(const void* src, uint8_t* dst, const size_t copySize, const 
 void saveBinaryScene(const std::filesystem::path& filename, SceneBinary scene){
     ModelFileHeader header;
     header.magicNumber = binaryModelMagicNumber;
-	header.objectCount = scene.objects.size();
+    header.objectCount = scene.objects.size();
     header.meshCount = scene.meshes.size();
 
     size_t meshDataSize = 0;
@@ -53,22 +53,22 @@ void saveBinaryScene(const std::filesystem::path& filename, SceneBinary scene){
         meshDataSize += meshBinary.texturePaths.normalTexturePath.string().size();
         meshDataSize += sizeof(uint32_t); //specular texture path length
         meshDataSize += meshBinary.texturePaths.specularTexturePath.string().size();
-		meshDataSize += sizeof(uint32_t); //sdf texture path length
-		meshDataSize += sizeof(meshBinary.meanAlbedo);
-		meshDataSize += meshBinary.texturePaths.sdfTexturePath.string().size();
+        meshDataSize += sizeof(uint32_t); //sdf texture path length
+        meshDataSize += sizeof(meshBinary.meanAlbedo);
+        meshDataSize += meshBinary.texturePaths.sdfTexturePath.string().size();
         meshDataSize += sizeof(uint16_t) * meshBinary.indexBuffer.size();
         meshDataSize += sizeof(uint8_t) * meshBinary.vertexBuffer.size();
     }
 
-	const size_t objectDataSize = sizeof(ObjectBinary) * scene.objects.size();
+    const size_t objectDataSize = sizeof(ObjectBinary) * scene.objects.size();
     const size_t fileSize = sizeof(ModelFileHeader) + objectDataSize + meshDataSize;
     uint8_t* fileData = new uint8_t[fileSize];
 
     size_t writePointer = 0;
-    writePointer = copyToBuffer(&header, fileData, sizeof(header), writePointer);				//write header
-	writePointer = copyToBuffer(scene.objects.data(), fileData, objectDataSize, writePointer);	//write object data
+    writePointer = copyToBuffer(&header, fileData, sizeof(header), writePointer);               //write header
+    writePointer = copyToBuffer(scene.objects.data(), fileData, objectDataSize, writePointer);  //write object data
 
-	//write mesh data
+    //write mesh data
     for(const MeshBinary& meshBinary : scene.meshes){
         writePointer = copyToBuffer(&meshBinary.indexCount, fileData, sizeof(meshBinary.indexCount), writePointer);
         writePointer = copyToBuffer(&meshBinary.vertexCount, fileData, sizeof(meshBinary.vertexCount), writePointer);
@@ -101,20 +101,20 @@ void saveBinaryScene(const std::filesystem::path& filename, SceneBinary scene){
             meshBinary.texturePaths.specularTexturePath.string().size() * sizeof(char),
             writePointer);
 
-		const uint32_t sdfPathLength = (uint32_t)meshBinary.texturePaths.sdfTexturePath.string().size();
-		writePointer = copyToBuffer(&sdfPathLength, fileData, sizeof(sdfPathLength), writePointer);
+        const uint32_t sdfPathLength = (uint32_t)meshBinary.texturePaths.sdfTexturePath.string().size();
+        writePointer = copyToBuffer(&sdfPathLength, fileData, sizeof(sdfPathLength), writePointer);
 
-		writePointer = copyToBuffer(
-			meshBinary.texturePaths.sdfTexturePath.string().c_str(),
-			fileData,
-			meshBinary.texturePaths.sdfTexturePath.string().size() * sizeof(char),
-			writePointer);
+        writePointer = copyToBuffer(
+            meshBinary.texturePaths.sdfTexturePath.string().c_str(),
+            fileData,
+            meshBinary.texturePaths.sdfTexturePath.string().size() * sizeof(char),
+            writePointer);
 
-		writePointer = copyToBuffer(
-			&meshBinary.meanAlbedo,
-			fileData,
-			sizeof(meshBinary.meanAlbedo),
-			writePointer);
+        writePointer = copyToBuffer(
+            &meshBinary.meanAlbedo,
+            fileData,
+            sizeof(meshBinary.meanAlbedo),
+            writePointer);
 
         writePointer = copyToBuffer(
             meshBinary.indexBuffer.data(),
@@ -148,7 +148,7 @@ bool loadBinaryScene(const std::filesystem::path& filename, SceneBinary* outScen
     const size_t fileSize = file.tellg();
     file.seekg(0, file.beg);
 
-	//read header
+    //read header
     ModelFileHeader header;
     file.read((char*)&header, sizeof(header));
 
@@ -158,12 +158,12 @@ bool loadBinaryScene(const std::filesystem::path& filename, SceneBinary* outScen
         return false;
     }
 
-	//read object data
-	outScene->objects.resize(header.objectCount);
-	const size_t objectDataSize = header.objectCount * sizeof(ObjectBinary);
-	file.read((char*)outScene->objects.data(), objectDataSize);
+    //read object data
+    outScene->objects.resize(header.objectCount);
+    const size_t objectDataSize = header.objectCount * sizeof(ObjectBinary);
+    file.read((char*)outScene->objects.data(), objectDataSize);
 
-	//read mesh data
+    //read mesh data
     outScene->meshes.reserve(header.meshCount);
 
     for (size_t i = 0; i < header.meshCount; i++) {
@@ -171,7 +171,7 @@ bool loadBinaryScene(const std::filesystem::path& filename, SceneBinary* outScen
         file.read((char*)&mesh.indexCount, sizeof(mesh.indexCount));
         file.read((char*)&mesh.vertexCount, sizeof(mesh.vertexCount));
         file.read((char*)&mesh.boundingBox, sizeof(mesh.boundingBox));
-    
+
         uint32_t albedoPathLength;
         file.read((char*)&albedoPathLength, sizeof(albedoPathLength));
         std::string albedoPathString;
@@ -193,14 +193,14 @@ bool loadBinaryScene(const std::filesystem::path& filename, SceneBinary* outScen
         file.read(specularPathString.data(), specularPathLength * sizeof(char));
         mesh.texturePaths.specularTexturePath = specularPathString;
 
-		uint32_t sdfPathLength;
-		file.read((char*)&sdfPathLength, sizeof(sdfPathLength));
-		std::string sdfPathString;
-		sdfPathString.resize(sdfPathLength);
-		file.read(sdfPathString.data(), sdfPathLength * sizeof(char));
-		mesh.texturePaths.sdfTexturePath = sdfPathString;
+        uint32_t sdfPathLength;
+        file.read((char*)&sdfPathLength, sizeof(sdfPathLength));
+        std::string sdfPathString;
+        sdfPathString.resize(sdfPathLength);
+        file.read(sdfPathString.data(), sdfPathLength * sizeof(char));
+        mesh.texturePaths.sdfTexturePath = sdfPathString;
 
-		file.read((char*)&mesh.meanAlbedo, sizeof(mesh.meanAlbedo));
+        file.read((char*)&mesh.meanAlbedo, sizeof(mesh.meanAlbedo));
 
         size_t halfPerIndex;
         size_t bytePerIndex;

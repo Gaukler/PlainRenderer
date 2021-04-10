@@ -30,37 +30,37 @@ float colorToLuminance(vec3 color){
 }
 
 void main(){
-    
+
     ivec2 uv = ivec2(gl_GlobalInvocationID.xy);   
     ivec2 inputSize = textureSize(sampler2D(srcTexture, g_sampler_nearestClamp), 0);
-    
+
     if(uv.x >= inputSize.x || uv.y >= inputSize.y){
         return;
     }
-    
+
     //FIXME could break for 8x8 threadsizes or huge bin count
     uint localIndexFlat = gl_LocalInvocationID.x + gl_LocalInvocationID.y * gl_WorkGroupSize.x;
     if(localIndexFlat < constNBins){
         localHistogram[localIndexFlat] = 0;     
     }
-    
+
     barrier();
-    
+
     const float minLuminanceLog = log(constMinLuminance);
     const float maxLuminanceLog = log(constMaxLuminance);
 
-    vec3 color = texelFetch(sampler2D(srcTexture, g_sampler_nearestClamp), uv, 0).rgb;    
+    vec3 color = texelFetch(sampler2D(srcTexture, g_sampler_nearestClamp), uv, 0).rgb;
     float luminance = colorToLuminance(color) / lightBuffer.previousFrameExposure;
     float luminanceLog = log(luminance);
     const uint maxIndex = constNBins - 1;
     uint bin = uint(maxIndex * clamp((luminanceLog - minLuminanceLog) / (maxLuminanceLog - minLuminanceLog), 0.f, 1.f));
-    atomicAdd(localHistogram[bin], 1); 
+    atomicAdd(localHistogram[bin], 1);
 
     barrier();
     
-    uint tileIndex = gl_WorkGroupID.x + gl_WorkGroupID.y * uint(ceil(float(inputSize.x) / float(gl_WorkGroupSize.x))); 
+    uint tileIndex = gl_WorkGroupID.x + gl_WorkGroupID.y * uint(ceil(float(inputSize.x) / float(gl_WorkGroupSize.x)));
     if(localIndexFlat < constNBins){
         uint binIndex = localIndexFlat;
-        histogramPerTile[tileIndex * constNBins + binIndex] = localHistogram[binIndex];      
+        histogramPerTile[tileIndex * constNBins + binIndex] = localHistogram[binIndex];
     }
 }

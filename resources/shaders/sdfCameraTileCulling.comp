@@ -12,16 +12,16 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(constant_id = 0) const bool useHiZ = false;
 
 layout(push_constant) uniform MatrixBlock {
-	uvec2 cameraTileCount;
+    uvec2 cameraTileCount;
 };
 
 layout(set=1, binding = 0, std430) buffer culledSdfInstanceBuffer{
     uint culledInstanceCount;
-	uint culledInstanceIndices[];
+    uint culledInstanceIndices[];
 };
 
 layout(set=1, binding = 1, std430) buffer worldBBInstanceBuffer{
-	BoundingBox instanceBBs[];
+    BoundingBox instanceBBs[];
 };
 
 layout(set=1, binding = 2, std430) buffer perTileInstanceBuffer{
@@ -35,65 +35,65 @@ layout(set=1, binding = 3, std140) uniform influenceRangeBuffer{
 layout(set=1, binding = 4)	uniform texture2D depthMinMaxTexture;
 
 vec3 VFromiUV(ivec2 iUV){
-	vec2 pixelCoor = (iUV / vec2(g_screenResolution) - 0.5) * 2;
-	return calculateViewDirectionFromPixel(pixelCoor, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
+    vec2 pixelCoor = (iUV / vec2(g_screenResolution) - 0.5) * 2;
+    return calculateViewDirectionFromPixel(pixelCoor, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 }
 
 void main(){
-	ivec2 tileUV = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 tileUV = ivec2(gl_GlobalInvocationID.xy);
 
-	if(any(greaterThanEqual(tileUV, cameraTileCount))){
-		return;
-	}
+    if(any(greaterThanEqual(tileUV, cameraTileCount))){
+        return;
+    }
 
-	uint tileIndex = tileIndexFromTileUV(tileUV);
+    uint tileIndex = tileIndexFromTileUV(tileUV);
 
-	cullingTiles[tileIndex].objectCount = 0;
+    cullingTiles[tileIndex].objectCount = 0;
 
-	vec3 cameraToPixel = -VFromiUV(tileUV * int(cullingTileSize) + ivec2(cullingTileSize, cullingTileSize) / 2);
+    vec3 cameraToPixel = -VFromiUV(tileUV * int(cullingTileSize) + ivec2(cullingTileSize, cullingTileSize) / 2);
 
-	//compute cone radius in 1m distance by computing distance between tiles two most extreme (inverse) view vectors
-	vec3 V_ll = -VFromiUV(tileUV * int(cullingTileSize));
-	vec3 V_ur = -VFromiUV(tileUV * int(cullingTileSize) + ivec2(cullingTileSize, cullingTileSize));
-	V_ll /= dot(cameraToPixel, V_ll);
-	V_ur /= dot(cameraToPixel, V_ur);
+    //compute cone radius in 1m distance by computing distance between tiles two most extreme (inverse) view vectors
+    vec3 V_ll = -VFromiUV(tileUV * int(cullingTileSize));
+    vec3 V_ur = -VFromiUV(tileUV * int(cullingTileSize) + ivec2(cullingTileSize, cullingTileSize));
+    V_ll /= dot(cameraToPixel, V_ll);
+    V_ur /= dot(cameraToPixel, V_ur);
 
-	float coneRadiusPerMeter = distance(V_ll, V_ur) * 0.5f;
+    float coneRadiusPerMeter = distance(V_ll, V_ur) * 0.5f;
 
-	float depthMin = g_nearPlane;
-	float depthMax = g_farPlane;
+    float depthMin = g_nearPlane;
+    float depthMax = g_farPlane;
 
-	vec2 uv = tileUV / vec2(cameraTileCount);
-	if(useHiZ){
-		//depthMinMaxTexture is bound at appropriate mip level, so use mip 0 in texture function
-		vec2 depthMinMax = textureLod(sampler2D(depthMinMaxTexture, g_sampler_nearestClamp), uv, 0).rg;
-		depthMin = linearizeDepth(depthMinMax.g, g_nearPlane, g_farPlane);
-		depthMax = linearizeDepth(depthMinMax.r, g_nearPlane, g_farPlane);
-	}
-	
-	//depth is distance in camera forward direction, but view vectors don't directly point in that direction
-	depthMin *= dot(cameraToPixel, g_cameraForward.xyz);
-	depthMax *= dot(cameraToPixel, g_cameraForward.xyz);
+    vec2 uv = tileUV / vec2(cameraTileCount);
+    if(useHiZ){
+        //depthMinMaxTexture is bound at appropriate mip level, so use mip 0 in texture function
+        vec2 depthMinMax = textureLod(sampler2D(depthMinMaxTexture, g_sampler_nearestClamp), uv, 0).rg;
+        depthMin = linearizeDepth(depthMinMax.g, g_nearPlane, g_farPlane);
+        depthMax = linearizeDepth(depthMinMax.r, g_nearPlane, g_farPlane);
+    }
 
-	for(int i = 0; i < culledInstanceCount; i++){
-		BoundingBox bb = instanceBBs[culledInstanceIndices[i]];
-		 
-		if(cullingTiles[tileIndex].objectCount >= maxObjectsPerTile){
-			break;
-		}
+    //depth is distance in camera forward direction, but view vectors don't directly point in that direction
+    depthMin *= dot(cameraToPixel, g_cameraForward.xyz);
+    depthMax *= dot(cameraToPixel, g_cameraForward.xyz);
 
-		vec3 boundingSphereCenter = (bb.bbMax + bb.bbMin) * 0.5f;
-		vec3 bbExtends = (bb.bbMax - bb.bbMin) * 0.5f;
-		float boundingSphereRadius = max(max(bbExtends.x, bbExtends.y), bbExtends.z);
-		boundingSphereRadius += influenceRange;
+    for(int i = 0; i < culledInstanceCount; i++){
+        BoundingBox bb = instanceBBs[culledInstanceIndices[i]];
+        
+        if(cullingTiles[tileIndex].objectCount >= maxObjectsPerTile){
+            break;
+        }
 
-		float projection = dot(boundingSphereCenter - g_cameraPosition.xyz, cameraToPixel);
-		projection = clamp(projection, depthMin, depthMax);
-		float d = distance(boundingSphereCenter, projection * cameraToPixel + g_cameraPosition.xyz);
+        vec3 boundingSphereCenter = (bb.bbMax + bb.bbMin) * 0.5f;
+        vec3 bbExtends = (bb.bbMax - bb.bbMin) * 0.5f;
+        float boundingSphereRadius = max(max(bbExtends.x, bbExtends.y), bbExtends.z);
+        boundingSphereRadius += influenceRange;
 
-		if(d < boundingSphereRadius + coneRadiusPerMeter * projection){
-			cullingTiles[tileIndex].indices[cullingTiles[tileIndex].objectCount] = culledInstanceIndices[i];
-			cullingTiles[tileIndex].objectCount++;
-		}
-	}
+        float projection = dot(boundingSphereCenter - g_cameraPosition.xyz, cameraToPixel);
+        projection = clamp(projection, depthMin, depthMax);
+        float d = distance(boundingSphereCenter, projection * cameraToPixel + g_cameraPosition.xyz);
+
+        if(d < boundingSphereRadius + coneRadiusPerMeter * projection){
+            cullingTiles[tileIndex].indices[cullingTiles[tileIndex].objectCount] = culledInstanceIndices[i];
+            cullingTiles[tileIndex].objectCount++;
+        }
+    }
 }

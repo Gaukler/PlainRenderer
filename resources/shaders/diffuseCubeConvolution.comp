@@ -13,43 +13,41 @@ layout(set=1, binding = 1) 			uniform textureCube	cubeTexture;
 layout(set=1, binding = 2) 			uniform sampler 	cubeSampler;
 
 void main(){
-	ivec3 storageCo = ivec3(gl_GlobalInvocationID.xyz);
-	vec3 N = cubemapCoordinateToDirection(storageCo, imageSize(cubeOut).x);
-	
+    ivec3 storageCo = ivec3(gl_GlobalInvocationID.xyz);
+    vec3 N = cubemapCoordinateToDirection(storageCo, imageSize(cubeOut).x);
+
     float samplesTaken = 0.f;
-	vec3 color = vec3(0.f);    
+    vec3 color = vec3(0.f);    
     int samples = 4096;
-    
-	for(int i = 0; i < samples; i++){
+
+    for(int i = 0; i < samples; i++){
         vec2 xi = hammersley2d(i, samples);
         const vec3 sampleDirection = importanceSampleCosine(xi, N);
-        
+
         float NoL = dot(N, sampleDirection);
-        /*
-        only allow samples in upper hemisphere
-        */
+
+        //only allow samples in upper hemisphere
         if(NoL > 0.f){
-            /*
-			compute load for pre-filtering
-			*/
-			float K = 4.f;
-			float pdf = NoL * (1.f / pi);
-			float omega_s = 1.f / pdf;
-			float cubeRes = float(textureSize(samplerCube(cubeTexture, cubeSampler), 0).x);
-			float omega_p = 4.f * pi / (6.f * cubeRes * cubeRes);
-			
-			float lod = 0.5f * log2(K * omega_s / omega_p);
-        
+
+            //compute load for pre-filtering
+            float K = 4.f;
+            float pdf = NoL * (1.f / pi);
+            float omega_s = 1.f / pdf;
+            float cubeRes = float(textureSize(samplerCube(cubeTexture, cubeSampler), 0).x);
+            float omega_p = 4.f * pi / (6.f * cubeRes * cubeRes);
+
+            float lod = 0.5f * log2(K * omega_s / omega_p);
+
             const vec3 sampleColor = textureLod(samplerCube(cubeTexture, cubeSampler), sampleDirection, max(lod, 0.f)).rgb;
             color += sampleColor;
             samplesTaken += 1.f;
         }
-	}
-	color /= samplesTaken; 
+    }
+    color /= samplesTaken; 
     //we must divide the sample trough the pdf which is (NoL / pi)
     //the NoL from the PDF is compensated with the NoL of the light direction
     //what is left is division with 1 / pi which equals multiplication with pi and can be pulled out of the loop
     //lambert = albedo / pi compensates exactly that
     color *= pi;
-	imageStore(cubeOut, storageCo, vec4(color, 1.f)); 
+    imageStore(cubeOut, storageCo, vec4(color, 1.f));
 }

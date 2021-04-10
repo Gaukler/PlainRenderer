@@ -15,9 +15,9 @@ float interleavedGradientNoise(vec2 uv){
 #define UIF (1.0 / float(0xffffffffU))
 vec3 hash32(vec2 q)
 {
-	uvec3 n = uvec3(ivec3(q.xyx)) * UI3;
-	n = (n.x ^ n.y ^ n.z) * UI3;
-	return vec3(n) * UIF;
+    uvec3 n = uvec3(ivec3(q.xyx)) * UI3;
+    n = (n.x ^ n.y ^ n.z) * UI3;
+    return vec3(n) * UIF;
 }
 
 //from: http://www.reedbeta.com/blog/quick-and-easy-gpu-random-numbers-in-d3d11/

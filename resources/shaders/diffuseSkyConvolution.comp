@@ -17,40 +17,40 @@ layout(set=1, binding = 1) uniform texture2D	skyLut;
 //as the sky lut is already very low resolution color and brightness starts to deviate quickly on lower mips
 //instead use noise and a high sample count for acceptable quality
 void main(){
-	ivec3 storageCo = ivec3(gl_GlobalInvocationID.xyz);
+    ivec3 storageCo = ivec3(gl_GlobalInvocationID.xyz);
     
     if(storageCo.x >= imageSize(cubeOut).x || storageCo.y >= imageSize(cubeOut).y){
         return;
     }
-    
-	vec3 N = cubemapCoordinateToDirection(storageCo, imageSize(cubeOut).x);
-	
+
+    vec3 N = cubemapCoordinateToDirection(storageCo, imageSize(cubeOut).x);
+
     float samplesTaken = 0.f;
-	vec3 color = vec3(0.f);    
+    vec3 color = vec3(0.f);
     bool groundTruth = false;
     int samples = groundTruth ? 5000 : 100; //minimum of what is acceptable in combination with noise
-    
-	for(int i = 0; i < samples; i++){
+
+    for(int i = 0; i < samples; i++){
         vec2 xi = hammersley2d(i, samples);
         vec2 noise = hash32(samples + storageCo.yz).xy;
         xi += groundTruth ? vec2(0) : noise;
         xi = fract(xi); //bring back into [0,1] range
         vec3 sampleDirection = importanceSampleCosine(xi, N);
-        
+
         float NoL = dot(N, sampleDirection);
         //only allow samples in upper hemisphere
-        if(NoL > 0.f){                
+        if(NoL > 0.f){
             vec2 skyUV = toSkyLut(sampleDirection);
             vec3 sampleColor = textureLod(sampler2D(skyLut, g_sampler_linearRepeat), skyUV, 0).rgb;
             color += sampleColor;
             samplesTaken += 1.f;
         }
-	}
-	color /= samplesTaken; 
+    }
+    color /= samplesTaken; 
     //we must divide the sample trough the pdf which is (NoL / pi)
     //the NoL from the PDF is compensated with the NoL of the light direction
     //what is left is division with 1 / pi which equals multiplication with pi and can be pulled out of the loop
     //lambert = albedo / pi compensates exactly that
     color *= pi;
-	imageStore(cubeOut, storageCo, vec4(color, 1.f)); 
+    imageStore(cubeOut, storageCo, vec4(color, 1.f)); 
 }

@@ -1,14 +1,14 @@
 layout(set=0, binding = 0, std140) uniform global{
-	mat4 g_viewProjection;
-	mat4 g_viewProjectionPrevious;
-	vec4 g_sunDirection;
-	vec4 g_cameraPosition;
-	vec4 g_cameraPositionPrevious;
+    mat4 g_viewProjection;
+    mat4 g_viewProjectionPrevious;
+    vec4 g_sunDirection;
+    vec4 g_cameraPosition;
+    vec4 g_cameraPositionPrevious;
     vec4 g_cameraRight;
     vec4 g_cameraUp;
     vec4 g_cameraForward;
-	vec4 g_cameraForwardPrevious;   
-	ivec4 g_noiseTextureIndices;
+    vec4 g_cameraForwardPrevious;
+    ivec4 g_noiseTextureIndices;
     vec2 g_currentFrameCameraJitter;
     vec2 g_previousFrameCameraJitter;
     ivec2 g_screenResolution;
@@ -21,12 +21,12 @@ layout(set=0, binding = 0, std140) uniform global{
     float g_exposureAdaptionSpeedEvPerSec;
     float g_deltaTime;
     float g_time;
-	float g_mipBias;
-	bool g_cameraCut;
-	uint g_frameIndex;
-	uint g_frameIndexMod2;
-	uint g_frameIndexMod3;
-	uint g_frameIndexMod4;
+    float g_mipBias;
+    bool g_cameraCut;
+    uint g_frameIndex;
+    uint g_frameIndexMod2;
+    uint g_frameIndexMod3;
+    uint g_frameIndexMod4;
 };
 
 layout(set=0, binding = 1) uniform sampler g_sampler_anisotropicRepeat;

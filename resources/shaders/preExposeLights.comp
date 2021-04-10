@@ -28,24 +28,24 @@ layout(set=1, binding = 2) uniform texture2D transmissionLut;
 float offsetFromSceneEV(float sceneEV100){
     float darkExp = 2.84f;
     float lightExp = 12.81f;
-    
+
     float lightOffset = 1.47;
     float darkOffset = -3.17;
-    
+
     float t = clamp((sceneEV100 - darkExp) / (lightExp - darkOffset), 0, 1);
-    
+
     return mix(darkOffset, lightOffset, t);
 }
 
 void main(){
-    
+
     const float minLuminanceLog = log(constMinLuminance);
     const float maxLuminanceLog = log(constMaxLuminance);
-    
+
     uint pixelCount = g_screenResolution.x * g_screenResolution.y;
     float mean = 0;
     uint countedPixels = 0;
-    
+
     uint currentPixelCount = 0;
     for(int i = 0; i < constNBins; i++){
         currentPixelCount += histogram[i];
@@ -56,7 +56,7 @@ void main(){
         if(percentage < 0.95f && percentage >= 0.5f){
             float binValueLog = minLuminanceLog + (maxLuminanceLog - minLuminanceLog) * i / float(constNBins - 1.f);
             float binValueLinear = exp(binValueLog);
-        
+
             mean += histogram[i] * binValueLinear;
             countedPixels += histogram[i];
         }
@@ -64,25 +64,25 @@ void main(){
     mean /= countedPixels;
     
     float sceneEV100 = log2(mean * 100.f / 12.5f);
-    
+
     float exposureOffset = offsetFromSceneEV(sceneEV100);
     exposureOffset += g_exposureOffset;
-    
+
     float targetEV100 = sceneEV100 - exposureOffset;
-	targetEV100 = max(targetEV100, 10);
+    targetEV100 = max(targetEV100, 10);
 
     float previousEV100 = log2(1.f / (max(lightBuffer.previousFrameExposure, 0.000001f) * 1.2f));
-    
+
     float evDelta = targetEV100 - previousEV100;
     float evMaxChange = g_exposureAdaptionSpeedEvPerSec * g_deltaTime;
     float evChange = sign(evDelta) * min(abs(evDelta), abs(evMaxChange));
-    
+
     float currentEV100 = previousEV100 + evChange;
 
     float exposure =  1.f / (pow(2.f, currentEV100) * 1.2f);
     lightBuffer.sunStrengthExposed = g_sunStrength * exposure;
     lightBuffer.previousFrameExposure = exposure;
-    
+
     vec2 lutUV = vec2(0, -g_sunDirection.y * 0.5 + 0.5);
     lightBuffer.sunColor = texture(sampler2D(transmissionLut, g_sampler_linearClamp), lutUV).rgb;
 }

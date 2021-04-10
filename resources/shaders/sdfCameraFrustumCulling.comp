@@ -6,27 +6,27 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 layout(set=1, binding = 0, std430) buffer sdfInstanceBuffer{
     uint instanceCount;
-	//... 
-	//rest of the information is irrelevant for this shader
+    //...
+    //rest of the information is irrelevant for this shader
 };
 
 layout(set=1, binding = 1, std140) uniform cameraFrustumBuffer{
-	vec4 frustumPoints[6];
-	vec4 frustumNormals[6];
+    vec4 frustumPoints[6];
+    vec4 frustumNormals[6];
 };
 
 layout(set=1, binding = 2, std430) buffer culledSdfInstanceBuffer{
     uint culledInstanceCount;
-	uint culledInstanceIndices[];
+    uint culledInstanceIndices[];
 };
 
 struct BoundingBox{
-		vec3 bbMin; float padding1;
-		vec3 bbMax; float padding2;
+        vec3 bbMin; float padding1;
+        vec3 bbMax; float padding2;
 };
 
 layout(set=1, binding = 3, std430) buffer worldBBInstanceBuffer{
-	BoundingBox instanceBBs[];
+    BoundingBox instanceBBs[];
 };
 
 layout(set=1, binding = 4, std140) uniform influenceRangeBuffer{
@@ -34,29 +34,29 @@ layout(set=1, binding = 4, std140) uniform influenceRangeBuffer{
 };
 
 void main(){
-	uint instanceIndex = gl_GlobalInvocationID.x;
-	if(instanceIndex >= instanceCount){
-		return;
-	}
+    uint instanceIndex = gl_GlobalInvocationID.x;
+    if(instanceIndex >= instanceCount){
+        return;
+    }
 
-	BoundingBox bb = instanceBBs[instanceIndex];
+    BoundingBox bb = instanceBBs[instanceIndex];
 
-	vec3 boundingSphereCenter = (bb.bbMax + bb.bbMin) * 0.5f;
-	vec3 bbExtends = (bb.bbMax - bb.bbMin);
-	float boundingSphereRadius = max(max(bbExtends.x, bbExtends.y), bbExtends.z) * 0.5f;
-	boundingSphereRadius += influenceRange;
+    vec3 boundingSphereCenter = (bb.bbMax + bb.bbMin) * 0.5f;
+    vec3 bbExtends = (bb.bbMax - bb.bbMin);
+    float boundingSphereRadius = max(max(bbExtends.x, bbExtends.y), bbExtends.z) * 0.5f;
+    boundingSphereRadius += influenceRange;
 
-	bool isInsideFrustum = true;
-	for (int i = 0; i < 6; i++) {
+    bool isInsideFrustum = true;
+    for (int i = 0; i < 6; i++) {
         vec3 frustumPoint  = frustumPoints[i].xyz;
         vec3 frustumNormal = frustumNormals[i].xyz;
 
         bool isOutsidePlane = dot(boundingSphereCenter - frustumPoint, frustumNormal) > boundingSphereRadius;
-		isInsideFrustum = isInsideFrustum && !isOutsidePlane;
+        isInsideFrustum = isInsideFrustum && !isOutsidePlane;
     }
 
-	if(isInsideFrustum){
-		uint indexBufferIndex = atomicAdd(culledInstanceCount, 1);
-		culledInstanceIndices[indexBufferIndex] = instanceIndex;
-	}
+    if(isInsideFrustum){
+        uint indexBufferIndex = atomicAdd(culledInstanceCount, 1);
+        culledInstanceIndices[indexBufferIndex] = instanceIndex;
+    }
 }

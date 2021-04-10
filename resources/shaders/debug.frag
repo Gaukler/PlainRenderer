@@ -4,5 +4,5 @@
 layout(location = 0) out vec3 color;
 
 void main(){
-	color = vec3(1.f, 0.f, 0.f);
+    color = vec3(1.f, 0.f, 0.f);
 }

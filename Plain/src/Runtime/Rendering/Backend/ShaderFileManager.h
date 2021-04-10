@@ -51,8 +51,8 @@ struct GraphicShaderSourceInfo {
 //currently includes in includes are not tracked
 class ShaderFileManager {
 public:    
-	void setup();
-	void shutdown();
+    void setup();
+    void shutdown();
 
     ComputeShaderHandle addComputeShader(const ShaderDescription& computeShaderDesc);
     GraphicShadersHandle addGraphicShaders(const GraphicPassShaderDescriptions& graphicShadersDesc);
@@ -70,10 +70,10 @@ public:
     std::vector<GraphicPassShaderReloadInfo> reloadOutOfDateGraphicShaders();
 private:
 
-	//iterates over all shader files and updates the last changed time point
-	void updateFileLastChangeTimes();
-	
-	void fileWatcherThread();
+    //iterates over all shader files and updates the last changed time point
+    void updateFileLastChangeTimes();
+
+    void fileWatcherThread();
 
     //returns existing index if available
     //else adds entry in m_pathToFileIndex, m_filePathsAbsolute and m_fileLastChanges
@@ -101,10 +101,10 @@ private:
     std::vector<fs::path> m_filePathsAbsolute;
     std::vector<fs::file_time_type> m_fileLastChanges;
 
-	std::thread m_directoryWatcher;
-	bool m_isRunning = true;
+    std::thread m_directoryWatcher;
+    bool m_isRunning = true;
 
-	std::mutex m_outOfDateListsMutex;
-	std::vector<size_t> m_outOfDateComputeIndices;
-	std::vector<size_t> m_outOfDateGraphicIndices;
+    std::mutex m_outOfDateListsMutex;
+    std::vector<size_t> m_outOfDateComputeIndices;
+    std::vector<size_t> m_outOfDateGraphicIndices;
 };

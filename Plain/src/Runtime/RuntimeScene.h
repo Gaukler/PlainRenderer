@@ -5,18 +5,18 @@
 
 //frontend stores backend handles with material indices
 struct MeshHandleFrontend {
-	uint32_t index;
+    uint32_t index;
 };
 
 struct SceneObject {
-	MeshHandleFrontend mesh;
-	size_t bbIndex;
-	glm::mat4 modelMatrix;
+    MeshHandleFrontend mesh;
+    size_t bbIndex;
+    glm::mat4 modelMatrix;
 };
 
 struct RenderObject {
-	MeshHandleFrontend mesh;
-	AxisAlignedBoundingBox bbWorld;
-	glm::mat4 modelMatrix;
-	glm::mat4 previousModelMatrix;
+    MeshHandleFrontend mesh;
+    AxisAlignedBoundingBox bbWorld;
+    glm::mat4 modelMatrix;
+    glm::mat4 previousModelMatrix;
 };

@@ -2,31 +2,31 @@
 #include <Windows.h>
 
 bool checkLastChangeTime(const fs::path& path, fs::file_time_type* outLastChangeTime) {
-	std::error_code exception;
-	const fs::file_time_type lastWriteTimeSrc = std::filesystem::last_write_time(path, exception);
-	if (exception.value() == 0) {
-		*outLastChangeTime = lastWriteTimeSrc;
-		return true;
-	}
-	std::cout << "Failed to to read file last change time\n";
-	std::cout << exception.message() << std::endl;
-	return false;
+    std::error_code exception;
+    const fs::file_time_type lastWriteTimeSrc = std::filesystem::last_write_time(path, exception);
+    if (exception.value() == 0) {
+        *outLastChangeTime = lastWriteTimeSrc;
+        return true;
+    }
+    std::cout << "Failed to to read file last change time\n";
+    std::cout << exception.message() << std::endl;
+    return false;
 }
 
 bool checkLastChangeTimeSlow(const fs::path& path, fs::file_time_type* outLastChangeTime, const int tries, const int tryWaitTimeMs) {
     std::error_code exception;
-	//sometime quering last write time randomly fails, try a few times for more consistent success
-	for (int i = 0; i < tries; i++) {
-		const fs::file_time_type lastWriteTimeSrc = std::filesystem::last_write_time(path, exception);
-		if (exception.value() == 0) {
-			*outLastChangeTime = lastWriteTimeSrc;
-			return true;
-		}
-		Sleep(tryWaitTimeMs);
-	}
-	std::cout << "Failed to to read file last change time\n";
-	std::cout << exception.message() << std::endl;
-	return false;
+    //sometime quering last write time randomly fails, try a few times for more consistent success
+    for (int i = 0; i < tries; i++) {
+        const fs::file_time_type lastWriteTimeSrc = std::filesystem::last_write_time(path, exception);
+        if (exception.value() == 0) {
+            *outLastChangeTime = lastWriteTimeSrc;
+            return true;
+        }
+        Sleep(tryWaitTimeMs);
+    }
+    std::cout << "Failed to to read file last change time\n";
+    std::cout << exception.message() << std::endl;
+    return false;
 }
 
 bool loadTextFile(const std::filesystem::path& absolutePath, std::vector<char>* outText) {
@@ -68,10 +68,10 @@ bool loadBinaryFile(const std::filesystem::path& absolutePath, std::vector<uint3
 void writeBinaryFile(const std::filesystem::path absolutePath, const std::vector<uint32_t>& data) {
     std::ofstream binaryFile;
     binaryFile.open(absolutePath, std::ios::out | std::ios::binary);
-	if (!binaryFile.is_open()) {
-		std::cout << "Failed to write binary file: " << absolutePath << "\n";
-		return;
-	}
+    if (!binaryFile.is_open()) {
+        std::cout << "Failed to write binary file: " << absolutePath << "\n";
+        return;
+    }
     binaryFile.write(reinterpret_cast<const char*>(data.data()), data.size() * sizeof(uint32_t));
     binaryFile.close();
 }

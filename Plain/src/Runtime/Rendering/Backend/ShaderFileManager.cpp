@@ -34,60 +34,60 @@ std::vector<fs::path> parseIncludePathsFromGLSL(const std::vector<char>& glslCod
 }
 
 void ShaderFileManager::setup() {
-	m_isRunning = true;
-	updateFileLastChangeTimes();
-	m_directoryWatcher = std::thread([this]() {
-		fileWatcherThread();
-	});
+    m_isRunning = true;
+    updateFileLastChangeTimes();
+    m_directoryWatcher = std::thread([this]() {
+        fileWatcherThread();
+    });
 }
 
 void ShaderFileManager::shutdown() {
-	m_isRunning = false;
-	m_directoryWatcher.join();
+    m_isRunning = false;
+    m_directoryWatcher.join();
 }
 
 void ShaderFileManager::fileWatcherThread() {
-	//using windows api to report file change details was inconsistent
-	//because of this the windows api is now only used to inform about a change in the directory
-	//the details of which files are out of date are handled manually
-	//TODO: fix callback triggers when writing spirv-cache files, causing unnecessary file out-of-date checks
-	const fs::path shaderPath = DirectoryUtils::getResourceDirectory() / getShaderDirectory();
-	HANDLE watchHandle = FindFirstChangeNotificationW((WCHAR*)shaderPath.c_str(), true, FILE_NOTIFY_CHANGE_LAST_WRITE);
-	assert(INVALID_HANDLE_VALUE);
+    //using windows api to report file change details was inconsistent
+    //because of this the windows api is now only used to inform about a change in the directory
+    //the details of which files are out of date are handled manually
+    //TODO: fix callback triggers when writing spirv-cache files, causing unnecessary file out-of-date checks
+    const fs::path shaderPath = DirectoryUtils::getResourceDirectory() / getShaderDirectory();
+    HANDLE watchHandle = FindFirstChangeNotificationW((WCHAR*)shaderPath.c_str(), true, FILE_NOTIFY_CHANGE_LAST_WRITE);
+    assert(INVALID_HANDLE_VALUE);
 
-	const DWORD waitInMs = 10;
-	while (m_isRunning) {
+    const DWORD waitInMs = 10;
+    while (m_isRunning) {
 
-		const DWORD waitResult = WaitForSingleObject(watchHandle, waitInMs);
-		FindNextChangeNotification(watchHandle);
-		if (waitResult == WAIT_OBJECT_0) {
-			//event occured
-			//writing can still be in progress when watchHandle is signaled
-			//FIXME: robust solution
-			Sleep(1);
-			updateFileLastChangeTimes();
+        const DWORD waitResult = WaitForSingleObject(watchHandle, waitInMs);
+        FindNextChangeNotification(watchHandle);
+        if (waitResult == WAIT_OBJECT_0) {
+            //event occured
+            //writing can still be in progress when watchHandle is signaled
+            //FIXME: robust solution
+            Sleep(1);
+            updateFileLastChangeTimes();
 
-			m_outOfDateListsMutex.lock();
-			for (int i = 0; i < m_computeShaderSourceInfos.size(); i++) {
-				if (isComputeShaderCacheOutOfDate(m_computeShaderSourceInfos[i])) {
-					m_outOfDateComputeIndices.push_back(i);
-				}
-			}
-			for (int i = 0; i < m_graphicShaderSourceInfos.size(); i++) {
-				if (areGraphicShadersCachesOutOfDate(m_graphicShaderSourceInfos[i])) {
-					m_outOfDateGraphicIndices.push_back(i);
-				}
-			}
+            m_outOfDateListsMutex.lock();
+            for (int i = 0; i < m_computeShaderSourceInfos.size(); i++) {
+                if (isComputeShaderCacheOutOfDate(m_computeShaderSourceInfos[i])) {
+                    m_outOfDateComputeIndices.push_back(i);
+                }
+            }
+            for (int i = 0; i < m_graphicShaderSourceInfos.size(); i++) {
+                if (areGraphicShadersCachesOutOfDate(m_graphicShaderSourceInfos[i])) {
+                    m_outOfDateGraphicIndices.push_back(i);
+                }
+            }
 
-			m_outOfDateListsMutex.unlock();
-		}
-		else if(waitResult == WAIT_TIMEOUT){
-			//repeat loop			
-		}
-		else if (waitResult == WAIT_FAILED) {
-			std::cout << "ShaderFileManager::fileWatcherThread Error: " << GetLastError() << "\n";
-		}
-	}
+            m_outOfDateListsMutex.unlock();
+        }
+        else if(waitResult == WAIT_TIMEOUT){
+            //repeat loop
+        }
+        else if (waitResult == WAIT_FAILED) {
+            std::cout << "ShaderFileManager::fileWatcherThread Error: " << GetLastError() << "\n";
+        }
+    }
 }
 
 ComputeShaderHandle ShaderFileManager::addComputeShader(const ShaderDescription& computeShaderDesc) {
@@ -210,19 +210,19 @@ bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handl
         //geometry
         if (srcInfo.loadInfo.geometry.has_value()) {
             const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.geometry.value().spirvCacheFileIndex];
-			outSpirV->geometry = std::vector<uint32_t>();
+            outSpirV->geometry = std::vector<uint32_t>();
             success &= loadBinaryFile(path, &outSpirV->geometry.value());
         }
         //tessellation evaluation
         if (srcInfo.loadInfo.tessellationControl.has_value()) {
             const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex];
-			outSpirV->tessellationControl = std::vector<uint32_t>();
+            outSpirV->tessellationControl = std::vector<uint32_t>();
             success &= loadBinaryFile(path, &outSpirV->tessellationControl.value());
         }
         //geometry
         if (srcInfo.loadInfo.tessellationEvaluation.has_value()) {
             const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex];
-			outSpirV->tessellationEvaluation = std::vector<uint32_t>();
+            outSpirV->tessellationEvaluation = std::vector<uint32_t>();
             success &= loadBinaryFile(path, &outSpirV->tessellationEvaluation.value());
         }
         return success;
@@ -231,12 +231,12 @@ bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handl
 
 std::vector<ComputePassShaderReloadInfo> ShaderFileManager::reloadOutOfDateComputeShaders() {
     std::vector<ComputePassShaderReloadInfo> reloadList;
-	std::set<size_t> spirvCacheUpdateList;
+    std::set<size_t> spirvCacheUpdateList;
 
-	m_outOfDateListsMutex.lock();
-	for (const size_t passIndex : m_outOfDateComputeIndices) {
+    m_outOfDateListsMutex.lock();
+    for (const size_t passIndex : m_outOfDateComputeIndices) {
 
-		ComputeShaderSourceInfo& shaderSrcInfo = m_computeShaderSourceInfos[passIndex];
+        ComputeShaderSourceInfo& shaderSrcInfo = m_computeShaderSourceInfos[passIndex];
         //reload glsl and compile to spirv
         fs::path shaderPathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.shaderFileIndex];
         std::cout << "Shader out of date reloading: " << shaderPathAbsolute << "\n";
@@ -254,29 +254,29 @@ std::vector<ComputePassShaderReloadInfo> ShaderFileManager::reloadOutOfDateCompu
             shaderSrcInfo.includeFileIndices.clear();
             addGLSLIncludesFileIndicesToSet(shaderPathAbsolute, &shaderSrcInfo.includeFileIndices);
         }
-		//update latest cache update point
-		//even if load/compilation is not succesfull we don't want to keep failing every frame before problem is solved
-		//update is deferred because the same cache might be used multiple shaders
-		spirvCacheUpdateList.insert(shaderSrcInfo.loadInfo.spirvCacheFileIndex);          
+        //update latest cache update point
+        //even if load/compilation is not succesfull we don't want to keep failing every frame before problem is solved
+        //update is deferred because the same cache might be used multiple shaders
+        spirvCacheUpdateList.insert(shaderSrcInfo.loadInfo.spirvCacheFileIndex);          
     }
-	m_outOfDateComputeIndices.clear();
-	m_outOfDateListsMutex.unlock();
+    m_outOfDateComputeIndices.clear();
+    m_outOfDateListsMutex.unlock();
 
-	//deferred update of cache files last change times
-	for (const size_t index : spirvCacheUpdateList) {
-		m_fileLastChanges[index] = fs::_File_time_clock::now();
-	}
-	
+    //deferred update of cache files last change times
+    for (const size_t index : spirvCacheUpdateList) {
+        m_fileLastChanges[index] = fs::_File_time_clock::now();
+    }
+
     return reloadList;
 }
 
 std::vector<GraphicPassShaderReloadInfo> ShaderFileManager::reloadOutOfDateGraphicShaders() {
 
     std::vector<GraphicPassShaderReloadInfo> reloadList;
-	m_outOfDateListsMutex.lock();
+    m_outOfDateListsMutex.lock();
     for (const size_t passIndex : m_outOfDateGraphicIndices) {
 
-		GraphicShaderSourceInfo& shaderSrcInfo = m_graphicShaderSourceInfos[passIndex];
+        GraphicShaderSourceInfo& shaderSrcInfo = m_graphicShaderSourceInfos[passIndex];
 
         const bool hasGeometryShader = shaderSrcInfo.loadInfo.geometry.has_value();
         const bool hasTessellationControlShader = shaderSrcInfo.loadInfo.tessellationControl.has_value();
@@ -343,41 +343,41 @@ std::vector<GraphicPassShaderReloadInfo> ShaderFileManager::reloadOutOfDateGraph
                 writeBinaryFile(tessellationEvaluationCachePathAbsolute, reloadInfo.spirV.tessellationEvaluation.value());
                 addGLSLIncludesFileIndicesToSet(shaderPaths.tessellationEvaluation.value(), &shaderSrcInfo.includeFileIndices);
             }
-			else {
-				//update latest cache update point
-				//even if load/compilation is not succesfull we don't want to keep failing every frame before problem is solved
-				m_fileLastChanges[shaderSrcInfo.loadInfo.vertex.spirvCacheFileIndex] = fs::_File_time_clock::now();
-				m_fileLastChanges[shaderSrcInfo.loadInfo.fragment.spirvCacheFileIndex] = fs::_File_time_clock::now();
-				if (hasGeometryShader) {
-					m_fileLastChanges[shaderSrcInfo.loadInfo.geometry.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
-				}
-				if (hasTessellationControlShader) {
-					m_fileLastChanges[shaderSrcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
-				}
-				if (hasTessellationEvauluationShader) {
-					m_fileLastChanges[shaderSrcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
-				}
-			}
+            else {
+                //update latest cache update point
+                //even if load/compilation is not succesfull we don't want to keep failing every frame before problem is solved
+                m_fileLastChanges[shaderSrcInfo.loadInfo.vertex.spirvCacheFileIndex] = fs::_File_time_clock::now();
+                m_fileLastChanges[shaderSrcInfo.loadInfo.fragment.spirvCacheFileIndex] = fs::_File_time_clock::now();
+                if (hasGeometryShader) {
+                    m_fileLastChanges[shaderSrcInfo.loadInfo.geometry.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
+                }
+                if (hasTessellationControlShader) {
+                    m_fileLastChanges[shaderSrcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
+                }
+                if (hasTessellationEvauluationShader) {
+                    m_fileLastChanges[shaderSrcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
+                }
+            }
         }
     }
-	m_outOfDateGraphicIndices.clear();
-	m_outOfDateListsMutex.unlock();
+    m_outOfDateGraphicIndices.clear();
+    m_outOfDateListsMutex.unlock();
     return reloadList;
 }
 
 void ShaderFileManager::updateFileLastChangeTimes() {
-	assert(m_filePathsAbsolute.size() == m_fileLastChanges.size());
-	for (size_t i = 0; i < m_filePathsAbsolute.size(); i++) {
-		const fs::path filePath = m_filePathsAbsolute[i];
-		fs::file_time_type lastChange;
-		const int lastChangeTimeTries = 3;
-		const int lastChangeTimeWaitTimeMs = 1;
-		if (checkLastChangeTimeSlow(filePath, &lastChange, lastChangeTimeTries, lastChangeTimeWaitTimeMs)) {
-			//if compilation of spirv cache files fails the last change time is still updated to avoid failing with same problem every frame
-			//use max to avoid overwriting this date
-			m_fileLastChanges[i] = std::max(m_fileLastChanges[i], lastChange);
-		}
-	}
+    assert(m_filePathsAbsolute.size() == m_fileLastChanges.size());
+    for (size_t i = 0; i < m_filePathsAbsolute.size(); i++) {
+        const fs::path filePath = m_filePathsAbsolute[i];
+        fs::file_time_type lastChange;
+        const int lastChangeTimeTries = 3;
+        const int lastChangeTimeWaitTimeMs = 1;
+        if (checkLastChangeTimeSlow(filePath, &lastChange, lastChangeTimeTries, lastChangeTimeWaitTimeMs)) {
+            //if compilation of spirv cache files fails the last change time is still updated to avoid failing with same problem every frame
+            //use max to avoid overwriting this date
+            m_fileLastChanges[i] = std::max(m_fileLastChanges[i], lastChange);
+        }
+    }
 }
 
 size_t ShaderFileManager::addFilePath(const fs::path& filePathAbsolute) {

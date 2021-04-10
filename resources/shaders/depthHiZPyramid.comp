@@ -51,14 +51,14 @@ bool isOdd(int i){
 //in that case the pyramid will need an extra channel to compute max with/without sky
 vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2 srcRes, bool extraRow, bool extraColumn){
     ivec2 offsets[4] = { ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1) };
-    
+
     float depthMin = 1.f;
     float depthMax = 0.f;
-    
+
     vec2 texelSize = vec2(1.f) / vec2(srcRes);
     vec2 upperLeftUV = upperLeft * texelSize;
     upperLeftUV += texelSize * 0.5f; //shift to texel center
-    
+
     for(int texel = 0; texel < 4; texel++){
         vec2 uv = upperLeftUV + offsets[texel] * texelSize;
         if(fromDepthBuffer){
@@ -89,7 +89,7 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
             }
         }
     }
-    
+
     if(extraColumn){
         vec2 extraColumnOffsets[2] = { vec2(2, 0), vec2(2, 1) };
         for(int texel = 0; texel < 2; texel++){
@@ -106,7 +106,7 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
             }
         }
     }
-    
+
     if(extraRow && extraColumn){
         vec2 uv = upperLeftUV + ivec2(2, 2) * texelSize;
         if(fromDepthBuffer){
@@ -119,10 +119,9 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
             depthMin = min(depthMin, previousMinMax.r + float(previousMinMax.g == 0.f));
             depthMax = max(depthMax, previousMinMax.g);
         }
-        
     }
     return vec2(depthMin, depthMax);
-} 
+}
 
 //single pass downscaling reference: https://github.com/GPUOpen-Effects/FidelityFX-SPD/tree/master/docs
 //depth buffer min/max reference: https://miketuritzin.com/post/hierarchical-depth-buffers/
@@ -131,14 +130,14 @@ vec2 computeMinMax(ivec2 upperLeft, bool fromDepthBuffer, int srcMipLevel, ivec2
 void main(){
     bool fromDepthBuffer = true;
     int srcMipLevel = 0;
-    
+
     ivec2 srcMipRes = ivec2(depthBufferResX,  depthBufferResY);
     ivec2 currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
-    
+
     //mip 0
     if((mipCount >= 11)){
         ivec2 offsets[4] = { ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1) };
-        
+
         for(int i = 0; i < 4; i++){
             ivec2 dstUV = ivec2(gl_GlobalInvocationID.xy) * 2 + offsets[i];
             if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
@@ -154,7 +153,7 @@ void main(){
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
         barrier();
         memoryBarrier();
-    }   
+    }
     //mip 1
     if(mipCount >= 10){
         ivec2 dstUV = ivec2(gl_GlobalInvocationID.xy);
@@ -225,7 +224,7 @@ void main(){
         barrier();
         memoryBarrier();
     }
-    
+
     //mip 5
     if(mipCount >= 6){
         if(gl_LocalInvocationID.x < 1 && gl_LocalInvocationID.y < 1){
@@ -244,29 +243,29 @@ void main(){
         barrier();
         memoryBarrier();
     }
-    
+
     //increment counter once per threadgroup, write previous value to shared memory
     if(gl_LocalInvocationIndex == 0){
         threadCounter = atomicAdd(syncCounter, 1); 
     }
-    
+
     //wait until threadCounter has been updated
     barrier();
     memoryBarrier();
-    
+
     //only last group computes last mip levels
     if(threadCounter != threadGroupCount-1){
         return;
     }
     //reset counter for next frame
     syncCounter = 0;
-    
+
     //from here gl_LocalInvocationID must be used to compute uvs
-    
+
     //mip 6
     if(mipCount >= 5){
         ivec2 offsets[4] = { ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1) };
-        
+
         for(int i = 0; i < 4; i++){
             ivec2 dstUV = ivec2(gl_LocalInvocationID.xy) * 2 + offsets[i];
             if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
@@ -335,12 +334,12 @@ void main(){
         barrier();
         memoryBarrier();
     }
-    
+
     //mip 10
     if(mipCount >= 1){
-        
+
         if(gl_LocalInvocationID.x < 2 && gl_LocalInvocationID.y < 2){
-            
+
             ivec2 dstUV = ivec2(gl_LocalInvocationID.xy);
             if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
                 vec2 minMax = computeMinMax(dstUV * 2, fromDepthBuffer, srcMipLevel, srcMipRes, isOdd(srcMipRes.y), isOdd(srcMipRes.x)); 

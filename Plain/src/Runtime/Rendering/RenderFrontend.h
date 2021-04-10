@@ -25,30 +25,30 @@ enum class IndirectLightingTech : int { SDFTrace, ConstantAmbient };
 struct ShadingConfig {
     DiffuseBRDF diffuseBRDF = DiffuseBRDF::CoDWWII;
     DirectSpecularMultiscattering directMultiscatter = DirectSpecularMultiscattering::McAuley;
-	IndirectLightingTech indirectLightingTech = IndirectLightingTech::SDFTrace;
+    IndirectLightingTech indirectLightingTech = IndirectLightingTech::SDFTrace;
     bool useGeometryAA = true;
-	bool indirectLightingHalfRes = true;
-	int sunShadowCascadeCount = 3;
+    bool indirectLightingHalfRes = true;
+    int sunShadowCascadeCount = 3;
 };
 
 enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2, Bicubic5Tap=3, Bicubic1Tap=4 };
 enum class SDFVisualisationMode : int { None=0, VisualizeSDF=1, CameraTileUsage=2, SDFNormals=3, RaymarchingSteps=4};
 
 struct SDFDebugSettings {
-	SDFVisualisationMode visualisationMode = SDFVisualisationMode::None;
-	bool showCameraTileUsageWithHiZ = true;
-	bool useInfluenceRadiusForDebug = false;	//less efficient, but tile usage is same as for indirect light tracing
+    SDFVisualisationMode visualisationMode = SDFVisualisationMode::None;
+    bool showCameraTileUsageWithHiZ = true;
+    bool useInfluenceRadiusForDebug = false;	//less efficient, but tile usage is same as for indirect light tracing
 };
 
 struct SDFDiffuseTraceSettings {
-	//reject trace hits outside of influence radius
-	//loses range, but results outside of influence radius are not entirely accurate, as objects start to be culled
-	bool strictInfluenceRadiusCutoff = true;
-	//radius in which objects are not culled, increases effect range and computation time
-	float traceInfluenceRadius = 5.f;
-	//highest sun shadow cascade used for shadowing trace hits
-	//if strict influence radius cutoff is disabled hits can be outside influence radius, so extra padding is necessary
-	float additionalSunShadowMapPadding = 3.f;
+    //reject trace hits outside of influence radius
+    //loses range, but results outside of influence radius are not entirely accurate, as objects start to be culled
+    bool strictInfluenceRadiusCutoff = true;
+    //radius in which objects are not culled, increases effect range and computation time
+    float traceInfluenceRadius = 5.f;
+    //highest sun shadow cascade used for shadowing trace hits
+    //if strict influence radius cutoff is disabled hits can be outside influence radius, so extra padding is necessary
+    float additionalSunShadowMapPadding = 3.f;
 };
 
 struct TemporalFilterSettings {
@@ -75,16 +75,16 @@ struct AtmosphereSettings {
 };
 
 struct VolumetricLightingSettings {
-	glm::vec3 windSampleOffset = glm::vec3(0.f);	//offset to apply to density noise, caused by wind
-	float maxDistance = 30.f;
-	glm::vec3 scatteringCoefficients = glm::vec3(1.f);
-	float absorptionCoefficient = 1.f;
-	
-	float sampleOffset = 0.f;
-	float baseDensity = 0.003f;
-	float densityNoiseRange = 0.008f;	//how strong the noise influences density
-	float densityNoiseScale = 0.5f;		//world space scale of the noise pattern
-	float phaseFunctionG = 0.2f;		//g of henyey greenstein phase function
+    glm::vec3 windSampleOffset = glm::vec3(0.f);	//offset to apply to density noise, caused by wind
+    float maxDistance = 30.f;
+    glm::vec3 scatteringCoefficients = glm::vec3(1.f);
+    float absorptionCoefficient = 1.f;
+
+    float sampleOffset = 0.f;
+    float baseDensity = 0.003f;
+    float densityNoiseRange = 0.008f;	//how strong the noise influences density
+    float densityNoiseScale = 0.5f;		//world space scale of the noise pattern
+    float phaseFunctionG = 0.2f;		//g of henyey greenstein phase function
 };
 
 enum class ShaderResourceType { SampledImage, Sampler, StorageImage, StorageBuffer, UniformBuffer };
@@ -109,31 +109,31 @@ struct FrameRenderTargets {
 
 //texture indices for direct use in shader, index into global texture array
 struct Material {
-	uint32_t albedoTextureIndex = 0;
-	uint32_t normalTextureIndex = 0;
-	uint32_t specularTextureIndex = 0;
+    uint32_t albedoTextureIndex = 0;
+    uint32_t normalTextureIndex = 0;
+    uint32_t specularTextureIndex = 0;
 };
 
 struct MeshFrontend {
-	MeshHandle				backendHandle;
-	int						sdfTextureIndex = 0;
-	glm::vec3				meanAlbedo = glm::vec3(0.5f);
-	Material				material;
-	AxisAlignedBoundingBox	localBB;
+    MeshHandle              backendHandle;
+    int                     sdfTextureIndex = 0;
+    glm::vec3               meanAlbedo = glm::vec3(0.5f);
+    Material                material;
+    AxisAlignedBoundingBox  localBB;
 };
 
 struct SDFInstance {
-	glm::vec3 localExtends;
-	uint32_t sdfTextureIndex;	//indexes into global texture descriptor array
-	glm::vec3 meanAlbedo;
-	float padding;
-	glm::mat4x4 worldToLocal;
+    glm::vec3 localExtends;
+    uint32_t sdfTextureIndex;   //indexes into global texture descriptor array
+    glm::vec3 meanAlbedo;
+    float padding;
+    glm::mat4x4 worldToLocal;
 };
 
 struct BloomSettings {
-	bool enabled = true;
-	float strength = 0.05f;
-	float radius = 1.5f;
+    bool enabled = true;
+    float strength = 0.05f;
+    float radius = 1.5f;
 };
 
 class RenderFrontend {
@@ -154,12 +154,12 @@ public:
     void renderScene(const std::vector<RenderObject>& scene);
     void renderFrame();
 
-	void toggleUI();
+    void toggleUI();
 
 private:
 
     void setupGlobalShaderInfoLayout();
-	void setupGlobalShaderInfoResources();
+    void setupGlobalShaderInfoResources();
 
     //declare render passes to backend
     //this has to be done before meshes drawcalls can be issued
@@ -167,16 +167,16 @@ private:
 
     //computes image histogram using compute shaders
     void computeColorBufferHistogram(const ImageHandle lastFrameColor) const;
-	void updateSkyLut() const;
+    void updateSkyLut() const;
     void renderSky(const FramebufferHandle framebuffer, const RenderPassHandle parent) const;
     void renderSunShadowCascades() const;
     void computeExposure() const;
     void renderDepthPrepass(const FramebufferHandle framebuffer) const;
     void computeDepthPyramid(const ImageHandle depthBuffer) const;
     void computeSunLightMatrices() const;
-	void diffuseSDFTrace(const FrameRenderTargets& currentTarget) const;
-	void filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame) const;
-	void downscaleDepth(const FrameRenderTargets& currentTarget) const;
+    void diffuseSDFTrace(const FrameRenderTargets& currentTarget) const;
+    void filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame) const;
+    void downscaleDepth(const FrameRenderTargets& currentTarget) const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const;
     void computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
         const ImageHandle target, const RenderPassHandle parent) const;
@@ -185,27 +185,27 @@ private:
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void issueSkyDrawcalls();
-	void renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const;
-	void computeVolumetricLighting();
+    void renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const;
+    void computeVolumetricLighting();
 
-	//downscales and blurs screen sized target image in separate texture, then additively blends on top of targetImage
-	//returns last render pass, which must be used as parent, when accessing target image for correct ordering
-	//parent pass is used as initial parent and must be last pass that used target image
-	RenderPassHandle computeBloom(const RenderPassHandle parentPass, const ImageHandle targetImage) const;
+    //downscales and blurs screen sized target image in separate texture, then additively blends on top of targetImage
+    //returns last render pass, which must be used as parent, when accessing target image for correct ordering
+    //parent pass is used as initial parent and must be last pass that used target image
+    RenderPassHandle computeBloom(const RenderPassHandle parentPass, const ImageHandle targetImage) const;
 
-	//returns list of passes that must be used as parent to wait for results
-	//when culling for direct visualisation hi-z culling results in artifacts
-	//enable for indirect, disable for direct
-	std::vector<RenderPassHandle> sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ, const bool tracingHalfRes) const;
+    //returns list of passes that must be used as parent to wait for results
+    //when culling for direct visualisation hi-z culling results in artifacts
+    //enable for indirect, disable for direct
+    std::vector<RenderPassHandle> sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ, const bool tracingHalfRes) const;
 
-	void updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB);
+    void updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB);
 
-	void resizeIndirectLightingBuffers();
+    void resizeIndirectLightingBuffers();
 
-	//load multiple images, loading from disk is parallel
+    //load multiple images, loading from disk is parallel
     //checks a map of all loaded images if it is avaible, returns existing image if possible
-	//if image could not be loaded ImageHandle.index is set to invalidIndex
-	std::vector<ImageHandle> loadImagesFromPaths(const std::vector<std::filesystem::path>& imagePaths);
+    //if image could not be loaded ImageHandle.index is set to invalidIndex
+    std::vector<ImageHandle> loadImagesFromPaths(const std::vector<std::filesystem::path>& imagePaths);
     std::unordered_map<std::string, ImageHandle> m_textureMap; //using string instead of path to use default string hash
 
     void computeBRDFLut();
@@ -213,7 +213,7 @@ private:
     //diffuse and specular convolution of sky lut for image based lighting
     void skyIBLConvolution();
 
-	std::vector<MeshFrontend> m_frontendMeshes;
+    std::vector<MeshFrontend> m_frontendMeshes;
 
     uint32_t m_screenWidth = 800;
     uint32_t m_screenHeight = 600;
@@ -223,21 +223,21 @@ private:
     uint32_t m_currentMainPassDrawcallCount = 0;    //executed after camera culling
     uint32_t m_currentShadowPassDrawcallCount = 0;  //executed after shadow frustum culling
 
-	uint32_t m_currentSDFInstanceCount = 0;
+    uint32_t m_currentSDFInstanceCount = 0;
 
     //timings are cached and not updated every frame to improve readability
     std::vector<RenderPassTime> m_currentRenderTimings;
     float m_renderTimingUpdateFrequency = 0.2f;
     float m_renderTimingTimeSinceLastUpdate = 0.f;
-	float m_latestCPUTimeStatMs = 0.f;		//not updated every frame, only use as performance metric
-	float m_latestDeltaTimeStatMs = 0.f;	//not updated every frame, only use as performance metric
+    float m_latestCPUTimeStatMs = 0.f;		//not updated every frame, only use as performance metric
+    float m_latestDeltaTimeStatMs = 0.f;	//not updated every frame, only use as performance metric
 
-	glm::ivec3 m_sceneSDFResolution = glm::ivec3(1);
+    glm::ivec3 m_sceneSDFResolution = glm::ivec3(1);
 
     bool m_didResolutionChange = false;
     bool m_minimized = false;
-	bool m_renderBoundingBoxes = false;
-	bool m_drawUI = true;
+    bool m_renderBoundingBoxes = false;
+    bool m_drawUI = true;
 
     //stored for resizing
     GLFWwindow* m_window = nullptr;
@@ -258,18 +258,18 @@ private:
 
     HistogramSettings createHistogramSettings();
 
-	glm::vec2 m_sunDirection = glm::vec2(0.f, 0.f);
+    glm::vec2 m_sunDirection = glm::vec2(0.f, 0.f);
 
     ShadingConfig m_shadingConfig;
     TemporalFilterSettings m_temporalFilterSettings;
     AtmosphereSettings m_atmosphereSettings;
-	SDFDebugSettings m_sdfDebugSettings;
-	SDFDiffuseTraceSettings m_sdfDiffuseTraceSettings;
-	VolumetricLightingSettings m_volumetricLightingSettings;
-	BloomSettings m_bloomSettings;
+    SDFDebugSettings m_sdfDebugSettings;
+    SDFDiffuseTraceSettings m_sdfDiffuseTraceSettings;
+    VolumetricLightingSettings m_volumetricLightingSettings;
+    BloomSettings m_bloomSettings;
 
-	glm::vec3 m_windVector = glm::vec3(0.f);
-	float m_windSpeed = 0.15f;
+    glm::vec3 m_windVector = glm::vec3(0.f);
+    float m_windSpeed = 0.15f;
 
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
@@ -295,22 +295,22 @@ private:
     RenderPassHandle m_temporalSupersamplingPass;
     RenderPassHandle m_temporalFilterPass;
     RenderPassHandle m_colorToLuminancePass;
-	RenderPassHandle m_diffuseSDFTracePass;
-	RenderPassHandle m_indirectDiffuseFilterSpatialPass[2];
-	RenderPassHandle m_indirectDiffuseFilterTemporalPass;
-	RenderPassHandle m_depthDownscalePass;
-	RenderPassHandle m_indirectLightingUpscale;
-	RenderPassHandle m_sdfCameraFrustumCulling;
-	RenderPassHandle m_sdfCameraTileCulling;
-	RenderPassHandle m_sdfCameraTileCullingHiZ;
-	RenderPassHandle m_sdfDebugVisualisationPass;
-	RenderPassHandle m_froxelVolumeMaterialPass;
-	RenderPassHandle m_froxelScatteringTransmittancePass;
-	RenderPassHandle m_volumetricLightingIntegration;
-	RenderPassHandle m_volumetricLightingReprojection;
-	std::vector<RenderPassHandle> m_bloomDownsamplePasses;
-	std::vector<RenderPassHandle> m_bloomUpsamplePasses;
-	RenderPassHandle m_applyBloomPass;
+    RenderPassHandle m_diffuseSDFTracePass;
+    RenderPassHandle m_indirectDiffuseFilterSpatialPass[2];
+    RenderPassHandle m_indirectDiffuseFilterTemporalPass;
+    RenderPassHandle m_depthDownscalePass;
+    RenderPassHandle m_indirectLightingUpscale;
+    RenderPassHandle m_sdfCameraFrustumCulling;
+    RenderPassHandle m_sdfCameraTileCulling;
+    RenderPassHandle m_sdfCameraTileCullingHiZ;
+    RenderPassHandle m_sdfDebugVisualisationPass;
+    RenderPassHandle m_froxelVolumeMaterialPass;
+    RenderPassHandle m_froxelScatteringTransmittancePass;
+    RenderPassHandle m_volumetricLightingIntegration;
+    RenderPassHandle m_volumetricLightingReprojection;
+    std::vector<RenderPassHandle> m_bloomDownsamplePasses;
+    std::vector<RenderPassHandle> m_bloomUpsamplePasses;
+    RenderPassHandle m_applyBloomPass;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -326,21 +326,21 @@ private:
     ImageHandle m_minMaxDepthPyramid;
     ImageHandle m_sceneLuminance;
     ImageHandle m_lastFrameLuminance;
-	ImageHandle m_indirectDiffuse_Y_SH[2];			//ping pong buffers for filtering, Y component of YCoCg color space as spherical harmonics		
-	ImageHandle m_indirectDiffuse_CoCg[2];			//ping pong buffers for filtering, CoCg component of YCoCg color space
-	ImageHandle m_indirectDiffuseHistory_Y_SH[2];	//Y component of YCoCg color space as spherical harmonics
-	ImageHandle m_indirectDiffuseHistory_CoCg[2];	//CoCg component of YCoCg color space
-	ImageHandle m_worldSpaceNormalImage;
-	ImageHandle m_depthHalfRes;
-	ImageHandle m_indirectLightingFullRes_Y_SH;
-	ImageHandle m_indirectLightingFullRes_CoCg;
-	ImageHandle m_volumeMaterialVolume;
-	ImageHandle m_scatteringTransmittanceVolume;
-	ImageHandle m_volumetricLightingHistory[2];
-	ImageHandle m_volumetricIntegrationVolume;
-	ImageHandle m_perlinNoise3D;
-	ImageHandle m_bloomDownscaleTexture;
-	ImageHandle m_bloomUpscaleTexture;
+    ImageHandle m_indirectDiffuse_Y_SH[2];			//ping pong buffers for filtering, Y component of YCoCg color space as spherical harmonics		
+    ImageHandle m_indirectDiffuse_CoCg[2];			//ping pong buffers for filtering, CoCg component of YCoCg color space
+    ImageHandle m_indirectDiffuseHistory_Y_SH[2];	//Y component of YCoCg color space as spherical harmonics
+    ImageHandle m_indirectDiffuseHistory_CoCg[2];	//CoCg component of YCoCg color space
+    ImageHandle m_worldSpaceNormalImage;
+    ImageHandle m_depthHalfRes;
+    ImageHandle m_indirectLightingFullRes_Y_SH;
+    ImageHandle m_indirectLightingFullRes_CoCg;
+    ImageHandle m_volumeMaterialVolume;
+    ImageHandle m_scatteringTransmittanceVolume;
+    ImageHandle m_volumetricLightingHistory[2];
+    ImageHandle m_volumetricIntegrationVolume;
+    ImageHandle m_perlinNoise3D;
+    ImageHandle m_bloomDownscaleTexture;
+    ImageHandle m_bloomUpscaleTexture;
 
     std::vector<ImageHandle> m_noiseTextures;
 
@@ -354,52 +354,52 @@ private:
     SamplerHandle m_sampler_linearClamp;
     SamplerHandle m_sampler_nearestClamp;
     SamplerHandle m_sampler_linearWhiteBorder;
-	SamplerHandle m_sampler_nearestRepeat;
-	SamplerHandle m_sampler_nearestWhiteBorder;
+    SamplerHandle m_sampler_nearestRepeat;
+    SamplerHandle m_sampler_nearestWhiteBorder;
 
     FramebufferHandle	m_shadowCascadeFramebuffers[4];
     FrameRenderTargets	m_frameRenderTargets[2];
 
     MeshHandle m_skyCube;
     MeshHandle m_quad;
-	MeshHandle m_boundingBoxMesh;
+    MeshHandle m_boundingBoxMesh;
 
     StorageBufferHandle m_histogramPerTileBuffer;
     StorageBufferHandle m_histogramBuffer;
     StorageBufferHandle m_lightBuffer;          //previous exposure and exposured light values
     StorageBufferHandle m_sunShadowInfoBuffer;  //light matrices and cascade splits
     StorageBufferHandle m_depthPyramidSyncBuffer;
-	StorageBufferHandle m_mainPassTransformsBuffer;
-	StorageBufferHandle m_shadowPassTransformsBuffer;
-	StorageBufferHandle m_boundingBoxDebugRenderMatrices;
-	StorageBufferHandle m_sdfInstanceBuffer;
-	StorageBufferHandle m_sdfCameraFrustumCulledInstances;
-	StorageBufferHandle m_sdfInstanceWorldBBBuffer;
-	StorageBufferHandle m_sdfCameraCulledTiles;
+    StorageBufferHandle m_mainPassTransformsBuffer;
+    StorageBufferHandle m_shadowPassTransformsBuffer;
+    StorageBufferHandle m_boundingBoxDebugRenderMatrices;
+    StorageBufferHandle m_sdfInstanceBuffer;
+    StorageBufferHandle m_sdfCameraFrustumCulledInstances;
+    StorageBufferHandle m_sdfInstanceWorldBBBuffer;
+    StorageBufferHandle m_sdfCameraCulledTiles;
 
     UniformBufferHandle m_globalUniformBuffer;
     UniformBufferHandle m_atmosphereSettingsBuffer;
     UniformBufferHandle m_taaResolveWeightBuffer;
     UniformBufferHandle m_sdfVolumeInfoBuffer;
-	UniformBufferHandle m_cameraFrustumBuffer;
-	UniformBufferHandle m_sdfTraceInfluenceRangeBuffer;
-	UniformBufferHandle m_volumetricLightingSettingsUniforms;
+    UniformBufferHandle m_cameraFrustumBuffer;
+    UniformBufferHandle m_sdfTraceInfluenceRangeBuffer;
+    UniformBufferHandle m_volumetricLightingSettingsUniforms;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
     ShaderDescription createTemporalFilterShaderDescription();
     ShaderDescription createTemporalSupersamplingShaderDescription();
-	ShaderDescription createSDFDebugShaderDescription();
-	ShaderDescription createSDFDiffuseTraceShaderDescription(const bool strictInfluenceRadiusCutoff);
-	ShaderDescription createLightMatrixShaderDescription();
+    ShaderDescription createSDFDebugShaderDescription();
+    ShaderDescription createSDFDiffuseTraceShaderDescription(const bool strictInfluenceRadiusCutoff);
+    ShaderDescription createLightMatrixShaderDescription();
 
     bool m_isMainPassShaderDescriptionStale = false;
     bool m_isBRDFLutShaderDescriptionStale = false;
     bool m_isTemporalFilterShaderDescriptionStale = false;
     bool m_isTemporalSupersamplingShaderDescriptionStale = false;
-	bool m_isSDFDebugShaderDescriptionStale = false;
-	bool m_isSDFDiffuseTraceShaderDescriptionStale = false;
-	bool m_isLightMatrixPassShaderDescriptionStale = false;
+    bool m_isSDFDebugShaderDescriptionStale = false;
+    bool m_isSDFDiffuseTraceShaderDescriptionStale = false;
+    bool m_isLightMatrixPassShaderDescriptionStale = false;
 
     void updateGlobalShaderInfo();
 

@@ -4,15 +4,15 @@
 //clips a point towards a target in a axis aligned bounding box
 vec3 clipAABB(
     vec3 target,    //last frame color
-    vec3 bbMin,     //bounding box min 
-    vec3 bbMax      //bounding box max   
-    )    
-{   
+    vec3 bbMin,     //bounding box min
+    vec3 bbMax      //bounding box max
+    )
+{
     const vec3 epsilon = vec3(0.0001f);
-    
+
     vec3 center = 0.5f * (bbMax + bbMin);
     vec3 extend = 0.5f * (bbMax - bbMin) + epsilon; //epsilon prevents divison by zero
-    
+
     vec3 toTarget = target - center;
     vec3 toTargetNorm = toTarget / extend;
     vec3 toTargetNormAbs = abs(toTargetNorm);
@@ -29,42 +29,42 @@ vec3 clipAABB(
 //reverseable 'tonemapping' function and it's counterpart
 //see "High Quality Temporal Supersampling", page 20
 vec3 tonemap(vec3 color){
-	return color / (1 + computeLuminance(color));
+    return color / (1 + computeLuminance(color));
 }
 
 vec3 tonemapReverse(vec3 color){
-	return color / (1 - computeLuminance(color));
+    return color / (1 - computeLuminance(color));
 }
 
 vec3[3][3] sampleNeighbourhood(texture2D inputTexture, sampler inputSampler, vec2 uv, vec2 texelSize, bool useTonemapping){
-	vec3[3][3] neighbourhood;
-	for(int x = -1; x <= 1; x++){
+    vec3[3][3] neighbourhood;
+    for(int x = -1; x <= 1; x++){
         for(int y = -1; y <= 1; y++){
-			vec3 color = texture(sampler2D(inputTexture, inputSampler), uv + texelSize * vec2(x, y)).rgb;
-			color = useTonemapping ? tonemap(color) : color;
-			neighbourhood[x+1][y+1] = color;
-		}
-	}
-	return neighbourhood;
+            vec3 color = texture(sampler2D(inputTexture, inputSampler), uv + texelSize * vec2(x, y)).rgb;
+            color = useTonemapping ? tonemap(color) : color;
+            neighbourhood[x+1][y+1] = color;
+        }
+    }
+    return neighbourhood;
 }
 
 vec3[2] minMaxFromNeighbourhood(vec3[3][3] neighbourhood){
-	vec3[2] minMax;
-	minMax[0] = neighbourhood[0][0];
-	minMax[1] = neighbourhood[0][0];
-	for(int i = 0; i < 3; i++){
-        for(int j = 0; j < 3; j++){
-			minMax[0] = min(minMax[0], neighbourhood[i][j]);
-			minMax[1] = max(minMax[1], neighbourhood[i][j]);
-		}
-	}
-	return minMax;
+    vec3[2] minMax;
+    minMax[0] = neighbourhood[0][0];
+    minMax[1] = neighbourhood[0][0];
+    for(int i = 0; i < 3; i++){
+           for(int j = 0; j < 3; j++){
+            minMax[0] = min(minMax[0], neighbourhood[i][j]);
+            minMax[1] = max(minMax[1], neighbourhood[i][j]);
+        }
+    }
+    return minMax;
 }
 
 vec2 getClosestFragmentMotion(ivec2 uv, texture2D depthTexture, texture2D velocityTexture, sampler textureSampler){
     float closestDepth = 0;
     ivec2 closestDepthOffset = ivec2(0);
-    
+
     //3x3 neighbourhood from Inside paper
     for(int x = -1; x <= 1; x++){
         for(int y = -1; y <= 1; y++){
@@ -80,5 +80,5 @@ vec2 getClosestFragmentMotion(ivec2 uv, texture2D depthTexture, texture2D veloci
 }
 
 bool isUVOutOfImage(vec2 uv){
-	return uv.x < 0 || uv.y < 0 || uv.x > 1 || uv.y > 1;
+    return uv.x < 0 || uv.y < 0 || uv.x > 1 || uv.y > 1;
 }

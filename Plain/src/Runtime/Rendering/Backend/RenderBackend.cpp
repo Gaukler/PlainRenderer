@@ -39,11 +39,11 @@ const uint32_t maxTextureCount = 1000;
 //===== private function declarations
 
 RenderPassExecution getGenericRenderpassInfoFromExecutionEntry(const RenderPassExecutionEntry& entry,
-	const std::vector<GraphicPassExecution>& graphicExecutions,
-	const std::vector<ComputePassExecution>& computeExecutions);
+    const std::vector<GraphicPassExecution>& graphicExecutions,
+    const std::vector<ComputePassExecution>& computeExecutions);
 
 RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExecution>& graphicExecutions,
-	const std::vector<ComputePassExecution>& computeExecutions);
+    const std::vector<ComputePassExecution>& computeExecutions);
 
 //=====
 
@@ -158,7 +158,7 @@ void checkVulkanResult(const VkResult result) {
 
 void RenderBackend::setup(GLFWwindow* window) {
 
-	m_shaderFileManager.setup();
+    m_shaderFileManager.setup();
 
     createVulkanInstance();
     createSurface(window);
@@ -184,11 +184,11 @@ void RenderBackend::setup(GLFWwindow* window) {
     acquireDebugUtilsExtFunctionsPointers();
 
     m_commandPool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-	
-	for (int i = 0; i < JobSystem::getWorkerCount(); i++) {
-		const VkCommandPool pool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-		m_drawcallCommandPools.push_back(pool);
-	}
+
+    for (int i = 0; i < JobSystem::getWorkerCount(); i++) {
+        const VkCommandPool pool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+        m_drawcallCommandPools.push_back(pool);
+    }
 
     m_transientCommandPool = createCommandPool(vkContext.queueFamilies.transferQueueFamilyIndex, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
 
@@ -214,94 +214,92 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_commandBuffers[1] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_commandPool);
 
     initGlobalTextureArrayDescriptorSetLayout();
-	initGlobalTextureArrayDescriptorSet();
+    initGlobalTextureArrayDescriptorSet();
     setupImgui(window);
 
     //query pools
     m_timestampQueryPools[0] = createQueryPool(VK_QUERY_TYPE_TIMESTAMP, m_timestampQueryPoolQueryCount);
-	m_timestampQueryPools[1] = createQueryPool(VK_QUERY_TYPE_TIMESTAMP, m_timestampQueryPoolQueryCount);
+    m_timestampQueryPools[1] = createQueryPool(VK_QUERY_TYPE_TIMESTAMP, m_timestampQueryPoolQueryCount);
 }
 
 void RenderBackend::shutdown() {
 
-	waitForRenderFinished();
-	m_shaderFileManager.shutdown();
+    waitForRenderFinished();
+    m_shaderFileManager.shutdown();
 
-	if (m_useValidationLayers) {
-		PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT =
-			reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>
-			(vkGetInstanceProcAddr(vkContext.vulkanInstance, "vkDestroyDebugReportCallbackEXT"));
-		vkDestroyDebugReportCallbackEXT(vkContext.vulkanInstance, m_debugCallback, nullptr);
-	}
+    if (m_useValidationLayers) {
+        PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT =
+            reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>
+            (vkGetInstanceProcAddr(vkContext.vulkanInstance, "vkDestroyDebugReportCallbackEXT"));
+        vkDestroyDebugReportCallbackEXT(vkContext.vulkanInstance, m_debugCallback, nullptr);
+    }
 
-	//destroy resources
-	for (uint32_t i = 0; i < m_images.size(); i++) {
-		destroyImage({ i });
-	}
+    //destroy resources
+    for (uint32_t i = 0; i < m_images.size(); i++) {
+        destroyImage({ i });
+    }
 
-	for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
-		destroyGraphicPass(m_renderPasses.getGraphicPassRefByIndex(i));
-	}
-	for (uint32_t i = 0; i < m_renderPasses.getNComputePasses(); i++) {
-		destroyComputePass(m_renderPasses.getComputePassRefByIndex(i));
-	}
-	for (const auto& mesh : m_meshes) {
-		destroyMesh(mesh);
-	}
-	for (const auto& mesh : m_dynamicMeshes) {
-		destroyDynamicMesh(mesh);
-	}
-	for (const auto& buffer : m_uniformBuffers) {
-		destroyBuffer(buffer);
-	}
-	for (const auto& buffer : m_storageBuffers) {
-		destroyBuffer(buffer);
-	}
-	for (const auto& sampler : m_samplers) {
-		vkDestroySampler(vkContext.device, sampler, nullptr);
-	}
-	for (const auto& framebuffer : m_framebuffers) {
-		destroyFramebuffer(framebuffer);
-	}
-	vkDestroyDescriptorSetLayout(vkContext.device, m_globalTextureArrayDescriporSetLayout, nullptr);
+    for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
+        destroyGraphicPass(m_renderPasses.getGraphicPassRefByIndex(i));
+    }
+    for (uint32_t i = 0; i < m_renderPasses.getNComputePasses(); i++) {
+        destroyComputePass(m_renderPasses.getComputePassRefByIndex(i));
+    }
+    for (const auto& mesh : m_meshes) {
+        destroyMesh(mesh);
+    }
+    for (const auto& mesh : m_dynamicMeshes) {
+        destroyDynamicMesh(mesh);
+    }
+    for (const auto& buffer : m_uniformBuffers) {
+        destroyBuffer(buffer);
+    }
+    for (const auto& buffer : m_storageBuffers) {
+        destroyBuffer(buffer);
+    }
+    for (const auto& sampler : m_samplers) {
+        vkDestroySampler(vkContext.device, sampler, nullptr);
+    }
+    for (const auto& framebuffer : m_framebuffers) {
+        destroyFramebuffer(framebuffer);
+    }
+    vkDestroyDescriptorSetLayout(vkContext.device, m_globalTextureArrayDescriporSetLayout, nullptr);
 
-	//destroy swapchain
-	vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
-	vkDestroySurfaceKHR(vkContext.vulkanInstance, m_swapchain.surface, nullptr);
+    //destroy swapchain
+    vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
+    vkDestroySurfaceKHR(vkContext.vulkanInstance, m_swapchain.surface, nullptr);
 
-	m_vkAllocator.destroy();
+    m_vkAllocator.destroy();
 
-	/*
-	destroy ui
-	*/
-	for (const auto& framebuffer : m_ui.framebuffers) {
-		vkDestroyFramebuffer(vkContext.device, framebuffer, nullptr);
-	}
-	vkDestroyRenderPass(vkContext.device, m_ui.renderPass, nullptr);
-	ImGui_ImplVulkan_Shutdown();
+    //destroy ui
+    for (const auto& framebuffer : m_ui.framebuffers) {
+        vkDestroyFramebuffer(vkContext.device, framebuffer, nullptr);
+    }
+    vkDestroyRenderPass(vkContext.device, m_ui.renderPass, nullptr);
+    ImGui_ImplVulkan_Shutdown();
 
-	destroyBuffer(m_stagingBuffer);
+    destroyBuffer(m_stagingBuffer);
 
-	for (const auto& pool : m_descriptorPools) {
-		vkDestroyDescriptorPool(vkContext.device, pool.vkPool, nullptr);
-	}
-	vkDestroyDescriptorPool(vkContext.device, m_imguiDescriptorPool, nullptr);
-	vkDestroyDescriptorPool(vkContext.device, m_globalTextureArrayDescriptorPool, nullptr);
+    for (const auto& pool : m_descriptorPools) {
+        vkDestroyDescriptorPool(vkContext.device, pool.vkPool, nullptr);
+    }
+    vkDestroyDescriptorPool(vkContext.device, m_imguiDescriptorPool, nullptr);
+    vkDestroyDescriptorPool(vkContext.device, m_globalTextureArrayDescriptorPool, nullptr);
 
-	vkDestroyDescriptorSetLayout(vkContext.device, m_globalDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(vkContext.device, m_globalDescriptorSetLayout, nullptr);
 
-	vkDestroyCommandPool(vkContext.device, m_commandPool, nullptr);
-	vkDestroyCommandPool(vkContext.device, m_transientCommandPool, nullptr);
+    vkDestroyCommandPool(vkContext.device, m_commandPool, nullptr);
+    vkDestroyCommandPool(vkContext.device, m_transientCommandPool, nullptr);
 
-	for (const VkCommandPool pool : m_drawcallCommandPools) {
-		vkDestroyCommandPool(vkContext.device, pool, nullptr);
-	}
+    for (const VkCommandPool pool : m_drawcallCommandPools) {
+        vkDestroyCommandPool(vkContext.device, pool, nullptr);
+    }
 
-	vkDestroySemaphore(vkContext.device, m_renderFinishedSemaphore, nullptr);
-	vkDestroySemaphore(vkContext.device, m_swapchain.imageAvaible, nullptr);
+    vkDestroySemaphore(vkContext.device, m_renderFinishedSemaphore, nullptr);
+    vkDestroySemaphore(vkContext.device, m_swapchain.imageAvaible, nullptr);
 
-	vkDestroyQueryPool(vkContext.device, m_timestampQueryPools[0], nullptr);
-	vkDestroyQueryPool(vkContext.device, m_timestampQueryPools[1], nullptr);
+    vkDestroyQueryPool(vkContext.device, m_timestampQueryPools[0], nullptr);
+    vkDestroyQueryPool(vkContext.device, m_timestampQueryPools[1], nullptr);
 
     vkDestroyFence(vkContext.device, m_renderFinishedFence, nullptr);
     vkDestroyDevice(vkContext.device, nullptr);
@@ -313,9 +311,7 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
     auto result = vkDeviceWaitIdle(vkContext.device);
     checkVulkanResult(result);
 
-    /*
-    destroy swapchain and views
-    */
+    //destroy swapchain and views
     for (const auto& imageHandle : m_swapchain.imageHandles) {
         destroyImage(imageHandle);
     }
@@ -441,12 +437,12 @@ void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const u
 void RenderBackend::newFrame() {
 
     m_graphicPassExecutions.clear();
-	m_computePassExecutions.clear();
+    m_computePassExecutions.clear();
 
     m_swapchainInputImageHandle.index = VK_NULL_HANDLE;
-	
-	m_frameIndex++;
-	m_frameIndexMod2 = m_frameIndex % 2;
+
+    m_frameIndex++;
+    m_frameIndexMod2 = m_frameIndex % 2;
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -477,82 +473,82 @@ void RenderBackend::startDrawcallRecording() {
         cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
         cmdBeginInfo.pInheritanceInfo = &inheritanceInfo;
 
-		const int poolCount = m_drawcallCommandPools.size();
-		for (int cmdBufferIndex = 0; cmdBufferIndex < poolCount; cmdBufferIndex++) {
-			const int finalIndex = cmdBufferIndex + m_frameIndexMod2 * poolCount;
-			const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[finalIndex];
-			const auto res = vkResetCommandBuffer(meshCommandBuffer, 0);
-			assert(res == VK_SUCCESS);
-
-			//reset command buffer
-			vkBeginCommandBuffer(meshCommandBuffer, &cmdBeginInfo);
-
-			//prepare for drawcall recording
-			vkCmdBindPipeline(meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipeline);
-
-			const glm::ivec2 resolution = resolutionFromFramebufferTargets(framebuffer.desc.targets);
-
-			//set viewport
-			{
-				VkViewport viewport;
-				viewport.x = 0;
-				viewport.y = 0;
-				viewport.width = (float)resolution.x;
-				viewport.height = (float)resolution.y;
-				viewport.minDepth = 0.f;
-				viewport.maxDepth = 1.f;
-
-				vkCmdSetViewport(meshCommandBuffer, 0, 1, &viewport);
-			}
-			//set scissor
-			{
-				VkRect2D scissor;
-				scissor.offset = { 0, 0 };
-				scissor.extent.width = resolution.x;
-				scissor.extent.height = resolution.y;
-
-				vkCmdSetScissor(meshCommandBuffer, 0, 1, &scissor);
-			}
-		}
+        const int poolCount = m_drawcallCommandPools.size();
+        for (int cmdBufferIndex = 0; cmdBufferIndex < poolCount; cmdBufferIndex++) {
+            const int finalIndex = cmdBufferIndex + m_frameIndexMod2 * poolCount;
+            const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[finalIndex];
+            const auto res = vkResetCommandBuffer(meshCommandBuffer, 0);
+            assert(res == VK_SUCCESS);
+            
+            //reset command buffer
+            vkBeginCommandBuffer(meshCommandBuffer, &cmdBeginInfo);
+            
+            //prepare for drawcall recording
+            vkCmdBindPipeline(meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipeline);
+            
+            const glm::ivec2 resolution = resolutionFromFramebufferTargets(framebuffer.desc.targets);
+            
+            //set viewport
+            {
+                VkViewport viewport;
+                viewport.x = 0;
+                viewport.y = 0;
+                viewport.width = (float)resolution.x;
+                viewport.height = (float)resolution.y;
+                viewport.minDepth = 0.f;
+                viewport.maxDepth = 1.f;
+                
+                vkCmdSetViewport(meshCommandBuffer, 0, 1, &viewport);
+            }
+            //set scissor
+            {
+                VkRect2D scissor;
+                scissor.offset = { 0, 0 };
+                scissor.extent.width = resolution.x;
+                scissor.extent.height = resolution.y;
+                
+                vkCmdSetScissor(meshCommandBuffer, 0, 1, &scissor);
+            }
+        }
     }
 }
 
 void RenderBackend::setGraphicPassExecution(const GraphicPassExecution& execution) {
-	if (execution.framebuffer.index == invalidIndex) {
-		std::cout << "Renderpass execution is missing framebuffer, skipping execution\n";
-		return;
-	}
-	const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
-	if (!validateFramebufferTargetGraphicPassCombination(framebuffer.desc.targets, execution.genericInfo.handle)) {
-		std::cout << "Framebuffer and renderpass are incompatible, skipping execution\n";
-		return;
-	}
-
-	const VkDescriptorSet descriptorSet = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
-	updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
-	m_graphicPassExecutions.push_back(execution);
+    if (execution.framebuffer.index == invalidIndex) {
+        std::cout << "Renderpass execution is missing framebuffer, skipping execution\n";
+        return;
+    }
+    const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
+    if (!validateFramebufferTargetGraphicPassCombination(framebuffer.desc.targets, execution.genericInfo.handle)) {
+        std::cout << "Framebuffer and renderpass are incompatible, skipping execution\n";
+        return;
+    }
+    
+    const VkDescriptorSet descriptorSet = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
+    updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
+    m_graphicPassExecutions.push_back(execution);
 }
 
 void RenderBackend::setComputePassExecution(const ComputePassExecution& execution) {
-	const VkDescriptorSet descriptorSet = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
-	updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
-	m_computePassExecutions.push_back(execution);
+    const VkDescriptorSet descriptorSet = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
+    updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
+    m_computePassExecutions.push_back(execution);
 }
 
 void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData,const RenderPassHandle passHandle, const int workerIndex) {
     const GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
 
-	VkShaderStageFlags pushConstantStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-	if (pass.graphicPassDesc.shaderDescriptions.geometry.has_value()) {
-		pushConstantStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
-	}
+    VkShaderStageFlags pushConstantStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    if (pass.graphicPassDesc.shaderDescriptions.geometry.has_value()) {
+        pushConstantStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+    }
 
-	const int poolCount = m_drawcallCommandPools.size();
-	const int poolIndex = workerIndex + poolCount * m_frameIndexMod2;
-
-	const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[poolIndex];
-	const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSets[m_frameIndexMod2], m_globalTextureArrayDescriptorSet };
-	vkCmdBindDescriptorSets(meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
+    const int poolCount = m_drawcallCommandPools.size();
+    const int poolIndex = workerIndex + poolCount * m_frameIndexMod2;
+    
+    const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[poolIndex];
+    const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSets[m_frameIndexMod2], m_globalTextureArrayDescriptorSet };
+    vkCmdBindDescriptorSets(meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
     for (uint32_t i = 0; i < meshHandles.size(); i++) {
 
@@ -563,26 +559,26 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const 
         vkCmdBindVertexBuffers(meshCommandBuffer, 0, 1, &mesh.vertexBuffer.vulkanHandle, offset);
         vkCmdBindIndexBuffer(meshCommandBuffer, mesh.indexBuffer.vulkanHandle, offset[0], mesh.indexPrecision);
 
-		if (pass.pushConstantSize > 0) {
-			//update push constants
-			vkCmdPushConstants(
-				meshCommandBuffer,
-				pass.pipelineLayout,
-				pushConstantStageFlags,
-				0,
-				(uint32_t)pass.pushConstantSize,
-				pushConstantData + i * pass.pushConstantSize);
-		}
-        vkCmdDrawIndexed(meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
+    if (pass.pushConstantSize > 0) {
+        //update push constants
+        vkCmdPushConstants(
+            meshCommandBuffer,
+            pass.pipelineLayout,
+            pushConstantStageFlags,
+            0,
+            (uint32_t)pass.pushConstantSize,
+            pushConstantData + i * pass.pushConstantSize);
+    }
+    vkCmdDrawIndexed(meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
     }
 }
 
 void RenderBackend::setUniformBufferData(const UniformBufferHandle buffer, const void* data, const size_t size) {
-	m_deferredUniformBufferFills.emplace_back(UniformBufferFillOrder{ buffer, dataToCharArray(data, size), });
+    m_deferredUniformBufferFills.emplace_back(UniformBufferFillOrder{ buffer, dataToCharArray(data, size), });
 }
 
 void RenderBackend::setStorageBufferData(const StorageBufferHandle buffer, const void* data, const size_t size) {
-	m_deferredStorageBufferFills.emplace_back(StorageBufferFillOrder{ buffer, dataToCharArray(data, size), });
+    m_deferredStorageBufferFills.emplace_back(StorageBufferFillOrder{ buffer, dataToCharArray(data, size), });
 }
 
 void RenderBackend::setGlobalDescriptorSetLayout(const ShaderLayout& layout) {
@@ -631,154 +627,154 @@ void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle pa
 
 //helper that picks correct vector from entry and returns RenderPassExecution accprdong to entry index
 RenderPassExecution getGenericRenderpassInfoFromExecutionEntry(const RenderPassExecutionEntry& entry,
-	const std::vector<GraphicPassExecution>& graphicExecutions,
-	const std::vector<ComputePassExecution>& computeExecutions) {
-
-	if (entry.type == RenderPassType::Graphic) {
-		return graphicExecutions[entry.index].genericInfo;
-	}
-	else if (entry.type == RenderPassType::Compute) {
-		return computeExecutions[entry.index].genericInfo;
-	}
-	else {
-		std::cout << "Unknown RenderPassType\n";
-		throw("Unknown RenderPassType");
-	}
+    const std::vector<GraphicPassExecution>& graphicExecutions,
+    const std::vector<ComputePassExecution>& computeExecutions) {
+    
+    if (entry.type == RenderPassType::Graphic) {
+        return graphicExecutions[entry.index].genericInfo;
+    }
+    else if (entry.type == RenderPassType::Compute) {
+        return computeExecutions[entry.index].genericInfo;
+    }
+    else {
+        std::cout << "Unknown RenderPassType\n";
+        throw("Unknown RenderPassType");
+    }
 }
 
 RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExecution>& graphicExecutions,
-	const std::vector<ComputePassExecution>& computeExecutions) {
-	
-	//create map and pending parent count lut to efficiently compute pass order
-	const size_t totalExecutionCount = graphicExecutions.size() + computeExecutions.size();
-	std::vector<size_t> pendingParentCount(totalExecutionCount, 0);
-
-	std::vector<std::vector<size_t>> perPassChildren(totalExecutionCount);
-
-	std::unordered_map<uint32_t, size_t> renderPassHandleToIndexMap;
-
-	//fill map and set pending parent count
-	for (int i = 0; i < graphicExecutions.size(); i++) {
-		const std::vector<RenderPassHandle>& parents = graphicExecutions[i].genericInfo.parents;
-		pendingParentCount[i] = parents.size();
-		renderPassHandleToIndexMap[graphicExecutions[i].genericInfo.handle.index] = i;
-	}
-	for (int i = 0; i < computeExecutions.size(); i++) {
-		const std::vector<RenderPassHandle>& parents = computeExecutions[i].genericInfo.parents;
-		const size_t passIndex = i + graphicExecutions.size();
-		pendingParentCount[passIndex] = parents.size();
-		renderPassHandleToIndexMap[computeExecutions[i].genericInfo.handle.index] = passIndex;
-	}
-
-	//collect children
-	for (int i = 0; i < graphicExecutions.size(); i++) {
-		for (const RenderPassHandle parent : graphicExecutions[i].genericInfo.parents) {
-			const size_t parentIndex = renderPassHandleToIndexMap[parent.index];
-			perPassChildren[parentIndex].push_back(i);
-		}
-	}
-	for (int i = 0; i < computeExecutions.size(); i++) {
-		for (const RenderPassHandle parent : computeExecutions[i].genericInfo.parents) {
-			const size_t parentIndex = renderPassHandleToIndexMap[parent.index];
-			const size_t childIndex = i + graphicExecutions.size();
-			perPassChildren[parentIndex].push_back(childIndex);
-		}
-	}
-	
-	//prepare entries beforehand
-	std::vector<RenderPassExecutionEntry> executionEntryPerPass;
-	executionEntryPerPass.reserve(totalExecutionCount);
-	//add graphic passes to list
-	for (int i = 0; i < graphicExecutions.size(); i++) {
-		RenderPassExecutionEntry entry;
-		entry.type = RenderPassType::Graphic;
-		entry.index = i;
-		executionEntryPerPass.push_back(entry);
-	}
-	//add compute passes to list
-	for (int i = 0; i < computeExecutions.size(); i++) {
-		RenderPassExecutionEntry entry;
-		entry.type = RenderPassType::Compute;
-		entry.index = i;
-		executionEntryPerPass.push_back(entry);
-	}
-
-	//add initial passes, which don't have any parents
-	std::vector<size_t> addablePasses;
-	for (int i = 0; i < totalExecutionCount; i++) {
-		if (pendingParentCount[i] == 0) {
-			addablePasses.push_back(i);
-		}
-	}
-
-	RenderPassExecutionOrder order;
-	order.executions.reserve(totalExecutionCount);
-
-	//continue until no further passes can be added
-	while (addablePasses.size() > 0) {
-		//take last
-		const size_t passIndex = addablePasses.back();
-		addablePasses.pop_back();
-		//add
-		order.executions.push_back(executionEntryPerPass[passIndex]);
-		//reduce pending parent count of every child
-		for (const size_t childIndex : perPassChildren[passIndex]) {
-			pendingParentCount[childIndex]--;
-			if (pendingParentCount[childIndex] == 0) {
-				addablePasses.push_back(childIndex); //reduced to zero, we know we can add this
-			}
-		}
-	}
-	assert(order.executions.size() == totalExecutionCount); //all passes must have been added
-	return order;
+    const std::vector<ComputePassExecution>& computeExecutions) {
+    
+    //create map and pending parent count lut to efficiently compute pass order
+    const size_t totalExecutionCount = graphicExecutions.size() + computeExecutions.size();
+    std::vector<size_t> pendingParentCount(totalExecutionCount, 0);
+    
+    std::vector<std::vector<size_t>> perPassChildren(totalExecutionCount);
+    
+    std::unordered_map<uint32_t, size_t> renderPassHandleToIndexMap;
+    
+    //fill map and set pending parent count
+    for (int i = 0; i < graphicExecutions.size(); i++) {
+        const std::vector<RenderPassHandle>& parents = graphicExecutions[i].genericInfo.parents;
+        pendingParentCount[i] = parents.size();
+        renderPassHandleToIndexMap[graphicExecutions[i].genericInfo.handle.index] = i;
+    }
+    for (int i = 0; i < computeExecutions.size(); i++) {
+        const std::vector<RenderPassHandle>& parents = computeExecutions[i].genericInfo.parents;
+        const size_t passIndex = i + graphicExecutions.size();
+        pendingParentCount[passIndex] = parents.size();
+        renderPassHandleToIndexMap[computeExecutions[i].genericInfo.handle.index] = passIndex;
+    }
+    
+    //collect children
+    for (int i = 0; i < graphicExecutions.size(); i++) {
+        for (const RenderPassHandle parent : graphicExecutions[i].genericInfo.parents) {
+            const size_t parentIndex = renderPassHandleToIndexMap[parent.index];
+            perPassChildren[parentIndex].push_back(i);
+        }
+    }
+    for (int i = 0; i < computeExecutions.size(); i++) {
+        for (const RenderPassHandle parent : computeExecutions[i].genericInfo.parents) {
+            const size_t parentIndex = renderPassHandleToIndexMap[parent.index];
+            const size_t childIndex = i + graphicExecutions.size();
+            perPassChildren[parentIndex].push_back(childIndex);
+        }
+    }
+    
+    //prepare entries beforehand
+    std::vector<RenderPassExecutionEntry> executionEntryPerPass;
+    executionEntryPerPass.reserve(totalExecutionCount);
+    //add graphic passes to list
+    for (int i = 0; i < graphicExecutions.size(); i++) {
+        RenderPassExecutionEntry entry;
+        entry.type = RenderPassType::Graphic;
+        entry.index = i;
+        executionEntryPerPass.push_back(entry);
+    }
+    //add compute passes to list
+    for (int i = 0; i < computeExecutions.size(); i++) {
+        RenderPassExecutionEntry entry;
+        entry.type = RenderPassType::Compute;
+        entry.index = i;
+        executionEntryPerPass.push_back(entry);
+    }
+    
+    //add initial passes, which don't have any parents
+    std::vector<size_t> addablePasses;
+    for (int i = 0; i < totalExecutionCount; i++) {
+        if (pendingParentCount[i] == 0) {
+            addablePasses.push_back(i);
+        }
+    }
+    
+    RenderPassExecutionOrder order;
+    order.executions.reserve(totalExecutionCount);
+    
+    //continue until no further passes can be added
+    while (addablePasses.size() > 0) {
+        //take last
+        const size_t passIndex = addablePasses.back();
+        addablePasses.pop_back();
+        //add
+        order.executions.push_back(executionEntryPerPass[passIndex]);
+        //reduce pending parent count of every child
+        for (const size_t childIndex : perPassChildren[passIndex]) {
+            pendingParentCount[childIndex]--;
+            if (pendingParentCount[childIndex] == 0) {
+                addablePasses.push_back(childIndex); //reduced to zero, we know we can add this
+            }
+        }
+    }
+    assert(order.executions.size() == totalExecutionCount); //all passes must have been added
+    return order;
 }
 
 void RenderBackend::renderFrame(const bool presentToScreen) {
 
-	//reset doesn't work before waiting for render finished fence
-	resetTimestampQueryPool(m_frameIndexMod2);
-
-	//record command buffer
-	VkCommandBufferBeginInfo beginInfo = {};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.pNext = nullptr;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	beginInfo.pInheritanceInfo = nullptr;
-
-	const VkCommandBuffer currentCommandBuffer = m_commandBuffers[m_frameIndexMod2];
-
-	auto res = vkResetCommandBuffer(currentCommandBuffer, 0);
-	assert(res == VK_SUCCESS);
-	res = vkBeginCommandBuffer(currentCommandBuffer, &beginInfo);
-	assert(res == VK_SUCCESS);
-
-	//index needed for end query
-	const uint32_t frameQueryIndex = (uint32_t)m_timestampQueriesPerFrame[m_frameIndexMod2].size();
+    //reset doesn't work before waiting for render finished fence
+    resetTimestampQueryPool(m_frameIndexMod2);
+    
+    //record command buffer
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.pNext = nullptr;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    beginInfo.pInheritanceInfo = nullptr;
+    
+    const VkCommandBuffer currentCommandBuffer = m_commandBuffers[m_frameIndexMod2];
+    
+    auto res = vkResetCommandBuffer(currentCommandBuffer, 0);
+    assert(res == VK_SUCCESS);
+    res = vkBeginCommandBuffer(currentCommandBuffer, &beginInfo);
+    assert(res == VK_SUCCESS);
+    
+    //index needed for end query
+    const uint32_t frameQueryIndex = (uint32_t)m_timestampQueriesPerFrame[m_frameIndexMod2].size();
     {
         TimestampQuery frameQuery;
         frameQuery.name = "Frame";
         frameQuery.startQuery = issueTimestampQuery(currentCommandBuffer, m_frameIndexMod2);
 
-		m_timestampQueriesPerFrame[m_frameIndexMod2].push_back(frameQuery);
+        m_timestampQueriesPerFrame[m_frameIndexMod2].push_back(frameQuery);
     }
             
-	const RenderPassExecutionOrder executionOrder = computeExecutionOrder(m_graphicPassExecutions, m_computePassExecutions);
-	const std::vector<RenderPassBarriers> barriers = createRenderPassBarriers(executionOrder, m_graphicPassExecutions, m_computePassExecutions);
-
-	for (int i = 0; i < executionOrder.executions.size(); i++) {
-		const RenderPassExecutionEntry& executionEntry = executionOrder.executions[i];
-		if (executionEntry.type == RenderPassType::Graphic) {
-			submitGraphicPass(m_graphicPassExecutions[executionEntry.index], barriers[i], currentCommandBuffer);
-		}
-		else if (executionEntry.type == RenderPassType::Compute) {
-			submitComputePass(m_computePassExecutions[executionEntry.index], barriers[i], currentCommandBuffer);
-		}
-		else {
-			std::cout << "Unknown RenderPassType\n";
-		}
+    const RenderPassExecutionOrder executionOrder = computeExecutionOrder(m_graphicPassExecutions, m_computePassExecutions);
+    const std::vector<RenderPassBarriers> barriers = createRenderPassBarriers(executionOrder, m_graphicPassExecutions, m_computePassExecutions);
+    
+    for (int i = 0; i < executionOrder.executions.size(); i++) {
+        const RenderPassExecutionEntry& executionEntry = executionOrder.executions[i];
+        if (executionEntry.type == RenderPassType::Graphic) {
+            submitGraphicPass(m_graphicPassExecutions[executionEntry.index], barriers[i], currentCommandBuffer);
+        }
+        else if (executionEntry.type == RenderPassType::Compute) {
+            submitComputePass(m_computePassExecutions[executionEntry.index], barriers[i], currentCommandBuffer);
+        }
+        else {
+            std::cout << "Unknown RenderPassType\n";
+        }
     }
 
-    //imgui    
+    //imgui
     {
         startDebugLabel(currentCommandBuffer, "ImGui");
     
@@ -787,10 +783,10 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
         imguiQuery.startQuery = issueTimestampQuery(currentCommandBuffer, m_frameIndexMod2);
     
         ImGui::Render();
-		
-		const std::vector<VkImageMemoryBarrier> uiBarrier = createImageBarriers(m_images[m_swapchainInputImageHandle.index],
-			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
+
+        const std::vector<VkImageMemoryBarrier> uiBarrier = createImageBarriers(m_images[m_swapchainInputImageHandle.index],
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
 
         vkCmdPipelineBarrier(currentCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
             0, 0, nullptr, 0, nullptr, 1, uiBarrier.data());
@@ -800,40 +796,40 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
         vkCmdEndRenderPass(currentCommandBuffer);
     
         imguiQuery.endQuery = issueTimestampQuery(currentCommandBuffer, m_frameIndexMod2);
-		m_timestampQueriesPerFrame[m_frameIndexMod2].push_back(imguiQuery);
+        m_timestampQueriesPerFrame[m_frameIndexMod2].push_back(imguiQuery);
     
         endDebugLabel(currentCommandBuffer);
     }
     
-	m_timestampQueriesPerFrame[m_frameIndexMod2][frameQueryIndex].endQuery = issueTimestampQuery(currentCommandBuffer, m_frameIndexMod2);
+    m_timestampQueriesPerFrame[m_frameIndexMod2][frameQueryIndex].endQuery = issueTimestampQuery(currentCommandBuffer, m_frameIndexMod2);
     
     //transition swapchain image to present
     auto& swapchainPresentImage = m_images[m_swapchainInputImageHandle.index];
     const auto& transitionToPresentBarrier = createImageBarriers(swapchainPresentImage, 
-		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
+        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
     barriersCommand(currentCommandBuffer, transitionToPresentBarrier, std::vector<VkBufferMemoryBarrier> {});
 
     res = vkEndCommandBuffer(currentCommandBuffer);
     assert(res == VK_SUCCESS);
 
-	//compute cpu time after drawcall recording, but before waiting for GPU to finish
-	m_lastFrameCPUTime = Timer::getTimeFloat() - m_timeOfLastGPUSubmit;
-
-	//wait for in flight frame to render so resources are avaible
-	res = vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, UINT64_MAX);
-	assert(res == VK_SUCCESS);
-	res = vkResetFences(vkContext.device, 1, &m_renderFinishedFence);
-	assert(res == VK_SUCCESS);
-
-	//execute deferred buffer fill orders
-	for (const UniformBufferFillOrder& order : m_deferredUniformBufferFills) {
-		fillBuffer(m_uniformBuffers[order.buffer.index], order.data.data(), order.data.size());
-	}
-	for (const StorageBufferFillOrder& order : m_deferredStorageBufferFills) {
-		fillBuffer(m_storageBuffers[order.buffer.index], order.data.data(), order.data.size());
-	}
-	m_deferredUniformBufferFills.clear();
-	m_deferredStorageBufferFills.clear();
+    //compute cpu time after drawcall recording, but before waiting for GPU to finish
+    m_lastFrameCPUTime = Timer::getTimeFloat() - m_timeOfLastGPUSubmit;
+    
+    //wait for in flight frame to render so resources are avaible
+    res = vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, UINT64_MAX);
+    assert(res == VK_SUCCESS);
+    res = vkResetFences(vkContext.device, 1, &m_renderFinishedFence);
+    assert(res == VK_SUCCESS);
+    
+    //execute deferred buffer fill orders
+    for (const UniformBufferFillOrder& order : m_deferredUniformBufferFills) {
+        fillBuffer(m_uniformBuffers[order.buffer.index], order.data.data(), order.data.size());
+    }
+    for (const StorageBufferFillOrder& order : m_deferredStorageBufferFills) {
+        fillBuffer(m_storageBuffers[order.buffer.index], order.data.data(), order.data.size());
+    }
+    m_deferredUniformBufferFills.clear();
+    m_deferredStorageBufferFills.clear();
 
     //submit 
     VkSubmitInfo submit = {};
@@ -858,34 +854,34 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
         glfwPollEvents();
     }
 
-	//timestamp after presenting, which waits for vsync
-	m_timeOfLastGPUSubmit = Timer::getTimeFloat();
+    //timestamp after presenting, which waits for vsync
+    m_timeOfLastGPUSubmit = Timer::getTimeFloat();
 
     //get timestamp results of last frame
-	{
-		m_renderpassTimings.clear();
-
-		const int previousFrameIndexMod2 = (m_frameIndexMod2 + 1) % 2;
-		const size_t previousFrameQueryCount = m_timestampQueryCounts[previousFrameIndexMod2];
-		const VkQueryPool previousQueryPool = m_timestampQueryPools[previousFrameIndexMod2];
-
-		std::vector<uint32_t> timestamps;
-		timestamps.resize(previousFrameQueryCount);
-
-		//res = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, 0, m_currentTimestampQueryCount,
-		//    timestamps.size() * sizeof(uint32_t), timestamps.data(), 0, VK_QUERY_RESULT_WAIT_BIT);
-		//assert(res == VK_SUCCESS);
-		//on Ryzen 4700U iGPU vkGetQueryPoolResults only returns correct results for the first query
-		//maybe it contains more info so needs more space per query?
-		//manually get every query for now
-		//FIXME: proper solution
-		for (size_t i = 0; i < previousFrameQueryCount; i++) {
-			auto result = vkGetQueryPoolResults(vkContext.device, previousQueryPool, (uint32_t)i, 1,
-				(uint32_t)timestamps.size() * sizeof(uint32_t), &timestamps[i], 0, VK_QUERY_RESULT_WAIT_BIT);
-			checkVulkanResult(result);
-		}
-
-		for (const TimestampQuery query : m_timestampQueriesPerFrame[previousFrameIndexMod2]) {
+    {
+        m_renderpassTimings.clear();
+        
+        const int previousFrameIndexMod2 = (m_frameIndexMod2 + 1) % 2;
+        const size_t previousFrameQueryCount = m_timestampQueryCounts[previousFrameIndexMod2];
+        const VkQueryPool previousQueryPool = m_timestampQueryPools[previousFrameIndexMod2];
+        
+        std::vector<uint32_t> timestamps;
+        timestamps.resize(previousFrameQueryCount);
+        
+        //res = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, 0, m_currentTimestampQueryCount,
+        //    timestamps.size() * sizeof(uint32_t), timestamps.data(), 0, VK_QUERY_RESULT_WAIT_BIT);
+        //assert(res == VK_SUCCESS);
+        //on Ryzen 4700U iGPU vkGetQueryPoolResults only returns correct results for the first query
+        //maybe it contains more info so needs more space per query?
+        //manually get every query for now
+        //FIXME: proper solution
+        for (size_t i = 0; i < previousFrameQueryCount; i++) {
+        	auto result = vkGetQueryPoolResults(vkContext.device, previousQueryPool, (uint32_t)i, 1,
+        		(uint32_t)timestamps.size() * sizeof(uint32_t), &timestamps[i], 0, VK_QUERY_RESULT_WAIT_BIT);
+        	checkVulkanResult(result);
+        }
+        
+        for (const TimestampQuery query : m_timestampQueriesPerFrame[previousFrameIndexMod2]) {
 
             const uint32_t startTime = timestamps[query.startQuery];
             const uint32_t endTime = timestamps[query.endQuery];
@@ -903,7 +899,7 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
 }
 
 uint32_t RenderBackend::getImageGlobalTextureArrayIndex(const ImageHandle image) {
-	return m_images[image.index].globalDescriptorSetIndex;
+    return m_images[image.index].globalDescriptorSetIndex;
 }
 
 RenderPassHandle RenderBackend::createComputePass(const ComputePassDescription& desc) {
@@ -931,7 +927,7 @@ RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& 
     if (!m_shaderFileManager.loadGraphicShadersSpirV(shaderHandle, &spirV)) {
         std::cout << "Initial shader loading failed" << std::endl;
         throw;
-    }    
+    }
 
     //create vulkan pass and handle
     GraphicPass pass = createGraphicPassInternal(desc, spirV);
@@ -987,153 +983,153 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
 
 ImageHandle RenderBackend::createImage(const ImageDescription& desc, const void* initialData, const size_t initialDataSize) {
 
-	const VkFormat format = imageFormatToVulkanFormat(desc.format);
-	const VkImageAspectFlagBits aspectFlag = imageFormatToVkAspectFlagBits(desc.format);
+    const VkFormat format = imageFormatToVulkanFormat(desc.format);
+    const VkImageAspectFlagBits aspectFlag = imageFormatToVkAspectFlagBits(desc.format);
+    
+    VkImageType type;
+    VkImageViewType viewType;
+    switch (desc.type) {
+    case ImageType::Type1D:     type = VK_IMAGE_TYPE_1D; viewType = VK_IMAGE_VIEW_TYPE_1D; break;
+    case ImageType::Type2D:     type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_2D; break;
+    case ImageType::Type3D:     type = VK_IMAGE_TYPE_3D; viewType = VK_IMAGE_VIEW_TYPE_3D; break;
+    case ImageType::TypeCube:   type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_CUBE; break;
+    default: throw std::runtime_error("Unsuported type enum");
+    }
+    
+    uint32_t mipCount;
+    switch (desc.mipCount) {
+    case(MipCount::One): mipCount = 1; break;
+    case(MipCount::Manual): mipCount = desc.manualMipCount; break;
+    case(MipCount::FullChain): mipCount = mipCountFromResolution(desc.width, desc.height, desc.depth); break;
+    default: throw std::runtime_error("Unsuported mipCoun enum");
+    }
+    
+    VkImageUsageFlags usage = 0;
+    if (bool(desc.usageFlags & ImageUsageFlags::Attachment)) {
+        const VkImageUsageFlagBits attachmentUsage = isDepthFormat(format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        usage |= attachmentUsage;
+    }
+    if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
+        usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    }
+    if (bool(desc.usageFlags & ImageUsageFlags::Storage)) {
+        usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+    }
+    if (initialDataSize > 0) {
+        usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    }
+    if (desc.autoCreateMips) {
+        usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    }
+    
+    Image image;
+    image.extent.width = desc.width;
+    image.extent.height = desc.height;
+    image.extent.depth = desc.depth;
+    image.desc = desc;
+    image.format = format;
+    image.type = desc.type;
+    
+    for (uint32_t i = 0; i < mipCount; i++) {
+        image.layoutPerMip.push_back(VK_IMAGE_LAYOUT_UNDEFINED);
+    }
+    
+    VkImageCreateFlags flags = 0;
+    uint32_t arrayLayers = 1;
+    if (desc.type == ImageType::TypeCube) {
+        flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+        arrayLayers = 6;
+        assert(desc.width == desc.height);
+        assert(desc.depth == 1);
+    }
+    
+    VkImageCreateInfo imageInfo = {};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.pNext = nullptr;
+    imageInfo.flags = flags;
+    imageInfo.imageType = type;
+    imageInfo.format = format;
+    imageInfo.extent = image.extent;
+    imageInfo.mipLevels = mipCount;
+    imageInfo.arrayLayers = arrayLayers;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = usage;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.queueFamilyIndexCount = 1;
+    imageInfo.pQueueFamilyIndices = &vkContext.queueFamilies.graphicsQueueIndex;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-	VkImageType type;
-	VkImageViewType viewType;
-	switch (desc.type) {
-	case ImageType::Type1D:     type = VK_IMAGE_TYPE_1D; viewType = VK_IMAGE_VIEW_TYPE_1D; break;
-	case ImageType::Type2D:     type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_2D; break;
-	case ImageType::Type3D:     type = VK_IMAGE_TYPE_3D; viewType = VK_IMAGE_VIEW_TYPE_3D; break;
-	case ImageType::TypeCube:   type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_CUBE; break;
-	default: throw std::runtime_error("Unsuported type enum");
-	}
-
-	uint32_t mipCount;
-	switch (desc.mipCount) {
-	case(MipCount::One): mipCount = 1; break;
-	case(MipCount::Manual): mipCount = desc.manualMipCount; break;
-	case(MipCount::FullChain): mipCount = mipCountFromResolution(desc.width, desc.height, desc.depth); break;
-	default: throw std::runtime_error("Unsuported mipCoun enum");
-	}
-
-	VkImageUsageFlags usage = 0;
-	if (bool(desc.usageFlags & ImageUsageFlags::Attachment)) {
-		const VkImageUsageFlagBits attachmentUsage = isDepthFormat(format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-		usage |= attachmentUsage;
-	}
-	if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
-		usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-	}
-	if (bool(desc.usageFlags & ImageUsageFlags::Storage)) {
-		usage |= VK_IMAGE_USAGE_STORAGE_BIT;
-	}
-	if (initialDataSize > 0) {
-		usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-	}
-	if (desc.autoCreateMips) {
-		usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-	}
-
-	Image image;
-	image.extent.width = desc.width;
-	image.extent.height = desc.height;
-	image.extent.depth = desc.depth;
-	image.desc = desc;
-	image.format = format;
-	image.type = desc.type;
-
-	for (uint32_t i = 0; i < mipCount; i++) {
-		image.layoutPerMip.push_back(VK_IMAGE_LAYOUT_UNDEFINED);
-	}
-
-	VkImageCreateFlags flags = 0;
-	uint32_t arrayLayers = 1;
-	if (desc.type == ImageType::TypeCube) {
-		flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-		arrayLayers = 6;
-		assert(desc.width == desc.height);
-		assert(desc.depth == 1);
-	}
-
-	VkImageCreateInfo imageInfo = {};
-	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	imageInfo.pNext = nullptr;
-	imageInfo.flags = flags;
-	imageInfo.imageType = type;
-	imageInfo.format = format;
-	imageInfo.extent = image.extent;
-	imageInfo.mipLevels = mipCount;
-	imageInfo.arrayLayers = arrayLayers;
-	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-	imageInfo.usage = usage;
-	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	imageInfo.queueFamilyIndexCount = 1;
-	imageInfo.pQueueFamilyIndices = &vkContext.queueFamilies.graphicsQueueIndex;
-	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-	auto res = vkCreateImage(vkContext.device, &imageInfo, nullptr, &image.vulkanHandle);
-	checkVulkanResult(res);
-
-	//bind memory
-	VkMemoryRequirements memoryRequirements;
-	vkGetImageMemoryRequirements(vkContext.device, image.vulkanHandle, &memoryRequirements);
-	const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-	if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &image.memory)) {
-		throw("Could not allocate image memory");
-	}
-	res = vkBindImageMemory(vkContext.device, image.vulkanHandle, image.memory.vkMemory, image.memory.offset);
-	assert(res == VK_SUCCESS);
-
-	//create image view
-	image.viewPerMip.reserve(mipCount);
-	for (uint32_t i = 0; i < mipCount; i++) {
-		const auto view = createImageView(image, viewType, i, mipCount - i, aspectFlag);
-		image.viewPerMip.push_back(view);
-	}
-
-	//fill with data
-	if (initialDataSize != 0) {
-		transferDataIntoImage(image, initialData, initialDataSize);
-	}
-
-	//generate mipmaps
-	if (desc.autoCreateMips) {
-		generateMipChain(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	}
-
-	//most textures with sampled usage are used by the material system
-	//the material systems assumes the read_only_optimal layout
-	//if no mips are generated the layout will still be transfer_dst or undefined
-	//to avoid issues all sampled images without mip generation are manually transitioned to read_only_optimal
-	if (bool(desc.usageFlags & ImageUsageFlags::Sampled) && !desc.autoCreateMips) {
-		const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
-
-		const auto newLayoutBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
-		barriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
-
-		//end recording
-		res = vkEndCommandBuffer(transitionCmdBuffer);
-		assert(res == VK_SUCCESS);
-
-		//submit
-		VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
-
-		res = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
-		assert(res == VK_SUCCESS);
-
-		//cleanup
-		vkDestroyFence(vkContext.device, fence, nullptr);
-		vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &transitionCmdBuffer);
-	}
-
-	//add to global texture descriptor array, if image can be sampled
-	if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
-		if (m_globalTextureArrayDescriptorSetFreeTextureIndices.size() > 0) {
-			image.globalDescriptorSetIndex = m_globalTextureArrayDescriptorSetFreeTextureIndices.back();
-			m_globalTextureArrayDescriptorSetFreeTextureIndices.pop_back();
-		}
-		else {
-			image.globalDescriptorSetIndex = (int32_t)m_globalTextureArrayDescriptorSetTextureCount;
-			m_globalTextureArrayDescriptorSetTextureCount++;
-		}
-
-		setGlobalTextureArrayDescriptorSetTexture(image.viewPerMip[0], image.globalDescriptorSetIndex);
-	}
-	
+    auto res = vkCreateImage(vkContext.device, &imageInfo, nullptr, &image.vulkanHandle);
+    checkVulkanResult(res);
+    
+    //bind memory
+    VkMemoryRequirements memoryRequirements;
+    vkGetImageMemoryRequirements(vkContext.device, image.vulkanHandle, &memoryRequirements);
+    const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &image.memory)) {
+        throw("Could not allocate image memory");
+    }
+    res = vkBindImageMemory(vkContext.device, image.vulkanHandle, image.memory.vkMemory, image.memory.offset);
+    assert(res == VK_SUCCESS);
+    
+    //create image view
+    image.viewPerMip.reserve(mipCount);
+    for (uint32_t i = 0; i < mipCount; i++) {
+        const auto view = createImageView(image, viewType, i, mipCount - i, aspectFlag);
+        image.viewPerMip.push_back(view);
+    }
+    
+    //fill with data
+    if (initialDataSize != 0) {
+        transferDataIntoImage(image, initialData, initialDataSize);
+    }
+    
+    //generate mipmaps
+    if (desc.autoCreateMips) {
+        generateMipChain(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+    
+    //most textures with sampled usage are used by the material system
+    //the material systems assumes the read_only_optimal layout
+    //if no mips are generated the layout will still be transfer_dst or undefined
+    //to avoid issues all sampled images without mip generation are manually transitioned to read_only_optimal
+    if (bool(desc.usageFlags & ImageUsageFlags::Sampled) && !desc.autoCreateMips) {
+        const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
+        
+        const auto newLayoutBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
+        barriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
+        
+        //end recording
+        res = vkEndCommandBuffer(transitionCmdBuffer);
+        assert(res == VK_SUCCESS);
+        
+        //submit
+        VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
+        
+        res = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        assert(res == VK_SUCCESS);
+        
+        //cleanup
+        vkDestroyFence(vkContext.device, fence, nullptr);
+        vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &transitionCmdBuffer);
+    }
+    
+    //add to global texture descriptor array, if image can be sampled
+    if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
+        if (m_globalTextureArrayDescriptorSetFreeTextureIndices.size() > 0) {
+            image.globalDescriptorSetIndex = m_globalTextureArrayDescriptorSetFreeTextureIndices.back();
+            m_globalTextureArrayDescriptorSetFreeTextureIndices.pop_back();
+        }
+        else {
+            image.globalDescriptorSetIndex = (int32_t)m_globalTextureArrayDescriptorSetTextureCount;
+            m_globalTextureArrayDescriptorSetTextureCount++;
+        }
+        
+        setGlobalTextureArrayDescriptorSetTexture(image.viewPerMip[0], image.globalDescriptorSetIndex);
+    }
+    
     //reuse a free image handle or create a new one
     ImageHandle handle;
     if (m_freeImageHandles.size() > 0) {
@@ -1280,137 +1276,137 @@ std::vector<RenderPassTime> RenderBackend::getRenderpassTimings() const {
 }
 
 float RenderBackend::getLastFrameCPUTime() const {
-	return m_lastFrameCPUTime;
+    return m_lastFrameCPUTime;
 }
 
 std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers(const RenderPassExecutionOrder& executionOrder,
-	const std::vector<GraphicPassExecution>& graphicExecutions,
-	const std::vector<ComputePassExecution>& computeExecutions) {
+    const std::vector<GraphicPassExecution>& graphicExecutions,
+    const std::vector<ComputePassExecution>& computeExecutions) {
 
-	std::vector<RenderPassBarriers> barrierList;
+    std::vector<RenderPassBarriers> barrierList;
 
-	for (const RenderPassExecutionEntry executionEntry : executionOrder.executions) {
+    for (const RenderPassExecutionEntry executionEntry : executionOrder.executions) {
 
-		const RenderPassExecution execution = getGenericRenderpassInfoFromExecutionEntry(executionEntry,
-			graphicExecutions, computeExecutions);
+        const RenderPassExecution execution = getGenericRenderpassInfoFromExecutionEntry(executionEntry,
+            graphicExecutions, computeExecutions);
 
-		const RenderPassResources& resources = execution.resources;
-		RenderPassBarriers barriers;
+        const RenderPassResources& resources = execution.resources;
+        RenderPassBarriers barriers;
 
-		//storage images        
-		for (const ImageResource& storageImage : resources.storageImages) {
-			Image& image = m_images[storageImage.image.index];
+        //storage images        
+        for (const ImageResource& storageImage : resources.storageImages) {
+            Image& image = m_images[storageImage.image.index];
 
-			//check if any mip levels need a layout transition            
-			const VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_GENERAL;
-			bool needsLayoutTransition = false;
-			for (const auto& layout : image.layoutPerMip) {
-				if (layout != requiredLayout) {
-					needsLayoutTransition = true;
-				}
-			}
+            //check if any mip levels need a layout transition            
+            const VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_GENERAL;
+            bool needsLayoutTransition = false;
+            for (const auto& layout : image.layoutPerMip) {
+                if (layout != requiredLayout) {
+                    needsLayoutTransition = true;
+                }
+            }
 
-			//check if image already has a barrier
-			//can happen if same image is used as two storage image when accessing different mips            
-			bool hasBarrierAlready = false;
-			for (const auto& barrier : barriers.imageBarriers) {
-				if (barrier.image == image.vulkanHandle) {
-					hasBarrierAlready = true;
-					break;
-				}
-			}
+            //check if image already has a barrier
+            //can happen if same image is used as two storage image when accessing different mips            
+            bool hasBarrierAlready = false;
+            for (const auto& barrier : barriers.imageBarriers) {
+                if (barrier.image == image.vulkanHandle) {
+                    hasBarrierAlready = true;
+                    break;
+                }
+            }
+            
+            if ((image.currentlyWriting || needsLayoutTransition) && !hasBarrierAlready) {
+                const auto& layoutBarriers = createImageBarriers(image, requiredLayout,
+                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, 0, (uint32_t)image.layoutPerMip.size());
+                barriers.imageBarriers.insert(barriers.imageBarriers.end(), layoutBarriers.begin(), layoutBarriers.end());
+            }
+            image.currentlyWriting = true;
+        }
 
-			if ((image.currentlyWriting || needsLayoutTransition) && !hasBarrierAlready) {
-				const auto& layoutBarriers = createImageBarriers(image, requiredLayout,
-					VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, 0, (uint32_t)image.layoutPerMip.size());
-				barriers.imageBarriers.insert(barriers.imageBarriers.end(), layoutBarriers.begin(), layoutBarriers.end());
-			}
-			image.currentlyWriting = true;
-		}
+        //sampled images
+        for (const ImageResource& sampledImage : resources.sampledImages) {
 
-		//sampled images        
-		for (const ImageResource& sampledImage : resources.sampledImages) {
+            //use general layout if image is used as a storage image too
+            bool isUsedAsStorageImage = false;
+            {
+                for (const ImageResource& storageImage : resources.storageImages) {
+                    if (storageImage.image.index == sampledImage.image.index) {
+                        isUsedAsStorageImage = true;
+                        break;
+                    }
+                }
+            }
+            if (isUsedAsStorageImage) {
+                continue;
+            }
 
-			//use general layout if image is used as a storage image too
-			bool isUsedAsStorageImage = false;
-			{
-				for (const ImageResource& storageImage : resources.storageImages) {
-					if (storageImage.image.index == sampledImage.image.index) {
-						isUsedAsStorageImage = true;
-						break;
-					}
-				}
-			}
-			if (isUsedAsStorageImage) {
-				continue;
-			}
+            Image& image = m_images[sampledImage.image.index];
 
-			Image& image = m_images[sampledImage.image.index];
+            //check if any mip levels need a layout transition            
+            VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-			//check if any mip levels need a layout transition            
-			VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            bool needsLayoutTransition = false;
+            for (const auto& layout : image.layoutPerMip) {
+                if (layout != requiredLayout) {
+                    needsLayoutTransition = true;
+                }
+            }
 
-			bool needsLayoutTransition = false;
-			for (const auto& layout : image.layoutPerMip) {
-				if (layout != requiredLayout) {
-					needsLayoutTransition = true;
-				}
-			}
+            if (image.currentlyWriting || needsLayoutTransition) {
+                const auto& layoutBarriers = createImageBarriers(image, requiredLayout, VK_ACCESS_SHADER_READ_BIT,
+                    0, (uint32_t)image.viewPerMip.size());
+                barriers.imageBarriers.insert(barriers.imageBarriers.end(), layoutBarriers.begin(), layoutBarriers.end());
+            }
+        }
 
-			if (image.currentlyWriting || needsLayoutTransition) {
-				const auto& layoutBarriers = createImageBarriers(image, requiredLayout, VK_ACCESS_SHADER_READ_BIT,
-					0, (uint32_t)image.viewPerMip.size());
-				barriers.imageBarriers.insert(barriers.imageBarriers.end(), layoutBarriers.begin(), layoutBarriers.end());
-			}
-		}
+        //attachments        
+        if (executionEntry.type == RenderPassType::Graphic) {
+            const GraphicPassExecution graphicExecutionInfo = graphicExecutions[executionEntry.index];
 
-		//attachments        
-		if (executionEntry.type == RenderPassType::Graphic) {
-			const GraphicPassExecution graphicExecutionInfo = graphicExecutions[executionEntry.index];
+            const Framebuffer& framebuffer = m_framebuffers[graphicExecutionInfo.framebuffer.index];
+            for (const FramebufferTarget& target : framebuffer.desc.targets) {
+                Image& image = m_images[target.image.index];
 
-			const Framebuffer& framebuffer = m_framebuffers[graphicExecutionInfo.framebuffer.index];
-			for (const FramebufferTarget& target : framebuffer.desc.targets) {
-				Image& image = m_images[target.image.index];
+            //check if any mip levels need a layout transition                
+            const VkImageLayout requiredLayout = isDepthFormat(image.format) ?
+                VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-				//check if any mip levels need a layout transition                
-				const VkImageLayout requiredLayout = isDepthFormat(image.format) ?
-					VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            bool needsLayoutTransition = false;
+            for (const auto& layout : image.layoutPerMip) {
+                if (layout != requiredLayout) {
+                    needsLayoutTransition = true;
+                }
+            }
 
-				bool needsLayoutTransition = false;
-				for (const auto& layout : image.layoutPerMip) {
-					if (layout != requiredLayout) {
-						needsLayoutTransition = true;
-					}
-				}
+            if (image.currentlyWriting || needsLayoutTransition) {
+                const VkAccessFlags access = isDepthFormat(image.format) ?
+                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-				if (image.currentlyWriting || needsLayoutTransition) {
-					const VkAccessFlags access = isDepthFormat(image.format) ?
-						VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                const auto& layoutBarriers = createImageBarriers(image, requiredLayout, access, 0,
+                    (uint32_t)image.viewPerMip.size());
+                barriers.imageBarriers.insert(barriers.imageBarriers.end(), layoutBarriers.begin(), layoutBarriers.end());
+            }
+            image.currentlyWriting = true;
+            }
+        }
 
-					const auto& layoutBarriers = createImageBarriers(image, requiredLayout, access, 0,
-						(uint32_t)image.viewPerMip.size());
-					barriers.imageBarriers.insert(barriers.imageBarriers.end(), layoutBarriers.begin(), layoutBarriers.end());
-				}
-				image.currentlyWriting = true;
-			}
-		}
-
-		//storage buffer barriers
-		for (const auto& bufferResource : resources.storageBuffers) {
-			StorageBufferHandle handle = bufferResource.buffer;
-			Buffer& buffer = m_storageBuffers[handle.index];
-			const bool needsBarrier = buffer.isBeingWritten;
-			if (needsBarrier) {
-				VkBufferMemoryBarrier barrier = createBufferBarrier(buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
-				barriers.memoryBarriers.push_back(barrier);
-			}
-
-			//update writing state
-			buffer.isBeingWritten = !bufferResource.readOnly;
-		}
-		barrierList.push_back(barriers);
-	}
-	return barrierList;
+        //storage buffer barriers
+        for (const auto& bufferResource : resources.storageBuffers) {
+        	StorageBufferHandle handle = bufferResource.buffer;
+        	Buffer& buffer = m_storageBuffers[handle.index];
+        	const bool needsBarrier = buffer.isBeingWritten;
+        	if (needsBarrier) {
+        		VkBufferMemoryBarrier barrier = createBufferBarrier(buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+        		barriers.memoryBarriers.push_back(barrier);
+        	}
+        
+        	//update writing state
+        	buffer.isBeingWritten = !bufferResource.readOnly;
+        }
+        barrierList.push_back(barriers);
+    }
+    return barrierList;
 }
 
 VkRenderPassBeginInfo createBeginInfo(const uint32_t width, const uint32_t height, const VkRenderPass pass, 
@@ -1437,78 +1433,78 @@ VkRenderPassBeginInfo createBeginInfo(const uint32_t width, const uint32_t heigh
 }
 
 void RenderBackend::submitGraphicPass(const GraphicPassExecution& execution,
-	const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer) {
+    const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer) {
 
-	GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle);
-	startDebugLabel(commandBuffer, pass.graphicPassDesc.name);
+    GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle);
+    startDebugLabel(commandBuffer, pass.graphicPassDesc.name);
 
-	TimestampQuery timeQuery;
-	timeQuery.name = pass.graphicPassDesc.name;
-	timeQuery.startQuery = issueTimestampQuery(commandBuffer, m_frameIndexMod2);
+    TimestampQuery timeQuery;
+    timeQuery.name = pass.graphicPassDesc.name;
+    timeQuery.startQuery = issueTimestampQuery(commandBuffer, m_frameIndexMod2);
 
-	barriersCommand(commandBuffer, barriers.imageBarriers, barriers.memoryBarriers);
+    barriersCommand(commandBuffer, barriers.imageBarriers, barriers.memoryBarriers);
 
-	const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
-	const glm::ivec2 resolution = resolutionFromFramebufferTargets(framebuffer.desc.targets);
-	const auto beginInfo = createBeginInfo(resolution.x, resolution.y, pass.vulkanRenderPass,
-		framebuffer.vkHandle, pass.clearValues);
+    const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
+    const glm::ivec2 resolution = resolutionFromFramebufferTargets(framebuffer.desc.targets);
+    const auto beginInfo = createBeginInfo(resolution.x, resolution.y, pass.vulkanRenderPass,
+        framebuffer.vkHandle, pass.clearValues);
 
-	//prepare pass
-	vkCmdBeginRenderPass(commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+    //prepare pass
+    vkCmdBeginRenderPass(commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
-	const int poolCount = m_drawcallCommandPools.size();
-	for (int poolIndex = 0; poolIndex < poolCount; poolIndex++) {
-		const int cmdBufferIndex = poolIndex + m_frameIndexMod2 * poolCount;
-		const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[cmdBufferIndex];
+    const int poolCount = m_drawcallCommandPools.size();
+    for (int poolIndex = 0; poolIndex < poolCount; poolIndex++) {
+        const int cmdBufferIndex = poolIndex + m_frameIndexMod2 * poolCount;
+        const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[cmdBufferIndex];
 
-		//stop recording mesh commands
-		vkEndCommandBuffer(meshCommandBuffer);
-	}
-	//execute mesh commands
-	const int cmdBufferIndexOffset = m_frameIndexMod2 * poolCount;
-	vkCmdExecuteCommands(commandBuffer, poolCount, &pass.meshCommandBuffers[cmdBufferIndexOffset]);
+        //stop recording mesh commands
+        vkEndCommandBuffer(meshCommandBuffer);
+    }
+    //execute mesh commands
+    const int cmdBufferIndexOffset = m_frameIndexMod2 * poolCount;
+    vkCmdExecuteCommands(commandBuffer, poolCount, &pass.meshCommandBuffers[cmdBufferIndexOffset]);
 
-	vkCmdEndRenderPass(commandBuffer);
+    vkCmdEndRenderPass(commandBuffer);
 
-	timeQuery.endQuery = issueTimestampQuery(commandBuffer, m_frameIndexMod2);
-	endDebugLabel(commandBuffer);
-	m_timestampQueriesPerFrame[m_frameIndexMod2].push_back(timeQuery);
+    timeQuery.endQuery = issueTimestampQuery(commandBuffer, m_frameIndexMod2);
+    endDebugLabel(commandBuffer);
+    m_timestampQueriesPerFrame[m_frameIndexMod2].push_back(timeQuery);
 }
 
 void RenderBackend::submitComputePass(const ComputePassExecution& execution,
-	const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer) {
+    const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer) {
 
-	TimestampQuery timeQuery;
+    TimestampQuery timeQuery;
 
-	//TODO: add push constants for compute passes
-	ComputePass& pass = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle);
-	startDebugLabel(commandBuffer, pass.computePassDesc.name);
+    //TODO: add push constants for compute passes
+    ComputePass& pass = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle);
+    startDebugLabel(commandBuffer, pass.computePassDesc.name);
 
-	timeQuery.name = pass.computePassDesc.name;
-	timeQuery.startQuery = issueTimestampQuery(commandBuffer, m_frameIndexMod2);
+    timeQuery.name = pass.computePassDesc.name;
+    timeQuery.startQuery = issueTimestampQuery(commandBuffer, m_frameIndexMod2);
 
-	barriersCommand(commandBuffer, barriers.imageBarriers, barriers.memoryBarriers);
+    barriersCommand(commandBuffer, barriers.imageBarriers, barriers.memoryBarriers);
 
-	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
 
-	const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSets[m_frameIndexMod2], m_globalTextureArrayDescriptorSet };
-	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
+    const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSets[m_frameIndexMod2], m_globalTextureArrayDescriptorSet };
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
-	if (execution.pushConstants.size() > 0) {
-		vkCmdPushConstants(
-			commandBuffer, 
-			pass.pipelineLayout, 
-			VK_SHADER_STAGE_COMPUTE_BIT, 
-			0,
-			sizeof(char) * (uint32_t)execution.pushConstants.size(), 
-			execution.pushConstants.data());
-	}
+    if (execution.pushConstants.size() > 0) {
+        vkCmdPushConstants(
+            commandBuffer, 
+            pass.pipelineLayout, 
+            VK_SHADER_STAGE_COMPUTE_BIT, 
+            0,
+            sizeof(char) * (uint32_t)execution.pushConstants.size(), 
+            execution.pushConstants.data());
+    }
 
-	vkCmdDispatch(commandBuffer, execution.dispatchCount[0], execution.dispatchCount[1], execution.dispatchCount[2]);
+    vkCmdDispatch(commandBuffer, execution.dispatchCount[0], execution.dispatchCount[1], execution.dispatchCount[2]);
 
-	timeQuery.endQuery = issueTimestampQuery(commandBuffer, m_frameIndexMod2);
-	endDebugLabel(commandBuffer);
-	m_timestampQueriesPerFrame[m_frameIndexMod2].push_back(timeQuery);
+    timeQuery.endQuery = issueTimestampQuery(commandBuffer, m_frameIndexMod2);
+    endDebugLabel(commandBuffer);
+    m_timestampQueriesPerFrame[m_frameIndexMod2].push_back(timeQuery);
 }
 
 void RenderBackend::waitForRenderFinished() {
@@ -1662,7 +1658,7 @@ void RenderBackend::createVulkanInstance() {
 }
 
 bool RenderBackend::hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDevice) {
-	//check features
+    //check features
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physicalDevice, &features);
 
@@ -1676,37 +1672,36 @@ bool RenderBackend::hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDev
 
     vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
 
-	const bool supportsRequiredFeatures = 
-		features.samplerAnisotropy &&
-		features.imageCubeArray &&
-		features.fragmentStoresAndAtomics &&
-		features.fillModeNonSolid &&
-		features.depthClamp &&
-		features.geometryShader &&
-		features12.hostQueryReset &&
-		features12.runtimeDescriptorArray &&
-		features12.descriptorBindingPartiallyBound &&
-		features12.descriptorBindingVariableDescriptorCount;
+    const bool supportsRequiredFeatures = 
+        features.samplerAnisotropy &&
+        features.imageCubeArray &&
+        features.fragmentStoresAndAtomics &&
+        features.fillModeNonSolid &&
+        features.depthClamp &&
+        features.geometryShader &&
+        features12.hostQueryReset &&
+        features12.runtimeDescriptorArray &&
+        features12.descriptorBindingPartiallyBound &&
+        features12.descriptorBindingVariableDescriptorCount;
 
-	//check device extensions
-	uint32_t extensionCount;
-	vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, nullptr);
+    //check device extensions
+    uint32_t extensionCount;
+    vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, nullptr);
 
-	std::vector<VkExtensionProperties> extensions(extensionCount);
-	vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, extensions.data());
+    std::vector<VkExtensionProperties> extensions(extensionCount);
+    vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, extensions.data());
 
-	bool supportsDeviceExtensions = false;
+    bool supportsDeviceExtensions = false;
 
-	//currently only requiring conservative rasterisation
-	for (const VkExtensionProperties& ext : extensions) {
-		if (strcmp(ext.extensionName, VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME)) {
-			supportsDeviceExtensions = true;
-			break;
-		}
-	}
+    //currently only requiring conservative rasterisation
+    for (const VkExtensionProperties& ext : extensions) {
+        if (strcmp(ext.extensionName, VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME)) {
+            supportsDeviceExtensions = true;
+            break;
+        }
+    }
 
-	return supportsRequiredFeatures && supportsDeviceExtensions;
-        
+    return supportsRequiredFeatures && supportsDeviceExtensions;
 }
 
 void RenderBackend::pickPhysicalDevice() {
@@ -1821,15 +1816,15 @@ void RenderBackend::createLogicalDevice() {
     features.fragmentStoresAndAtomics = true;
     features.fillModeNonSolid = true;
     features.depthClamp = true;
-	features.geometryShader = true;
+    features.geometryShader = true;
 
     VkPhysicalDeviceVulkan12Features features12 = {}; //vulkan 1.2 features
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     features12.pNext = nullptr;
     features12.hostQueryReset = true;
-	features12.runtimeDescriptorArray = true;
-	features12.descriptorBindingPartiallyBound = true;
-	features12.descriptorBindingVariableDescriptorCount = true;
+    features12.runtimeDescriptorArray = true;
+    features12.descriptorBindingPartiallyBound = true;
+    features12.descriptorBindingVariableDescriptorCount = true;
 
     //device info
     VkDeviceCreateInfo deviceInfo = {};
@@ -2322,9 +2317,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
 
 void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout) {
 
-    /*
-    check for linear filtering support
-    */
+    //check for linear filtering support
     VkFormatProperties formatProps;
     vkGetPhysicalDeviceFormatProperties(vkContext.physicalDevice, image.format, &formatProps);
     if (!(formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
@@ -2333,9 +2326,7 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
 
     VkImageBlit blitInfo;
 
-    /*
-    offset base stays zero
-    */
+    //offset base stays zero
     blitInfo.srcOffsets[0].x = 0;
     blitInfo.srcOffsets[0].y = 0;
     blitInfo.srcOffsets[0].z = 0;
@@ -2344,9 +2335,7 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
     blitInfo.dstOffsets[0].y = 0;
     blitInfo.dstOffsets[0].z = 0;
 
-    /*
-    initial offset extent
-    */
+    //initial offset extent
     blitInfo.srcOffsets[1].x = image.extent.width;
     blitInfo.srcOffsets[1].y = image.extent.height;
     blitInfo.srcOffsets[1].z = image.extent.depth;
@@ -2359,27 +2348,21 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
 
     for (uint32_t srcMip = 0; srcMip < image.viewPerMip.size() - 1; srcMip++) {
 
-        /*
-        barriers
-        */
+        //barriers
         auto barriers = createImageBarriers(image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, srcMip, 1); //src
         const auto dstBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, srcMip + 1, 1); //dst
         barriers.insert(barriers.end(), dstBarriers.begin(), dstBarriers.end());
 
         barriersCommand(blitCmdBuffer, barriers, std::vector<VkBufferMemoryBarrier> {});
 
-        /*
-        blit operation
-        */
+        //blit operation
         blitInfo.srcSubresource = createSubresourceLayers(image, srcMip );
         blitInfo.dstSubresource = createSubresourceLayers(image, srcMip + 1);
 
         vkCmdBlitImage(blitCmdBuffer, image.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.vulkanHandle, 
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blitInfo, VK_FILTER_LINEAR);
 
-        /*
-        update offsets
-        */
+        //update offsets
         blitInfo.srcOffsets[1].x /= blitInfo.srcOffsets[1].x != 1 ? 2 : 1;
         blitInfo.srcOffsets[1].y /= blitInfo.srcOffsets[1].y != 1 ? 2 : 1;
         blitInfo.srcOffsets[1].z /= blitInfo.srcOffsets[1].z != 1 ? 2 : 1;
@@ -2389,9 +2372,7 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
         blitInfo.dstOffsets[1].z = blitInfo.srcOffsets[1].z != 1 ? blitInfo.srcOffsets[1].z / 2 : 1;
     }
 
-    /*
-    bring image into new layout
-    */
+    //bring image into new layout
     const auto newLayoutBarriers = createImageBarriers(image, newLayout, VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
     barriersCommand(blitCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
 
@@ -2697,11 +2678,10 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
     };
 
     std::vector<VkWriteDescriptorSet> descriptorInfos;
-    /*
-    buffer and images are given via pointer
-    stored in vector to keep pointer valid
-    resize first to avoid push_back invalidating pointers
-    */
+
+    //buffer and images are given via pointer
+    //stored in vector to keep pointer valid
+    //resize first to avoid push_back invalidating pointers
     uint32_t imageInfoIndex = 0;
     uint32_t bufferInfoIndex = 0;
     std::vector<VkDescriptorBufferInfo> bufferInfos;
@@ -2710,9 +2690,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
     imageInfos.resize(resources.samplers.size() + resources.storageImages.size() + resources.sampledImages.size());
     bufferInfos.resize(resources.uniformBuffers.size() + resources.storageBuffers.size());
 
-    /*
-    samplers
-    */
+    //samplers
     for (const auto& resource : resources.samplers) {
         VkDescriptorImageInfo samplerInfo;
         samplerInfo.sampler = m_samplers[resource.sampler.index];
@@ -2722,9 +2700,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
         descriptorInfos.push_back(writeSet);
     }
 
-    /*
-    sampled images
-    */
+    //sampled images
     for (const auto& resource : resources.sampledImages) {
         VkDescriptorImageInfo imageInfo;
 
@@ -2748,9 +2724,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
         descriptorInfos.push_back(writeSet);
     }
 
-    /*
-    storage images
-    */
+    //storage images
     for (const auto& resource : resources.storageImages) {
         VkDescriptorImageInfo imageInfo;
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -2761,9 +2735,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
         descriptorInfos.push_back(writeSet);
     }
 
-    /*
-    uniform buffer
-    */
+    //uniform buffer
     for (const auto& resource : resources.uniformBuffers) {
         Buffer buffer = m_uniformBuffers[resource.buffer.index];
         VkDescriptorBufferInfo bufferInfo;
@@ -2776,9 +2748,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
         descriptorInfos.push_back(writeSet);
     }
 
-    /*
-    storage buffer
-    */
+    //storage buffer
     for (const auto& resource : resources.storageBuffers) {
         Buffer buffer = m_storageBuffers[resource.buffer.index];
         VkDescriptorBufferInfo bufferInfo;
@@ -2841,7 +2811,7 @@ VkDescriptorSetLayout RenderBackend::createDescriptorSetLayout(const ShaderLayou
 }
 
 VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout setLayout, const size_t pushConstantSize, 
-	const VkShaderStageFlags stageFlags) {
+    const VkShaderStageFlags stageFlags) {
 
     VkDescriptorSetLayout setLayouts[3] = { m_globalDescriptorSetLayout, setLayout, m_globalTextureArrayDescriporSetLayout };
     uint32_t setCount = 3;
@@ -2853,16 +2823,16 @@ VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout
     layoutInfo.setLayoutCount = setCount;
     layoutInfo.pSetLayouts = setLayouts;
     layoutInfo.pushConstantRangeCount = 0;
-	layoutInfo.pPushConstantRanges = nullptr;
+    layoutInfo.pPushConstantRanges = nullptr;
 
-	VkPushConstantRange pushConstantRange;
-	if (pushConstantSize > 0) {
-		pushConstantRange.stageFlags = stageFlags;
-		pushConstantRange.offset = 0;
-		pushConstantRange.size = (uint32_t)pushConstantSize;
-		layoutInfo.pPushConstantRanges = &pushConstantRange;
-		layoutInfo.pushConstantRangeCount = 1;
-	}
+    VkPushConstantRange pushConstantRange;
+    if (pushConstantSize > 0) {
+        pushConstantRange.stageFlags = stageFlags;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = (uint32_t)pushConstantSize;
+        layoutInfo.pPushConstantRanges = &pushConstantRange;
+        layoutInfo.pushConstantRangeCount = 1;
+    }
     
     VkPipelineLayout layout = {};
     auto res = vkCreatePipelineLayout(vkContext.device, &layoutInfo, nullptr, &layout);
@@ -2881,7 +2851,7 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     const ShaderReflection reflection = performComputeShaderReflection(spirV);
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
     pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, reflection.pushConstantByteSize, VK_SHADER_STAGE_COMPUTE_BIT);
-	pass.pushConstantSize = reflection.pushConstantByteSize;
+    pass.pushConstantSize = reflection.pushConstantByteSize;
 
     VulkanShaderCreateAdditionalStructs additionalStructs;
 
@@ -2903,96 +2873,96 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     //descriptor set    
     const auto setSizes = descriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
     pass.descriptorSets[0] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
-	pass.descriptorSets[1] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
+    pass.descriptorSets[1] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
 
     return pass;
 }
 
 void RenderBackend::initGlobalTextureArrayDescriptorSetLayout() {
 
-	VkDescriptorSetLayoutBinding textureArrayBinding;
-	textureArrayBinding.binding = 0;
-	textureArrayBinding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-	textureArrayBinding.descriptorCount = maxTextureCount;
-	textureArrayBinding.stageFlags = VK_SHADER_STAGE_ALL;
-	textureArrayBinding.pImmutableSamplers = nullptr;
+    VkDescriptorSetLayoutBinding textureArrayBinding;
+    textureArrayBinding.binding = 0;
+    textureArrayBinding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    textureArrayBinding.descriptorCount = maxTextureCount;
+    textureArrayBinding.stageFlags = VK_SHADER_STAGE_ALL;
+    textureArrayBinding.pImmutableSamplers = nullptr;
 
-	const VkDescriptorBindingFlags flags = 
-		VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT |
-		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+    const VkDescriptorBindingFlags flags = 
+        VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT |
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
 
-	VkDescriptorSetLayoutBindingFlagsCreateInfo flagInfo;
-	flagInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-	flagInfo.pNext = nullptr;
-	flagInfo.bindingCount = 1;
-	flagInfo.pBindingFlags = &flags;
+    VkDescriptorSetLayoutBindingFlagsCreateInfo flagInfo;
+    flagInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    flagInfo.pNext = nullptr;
+    flagInfo.bindingCount = 1;
+    flagInfo.pBindingFlags = &flags;
 
-	VkDescriptorSetLayoutCreateInfo layoutInfo;
-	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.pNext = &flagInfo;
-	layoutInfo.flags = 0;
-	layoutInfo.bindingCount = 1;
-	layoutInfo.pBindings = &textureArrayBinding;
+    VkDescriptorSetLayoutCreateInfo layoutInfo;
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.pNext = &flagInfo;
+    layoutInfo.flags = 0;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &textureArrayBinding;
 
-	const VkResult result = vkCreateDescriptorSetLayout(vkContext.device, &layoutInfo, nullptr, &m_globalTextureArrayDescriporSetLayout);
-	checkVulkanResult(result);
+    const VkResult result = vkCreateDescriptorSetLayout(vkContext.device, &layoutInfo, nullptr, &m_globalTextureArrayDescriporSetLayout);
+    checkVulkanResult(result);
 }
 
 void RenderBackend::setGlobalTextureArrayDescriptorSetTexture(const VkImageView imageView, const uint32_t index) {
 
-	VkDescriptorImageInfo imageInfo;
-	imageInfo.imageView = imageView;
-	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkDescriptorImageInfo imageInfo;
+    imageInfo.imageView = imageView;
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-	VkWriteDescriptorSet write;
-	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.pNext = nullptr;
-	write.dstSet = m_globalTextureArrayDescriptorSet;
-	write.dstBinding = 0;
-	write.dstArrayElement = index;
-	write.descriptorCount = 1;
-	write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-	write.pImageInfo = &imageInfo;
-	write.pBufferInfo = nullptr;
-	write.pTexelBufferView = nullptr;
+    VkWriteDescriptorSet write;
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.pNext = nullptr;
+    write.dstSet = m_globalTextureArrayDescriptorSet;
+    write.dstBinding = 0;
+    write.dstArrayElement = index;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    write.pImageInfo = &imageInfo;
+    write.pBufferInfo = nullptr;
+    write.pTexelBufferView = nullptr;
 
-	vkUpdateDescriptorSets(vkContext.device, 1, &write, 0, nullptr);
+    vkUpdateDescriptorSets(vkContext.device, 1, &write, 0, nullptr);
 }
 
 void RenderBackend::initGlobalTextureArrayDescriptorSet() {
-	DescriptorPoolAllocationSizes layoutSizes;
-	layoutSizes.imageSampled = maxTextureCount;
+    DescriptorPoolAllocationSizes layoutSizes;
+    layoutSizes.imageSampled = maxTextureCount;
 
-	VkDescriptorPoolSize poolSize;
-	poolSize.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-	poolSize.descriptorCount = maxTextureCount;
+    VkDescriptorPoolSize poolSize;
+    poolSize.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    poolSize.descriptorCount = maxTextureCount;
 
-	VkDescriptorPoolCreateInfo poolInfo;
-	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	poolInfo.pNext = nullptr;
-	poolInfo.flags = 0;
-	poolInfo.maxSets = 1;
-	poolInfo.poolSizeCount = 1;
-	poolInfo.pPoolSizes = &poolSize;
+    VkDescriptorPoolCreateInfo poolInfo;
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.pNext = nullptr;
+    poolInfo.flags = 0;
+    poolInfo.maxSets = 1;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
 
-	VkResult result = vkCreateDescriptorPool(vkContext.device, &poolInfo, nullptr, &m_globalTextureArrayDescriptorPool);
-	checkVulkanResult(result);
+    VkResult result = vkCreateDescriptorPool(vkContext.device, &poolInfo, nullptr, &m_globalTextureArrayDescriptorPool);
+    checkVulkanResult(result);
 
-	VkDescriptorSetVariableDescriptorCountAllocateInfo variableDescriptorCountInfo;
-	variableDescriptorCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
-	variableDescriptorCountInfo.pNext = nullptr;
-	variableDescriptorCountInfo.descriptorSetCount = 1;
-	variableDescriptorCountInfo.pDescriptorCounts = &maxTextureCount;
+    VkDescriptorSetVariableDescriptorCountAllocateInfo variableDescriptorCountInfo;
+    variableDescriptorCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
+    variableDescriptorCountInfo.pNext = nullptr;
+    variableDescriptorCountInfo.descriptorSetCount = 1;
+    variableDescriptorCountInfo.pDescriptorCounts = &maxTextureCount;
 
-	VkDescriptorSetAllocateInfo setInfo;
-	setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	setInfo.pNext = &variableDescriptorCountInfo;
-	setInfo.descriptorPool = m_globalTextureArrayDescriptorPool;
-	setInfo.descriptorSetCount = 1;
-	setInfo.pSetLayouts = &m_globalTextureArrayDescriporSetLayout;
+    VkDescriptorSetAllocateInfo setInfo;
+    setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    setInfo.pNext = &variableDescriptorCountInfo;
+    setInfo.descriptorPool = m_globalTextureArrayDescriptorPool;
+    setInfo.descriptorSetCount = 1;
+    setInfo.pSetLayouts = &m_globalTextureArrayDescriporSetLayout;
 
-	result = vkAllocateDescriptorSets(vkContext.device, &setInfo, &m_globalTextureArrayDescriptorSet);
-	checkVulkanResult(result);
+    result = vkAllocateDescriptorSets(vkContext.device, &setInfo, &m_globalTextureArrayDescriptorSet);
+    checkVulkanResult(result);
 }
 
 GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV) {
@@ -3000,12 +2970,12 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     GraphicPass pass;
     pass.graphicPassDesc = desc;
 
-	for (int frameIndex = 0; frameIndex < 2; frameIndex++) {
-		for (int poolIndex = 0; poolIndex < m_drawcallCommandPools.size(); poolIndex++) {
-			const VkCommandPool pool = m_drawcallCommandPools[poolIndex];
-			pass.meshCommandBuffers.push_back(allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY, pool));
-		}
-	}
+    for (int frameIndex = 0; frameIndex < 2; frameIndex++) {
+        for (int poolIndex = 0; poolIndex < m_drawcallCommandPools.size(); poolIndex++) {
+            const VkCommandPool pool = m_drawcallCommandPools[poolIndex];
+            pass.meshCommandBuffers.push_back(allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY, pool));
+        }
+    }
 
     const VkShaderModule vertexModule   = createShaderModule(spirV.vertex);
     const VkShaderModule fragmentModule = createShaderModule(spirV.fragment);
@@ -3043,15 +3013,15 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
             desc.shaderDescriptions.tesselationEvaluation.value().specialisationConstants, &additionalStructs[4]));
     }
 
-	VkShaderStageFlags pipelineLayoutStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-	if (desc.shaderDescriptions.geometry.has_value()) {
-		pipelineLayoutStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
-	}
+    VkShaderStageFlags pipelineLayoutStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    if (desc.shaderDescriptions.geometry.has_value()) {
+        pipelineLayoutStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+    }
 
     const ShaderReflection reflection = performShaderReflection(spirV);
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
     pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, reflection.pushConstantByteSize, pipelineLayoutStageFlags);
-	pass.pushConstantSize = reflection.pushConstantByteSize;
+    pass.pushConstantSize = reflection.pushConstantByteSize;
 
     std::vector<VkVertexInputAttributeDescription> attributes;
     uint32_t currentOffset = 0;
@@ -3216,7 +3186,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
     const auto setSizes = descriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
     pass.descriptorSets[0] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
-	pass.descriptorSets[1] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
+    pass.descriptorSets[1] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
 
     return pass;
 }
@@ -3282,9 +3252,7 @@ VkRenderPass RenderBackend::createVulkanRenderPass(const std::vector<Attachment>
     VkAttachmentReference  depthReference;
     bool hasDepth = false;
 
-    /*
-    attachment descriptions
-    */
+    //attachment descriptions
     for (uint32_t i = 0; i < attachments.size(); i++) {
 
         Attachment attachment = attachments[i];
@@ -3324,9 +3292,7 @@ VkRenderPass RenderBackend::createVulkanRenderPass(const std::vector<Attachment>
         descriptions.push_back(desc);
     }
 
-    /*
-    subpass
-    */
+    //subpass
     subpass.flags = 0;
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.inputAttachmentCount = 0;
@@ -3517,14 +3483,14 @@ VulkanRasterizationStateCreateInfo RenderBackend::createRasterizationState(const
     vkRaster.baseInfo.depthBiasSlopeFactor = 0.f;
     vkRaster.baseInfo.lineWidth = 1.f;
 
-	if (raster.conservative) {
-		vkRaster.conservativeInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_CONSERVATIVE_STATE_CREATE_INFO_EXT;
-		vkRaster.conservativeInfo.pNext = nullptr;
-		vkRaster.conservativeInfo.flags = 0;
-		vkRaster.conservativeInfo.conservativeRasterizationMode = VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT;
+    if (raster.conservative) {
+        vkRaster.conservativeInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_CONSERVATIVE_STATE_CREATE_INFO_EXT;
+        vkRaster.conservativeInfo.pNext = nullptr;
+        vkRaster.conservativeInfo.flags = 0;
+        vkRaster.conservativeInfo.conservativeRasterizationMode = VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT;
 
-		vkRaster.baseInfo.pNext = &vkRaster.conservativeInfo;
-	}
+        vkRaster.baseInfo.pNext = &vkRaster.conservativeInfo;
+    }
 
     return vkRaster;
 }
@@ -3620,9 +3586,7 @@ std::vector<VkImageMemoryBarrier> RenderBackend::createImageBarriers(Image& imag
         layerCount = 6;
     }
 
-    /*
-    first barrier
-    */ 
+    //first barrier 
     VkImageMemoryBarrier firstBarrier;
     firstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     firstBarrier.pNext = nullptr;
@@ -3639,21 +3603,17 @@ std::vector<VkImageMemoryBarrier> RenderBackend::createImageBarriers(Image& imag
     firstBarrier.subresourceRange.baseArrayLayer = 0;
     firstBarrier.subresourceRange.layerCount = layerCount;
     barriers.push_back(firstBarrier);
-    
-    /*
-    add subsequent mip level barriers
-    */
+
+    //add subsequent mip level barriers
     for (uint32_t i = 1; i < mipLevels; i++) {
-        /*
-        same mip layout: extens subresource range
-        */
+
+        //same mip layout: extens subresource range
         uint32_t mipLevel = baseMip + i;
         if (image.layoutPerMip[mipLevel] == barriers.back().oldLayout) {
             barriers.back().subresourceRange.levelCount++;
         }
-        /*
-        different mip layout: new barrier
-        */
+
+        //different mip layout: new barrier
         else {
             VkImageMemoryBarrier barrier;
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -3675,9 +3635,7 @@ std::vector<VkImageMemoryBarrier> RenderBackend::createImageBarriers(Image& imag
         }
     }
 
-    /*
-    update image properties
-    */
+    //update image properties
     for (uint32_t i = baseMip; i < baseMip + mipLevels; i++) {
         image.layoutPerMip[i] = newLayout;
     }
@@ -3749,15 +3707,15 @@ VkQueryPool RenderBackend::createQueryPool(const VkQueryType queryType, const ui
 }
 
 void RenderBackend::resetTimestampQueryPool(const int poolIndex) {
-	m_timestampQueriesPerFrame[poolIndex].resize(0);
+    m_timestampQueriesPerFrame[poolIndex].resize(0);
     vkResetQueryPool(vkContext.device, m_timestampQueryPools[poolIndex], 0, m_timestampQueryCounts[m_frameIndexMod2]);
-	m_timestampQueryCounts[m_frameIndexMod2] = 0;
+    m_timestampQueryCounts[m_frameIndexMod2] = 0;
 }
 
 uint32_t RenderBackend::issueTimestampQuery(const VkCommandBuffer cmdBuffer, const int poolIndex) {
     const uint32_t query = m_timestampQueryCounts[m_frameIndexMod2];
     vkCmdWriteTimestamp(cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, m_timestampQueryPools[poolIndex], query);
-	m_timestampQueryCounts[m_frameIndexMod2]++;
+    m_timestampQueryCounts[m_frameIndexMod2]++;
     return query;
 }
 
@@ -3783,19 +3741,18 @@ void RenderBackend::destroyImage(const ImageHandle handle) {
 
     const Image image = m_images[handle.index];
 
-	if (bool(image.desc.usageFlags & ImageUsageFlags::Sampled)) {
-		m_globalTextureArrayDescriptorSetFreeTextureIndices.push_back(image.globalDescriptorSetIndex);
-	}
-	
+    if (bool(image.desc.usageFlags & ImageUsageFlags::Sampled)) {
+        m_globalTextureArrayDescriptorSetFreeTextureIndices.push_back(image.globalDescriptorSetIndex);
+    }
+
     for (const auto& view : image.viewPerMip) {
         vkDestroyImageView(vkContext.device, view, nullptr);
     }
-    
-    /*
-    swapchain images have no manualy allocated memory
-    they are deleted by the swapchain
-    view has to be destroyed manually though
-    */
+
+
+    //swapchain images have no manualy allocated memory
+    //they are deleted by the swapchain
+    //view has to be destroyed manually though
     if (!image.isSwapchainImage) {
         m_vkAllocator.free(image.memory);
         vkDestroyImage(vkContext.device, image.vulkanHandle, nullptr);

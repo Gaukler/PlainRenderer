@@ -20,78 +20,78 @@ layout(constant_id = 3) const bool useTonemap = false;
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set=1, binding = 0) 					uniform texture2D currentFrame;
-layout(set=1, binding = 1, r11f_g11f_b10f) 	uniform image2D outputImage;
-layout(set=1, binding = 2, r11f_g11f_b10f) 	uniform image2D historyBufferDst;
-layout(set=1, binding = 3) 	                uniform texture2D historyBufferSrc;
-layout(set=1, binding = 4) 	                uniform texture2D motionBuffer;
-layout(set=1, binding = 5) 	                uniform texture2D depthBuffer;
-layout(set=1, binding = 6) 					uniform resolveWeightBuffer {
-	float w0_0;
-	float w1_0;
-	float w2_0;
-	float w0_1;
-	float w1_1;
-	float w2_1;
-	float w0_2;
-	float w1_2;
-	float w2_2;
+layout(set=1, binding = 0)                  uniform texture2D currentFrame;
+layout(set=1, binding = 1, r11f_g11f_b10f)  uniform image2D outputImage;
+layout(set=1, binding = 2, r11f_g11f_b10f)  uniform image2D historyBufferDst;
+layout(set=1, binding = 3)                  uniform texture2D historyBufferSrc;
+layout(set=1, binding = 4)                  uniform texture2D motionBuffer;
+layout(set=1, binding = 5)                  uniform texture2D depthBuffer;
+layout(set=1, binding = 6)                  uniform resolveWeightBuffer {
+    float w0_0;
+    float w1_0;
+    float w2_0;
+    float w0_1;
+    float w1_1;
+    float w2_1;
+    float w0_2;
+    float w1_2;
+    float w2_2;
 } resolveWeights;
 
 vec3 resolveColor(vec3 [3][3] neighbourhood){
-	vec3 resolved = vec3(0);
-	
-	resolved += neighbourhood[0][0] * resolveWeights.w0_0;
-	resolved += neighbourhood[1][0] * resolveWeights.w1_0;
-	resolved += neighbourhood[2][0] * resolveWeights.w2_0;
+    vec3 resolved = vec3(0);
 
-	resolved += neighbourhood[0][1] * resolveWeights.w0_1;
-	resolved += neighbourhood[1][1] * resolveWeights.w1_1;
-	resolved += neighbourhood[2][1] * resolveWeights.w2_1;
+    resolved += neighbourhood[0][0] * resolveWeights.w0_0;
+    resolved += neighbourhood[1][0] * resolveWeights.w1_0;
+    resolved += neighbourhood[2][0] * resolveWeights.w2_0;
 
-	resolved += neighbourhood[0][2] * resolveWeights.w0_2;
-	resolved += neighbourhood[1][2] * resolveWeights.w1_2;
-	resolved += neighbourhood[2][2] * resolveWeights.w2_2;
+    resolved += neighbourhood[0][1] * resolveWeights.w0_1;
+    resolved += neighbourhood[1][1] * resolveWeights.w1_1;
+    resolved += neighbourhood[2][1] * resolveWeights.w2_1;
 
-	return resolved;
+    resolved += neighbourhood[0][2] * resolveWeights.w0_2;
+    resolved += neighbourhood[1][2] * resolveWeights.w1_2;
+    resolved += neighbourhood[2][2] * resolveWeights.w2_2;
+
+    return resolved;
 }
 
 float computeNeighbourhoodContrast(vec3 neighbourhood[3][3]){
-	return 
-		abs(computeLuminance(neighbourhood[0][0]) - computeLuminance(neighbourhood[1][1]))+
-		abs(computeLuminance(neighbourhood[1][0]) - computeLuminance(neighbourhood[1][1]))+
-		abs(computeLuminance(neighbourhood[2][0]) - computeLuminance(neighbourhood[1][1]))+
-		abs(computeLuminance(neighbourhood[0][2]) - computeLuminance(neighbourhood[1][1]))+
-		abs(computeLuminance(neighbourhood[1][2]) - computeLuminance(neighbourhood[1][1]))+
-		abs(computeLuminance(neighbourhood[2][2]) - computeLuminance(neighbourhood[1][1]))+
-		abs(computeLuminance(neighbourhood[0][1]) - computeLuminance(neighbourhood[1][1]))+
-		abs(computeLuminance(neighbourhood[2][1]) - computeLuminance(neighbourhood[1][1]));
+    return
+        abs(computeLuminance(neighbourhood[0][0]) - computeLuminance(neighbourhood[1][1]))+
+        abs(computeLuminance(neighbourhood[1][0]) - computeLuminance(neighbourhood[1][1]))+
+        abs(computeLuminance(neighbourhood[2][0]) - computeLuminance(neighbourhood[1][1]))+
+        abs(computeLuminance(neighbourhood[0][2]) - computeLuminance(neighbourhood[1][1]))+
+        abs(computeLuminance(neighbourhood[1][2]) - computeLuminance(neighbourhood[1][1]))+
+        abs(computeLuminance(neighbourhood[2][2]) - computeLuminance(neighbourhood[1][1]))+
+        abs(computeLuminance(neighbourhood[0][1]) - computeLuminance(neighbourhood[1][1]))+
+        abs(computeLuminance(neighbourhood[2][1]) - computeLuminance(neighbourhood[1][1]));
 }
 
 vec3 gaussianFilteredNeighbourhood(vec3 neighbourhood[3][3]){
-	return 
-		neighbourhood[0][0] * 0.0625 + 
-		neighbourhood[0][2] * 0.0625 +
-		neighbourhood[2][0] * 0.0625 +
-		neighbourhood[2][2] * 0.0625 +
-		neighbourhood[1][0] * 0.125 + 
-		neighbourhood[0][1] * 0.125 +
-		neighbourhood[1][2] * 0.125 +
-		neighbourhood[2][1] * 0.125 +
-		neighbourhood[1][1] * 0.25;
+    return
+        neighbourhood[0][0] * 0.0625 +
+        neighbourhood[0][2] * 0.0625 +
+        neighbourhood[2][0] * 0.0625 +
+        neighbourhood[2][2] * 0.0625 +
+        neighbourhood[1][0] * 0.125 +
+        neighbourhood[0][1] * 0.125 +
+        neighbourhood[1][2] * 0.125 +
+        neighbourhood[2][1] * 0.125 +
+        neighbourhood[1][1] * 0.25;
 }
 
 void main(){
 
-	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
-    
-	vec2 texelSize = 1.f / imageSize(outputImage).xy;
-	vec2 uv = (iUV + 0.5) * texelSize; //+0.5 to shift to pixel center
-    vec3[3][3] neighbourhood = sampleNeighbourhood(currentFrame, g_sampler_linearClamp, uv, texelSize, useTonemap);
-	vec3[2] minMax = minMaxFromNeighbourhood(neighbourhood);
+    ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
 
-	//vec3 currentColor = neighbourhood[1][1];
-	vec3 currentColor = resolveColor(neighbourhood);
+    vec2 texelSize = 1.f / imageSize(outputImage).xy;
+    vec2 uv = (iUV + 0.5) * texelSize; //+0.5 to shift to pixel center
+    vec3[3][3] neighbourhood = sampleNeighbourhood(currentFrame, g_sampler_linearClamp, uv, texelSize, useTonemap);
+    vec3[2] minMax = minMaxFromNeighbourhood(neighbourhood);
+
+    //vec3 currentColor = neighbourhood[1][1];
+    vec3 currentColor = resolveColor(neighbourhood);
 
     vec2 motion;
     if(useMotionVectorDilation){ 
@@ -100,42 +100,42 @@ void main(){
     else{
         motion = texelFetch(sampler2D(motionBuffer, g_sampler_linearClamp), iUV, 0).rg;
     }
-     
-	vec3 historySample; 
-	if(historySampleTech == HISTORY_SAMPLING_BILINEAR){ 
-		vec2 uvReprojected = uv + motion;
-		historySample = texture(sampler2D(historyBufferSrc, g_sampler_linearClamp), uvReprojected).rgb;
-	} 
-	else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_16_TAP){
-		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
-		historySample = bicubicSample16Tap(historyBufferSrc, g_sampler_linearClamp, uvReprojected, texelSize);
-	}
-	else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_9_TAP){
-		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
-		historySample = bicubicSample9Tap(historyBufferSrc, g_sampler_linearClamp, uvReprojected, texelSize);
-	}  
-	else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_5_TAP){
-		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
-		historySample = bicubicSample5Tap(historyBufferSrc, g_sampler_linearClamp, uvReprojected, texelSize);
-	}  
-	else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_1_TAP){
-		vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
-		historySample = bicubicSample1Tap(historyBufferSrc, g_sampler_linearClamp, uvReprojected, texelSize, neighbourhood);
-	}
-	else{
-		historySample = vec3(1, 0, 0);
-	}
 
-	if(useTonemap){
-		historySample = tonemap(historySample);
-	}
+    vec3 historySample; 
+    if(historySampleTech == HISTORY_SAMPLING_BILINEAR){ 
+        vec2 uvReprojected = uv + motion;
+        historySample = texture(sampler2D(historyBufferSrc, g_sampler_linearClamp), uvReprojected).rgb;
+    }
+    else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_16_TAP){
+        vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
+        historySample = bicubicSample16Tap(historyBufferSrc, g_sampler_linearClamp, uvReprojected, texelSize);
+    }
+    else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_9_TAP){
+        vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
+        historySample = bicubicSample9Tap(historyBufferSrc, g_sampler_linearClamp, uvReprojected, texelSize);
+    }
+    else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_5_TAP){
+        vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
+        historySample = bicubicSample5Tap(historyBufferSrc, g_sampler_linearClamp, uvReprojected, texelSize);
+    }
+    else if(historySampleTech == HISTORY_SAMPLING_BICUBIC_1_TAP){
+        vec2 uvReprojected = vec2(iUV) + 0.5f + motion * g_screenResolution;
+        historySample = bicubicSample1Tap(historyBufferSrc, g_sampler_linearClamp, uvReprojected, texelSize, neighbourhood);
+    }
+    else{
+        historySample = vec3(1, 0, 0);
+    }
+
+    if(useTonemap){
+        historySample = tonemap(historySample);
+    }
 
     if(useClipping){
         historySample = clipAABB(historySample, minMax[0], minMax[1]);
     }
     else{
         historySample = clamp(historySample, minMax[0], minMax[1]);
-    }  
+    }
 
     //nan test, mainly a problem when resizing the buffers
     //clear previous frame buffer on resize instead of checking here
@@ -143,37 +143,37 @@ void main(){
         historySample = currentColor;
     }
 
-	//blend factor dependant on contrast change to prevent flickering
-	//see "Filmic SMAA", page 94
-	float currentContrast = computeNeighbourhoodContrast(neighbourhood);
+    //blend factor dependant on contrast change to prevent flickering
+    //see "Filmic SMAA", page 94
+    float currentContrast = computeNeighbourhoodContrast(neighbourhood);
 
-	//TODO: compute history luminance once instead of costly color fetches
-	vec3[3][3] lastNeighbourhood = sampleNeighbourhood(historyBufferSrc, g_sampler_linearClamp, uv + motion, texelSize, useTonemap);
-	float lastContrast = computeNeighbourhoodContrast(lastNeighbourhood);
-	float contrastChange = abs(currentContrast - lastContrast);
-	contrastChange = clamp(contrastChange, 0, 1);
+    //TODO: compute history luminance once instead of costly color fetches
+    vec3[3][3] lastNeighbourhood = sampleNeighbourhood(historyBufferSrc, g_sampler_linearClamp, uv + motion, texelSize, useTonemap);
+    float lastContrast = computeNeighbourhoodContrast(lastNeighbourhood);
+    float contrastChange = abs(currentContrast - lastContrast);
+    contrastChange = clamp(contrastChange, 0, 1);
 
-	float blendMin = 0.03f;
-	float blendMax = 0.13;
-	float blendFactor = mix(blendMax, blendMin, contrastChange);
-	//blendFactor = 0.03f; //static low blend factor overly blury in some areas
+    float blendMin = 0.03f;
+    float blendMax = 0.13;
+    float blendFactor = mix(blendMax, blendMin, contrastChange);
+    //blendFactor = 0.03f; //static low blend factor overly blury in some areas
 
-	if(g_cameraCut){
-		blendFactor = 1.f;
-	}
+    if(g_cameraCut){
+        blendFactor = 1.f;
+    }
 
-	//if reprojected uv is outside screen use filtered color
-	if(isUVOutOfImage(uv + motion)){
-		blendFactor = 1.f;
-		currentColor = gaussianFilteredNeighbourhood(neighbourhood);
-	}
+    //if reprojected uv is outside screen use filtered color
+    if(isUVOutOfImage(uv + motion)){
+        blendFactor = 1.f;
+        currentColor = gaussianFilteredNeighbourhood(neighbourhood);
+    }
 
     vec3 color = mix(historySample, currentColor, blendFactor);
 
-	if(useTonemap){
-		color = tonemapReverse(color);
-	}
+    if(useTonemap){
+        color = tonemapReverse(color);
+    }
 
     imageStore(historyBufferDst, iUV, vec4(color, 1.f));    
-	imageStore(outputImage, iUV, vec4(color, 1.f));
+    imageStore(outputImage, iUV, vec4(color, 1.f));
 }

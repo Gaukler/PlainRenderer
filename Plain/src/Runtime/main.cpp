@@ -56,31 +56,31 @@ void main(int argc, char* argv[]){
 
     const CommandLineSettings settings = parseCommandLineArguments(argc, argv);
 
-	const float startTime = Timer::getTimeFloat();
+    const float startTime = Timer::getTimeFloat();
 
     DirectoryUtils::init();
 
-	Window::initWindowSystem();
-	GLFWwindow* window = Window::createWindow(settings.width, settings.height);
+    Window::initWindowSystem();
+    GLFWwindow* window = Window::createWindow(settings.width, settings.height);
 
-	JobSystem::initJobSystem();
+    JobSystem::initJobSystem();
 
     gRenderBackend.setup(window);
     gRenderFrontend.setup(window);
     gInputManager.setup(window);
 
-	App app;
+    App app;
     app.setup(settings.sceneFilePath);
 
-	const float endTime = Timer::getTimeFloat();
-	std::cout << "Startup time: " << endTime - startTime << "s\n";
+    const float endTime = Timer::getTimeFloat();
+    std::cout << "Startup time: " << endTime - startTime << "s\n";
 
     while (!glfwWindowShouldClose(window)) {
         Timer::markNewFrame();
-		gInputManager.update();
-		if (gInputManager.getKeyboardKeyState(KeyboardKey::keyEnter) == KeyState::Pressed && gInputManager.isKeyboardKeyDown(KeyboardKey::keyLeftAlt)) {
-			Window::toggleFullscreen();
-		}
+        gInputManager.update();
+        if (gInputManager.getKeyboardKeyState(KeyboardKey::keyEnter) == KeyState::Pressed && gInputManager.isKeyboardKeyDown(KeyboardKey::keyLeftAlt)) {
+            Window::toggleFullscreen();
+        }
         gRenderFrontend.prepareNewFrame();
         app.runUpdate();
         gRenderFrontend.renderFrame();

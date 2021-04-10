@@ -25,40 +25,40 @@ layout(set=1, binding = 4, std430) buffer lightStorageBuffer{
 };
 
 layout(set=1, binding = 5) uniform SettingsBuffer {
-	VolumetricLightingSettings settings;
+    VolumetricLightingSettings settings;
 };
 
 void main(){
-	uvec3 iUV = gl_GlobalInvocationID.xyz;
-	uvec3 volumeRes = imageSize(scatteringTransmittanceVolume);
-	if(any(greaterThanEqual(iUV, volumeRes))){
-		return;
-	}
+    uvec3 iUV = gl_GlobalInvocationID.xyz;
+    uvec3 volumeRes = imageSize(scatteringTransmittanceVolume);
+    if(any(greaterThanEqual(iUV, volumeRes))){
+        return;
+    }
 
-	//calculate world position
-	vec3 uv = (iUV + 0.5f + settings.sampleOffset) / volumeRes;
-	vec3 ndc = 2.f * (uv - 0.5f);
-	vec3 V = calculateViewDirectionFromPixel(ndc.xy, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
+    //calculate world position
+    vec3 uv = (iUV + 0.5f + settings.sampleOffset) / volumeRes;
+    vec3 ndc = 2.f * (uv - 0.5f);
+    vec3 V = calculateViewDirectionFromPixel(ndc.xy, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 
-	vec3 posWorld = g_cameraPosition.xyz - V / dot(-V, g_cameraForward.xyz) * froxelUVToDepth(uv.z, settings.maxDistance);
+    vec3 posWorld = g_cameraPosition.xyz - V / dot(-V, g_cameraForward.xyz) * froxelUVToDepth(uv.z, settings.maxDistance);
 
-	float shadow = simpleShadow(posWorld, sunShadowCascadeInfo.lightMatrices[2], sunShadowMap, g_sampler_nearestBlackBorder);
-	vec3 sunLight = shadow * lightBuffer.sunColor.rgb * lightBuffer.sunStrengthExposed;
+    float shadow = simpleShadow(posWorld, sunShadowCascadeInfo.lightMatrices[2], sunShadowMap, g_sampler_nearestBlackBorder);
+    vec3 sunLight = shadow * lightBuffer.sunColor.rgb * lightBuffer.sunStrengthExposed;
 
-	vec3 L = g_sunDirection.xyz;
-	float VoL = dot(-V, L);
+    vec3 L = g_sunDirection.xyz;
+    float VoL = dot(-V, L);
     float phase = phaseGreenstein(VoL, settings.phaseFunctionG);
 
-	vec4 scatteringAbsorptionCoefficients = texelFetch(sampler3D(materialVolume, g_sampler_nearestClamp), ivec3(iUV), 0);
-	vec3 scatteringCoefficient = scatteringAbsorptionCoefficients.rgb;
-	float absorptionCoefficient = scatteringAbsorptionCoefficients.a;
+    vec4 scatteringAbsorptionCoefficients = texelFetch(sampler3D(materialVolume, g_sampler_nearestClamp), ivec3(iUV), 0);
+    vec3 scatteringCoefficient = scatteringAbsorptionCoefficients.rgb;
+    float absorptionCoefficient = scatteringAbsorptionCoefficients.a;
 
-	//indirect lighting is not volumetric, so no proper contribution to volumetric lighting is currently implemented
-	vec3 constantAmbientLighting = vec3(0.02f);
-	vec3 inscattering = (sunLight * phase + constantAmbientLighting) * scatteringCoefficient;
+    //indirect lighting is not volumetric, so no proper contribution to volumetric lighting is currently implemented
+    vec3 constantAmbientLighting = vec3(0.02f);
+    vec3 inscattering = (sunLight * phase + constantAmbientLighting) * scatteringCoefficient;
 
-	vec3 extinctionCoefficient = scatteringCoefficient + absorptionCoefficient;
-	float transmittance = computeLuminance(extinctionCoefficient);
+    vec3 extinctionCoefficient = scatteringCoefficient + absorptionCoefficient;
+    float transmittance = computeLuminance(extinctionCoefficient);
 
-	imageStore(scatteringTransmittanceVolume, ivec3(iUV), vec4(inscattering, transmittance));
+    imageStore(scatteringTransmittanceVolume, ivec3(iUV), vec4(inscattering, transmittance));
 }

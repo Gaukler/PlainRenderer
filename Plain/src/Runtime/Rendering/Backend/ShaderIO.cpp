@@ -6,9 +6,9 @@
 bool loadShader(const std::filesystem::path pathAbsolute, std::vector<uint32_t>* outSpirV) {
     std::vector<char> shaderGLSL;
     bool success = loadTextFile(pathAbsolute, &shaderGLSL);
-	if (success) {
-		success &= compileGLSLToSPIRV(shaderGLSL, pathAbsolute, outSpirV);
-	}
+    if (success) {
+        success &= compileGLSLToSPIRV(shaderGLSL, pathAbsolute, outSpirV);
+    }
     if (!success) {
         return false;
     }
@@ -21,15 +21,15 @@ bool loadGraphicPassShaders(const GraphicPassShaderPaths& shaderPaths, GraphicPa
     success &= loadShader(shaderPaths.vertex,   &outSpirV->vertex);
     success &= loadShader(shaderPaths.fragment, &outSpirV->fragment);
     if (shaderPaths.geometry.has_value()) {
-		outSpirV->geometry = std::vector<uint32_t>();
+        outSpirV->geometry = std::vector<uint32_t>();
         success &= loadShader(shaderPaths.geometry.value(), &outSpirV->geometry.value());
     }
     if (shaderPaths.tessellationControl.has_value()) {
-		outSpirV->tessellationControl = std::vector<uint32_t>();
+        outSpirV->tessellationControl = std::vector<uint32_t>();
         success &= loadShader(shaderPaths.tessellationControl.value(), &outSpirV->tessellationControl.value());
     }
     if (shaderPaths.tessellationEvaluation.has_value()) {
-		outSpirV->tessellationEvaluation = std::vector<uint32_t>();
+        outSpirV->tessellationEvaluation = std::vector<uint32_t>();
         success &= loadShader(shaderPaths.tessellationEvaluation.value(), &outSpirV->tessellationEvaluation.value());
     }
     return success;

@@ -10,7 +10,7 @@ glm::vec3 directionToVector(const glm::vec2 direction) {
     vec.x = sin(theta) * cos(phi);
     vec.y = -cos(theta);
     vec.z = sin(theta) * sin(phi);
-    
+
     return vec;
 }
 
@@ -19,7 +19,7 @@ uint32_t mipCountFromResolution(const uint32_t width, const uint32_t height, con
 }
 
 glm::ivec3 resolutionFromMip(const glm::ivec3 baseResolution, const int mipLevel) {
-	return glm::max(glm::ivec3(baseResolution / (int)glm::exp2(mipLevel)), 1);
+    return glm::max(glm::ivec3(baseResolution / (int)glm::exp2(mipLevel)), 1);
 }
 
 glm::vec2 hammersley2D(const uint32_t index) {
@@ -70,5 +70,5 @@ float radicalInverseBase3(const uint32_t in) {
 }
 
 float dot2(const glm::vec3& v) {
-	return glm::dot(v, v);
+    return glm::dot(v, v);
 };

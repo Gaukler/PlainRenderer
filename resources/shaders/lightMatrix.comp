@@ -20,8 +20,8 @@ layout(set=1, binding = 1, rg32f) uniform image2D depthMinMaxLowestMip;
 #define FLOAT_MIN 1.175494351e-38
 
 layout(push_constant) uniform MatrixBlock {
-	float highestCascadeExtraPadding;	//padding to extend range around camera to cover sdf trace hits outside of view
-	float highestCascadeMinFarPlane;	//volumetric lighting always needs a certain valid distance for shadows
+    float highestCascadeExtraPadding;	//padding to extend range around camera to cover sdf trace hits outside of view
+    float highestCascadeMinFarPlane;	//volumetric lighting always needs a certain valid distance for shadows
 };
 
 
@@ -55,13 +55,13 @@ float computeCascadeSplit(float near, float far, int i){
 //reference: https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
 //z-coordinate is tightly fitted, rendering pass uses depth clamping
 void main(){
-    
+
     mat4 coordinateSystemCorrection = {
         {1.0f, 0.0f, 0.0f, 0.0f},
         {0.0f, 1.0f, 0.0f, 0.0f},
         {0.0f, 0.0f, -0.5f, 0.f},
         {0.0f, 0.0f,  0.5f, 1.0f}};
-    
+
     mat4 V = mat4(1.f);
     vec3 forward = -g_sunDirection.xyz;
     vec3 up = abs(forward.y) < 0.9999f ? vec3(0.f, -1.f, 0.f) : vec3(0.f, 0.f, -1.f);
@@ -72,7 +72,7 @@ void main(){
     V[2].xyz = forward;
     V[3][3] = 1.f;
     V = transpose(V);
-    
+
     vec2 depthMinMax = imageLoad(depthMinMaxLowestMip, ivec2(0)).rg;
     float depthMaxLinear = linearizeDepth(depthMinMax.x, g_nearPlane, g_farPlane);
     float depthMinLinear = linearizeDepth(depthMinMax.y, g_nearPlane, g_farPlane);
@@ -80,29 +80,29 @@ void main(){
     for(int i = 0; i < sunShadowCascadeCount - 1; i++){
         sunShadowCascadeInfo.splits[i] = computeCascadeSplit(depthMinLinear, depthMaxLinear, i);
     }
-    
+
     for(int i = 0; i < sunShadowCascadeCount; i++){
-        
+
         vec3 minP = vec3(FLOAT_MAX);
         vec3 maxP = vec3(FLOAT_MIN);
-        
-        vec3 frustumPoints[8];
-        
-		float cascadeMinDepth = sunShadowCascadeInfo.splits[i-1];
-		float cascadeMaxDepth = sunShadowCascadeInfo.splits[i];
 
-		if(i == 0){
-			cascadeMinDepth = depthMinLinear;
-		}
-		//last cascade is used for sdf trace shadowing and (will be used for) volumetric light shadowing
-		//because of this it spans from the near plane to at least the volumetric lighting distance
-		if(i == sunShadowCascadeCount-1){
-			cascadeMinDepth = g_nearPlane;
-			cascadeMaxDepth = max(depthMaxLinear, highestCascadeMinFarPlane);
-		}
-		
-		computeFrustumPoints(frustumPoints, cascadeMinDepth, cascadeMaxDepth);
-        
+        vec3 frustumPoints[8];
+
+        float cascadeMinDepth = sunShadowCascadeInfo.splits[i-1];
+        float cascadeMaxDepth = sunShadowCascadeInfo.splits[i];
+
+        if(i == 0){
+            cascadeMinDepth = depthMinLinear;
+        }
+        //last cascade is used for sdf trace shadowing and (will be used for) volumetric light shadowing
+        //because of this it spans from the near plane to at least the volumetric lighting distance
+        if(i == sunShadowCascadeCount-1){
+            cascadeMinDepth = g_nearPlane;
+            cascadeMaxDepth = max(depthMaxLinear, highestCascadeMinFarPlane);
+        }
+
+        computeFrustumPoints(frustumPoints, cascadeMinDepth, cascadeMaxDepth);
+
         for(int i = 0; i < 8; i++) {
             vec3 p = frustumPoints[i];
             vec3 pTransformed = (V * vec4(p, 1.f)).xyz;
@@ -110,19 +110,19 @@ void main(){
             maxP = max(maxP, pTransformed);
         }
 
-		if(i == sunShadowCascadeCount-1){
-			//increase by sdf trace influence radius so all samples are covered
-			minP -= highestCascadeExtraPadding;
-			maxP += highestCascadeExtraPadding;
-		}
+        if(i == sunShadowCascadeCount-1){
+            //increase by sdf trace influence radius so all samples are covered
+            minP -= highestCascadeExtraPadding;
+            maxP += highestCascadeExtraPadding;
+        }
 
-		//increase area according to sample radius to avoid sampling outside
-		minP -= shadowSampleRadius * 2;
-		maxP += shadowSampleRadius * 2;
-        
+        //increase area according to sample radius to avoid sampling outside
+        minP -= shadowSampleRadius * 2;
+        maxP += shadowSampleRadius * 2;
+
         vec3 scale = vec3(2.f) / (maxP - minP);
         vec3 offset = -0.5f * (maxP + minP) * scale;
-        
+
         mat4 P = mat4(0.f);
         P[0][0] = scale.x;
         P[1][1] = scale.y;
@@ -131,8 +131,8 @@ void main(){
         P[3][1] = offset.y;
         P[3][2] = offset.z;
         P[3][3] = 1.f;
-        
+
         sunShadowCascadeInfo.lightMatrices[i] = coordinateSystemCorrection * P * V;
-		sunShadowCascadeInfo.lightSpaceScale[i] = scale.xy;
+        sunShadowCascadeInfo.lightSpaceScale[i] = scale.xy;
     }
 }

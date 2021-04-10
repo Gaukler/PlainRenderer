@@ -39,13 +39,13 @@ ViewFrustum computeViewFrustum(const Camera& camera) {
 ViewFrustumNormals computeViewFrustumNormals(const ViewFrustumPoints& p) {
     ViewFrustumNormals normals;
     normals.top = glm::normalize(glm::cross(p.r_u_f - p.r_u_n, p.r_u_n - p.l_u_n));
-	normals.bot = glm::normalize(glm::cross(p.r_l_n - p.l_l_n, p.r_l_f - p.r_l_n));
+    normals.bot = glm::normalize(glm::cross(p.r_l_n - p.l_l_n, p.r_l_f - p.r_l_n));
 
     normals.right = glm::normalize(glm::cross(p.r_u_n - p.r_l_n, p.r_l_f - p.r_l_n));
-	normals.left  = glm::normalize(glm::cross(p.l_l_f - p.l_l_n, p.l_u_n - p.l_l_n));
+    normals.left  = glm::normalize(glm::cross(p.l_l_f - p.l_l_n, p.l_u_n - p.l_l_n));
 
     normals.near = glm::normalize(glm::cross(p.r_u_n - p.r_l_n, p.r_l_n - p.l_l_n));
-	normals.far  = glm::normalize(glm::cross(p.r_l_f - p.l_l_f, p.r_u_f - p.r_l_f));
+    normals.far  = glm::normalize(glm::cross(p.r_l_f - p.l_l_f, p.r_u_f - p.r_l_f));
 
     return normals;
 }

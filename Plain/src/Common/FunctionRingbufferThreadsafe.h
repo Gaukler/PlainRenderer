@@ -5,21 +5,21 @@
 
 class FunctionRingbufferThreadsafe {
 public:
-	//bufferSize is the maximum number of elements the ringbuffer can hold at any time
-	FunctionRingbufferThreadsafe(const size_t bufferSize);
+    //bufferSize is the maximum number of elements the ringbuffer can hold at any time
+    FunctionRingbufferThreadsafe(const size_t bufferSize);
 
-	//appends function to end of list, waits if buffer is full
-	void add(const std::function<void(int)> function);
+    //appends function to end of list, waits if buffer is full
+    void add(const std::function<void(int)> function);
 
-	//removes and returns first element, waits if buffer is empty
-	std::function<void(int)> popFront();
+    //removes and returns first element, waits if buffer is empty
+    std::function<void(int)> popFront();
 
 private:
-	std::vector<std::function<void(int)>> m_buffer;
-	int m_frontIndex;	//index of first element in m_buffer
-	int m_elementCount;	//number of elements currently in m_buffer
+    std::vector<std::function<void(int)>> m_buffer;
+    int m_frontIndex;	//index of first element in m_buffer
+    int m_elementCount;	//number of elements currently in m_buffer
 
-	std::mutex m_mutex;
-	std::condition_variable m_emptyCondition;
-	std::condition_variable m_fullCondition;
+    std::mutex m_mutex;
+    std::condition_variable m_emptyCondition;
+    std::condition_variable m_fullCondition;
 };

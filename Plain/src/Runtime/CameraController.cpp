@@ -4,16 +4,16 @@
 #include "InputManager.h"
 
 CameraExtrinsic CameraController::getExtrinsic() {
-	return m_extrinsic;
+    return m_extrinsic;
 }
 
 void CameraController::update() {
-	//look
-	if (gInputManager.isMouseButtonDown(MouseButton::right)) {
+    //look
+    if (gInputManager.isMouseButtonDown(MouseButton::right)) {
         const glm::vec2 mouseMovement = gInputManager.getMouseMovement();
-		m_yaw   += m_mouseSensitivity * mouseMovement.x;
-		m_pitch -= m_mouseSensitivity * mouseMovement.y;
-	}
+        m_yaw   += m_mouseSensitivity * mouseMovement.x;
+        m_pitch -= m_mouseSensitivity * mouseMovement.y;
+    }
     //compute rotation
     {
         //limit look up/down

@@ -16,21 +16,21 @@ double Timer::m_lastFrameTime;
 float  Timer::m_deltaTimeFloat;
 
 void Timer::markNewFrame() {
-	double currentTime = getTime();
-	m_deltaTime = currentTime - m_lastFrameTime;
-	if (m_deltaTime > 0.3f) { //workaround for paused application
-		m_deltaTime = 0.016f;
-	}
-	m_deltaTimeFloat = static_cast<float>(m_deltaTime);
-	m_lastFrameTime = currentTime;
+    double currentTime = getTime();
+    m_deltaTime = currentTime - m_lastFrameTime;
+    if (m_deltaTime > 0.3f) { //workaround for paused application
+        m_deltaTime = 0.016f;
+    }
+    m_deltaTimeFloat = static_cast<float>(m_deltaTime);
+    m_lastFrameTime = currentTime;
 }
 
 double Timer::getDeltaTime() {
-	return m_deltaTime;
+    return m_deltaTime;
 }
 
 double Timer::getTime() {
-	return glfwGetTime();
+    return glfwGetTime();
 }
 
 float Timer::getTimeFloat() {
@@ -38,5 +38,5 @@ float Timer::getTimeFloat() {
 }
 
 float Timer::getDeltaTimeFloat() {
-	return m_deltaTimeFloat;
+    return m_deltaTimeFloat;
 }

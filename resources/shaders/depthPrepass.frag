@@ -14,10 +14,10 @@ layout(location = 4) in mat3 passTBN;
 layout(set=2, binding = 0) uniform texture2D[] textures;
 
 layout(push_constant) uniform MatrixBlock {
-	int albedoTextureIndex;
-	int normalTextureIndex;
-	int specularTextureIndex;
-	int transformIndex;
+    int albedoTextureIndex;
+    int normalTextureIndex;
+    int specularTextureIndex;
+    int transformIndex;
 };
 
 layout(location = 0) out vec2 motion;
@@ -28,22 +28,22 @@ void main(){
     if(alpha < 0.5f){
         discard;
     }
-    
+
     //computing per pixel motion vectors
     //reference: "Temporal Antialiasing in Uncharted 4"
     vec2 ndcCurrent  = passPos.xy           / passPos.w;
     vec2 ndcPrevious = passPosPrevious.xy   / passPosPrevious.w;
-    
+
     ndcCurrent  += g_currentFrameCameraJitter;
     ndcPrevious += g_previousFrameCameraJitter;
-    
+
     motion = (ndcPrevious - ndcCurrent) * vec2(0.5f, 0.5f);
 
-	vec2 normalTexel 		= texture(sampler2D(textures[normalTextureIndex], g_sampler_anisotropicRepeat), passUV, g_mipBias).rg;
+    vec2 normalTexel 		= texture(sampler2D(textures[normalTextureIndex], g_sampler_anisotropicRepeat), passUV, g_mipBias).rg;
     vec3 normalTexelReconstructed = vec3(normalTexel, sqrt(1.f - normalTexel.x * normalTexel.x + normalTexel.y + normalTexel.y));
     normalTexelReconstructed = normalTexelReconstructed * 2.f - 1.f;
 
-	normal = normalize(passTBN * normalTexelReconstructed) * 0.5 + 0.5; 
+    normal = normalize(passTBN * normalTexelReconstructed) * 0.5 + 0.5; 
 
-	normal = normalize(passTBN[2]) * 0.5 + 0.5;
+    normal = normalize(passTBN[2]) * 0.5 + 0.5;
 }

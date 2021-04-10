@@ -13,46 +13,46 @@ layout(set=1, binding = 2) uniform texture2D source;
 layout(constant_id = 0) const bool isLowestMip = false;
 
 layout(push_constant) uniform PushConstants {
-	float blurRadius;
+    float blurRadius;
 };
 
 void main(){
-	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
-	ivec2 targetResolution = imageSize(target);
+    ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 targetResolution = imageSize(target);
 
-	if(any(greaterThan(iUV, targetResolution))){
-		return;
-	}
+    if(any(greaterThan(iUV, targetResolution))){
+        return;
+    }
 
-	ivec2 srcResolution = textureSize(sampler2D(source, g_sampler_linearClamp), 0);
-	vec2 texelSize = 1.f / vec2(srcResolution);
-	vec2 sampleStepSize = blurRadius * texelSize;
+    ivec2 srcResolution = textureSize(sampler2D(source, g_sampler_linearClamp), 0);
+    vec2 texelSize = 1.f / vec2(srcResolution);
+    vec2 sampleStepSize = blurRadius * texelSize;
 
-	vec2 uv = (iUV + 0.5f) / vec2(targetResolution);
+    vec2 uv = (iUV + 0.5f) / vec2(targetResolution);
 
-	//blur current downscaled mip level
-	vec3 color = vec3(0);
+    //blur current downscaled mip level
+    vec3 color = vec3(0);
 
-	color += textureLod(sampler2D(source, g_sampler_linearClamp), uv, 0).rgb * 0.25f;
+    color += textureLod(sampler2D(source, g_sampler_linearClamp), uv, 0).rgb * 0.25f;
 
-	color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2( 1,  0), 0).rgb * 0.125f;
-	color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2(-1,  0), 0).rgb * 0.125f;
-	color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2( 0,  1), 0).rgb * 0.125f;
-	color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2( 0, -1), 0).rgb * 0.125f;
+    color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2( 1,  0), 0).rgb * 0.125f;
+    color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2(-1,  0), 0).rgb * 0.125f;
+    color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2( 0,  1), 0).rgb * 0.125f;
+    color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2( 0, -1), 0).rgb * 0.125f;
 
-	color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2( 1,  1), 0).rgb * 0.0625f;
-	color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2( 1, -1), 0).rgb * 0.0625f;
-	color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2(-1,  1), 0).rgb * 0.0625f;
-	color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2(-1, -1), 0).rgb * 0.0625f;
+    color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2( 1,  1), 0).rgb * 0.0625f;
+    color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2( 1, -1), 0).rgb * 0.0625f;
+    color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2(-1,  1), 0).rgb * 0.0625f;
+    color += textureLod(sampler2D(source, g_sampler_linearClamp), uv + sampleStepSize * vec2(-1, -1), 0).rgb * 0.0625f;
 
-	if(!isLowestMip){
-		//add previous upscaled mip level
-		//use repeated box filter for good upscaling quality
-		color += textureLod(sampler2D(targetPreviousMip, g_sampler_linearClamp), uv + texelSize * vec2( 0.5,  0.5), 0).rgb * 0.25;
-		color += textureLod(sampler2D(targetPreviousMip, g_sampler_linearClamp), uv + texelSize * vec2( 0.5, -0.5), 0).rgb * 0.25;
-		color += textureLod(sampler2D(targetPreviousMip, g_sampler_linearClamp), uv + texelSize * vec2(-0.5,  0.5), 0).rgb * 0.25;
-		color += textureLod(sampler2D(targetPreviousMip, g_sampler_linearClamp), uv + texelSize * vec2(-0.5, -0.5), 0).rgb * 0.25;
-	}
+    if(!isLowestMip){
+        //add previous upscaled mip level
+        //use repeated box filter for good upscaling quality
+        color += textureLod(sampler2D(targetPreviousMip, g_sampler_linearClamp), uv + texelSize * vec2( 0.5,  0.5), 0).rgb * 0.25;
+        color += textureLod(sampler2D(targetPreviousMip, g_sampler_linearClamp), uv + texelSize * vec2( 0.5, -0.5), 0).rgb * 0.25;
+        color += textureLod(sampler2D(targetPreviousMip, g_sampler_linearClamp), uv + texelSize * vec2(-0.5,  0.5), 0).rgb * 0.25;
+        color += textureLod(sampler2D(targetPreviousMip, g_sampler_linearClamp), uv + texelSize * vec2(-0.5, -0.5), 0).rgb * 0.25;
+    }
 
-	imageStore(target, iUV, vec4(color, 0));
+    imageStore(target, iUV, vec4(color, 0));
 }

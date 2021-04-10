@@ -88,9 +88,9 @@ const ImageFormat dummyImageFormat = ImageFormat::R8;
 
 //matrices used in the main rendering pass for depth-prepass and forward
 struct MainPassMatrices {
-	glm::mat4 model;
-	glm::mat4 mvp;
-	glm::mat4 mvpPrevious;
+    glm::mat4 model;
+    glm::mat4 mvp;
+    glm::mat4 mvpPrevious;
 };
 
 //---- function implementations ----
@@ -115,7 +115,7 @@ DefaultTextures createDefaultTextures() {
         defaultDiffuseDesc.width = 1;
         defaultDiffuseDesc.height = 1;
 
-		const uint8_t initialData[4] = { 255, 255, 255, 255 };
+        const uint8_t initialData[4] = { 255, 255, 255, 255 };
         defaultTextures.diffuse = gRenderBackend.createImage(defaultDiffuseDesc, initialData, sizeof(initialData));
     }
     //specular
@@ -131,7 +131,7 @@ DefaultTextures createDefaultTextures() {
         defaultSpecularDesc.width = 1;
         defaultSpecularDesc.height = 1;
 
-		const uint8_t initialData[4] = { 0, 128, 255, 0 };
+        const uint8_t initialData[4] = { 0, 128, 255, 0 };
         defaultTextures.specular = gRenderBackend.createImage(defaultSpecularDesc, initialData, sizeof(initialData));
     }
     //normal
@@ -147,7 +147,7 @@ DefaultTextures createDefaultTextures() {
         defaultNormalDesc.width = 1;
         defaultNormalDesc.height = 1;
 
-		const uint8_t initialData[2] = { 128, 128 };
+        const uint8_t initialData[2] = { 128, 128 };
         defaultTextures.normal = gRenderBackend.createImage(defaultNormalDesc, initialData, sizeof(initialData));
     }
     //sky
@@ -163,7 +163,7 @@ DefaultTextures createDefaultTextures() {
         defaultCubemapDesc.width = 1;
         defaultCubemapDesc.height = 1;
 
-		const uint8_t initialData[4] = { 255, 255, 255, 255 };
+        const uint8_t initialData[4] = { 255, 255, 255, 255 };
         defaultTextures.sky = gRenderBackend.createImage(defaultCubemapDesc, initialData, sizeof(initialData));
     }
     return defaultTextures;
@@ -238,7 +238,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     initRenderTargets();
     initMeshs();
 
-	setupGlobalShaderInfoResources();
+    setupGlobalShaderInfoResources();
 
     gRenderBackend.newFrame();
     computeBRDFLut();
@@ -246,17 +246,17 @@ void RenderFrontend::setup(GLFWwindow* window) {
 }
 
 void RenderFrontend::shutdown() {
-    
+
 }
 
 void RenderFrontend::prepareNewFrame() {
     if (m_didResolutionChange) {
 
         gRenderBackend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
-		//full res render targets
+        //full res render targets
         gRenderBackend.resizeImages({
             m_frameRenderTargets[0].motionBuffer,
-			m_frameRenderTargets[1].motionBuffer,
+            m_frameRenderTargets[1].motionBuffer,
             m_frameRenderTargets[0].colorBuffer,
             m_frameRenderTargets[0].depthBuffer,
             m_frameRenderTargets[1].colorBuffer,
@@ -267,22 +267,22 @@ void RenderFrontend::prepareNewFrame() {
             m_historyBuffers[1],
             m_sceneLuminance,
             m_lastFrameLuminance,
-			m_worldSpaceNormalImage,
-			m_indirectLightingFullRes_Y_SH, 
-			m_indirectLightingFullRes_CoCg,
-			m_bloomDownscaleTexture,
-			m_bloomUpscaleTexture },
+            m_worldSpaceNormalImage,
+            m_indirectLightingFullRes_Y_SH, 
+            m_indirectLightingFullRes_CoCg,
+            m_bloomDownscaleTexture,
+            m_bloomUpscaleTexture },
             m_screenWidth, m_screenHeight);
-		//half res render targets
+        //half res render targets
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid, m_depthHalfRes }, m_screenWidth / 2, m_screenHeight / 2);
 
-		const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
-		//volumetric textures
-		gRenderBackend.resizeImages({ m_scatteringTransmittanceVolume, m_volumetricIntegrationVolume, m_volumeMaterialVolume,
-			m_volumetricLightingHistory[0], m_volumetricLightingHistory[1] },
-			froxelResolution.x,	froxelResolution.y);
+        const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
+        //volumetric textures
+        gRenderBackend.resizeImages({ m_scatteringTransmittanceVolume, m_volumetricIntegrationVolume, m_volumeMaterialVolume,
+            m_volumetricLightingHistory[0], m_volumetricLightingHistory[1] },
+            froxelResolution.x,	froxelResolution.y);
 
-		resizeIndirectLightingBuffers();
+        resizeIndirectLightingBuffers();
 
         m_didResolutionChange = false;
 
@@ -313,19 +313,19 @@ void RenderFrontend::prepareNewFrame() {
         gRenderBackend.updateComputePassShaderDescription(m_temporalSupersamplingPass, createTemporalSupersamplingShaderDescription());
         m_isTemporalSupersamplingShaderDescriptionStale = false;
     }
-	if (m_isSDFDebugShaderDescriptionStale) {
-		gRenderBackend.updateComputePassShaderDescription(m_sdfDebugVisualisationPass, createSDFDebugShaderDescription());
-		m_isSDFDebugShaderDescriptionStale = false;
-	}
-	if (m_isSDFDiffuseTraceShaderDescriptionStale) {
-		gRenderBackend.updateComputePassShaderDescription(m_diffuseSDFTracePass, 
-			createSDFDiffuseTraceShaderDescription(m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff));
-		m_isSDFDiffuseTraceShaderDescriptionStale = false;
-	}
-	if (m_isLightMatrixPassShaderDescriptionStale) {
-		gRenderBackend.updateComputePassShaderDescription(m_lightMatrixPass, createLightMatrixShaderDescription());
-		m_isLightMatrixPassShaderDescriptionStale = false;
-	}
+    if (m_isSDFDebugShaderDescriptionStale) {
+        gRenderBackend.updateComputePassShaderDescription(m_sdfDebugVisualisationPass, createSDFDebugShaderDescription());
+        m_isSDFDebugShaderDescriptionStale = false;
+    }
+    if (m_isSDFDiffuseTraceShaderDescriptionStale) {
+        gRenderBackend.updateComputePassShaderDescription(m_diffuseSDFTracePass, 
+            createSDFDiffuseTraceShaderDescription(m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff));
+        m_isSDFDiffuseTraceShaderDescriptionStale = false;
+    }
+    if (m_isLightMatrixPassShaderDescriptionStale) {
+        gRenderBackend.updateComputePassShaderDescription(m_lightMatrixPass, createLightMatrixShaderDescription());
+        m_isLightMatrixPassShaderDescriptionStale = false;
+    }
 
     gRenderBackend.updateShaderCode();
     gRenderBackend.newFrame();    
@@ -334,15 +334,15 @@ void RenderFrontend::prepareNewFrame() {
     m_sceneLuminance = m_lastFrameLuminance;
     m_lastFrameLuminance = tempImage;
 
-	if (m_drawUI) {
-		drawUi();
-	}
+    if (m_drawUI) {
+        drawUi();
+    }
     prepareRenderpasses();
     gRenderBackend.startDrawcallRecording();
 
-	m_currentMeshCount = 0;
-	m_currentMainPassDrawcallCount = 0;
-	m_currentShadowPassDrawcallCount = 0;
+    m_currentMeshCount = 0;
+    m_currentMainPassDrawcallCount = 0;
+    m_currentShadowPassDrawcallCount = 0;
 }
 
 void RenderFrontend::setupGlobalShaderInfoLayout() {
@@ -356,48 +356,48 @@ void RenderFrontend::setupGlobalShaderInfoLayout() {
     globalLayout.samplerBindings.push_back(globalSamplerLinearClampBinding);
     globalLayout.samplerBindings.push_back(globalSamplerNearestClampBinding);
     globalLayout.samplerBindings.push_back(globalSamplerLinearWhiteBorderBinding);
-	globalLayout.samplerBindings.push_back(globalSamplerNearestRepeatBinding);
-	globalLayout.samplerBindings.push_back(globalSamplerNearestWhiteBorderBinding);
-    
+    globalLayout.samplerBindings.push_back(globalSamplerNearestRepeatBinding);
+    globalLayout.samplerBindings.push_back(globalSamplerNearestWhiteBorderBinding);
+
     gRenderBackend.setGlobalDescriptorSetLayout(globalLayout);
 }
 
 void RenderFrontend::setupGlobalShaderInfoResources() {
-	RenderPassResources globalResources;
-	globalResources.uniformBuffers = { UniformBufferResource(m_globalUniformBuffer, globalUniformBufferBinding) };
-	globalResources.samplers = {
-		SamplerResource(m_sampler_anisotropicRepeat,    globalSamplerAnisotropicRepeatBinding),
-		SamplerResource(m_sampler_nearestBlackBorder,   globalSamplerNearestBlackBorderBinding),
-		SamplerResource(m_sampler_linearRepeat,         globalSamplerLinearRepeatBinding),
-		SamplerResource(m_sampler_linearClamp,          globalSamplerLinearClampBinding),
-		SamplerResource(m_sampler_nearestClamp,         globalSamplerNearestClampBinding),
-		SamplerResource(m_sampler_linearWhiteBorder,    globalSamplerLinearWhiteBorderBinding),
-		SamplerResource(m_sampler_nearestRepeat,		globalSamplerNearestRepeatBinding),
-		SamplerResource(m_sampler_nearestWhiteBorder,	globalSamplerNearestWhiteBorderBinding)
-	};
-	gRenderBackend.setGlobalDescriptorSetResources(globalResources);
+    RenderPassResources globalResources;
+    globalResources.uniformBuffers = { UniformBufferResource(m_globalUniformBuffer, globalUniformBufferBinding) };
+    globalResources.samplers = {
+        SamplerResource(m_sampler_anisotropicRepeat,    globalSamplerAnisotropicRepeatBinding),
+        SamplerResource(m_sampler_nearestBlackBorder,   globalSamplerNearestBlackBorderBinding),
+        SamplerResource(m_sampler_linearRepeat,         globalSamplerLinearRepeatBinding),
+        SamplerResource(m_sampler_linearClamp,          globalSamplerLinearClampBinding),
+        SamplerResource(m_sampler_nearestClamp,         globalSamplerNearestClampBinding),
+        SamplerResource(m_sampler_linearWhiteBorder,    globalSamplerLinearWhiteBorderBinding),
+        SamplerResource(m_sampler_nearestRepeat,        globalSamplerNearestRepeatBinding),
+        SamplerResource(m_sampler_nearestWhiteBorder,   globalSamplerNearestWhiteBorderBinding)
+    };
+    gRenderBackend.setGlobalDescriptorSetResources(globalResources);
 }
 
 void RenderFrontend::prepareRenderpasses(){
 
-	static int sceneRenderTargetIndex;
-	const FrameRenderTargets lastRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
-	sceneRenderTargetIndex++;
-	sceneRenderTargetIndex %= 2;
-	const FrameRenderTargets currentRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
+    static int sceneRenderTargetIndex;
+    const FrameRenderTargets lastRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
+    sceneRenderTargetIndex++;
+    sceneRenderTargetIndex %= 2;
+    const FrameRenderTargets currentRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
 
-	if (m_sdfDebugSettings.visualisationMode != SDFVisualisationMode::None) {
-		renderDepthPrepass(currentRenderTarget.prepassFramebuffer);
-		computeDepthPyramid(currentRenderTarget.depthBuffer);
-		computeColorBufferHistogram(m_postProcessBuffers[0]);
-		computeExposure();
-		updateSkyLut();
-		computeSunLightMatrices();
-		renderSunShadowCascades();
-		renderSDFVisualization(m_postProcessBuffers[0], m_skyLutPass);
-		computeTonemapping(m_sdfDebugVisualisationPass, m_postProcessBuffers[0]);
-		return;
-	}
+    if (m_sdfDebugSettings.visualisationMode != SDFVisualisationMode::None) {
+        renderDepthPrepass(currentRenderTarget.prepassFramebuffer);
+        computeDepthPyramid(currentRenderTarget.depthBuffer);
+        computeColorBufferHistogram(m_postProcessBuffers[0]);
+        computeExposure();
+        updateSkyLut();
+        computeSunLightMatrices();
+        renderSunShadowCascades();
+        renderSDFVisualization(m_postProcessBuffers[0], m_skyLutPass);
+        computeTonemapping(m_sdfDebugVisualisationPass, m_postProcessBuffers[0]);
+        return;
+    }
 
     std::vector<RenderPassHandle> forwardShadingDependencies;
 
@@ -407,45 +407,45 @@ void RenderFrontend::prepareRenderpasses(){
         m_isBRDFLutShaderDescriptionStale = false;
     }
 
-	if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SDFTrace) {
-		forwardShadingDependencies.push_back(m_diffuseSDFTracePass);
-		forwardShadingDependencies.push_back(m_indirectDiffuseFilterSpatialPass[0]);
-		forwardShadingDependencies.push_back(m_indirectDiffuseFilterSpatialPass[1]);
-		forwardShadingDependencies.push_back(m_indirectDiffuseFilterTemporalPass);
-		if (m_shadingConfig.indirectLightingHalfRes) {
-			forwardShadingDependencies.push_back(m_indirectLightingUpscale);
-		}
-	}
+    if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SDFTrace) {
+        forwardShadingDependencies.push_back(m_diffuseSDFTracePass);
+        forwardShadingDependencies.push_back(m_indirectDiffuseFilterSpatialPass[0]);
+        forwardShadingDependencies.push_back(m_indirectDiffuseFilterSpatialPass[1]);
+        forwardShadingDependencies.push_back(m_indirectDiffuseFilterTemporalPass);
+        if (m_shadingConfig.indirectLightingHalfRes) {
+            forwardShadingDependencies.push_back(m_indirectLightingUpscale);
+        }
+    }
 
     renderSunShadowCascades();
-	for (int i = 0; i < m_shadingConfig.sunShadowCascadeCount; i++) {
-		forwardShadingDependencies.push_back(m_shadowPasses[i]);
-	}
+    for (int i = 0; i < m_shadingConfig.sunShadowCascadeCount; i++) {
+        forwardShadingDependencies.push_back(m_shadowPasses[i]);
+    }
 
     computeColorBufferHistogram(lastRenderTarget.colorBuffer);
     computeExposure();
     renderDepthPrepass(currentRenderTarget.prepassFramebuffer);
     computeDepthPyramid(currentRenderTarget.depthBuffer);
     computeSunLightMatrices();
-	if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SDFTrace) {
-		if (m_shadingConfig.indirectLightingHalfRes) {
-			downscaleDepth(currentRenderTarget);
-		}		
-		diffuseSDFTrace(currentRenderTarget);
-		filterIndirectDiffuse(currentRenderTarget, lastRenderTarget);
-	}
-	
-	computeVolumetricLighting();
-	forwardShadingDependencies.push_back(m_volumetricLightingIntegration);
+    if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SDFTrace) {
+        if (m_shadingConfig.indirectLightingHalfRes) {
+            downscaleDepth(currentRenderTarget);
+        }
+        diffuseSDFTrace(currentRenderTarget);
+        filterIndirectDiffuse(currentRenderTarget, lastRenderTarget);
+    }
+
+    computeVolumetricLighting();
+    forwardShadingDependencies.push_back(m_volumetricLightingIntegration);
 
     renderForwardShading(forwardShadingDependencies, currentRenderTarget.colorFramebuffer);
-	RenderPassHandle skyParent = m_mainPass;
-	if (m_renderBoundingBoxes) {
-		renderDebugGeometry(currentRenderTarget.colorFramebuffer);
-		skyParent = m_debugGeoPass;
-	}
+    RenderPassHandle skyParent = m_mainPass;
+    if (m_renderBoundingBoxes) {
+        renderDebugGeometry(currentRenderTarget.colorFramebuffer);
+        skyParent = m_debugGeoPass;
+    }
     renderSky(currentRenderTarget.colorFramebuffer, skyParent);
-    
+
     RenderPassHandle currentPass = m_sunSpritePass;
     ImageHandle currentSrc = currentRenderTarget.colorBuffer;
 
@@ -470,9 +470,9 @@ void RenderFrontend::prepareRenderpasses(){
         currentSrc = m_postProcessBuffers[1];        
     }
 
-	if (m_bloomSettings.enabled) {
-		currentPass = computeBloom(currentPass, currentSrc);
-	}
+    if (m_bloomSettings.enabled) {
+        currentPass = computeBloom(currentPass, currentSrc);
+    }
     computeTonemapping(currentPass, currentSrc);
 }
 
@@ -512,14 +512,14 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
         const glm::mat4 jitteredProjection = applyProjectionMatrixJitter(projectionMatrix, m_globalShaderInfo.currentFrameCameraJitter);
 
         m_viewProjectionMatrix = jitteredProjection * viewMatrix;
-    }    
+    }
     else {
         m_globalShaderInfo.currentFrameCameraJitter = glm::vec2(0.f);
         m_viewProjectionMatrix = projectionMatrix * viewMatrix;
     }
 
-	m_globalShaderInfo.viewProjectionPrevious = m_globalShaderInfo.viewProjection;
-	m_globalShaderInfo.viewProjection = m_viewProjectionMatrix;
+    m_globalShaderInfo.viewProjectionPrevious = m_globalShaderInfo.viewProjection;
+    m_globalShaderInfo.viewProjection = m_viewProjectionMatrix;
 
     updateCameraFrustum();
     updateShadowFrustum();
@@ -530,67 +530,67 @@ std::vector<MeshHandleFrontend> RenderFrontend::registerMeshes(const std::vector
     std::vector<Material> materials;
     materials.reserve(meshes.size());
 
-	const std::vector<MeshHandle> backendHandles = gRenderBackend.createMeshes(meshes);
+    const std::vector<MeshHandle> backendHandles = gRenderBackend.createMeshes(meshes);
 
-	std::vector<MeshHandleFrontend> meshHandlesFrontend;
-	meshHandlesFrontend.reserve(backendHandles.size());
-	
-	std::vector<fs::path> imagePaths;
-	const size_t texturesPerMesh = 4;
-	imagePaths.reserve(meshes.size() * texturesPerMesh);
-	for (const MeshBinary& mesh : meshes) {
-		imagePaths.push_back(mesh.texturePaths.albedoTexturePath);
-		imagePaths.push_back(mesh.texturePaths.normalTexturePath);
-		imagePaths.push_back(mesh.texturePaths.specularTexturePath);
-		imagePaths.push_back(mesh.texturePaths.sdfTexturePath);
-	}
-	const std::vector<ImageHandle> meshImageHandles = loadImagesFromPaths(imagePaths);
+    std::vector<MeshHandleFrontend> meshHandlesFrontend;
+    meshHandlesFrontend.reserve(backendHandles.size());
 
-	assert(backendHandles.size() == meshes.size());
-	for (size_t i = 0; i < backendHandles.size(); i++) {
-		MeshHandleFrontend meshHandleFrontend;
-		meshHandleFrontend.index = (uint32_t)m_frontendMeshes.size();
-		meshHandlesFrontend.push_back(meshHandleFrontend);
+    std::vector<fs::path> imagePaths;
+    const size_t texturesPerMesh = 4;
+    imagePaths.reserve(meshes.size() * texturesPerMesh);
+    for (const MeshBinary& mesh : meshes) {
+        imagePaths.push_back(mesh.texturePaths.albedoTexturePath);
+        imagePaths.push_back(mesh.texturePaths.normalTexturePath);
+        imagePaths.push_back(mesh.texturePaths.specularTexturePath);
+        imagePaths.push_back(mesh.texturePaths.sdfTexturePath);
+    }
+    const std::vector<ImageHandle> meshImageHandles = loadImagesFromPaths(imagePaths);
 
-		MeshFrontend meshFrontend;
-		meshFrontend.backendHandle = backendHandles[i];
+    assert(backendHandles.size() == meshes.size());
+    for (size_t i = 0; i < backendHandles.size(); i++) {
+        MeshHandleFrontend meshHandleFrontend;
+        meshHandleFrontend.index = (uint32_t)m_frontendMeshes.size();
+        meshHandlesFrontend.push_back(meshHandleFrontend);
 
-		const MeshBinary mesh = meshes[i];
+        MeshFrontend meshFrontend;
+        meshFrontend.backendHandle = backendHandles[i];
 
-		meshFrontend.localBB = mesh.boundingBox;
-		meshFrontend.meanAlbedo = mesh.meanAlbedo;
+        const MeshBinary mesh = meshes[i];
 
-		const size_t baseIndex = (size_t)4 * i;
+        meshFrontend.localBB = mesh.boundingBox;
+        meshFrontend.meanAlbedo = mesh.meanAlbedo;
 
-		//material
-		ImageHandle albedoHandle = meshImageHandles[baseIndex + 0];
-		if (albedoHandle.index == invalidIndex) {
-			albedoHandle = m_defaultTextures.diffuse;
-		}
-		ImageHandle normalHandle = meshImageHandles[baseIndex + 1];
-		if (normalHandle.index == invalidIndex) {
-			normalHandle = m_defaultTextures.normal;
-		}
-		ImageHandle specularHandle = meshImageHandles[baseIndex + 2];
-		if (specularHandle.index == invalidIndex) {
-			specularHandle = m_defaultTextures.specular;
-		}
-		ImageHandle sdfHandle = meshImageHandles[baseIndex + 3];
+        const size_t baseIndex = (size_t)4 * i;
 
-		meshFrontend.material.albedoTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(albedoHandle);
-		meshFrontend.material.normalTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(normalHandle);
-		meshFrontend.material.specularTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(specularHandle);
+        //material
+        ImageHandle albedoHandle = meshImageHandles[baseIndex + 0];
+        if (albedoHandle.index == invalidIndex) {
+            albedoHandle = m_defaultTextures.diffuse;
+        }
+        ImageHandle normalHandle = meshImageHandles[baseIndex + 1];
+        if (normalHandle.index == invalidIndex) {
+            normalHandle = m_defaultTextures.normal;
+        }
+        ImageHandle specularHandle = meshImageHandles[baseIndex + 2];
+        if (specularHandle.index == invalidIndex) {
+            specularHandle = m_defaultTextures.specular;
+        }
+        ImageHandle sdfHandle = meshImageHandles[baseIndex + 3];
 
-		if (sdfHandle.index == invalidIndex) {
-			meshFrontend.sdfTextureIndex = -1;
-		}
-		else {
-			meshFrontend.sdfTextureIndex = (int)gRenderBackend.getImageGlobalTextureArrayIndex(sdfHandle);
-		}
+        meshFrontend.material.albedoTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(albedoHandle);
+        meshFrontend.material.normalTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(normalHandle);
+        meshFrontend.material.specularTextureIndex = gRenderBackend.getImageGlobalTextureArrayIndex(specularHandle);
 
-		m_frontendMeshes.push_back(meshFrontend);
-	}
-	return meshHandlesFrontend;
+        if (sdfHandle.index == invalidIndex) {
+            meshFrontend.sdfTextureIndex = -1;
+        }
+        else {
+            meshFrontend.sdfTextureIndex = (int)gRenderBackend.getImageGlobalTextureArrayIndex(sdfHandle);
+        }
+
+        m_frontendMeshes.push_back(meshFrontend);
+    }
+    return meshHandlesFrontend;
 }
 
 void RenderFrontend::prepareForDrawcalls() {
@@ -610,80 +610,80 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
         return;
     }
 
-	assert(scene.size() < maxObjectCountMainScene);
+    assert(scene.size() < maxObjectCountMainScene);
 
-	//sdf scene
-	//TODO: instead of updating complete scene transforms every frame, track dirty transforms and ony write changes using compute shader
-	{
-		struct GPUBoundingBox {
-			glm::vec3 min = glm::vec3(0);
-			float padding1 = 0.f;
-			glm::vec3 max = glm::vec3(0);
-			float padding2 = 0.f;
-		};
-		std::vector<GPUBoundingBox> instanceWorldBBs;
-		std::vector<SDFInstance> instanceData;
-		instanceData.reserve(scene.size());
-		instanceWorldBBs.reserve(scene.size());
-		for (const RenderObject& obj : scene) {
+    //sdf scene
+    //TODO: instead of updating complete scene transforms every frame, track dirty transforms and ony write changes using compute shader
+    {
+        struct GPUBoundingBox {
+            glm::vec3 min = glm::vec3(0);
+            float padding1 = 0.f;
+            glm::vec3 max = glm::vec3(0);
+            float padding2 = 0.f;
+        };
+        std::vector<GPUBoundingBox> instanceWorldBBs;
+        std::vector<SDFInstance> instanceData;
+        instanceData.reserve(scene.size());
+        instanceWorldBBs.reserve(scene.size());
+        for (const RenderObject& obj : scene) {
 
-			const MeshFrontend& mesh = m_frontendMeshes[obj.mesh.index];
-			//skip meshes without sdf
-			if (mesh.sdfTextureIndex < 0) {
-				continue;
-			}
+            const MeshFrontend& mesh = m_frontendMeshes[obj.mesh.index];
+            //skip meshes without sdf
+            if (mesh.sdfTextureIndex < 0) {
+                continue;
+            }
 
-			//culling requires the padded bounding box, used for rendering and computation
-			const AxisAlignedBoundingBox paddedWorldBB = padSDFBoundingBox(obj.bbWorld);
-			GPUBoundingBox worldBB;
-			worldBB.min = paddedWorldBB.min;
-			worldBB.max = paddedWorldBB.max;
-			instanceWorldBBs.push_back(worldBB);
+            //culling requires the padded bounding box, used for rendering and computation
+            const AxisAlignedBoundingBox paddedWorldBB = padSDFBoundingBox(obj.bbWorld);
+            GPUBoundingBox worldBB;
+            worldBB.min = paddedWorldBB.min;
+            worldBB.max = paddedWorldBB.max;
+            instanceWorldBBs.push_back(worldBB);
 
-			SDFInstance instance;
-			instance.sdfTextureIndex = mesh.sdfTextureIndex;
+            SDFInstance instance;
+            instance.sdfTextureIndex = mesh.sdfTextureIndex;
 
-			const AxisAlignedBoundingBox paddedLocalBB = padSDFBoundingBox(mesh.localBB);
-			instance.localExtends = paddedLocalBB.max - paddedLocalBB.min;
-			instance.meanAlbedo = mesh.meanAlbedo;
+            const AxisAlignedBoundingBox paddedLocalBB = padSDFBoundingBox(mesh.localBB);
+            instance.localExtends = paddedLocalBB.max - paddedLocalBB.min;
+            instance.meanAlbedo = mesh.meanAlbedo;
 
-			const glm::vec3 bbOffset = (paddedLocalBB.min + paddedLocalBB.max) * 0.5f;
+            const glm::vec3 bbOffset = (paddedLocalBB.min + paddedLocalBB.max) * 0.5f;
 
-			glm::mat4 bbT = glm::translate(glm::mat4x4(1.f), bbOffset);
+            glm::mat4 bbT = glm::translate(glm::mat4x4(1.f), bbOffset);
 
-			instance.worldToLocal = glm::inverse(obj.modelMatrix * bbT);
-			instanceData.push_back(instance);
-		}
-		std::vector<uint8_t> bufferData(sizeof(SDFInstance) * instanceData.size() + sizeof(uint32_t) * 4);
-		m_currentSDFInstanceCount = (uint32_t)instanceData.size();
-		uint32_t padding[3] = { 0, 0, 0 };
-		memcpy(bufferData.data(), &m_currentSDFInstanceCount, sizeof(uint32_t));
-		memcpy(bufferData.data() + sizeof(uint32_t), &padding, sizeof(uint32_t) * 3);
-		memcpy(bufferData.data() + sizeof(uint32_t) * 4, instanceData.data(), sizeof(SDFInstance) * instanceData.size());
-		gRenderBackend.setStorageBufferData(m_sdfInstanceBuffer, bufferData.data(), bufferData.size());
+            instance.worldToLocal = glm::inverse(obj.modelMatrix * bbT);
+            instanceData.push_back(instance);
+        }
+        std::vector<uint8_t> bufferData(sizeof(SDFInstance) * instanceData.size() + sizeof(uint32_t) * 4);
+        m_currentSDFInstanceCount = (uint32_t)instanceData.size();
+        uint32_t padding[3] = { 0, 0, 0 };
+        memcpy(bufferData.data(), &m_currentSDFInstanceCount, sizeof(uint32_t));
+        memcpy(bufferData.data() + sizeof(uint32_t), &padding, sizeof(uint32_t) * 3);
+        memcpy(bufferData.data() + sizeof(uint32_t) * 4, instanceData.data(), sizeof(SDFInstance) * instanceData.size());
+        gRenderBackend.setStorageBufferData(m_sdfInstanceBuffer, bufferData.data(), bufferData.size());
 
-		gRenderBackend.setStorageBufferData(m_sdfInstanceWorldBBBuffer, instanceWorldBBs.data(),
-			instanceWorldBBs.size() * sizeof(GPUBoundingBox));
-	}
+        gRenderBackend.setStorageBufferData(m_sdfInstanceWorldBBBuffer, instanceWorldBBs.data(),
+            instanceWorldBBs.size() * sizeof(GPUBoundingBox));
+    }
 
     m_currentMeshCount += (uint32_t)scene.size();
 
-	const bool renderingSDFVisualisation = m_sdfDebugSettings.visualisationMode != SDFVisualisationMode::None;
+    const bool renderingSDFVisualisation = m_sdfDebugSettings.visualisationMode != SDFVisualisationMode::None;
 
     //main and prepass
-	JobSystem::Counter recordingFinished;
+    JobSystem::Counter recordingFinished;
 
-	struct MainPassPushConstants {
-		uint32_t albedoTextureIndex;
-		uint32_t normalTextureIndex;
-		uint32_t specularTextureIndex;
-		uint32_t transformIndex;
-	};
-	//data needed in outer scope to keep data pointer in scope when executing job
-	std::vector<MainPassPushConstants> mainPassPushConstants;	
-	std::vector<MeshHandle> mainPassCulledMeshes;
+    struct MainPassPushConstants {
+        uint32_t albedoTextureIndex;
+        uint32_t normalTextureIndex;
+        uint32_t specularTextureIndex;
+        uint32_t transformIndex;
+    };
+    //data needed in outer scope to keep data pointer in scope when executing job
+    std::vector<MainPassPushConstants> mainPassPushConstants;	
+    std::vector<MeshHandle> mainPassCulledMeshes;
     {
-		std::vector<MainPassMatrices> mainPassMatrices;
+        std::vector<MainPassMatrices> mainPassMatrices;
 
         //frustum culling
         for (const RenderObject& obj : scene) {
@@ -692,48 +692,48 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 
             if (isVisible) {
                 m_currentMainPassDrawcallCount++;
-				MeshFrontend meshFrontend = m_frontendMeshes[obj.mesh.index];
+                MeshFrontend meshFrontend = m_frontendMeshes[obj.mesh.index];
                 mainPassCulledMeshes.push_back(meshFrontend.backendHandle);
 
-				MainPassPushConstants meshPushConstants;
-				meshPushConstants.albedoTextureIndex = meshFrontend.material.albedoTextureIndex;
-				meshPushConstants.normalTextureIndex = meshFrontend.material.normalTextureIndex;
-				meshPushConstants.specularTextureIndex = meshFrontend.material.specularTextureIndex;
-				meshPushConstants.transformIndex = (uint32_t)mainPassMatrices.size();
-				mainPassPushConstants.push_back(meshPushConstants);
+                MainPassPushConstants meshPushConstants;
+                meshPushConstants.albedoTextureIndex = meshFrontend.material.albedoTextureIndex;
+                meshPushConstants.normalTextureIndex = meshFrontend.material.normalTextureIndex;
+                meshPushConstants.specularTextureIndex = meshFrontend.material.specularTextureIndex;
+                meshPushConstants.transformIndex = (uint32_t)mainPassMatrices.size();
+                mainPassPushConstants.push_back(meshPushConstants);
 
-				MainPassMatrices matrices;
-				matrices.model = obj.modelMatrix;
-				matrices.mvp = m_viewProjectionMatrix * obj.modelMatrix;
-				matrices.mvpPrevious = m_previousViewProjectionMatrix * obj.previousModelMatrix;
-				mainPassMatrices.push_back(matrices);
+                MainPassMatrices matrices;
+                matrices.model = obj.modelMatrix;
+                matrices.mvp = m_viewProjectionMatrix * obj.modelMatrix;
+                matrices.mvpPrevious = m_previousViewProjectionMatrix * obj.previousModelMatrix;
+                mainPassMatrices.push_back(matrices);
             }
         }
-		//only prepass drawcalls needed for sdf debug visualisation
-		if (renderingSDFVisualisation) {
-			JobSystem::addJob([this, &mainPassCulledMeshes, &mainPassPushConstants](int workerIndex) {
-				gRenderBackend.drawMeshes(mainPassCulledMeshes, (char*)mainPassPushConstants.data(), m_depthPrePass, workerIndex);
-			}, &recordingFinished);
-		}
-		else {
-			JobSystem::addJob([this, &mainPassCulledMeshes, &mainPassPushConstants](int workerIndex) {
-				gRenderBackend.drawMeshes(mainPassCulledMeshes, (char*)mainPassPushConstants.data(), m_mainPass, workerIndex);
-			}, &recordingFinished);
-			JobSystem::addJob([this, &mainPassCulledMeshes, &mainPassPushConstants](int workerIndex) {
-				gRenderBackend.drawMeshes(mainPassCulledMeshes, (char*)mainPassPushConstants.data(), m_depthPrePass, workerIndex);
-			}, &recordingFinished);
-		}
-		gRenderBackend.setStorageBufferData(m_mainPassTransformsBuffer, mainPassMatrices.data(), 
-			sizeof(MainPassMatrices) * mainPassMatrices.size());
+        //only prepass drawcalls needed for sdf debug visualisation
+        if (renderingSDFVisualisation) {
+            JobSystem::addJob([this, &mainPassCulledMeshes, &mainPassPushConstants](int workerIndex) {
+                gRenderBackend.drawMeshes(mainPassCulledMeshes, (char*)mainPassPushConstants.data(), m_depthPrePass, workerIndex);
+            }, &recordingFinished);
+        }
+        else {
+            JobSystem::addJob([this, &mainPassCulledMeshes, &mainPassPushConstants](int workerIndex) {
+                gRenderBackend.drawMeshes(mainPassCulledMeshes, (char*)mainPassPushConstants.data(), m_mainPass, workerIndex);
+            }, &recordingFinished);
+            JobSystem::addJob([this, &mainPassCulledMeshes, &mainPassPushConstants](int workerIndex) {
+                gRenderBackend.drawMeshes(mainPassCulledMeshes, (char*)mainPassPushConstants.data(), m_depthPrePass, workerIndex);
+            }, &recordingFinished);
+        }
+        gRenderBackend.setStorageBufferData(m_mainPassTransformsBuffer, mainPassMatrices.data(), 
+            sizeof(MainPassMatrices) * mainPassMatrices.size());
     }
-	
+
     //shadow pass
-	struct ShadowPushConstants {
-		uint32_t albedoTextureIndex;
-		uint32_t transformIndex;
-	};
-	std::vector<MeshHandle> shadowCulledMeshes;
-	std::vector<ShadowPushConstants> shadowPushConstantData;
+    struct ShadowPushConstants {
+        uint32_t albedoTextureIndex;
+        uint32_t transformIndex;
+    };
+    std::vector<MeshHandle> shadowCulledMeshes;
+    std::vector<ShadowPushConstants> shadowPushConstantData;
     {
         const glm::vec3 sunDirection = directionToVector(m_sunDirection);
         //we must not cull behind the shadow frustum near plane, as objects there cast shadows into the visible area
@@ -746,7 +746,7 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
         m_sunShadowFrustum.points.l_u_n += nearPlaneOffset;
         m_sunShadowFrustum.points.r_u_n += nearPlaneOffset;
 
-		std::vector<glm::mat4> shadowModelMatrices;
+        std::vector<glm::mat4> shadowModelMatrices;
 
         //coarse frustum culling for shadow rendering, assuming shadow frustum if fitted to camera frustum
         //actual frustum is fitted tightly to depth buffer values, but that is done on the GPU
@@ -757,53 +757,53 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
             if (isVisible) {
                 m_currentShadowPassDrawcallCount++;
 
-				const MeshFrontend mesh = m_frontendMeshes[obj.mesh.index];
+                const MeshFrontend mesh = m_frontendMeshes[obj.mesh.index];
                 shadowCulledMeshes.push_back(mesh.backendHandle);
 
-				ShadowPushConstants pushConstants;
-				pushConstants.albedoTextureIndex = mesh.material.albedoTextureIndex;
-				pushConstants.transformIndex = (uint32_t)shadowModelMatrices.size();
-				shadowPushConstantData.push_back(pushConstants);
+                ShadowPushConstants pushConstants;
+                pushConstants.albedoTextureIndex = mesh.material.albedoTextureIndex;
+                pushConstants.transformIndex = (uint32_t)shadowModelMatrices.size();
+                shadowPushConstantData.push_back(pushConstants);
 
-				shadowModelMatrices.push_back(obj.modelMatrix);
+                shadowModelMatrices.push_back(obj.modelMatrix);
             }
         }
         for (int shadowPass = 0; shadowPass < m_shadingConfig.sunShadowCascadeCount; shadowPass++) {
-			JobSystem::addJob([this, shadowPass, &shadowCulledMeshes, &shadowPushConstantData](int workerIndex) {
-				gRenderBackend.drawMeshes(shadowCulledMeshes, (char*)shadowPushConstantData.data(), m_shadowPasses[shadowPass], workerIndex);
-			}, & recordingFinished);
+            JobSystem::addJob([this, shadowPass, &shadowCulledMeshes, &shadowPushConstantData](int workerIndex) {
+                gRenderBackend.drawMeshes(shadowCulledMeshes, (char*)shadowPushConstantData.data(), m_shadowPasses[shadowPass], workerIndex);
+            }, & recordingFinished);
         }
-		gRenderBackend.setStorageBufferData(m_shadowPassTransformsBuffer, shadowModelMatrices.data(),
-			sizeof(glm::mat4) * shadowModelMatrices.size());
+        gRenderBackend.setStorageBufferData(m_shadowPassTransformsBuffer, shadowModelMatrices.data(),
+            sizeof(glm::mat4) * shadowModelMatrices.size());
     }
 
-	//bounding boxes
-	std::vector<MeshHandle> bbMeshHandles;
-	std::vector<uint32_t> bbPushConstantData; //contains index to matrix
+    //bounding boxes
+    std::vector<MeshHandle> bbMeshHandles;
+    std::vector<uint32_t> bbPushConstantData; //contains index to matrix
 
-	if (m_renderBoundingBoxes && !renderingSDFVisualisation) {
-		std::vector<glm::mat4> boundingBoxMatrices;
-		for (const RenderObject& obj : scene) {
-			//culling again is repeating work
-			//but keeps code nicely separated and is for debugging only
-			const bool isVisible = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, obj.bbWorld);
-			if (isVisible) {
-				const glm::vec3 offset = (obj.bbWorld.min + obj.bbWorld.max) * 0.5f;
-				const glm::mat4 translationMatrix = glm::translate(glm::mat4(1.f), offset);
-				const glm::mat4 scaleMatrix = glm::scale(glm::mat4(1.f), (obj.bbWorld.max - obj.bbWorld.min) * 0.5f);
-				const glm::mat4 bbMatrix = m_globalShaderInfo.viewProjection * translationMatrix * scaleMatrix;
-				bbPushConstantData.push_back((uint32_t)boundingBoxMatrices.size());
-				boundingBoxMatrices.push_back(bbMatrix);
-				bbMeshHandles.push_back(m_boundingBoxMesh);
-			}
-		}
-		JobSystem::addJob([this, &bbMeshHandles, &bbPushConstantData](int workerIndex) {
-			gRenderBackend.drawMeshes(bbMeshHandles, (char*)bbPushConstantData.data(), m_debugGeoPass, workerIndex);
-		}, & recordingFinished);
-		const size_t bbMatricesSize = boundingBoxMatrices.size() * sizeof(glm::mat4);
-		gRenderBackend.setStorageBufferData(m_boundingBoxDebugRenderMatrices, (char*)boundingBoxMatrices.data(), bbMatricesSize);
-	}
-	JobSystem::waitOnCounter(recordingFinished);
+    if (m_renderBoundingBoxes && !renderingSDFVisualisation) {
+        std::vector<glm::mat4> boundingBoxMatrices;
+        for (const RenderObject& obj : scene) {
+            //culling again is repeating work
+            //but keeps code nicely separated and is for debugging only
+            const bool isVisible = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, obj.bbWorld);
+            if (isVisible) {
+                const glm::vec3 offset = (obj.bbWorld.min + obj.bbWorld.max) * 0.5f;
+                const glm::mat4 translationMatrix = glm::translate(glm::mat4(1.f), offset);
+                const glm::mat4 scaleMatrix = glm::scale(glm::mat4(1.f), (obj.bbWorld.max - obj.bbWorld.min) * 0.5f);
+                const glm::mat4 bbMatrix = m_globalShaderInfo.viewProjection * translationMatrix * scaleMatrix;
+                bbPushConstantData.push_back((uint32_t)boundingBoxMatrices.size());
+                boundingBoxMatrices.push_back(bbMatrix);
+                bbMeshHandles.push_back(m_boundingBoxMesh);
+            }
+        }
+        JobSystem::addJob([this, &bbMeshHandles, &bbPushConstantData](int workerIndex) {
+            gRenderBackend.drawMeshes(bbMeshHandles, (char*)bbPushConstantData.data(), m_debugGeoPass, workerIndex);
+        }, & recordingFinished);
+        const size_t bbMatricesSize = boundingBoxMatrices.size() * sizeof(glm::mat4);
+        gRenderBackend.setStorageBufferData(m_boundingBoxDebugRenderMatrices, (char*)boundingBoxMatrices.data(), bbMatricesSize);
+    }
+    JobSystem::waitOnCounter(recordingFinished);
 }
 
 void RenderFrontend::renderFrame() {
@@ -811,15 +811,15 @@ void RenderFrontend::renderFrame() {
     if (m_minimized) {
         return;
     }
-	m_globalShaderInfo.frameIndex++;
-	m_globalShaderInfo.frameIndexMod2 = m_globalShaderInfo.frameIndex % 2;
-	m_globalShaderInfo.frameIndexMod3 = m_globalShaderInfo.frameIndex % 3;
-	m_globalShaderInfo.frameIndexMod4 = m_globalShaderInfo.frameIndex % 4;
+    m_globalShaderInfo.frameIndex++;
+    m_globalShaderInfo.frameIndexMod2 = m_globalShaderInfo.frameIndex % 2;
+    m_globalShaderInfo.frameIndexMod3 = m_globalShaderInfo.frameIndex % 3;
+    m_globalShaderInfo.frameIndexMod4 = m_globalShaderInfo.frameIndex % 4;
 
-	//no sky drawn in debug mode
-	if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::None) {
-		issueSkyDrawcalls();
-	}
+    //no sky drawn in debug mode
+    if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::None) {
+        issueSkyDrawcalls();
+    }
     gRenderBackend.renderFrame(true);
 
     //set after frame finished so logic before rendering can decide if cut should happen
@@ -836,7 +836,7 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
         ImageResource colorTextureResource(lastFrameColor, 0, 2);
         StorageBufferResource lightBufferResource(m_lightBuffer, true, 3);
 
-		ComputePassExecution histogramPerTileExecution;
+        ComputePassExecution histogramPerTileExecution;
         histogramPerTileExecution.genericInfo.handle = m_histogramPerTilePass;
         histogramPerTileExecution.genericInfo.resources.storageBuffers = { histogramPerTileResource, lightBufferResource };
         histogramPerTileExecution.genericInfo.resources.sampledImages = { colorTextureResource };
@@ -850,7 +850,7 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
     const float binsPerDispatch = 64.f;
     //reset global tile
     {
-		ComputePassExecution histogramResetExecution;
+        ComputePassExecution histogramResetExecution;
         histogramResetExecution.genericInfo.handle = m_histogramResetPass;
         histogramResetExecution.genericInfo.resources.storageBuffers = { histogramResource };
         histogramResetExecution.dispatchCount[0] = uint32_t(std::ceilf(float(nHistogramBins) / binsPerDispatch));
@@ -861,7 +861,7 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
     }
     //combine tiles
     {
-		ComputePassExecution histogramCombineTilesExecution;
+        ComputePassExecution histogramCombineTilesExecution;
         histogramCombineTilesExecution.genericInfo.handle = m_histogramCombinePass;
         histogramCombineTilesExecution.genericInfo.resources.storageBuffers = { histogramPerTileResource, histogramResource };
         uint32_t tileCount =
@@ -877,70 +877,70 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
 }
 
 void RenderFrontend::toggleUI() {
-	m_drawUI = !m_drawUI;
+    m_drawUI = !m_drawUI;
 }
 
 void RenderFrontend::updateSkyLut() const {
-	//compute transmission lut
-	{
-		ImageResource lutResource(m_skyTransmissionLut, 0, 0);
-		UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 1);
+    //compute transmission lut
+    {
+        ImageResource lutResource(m_skyTransmissionLut, 0, 0);
+        UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 1);
 
-		ComputePassExecution skyTransmissionLutExecution;
-		skyTransmissionLutExecution.genericInfo.handle = m_skyTransmissionLutPass;
-		skyTransmissionLutExecution.genericInfo.resources.storageImages = { lutResource };
-		skyTransmissionLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
-		skyTransmissionLutExecution.dispatchCount[0] = skyTransmissionLutResolution / 8;
-		skyTransmissionLutExecution.dispatchCount[1] = skyTransmissionLutResolution / 8;
-		skyTransmissionLutExecution.dispatchCount[2] = 1;
-		gRenderBackend.setComputePassExecution(skyTransmissionLutExecution);
-	}
-	//compute multiscatter lut
-	{
-		ImageResource multiscatterLutResource(m_skyMultiscatterLut, 0, 0);
-		ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
-		UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 3);
+        ComputePassExecution skyTransmissionLutExecution;
+        skyTransmissionLutExecution.genericInfo.handle = m_skyTransmissionLutPass;
+        skyTransmissionLutExecution.genericInfo.resources.storageImages = { lutResource };
+        skyTransmissionLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
+        skyTransmissionLutExecution.dispatchCount[0] = skyTransmissionLutResolution / 8;
+        skyTransmissionLutExecution.dispatchCount[1] = skyTransmissionLutResolution / 8;
+        skyTransmissionLutExecution.dispatchCount[2] = 1;
+        gRenderBackend.setComputePassExecution(skyTransmissionLutExecution);
+    }
+    //compute multiscatter lut
+    {
+        ImageResource multiscatterLutResource(m_skyMultiscatterLut, 0, 0);
+        ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
+        UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 3);
 
-		ComputePassExecution skyMultiscatterLutExecution;
-		skyMultiscatterLutExecution.genericInfo.handle = m_skyMultiscatterLutPass;
-		skyMultiscatterLutExecution.genericInfo.parents = { m_skyTransmissionLutPass };
-		skyMultiscatterLutExecution.genericInfo.resources.storageImages = { multiscatterLutResource };
-		skyMultiscatterLutExecution.genericInfo.resources.sampledImages = { transmissionLutResource };
-		skyMultiscatterLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
-		skyMultiscatterLutExecution.dispatchCount[0] = skyMultiscatterLutResolution / 8;
-		skyMultiscatterLutExecution.dispatchCount[1] = skyMultiscatterLutResolution / 8;
-		skyMultiscatterLutExecution.dispatchCount[2] = 1;
-		gRenderBackend.setComputePassExecution(skyMultiscatterLutExecution);
-	}
-	//compute sky lut
-	{
-		ImageResource lutResource(m_skyLut, 0, 0);
-		ImageResource lutTransmissionResource(m_skyTransmissionLut, 0, 1);
-		ImageResource lutMultiscatterResource(m_skyMultiscatterLut, 0, 2);
-		UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 4);
-		StorageBufferResource lightBufferResource(m_lightBuffer, true, 5);
+        ComputePassExecution skyMultiscatterLutExecution;
+        skyMultiscatterLutExecution.genericInfo.handle = m_skyMultiscatterLutPass;
+        skyMultiscatterLutExecution.genericInfo.parents = { m_skyTransmissionLutPass };
+        skyMultiscatterLutExecution.genericInfo.resources.storageImages = { multiscatterLutResource };
+        skyMultiscatterLutExecution.genericInfo.resources.sampledImages = { transmissionLutResource };
+        skyMultiscatterLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
+        skyMultiscatterLutExecution.dispatchCount[0] = skyMultiscatterLutResolution / 8;
+        skyMultiscatterLutExecution.dispatchCount[1] = skyMultiscatterLutResolution / 8;
+        skyMultiscatterLutExecution.dispatchCount[2] = 1;
+        gRenderBackend.setComputePassExecution(skyMultiscatterLutExecution);
+    }
+    //compute sky lut
+    {
+        ImageResource lutResource(m_skyLut, 0, 0);
+        ImageResource lutTransmissionResource(m_skyTransmissionLut, 0, 1);
+        ImageResource lutMultiscatterResource(m_skyMultiscatterLut, 0, 2);
+        UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 4);
+        StorageBufferResource lightBufferResource(m_lightBuffer, true, 5);
 
-		ComputePassExecution skyLutExecution;
-		skyLutExecution.genericInfo.handle = m_skyLutPass;
-		skyLutExecution.genericInfo.resources.storageImages = { lutResource };
-		skyLutExecution.genericInfo.resources.sampledImages = { lutTransmissionResource, lutMultiscatterResource };
-		skyLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
-		skyLutExecution.genericInfo.resources.storageBuffers = { lightBufferResource };
-		skyLutExecution.dispatchCount[0] = skyLutWidth / 8;
-		skyLutExecution.dispatchCount[1] = skyLutHeight / 8;
-		skyLutExecution.dispatchCount[2] = 1;
-		skyLutExecution.genericInfo.parents = { m_skyTransmissionLutPass, m_skyMultiscatterLutPass, m_preExposeLightsPass };
-		gRenderBackend.setComputePassExecution(skyLutExecution);
-	}
+        ComputePassExecution skyLutExecution;
+        skyLutExecution.genericInfo.handle = m_skyLutPass;
+        skyLutExecution.genericInfo.resources.storageImages = { lutResource };
+        skyLutExecution.genericInfo.resources.sampledImages = { lutTransmissionResource, lutMultiscatterResource };
+        skyLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
+        skyLutExecution.genericInfo.resources.storageBuffers = { lightBufferResource };
+        skyLutExecution.dispatchCount[0] = skyLutWidth / 8;
+        skyLutExecution.dispatchCount[1] = skyLutHeight / 8;
+        skyLutExecution.dispatchCount[2] = 1;
+        skyLutExecution.genericInfo.parents = { m_skyTransmissionLutPass, m_skyMultiscatterLutPass, m_preExposeLightsPass };
+        gRenderBackend.setComputePassExecution(skyLutExecution);
+    }
 }
-   
+
 void RenderFrontend::renderSky(const FramebufferHandle framebuffer, const RenderPassHandle parent) const {
     gRenderBackend.setUniformBufferData(
         m_atmosphereSettingsBuffer, 
         &m_atmosphereSettings, 
         sizeof(m_atmosphereSettings));
     
-	updateSkyLut();
+    updateSkyLut();
 
     //render skybox
     {
@@ -948,12 +948,12 @@ void RenderFrontend::renderSky(const FramebufferHandle framebuffer, const Render
         skyPassExecution.genericInfo.handle = m_skyPass;
         skyPassExecution.framebuffer = framebuffer;
         skyPassExecution.genericInfo.resources.sampledImages = { 
-			ImageResource(m_skyLut, 0, 0),
-			ImageResource(m_volumetricIntegrationVolume, 0, 1)
-		};
-		skyPassExecution.genericInfo.resources.uniformBuffers = {
-			UniformBufferResource(m_volumetricLightingSettingsUniforms, 2)
-		};
+            ImageResource(m_skyLut, 0, 0),
+            ImageResource(m_volumetricIntegrationVolume, 0, 1)
+        };
+        skyPassExecution.genericInfo.resources.uniformBuffers = {
+            UniformBufferResource(m_volumetricLightingSettingsUniforms, 2)
+        };
         skyPassExecution.genericInfo.parents = { parent,  m_skyLutPass, m_volumetricLightingIntegration };
         gRenderBackend.setGraphicPassExecution(skyPassExecution);
     }
@@ -962,7 +962,7 @@ void RenderFrontend::renderSky(const FramebufferHandle framebuffer, const Render
         const StorageBufferResource lightBufferResource(m_lightBuffer, true, 0);
         const ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
 
-		GraphicPassExecution sunSpritePassExecution;
+        GraphicPassExecution sunSpritePassExecution;
         sunSpritePassExecution.genericInfo.handle = m_sunSpritePass;
         sunSpritePassExecution.framebuffer = framebuffer;
         sunSpritePassExecution.genericInfo.parents = { m_skyPass };
@@ -974,14 +974,14 @@ void RenderFrontend::renderSky(const FramebufferHandle framebuffer, const Render
 
 void RenderFrontend::renderSunShadowCascades() const {
     for (int i = 0; i < m_shadingConfig.sunShadowCascadeCount; i++) {
-		GraphicPassExecution shadowPassExecution;
+        GraphicPassExecution shadowPassExecution;
         shadowPassExecution.genericInfo.handle = m_shadowPasses[i];
         shadowPassExecution.genericInfo.parents = { m_lightMatrixPass };
         shadowPassExecution.framebuffer = m_shadowCascadeFramebuffers[i];
         shadowPassExecution.genericInfo.resources.storageBuffers = {
-			StorageBufferResource(m_sunShadowInfoBuffer, true, 0),
-			StorageBufferResource(m_shadowPassTransformsBuffer, true, 1)
-		};
+            StorageBufferResource(m_sunShadowInfoBuffer, true, 0),
+            StorageBufferResource(m_shadowPassTransformsBuffer, true, 1)
+        };
 
         gRenderBackend.setGraphicPassExecution(shadowPassExecution);
     }
@@ -1005,15 +1005,15 @@ void RenderFrontend::computeExposure() const {
 }
 
 void RenderFrontend::renderDepthPrepass(const FramebufferHandle framebuffer) const {
-	GraphicPassExecution prepassExe;
+    GraphicPassExecution prepassExe;
     prepassExe.genericInfo.handle = m_depthPrePass;
     prepassExe.framebuffer = framebuffer;
-	prepassExe.genericInfo.resources.storageBuffers = { StorageBufferResource(m_mainPassTransformsBuffer, true, 0) };
+    prepassExe.genericInfo.resources.storageBuffers = { StorageBufferResource(m_mainPassTransformsBuffer, true, 0) };
     gRenderBackend.setGraphicPassExecution(prepassExe);
 }
 
 void RenderFrontend::computeDepthPyramid(const ImageHandle depthBuffer) const {
-	ComputePassExecution exe;
+    ComputePassExecution exe;
     exe.genericInfo.handle = m_depthPyramidPass;
     exe.genericInfo.parents = { m_depthPrePass };
 
@@ -1050,7 +1050,7 @@ void RenderFrontend::computeDepthPyramid(const ImageHandle depthBuffer) const {
 }
 
 void RenderFrontend::computeSunLightMatrices() const{
-	ComputePassExecution exe;
+    ComputePassExecution exe;
     exe.genericInfo.handle = m_lightMatrixPass;
     exe.genericInfo.parents = { m_depthPyramidPass };
     exe.dispatchCount[0] = 1;
@@ -1064,215 +1064,215 @@ void RenderFrontend::computeSunLightMatrices() const{
     StorageBufferResource lightMatrixBuffer(m_sunShadowInfoBuffer, false, 0);
     exe.genericInfo.resources.storageBuffers = { lightMatrixBuffer };
 
-	struct LightMatrixPushConstants {
-		float highestCascadePaddingSize;
-		float highestCascadeMinFarPlane;
-	};
+    struct LightMatrixPushConstants {
+        float highestCascadePaddingSize;
+        float highestCascadeMinFarPlane;
+    };
 
-	LightMatrixPushConstants pushConstants;
-	pushConstants.highestCascadePaddingSize = m_sdfDiffuseTraceSettings.traceInfluenceRadius;
-	pushConstants.highestCascadeMinFarPlane = m_volumetricLightingSettings.maxDistance;
+    LightMatrixPushConstants pushConstants;
+    pushConstants.highestCascadePaddingSize = m_sdfDiffuseTraceSettings.traceInfluenceRadius;
+    pushConstants.highestCascadeMinFarPlane = m_volumetricLightingSettings.maxDistance;
 
-	//if strict cutoff enabled all hits outside influence radius are discarded anyways
-	if (!m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff) {
-		pushConstants.highestCascadePaddingSize += m_sdfDiffuseTraceSettings.additionalSunShadowMapPadding;
-	}
+    //if strict cutoff enabled all hits outside influence radius are discarded anyways
+    if (!m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff) {
+        pushConstants.highestCascadePaddingSize += m_sdfDiffuseTraceSettings.additionalSunShadowMapPadding;
+    }
 
-	exe.pushConstants = dataToCharArray(&pushConstants, sizeof(pushConstants));
+    exe.pushConstants = dataToCharArray(&pushConstants, sizeof(pushConstants));
 
     gRenderBackend.setComputePassExecution(exe);
 }
 
 void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) const {
-	
-	const std::vector<RenderPassHandle> cullingParentPasses = 
-		sdfInstanceCulling(m_sdfDiffuseTraceSettings.traceInfluenceRadius, true, m_shadingConfig.indirectLightingHalfRes);
 
-	const int shadowCascadeIndex = m_shadingConfig.sunShadowCascadeCount - 1;
+    const std::vector<RenderPassHandle> cullingParentPasses = 
+        sdfInstanceCulling(m_sdfDiffuseTraceSettings.traceInfluenceRadius, true, m_shadingConfig.indirectLightingHalfRes);
 
-	ComputePassExecution exe;
-	exe.genericInfo.handle = m_diffuseSDFTracePass;
-	exe.genericInfo.parents = cullingParentPasses;
-	exe.genericInfo.parents.push_back(m_depthPrePass);
-	exe.genericInfo.parents.push_back(m_skyLutPass);
-	exe.genericInfo.parents.push_back(m_lightMatrixPass);
-	exe.genericInfo.parents.push_back(m_shadowPasses[shadowCascadeIndex]);
-	if (m_shadingConfig.indirectLightingHalfRes) {
-		exe.genericInfo.parents.push_back(m_depthDownscalePass);
-	}
+    const int shadowCascadeIndex = m_shadingConfig.sunShadowCascadeCount - 1;
 
-	exe.genericInfo.resources.storageImages = {
-		ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
-		ImageResource(m_indirectDiffuse_CoCg[0], 0, 1)
-	};
+    ComputePassExecution exe;
+    exe.genericInfo.handle = m_diffuseSDFTracePass;
+    exe.genericInfo.parents = cullingParentPasses;
+    exe.genericInfo.parents.push_back(m_depthPrePass);
+    exe.genericInfo.parents.push_back(m_skyLutPass);
+    exe.genericInfo.parents.push_back(m_lightMatrixPass);
+    exe.genericInfo.parents.push_back(m_shadowPasses[shadowCascadeIndex]);
+    if (m_shadingConfig.indirectLightingHalfRes) {
+        exe.genericInfo.parents.push_back(m_depthDownscalePass);
+    }
 
-	ImageHandle depthSrc = m_shadingConfig.indirectLightingHalfRes ? m_depthHalfRes : currentTarget.depthBuffer;
+    exe.genericInfo.resources.storageImages = {
+        ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
+        ImageResource(m_indirectDiffuse_CoCg[0], 0, 1)
+    };
 
-	exe.genericInfo.resources.sampledImages = {
-		ImageResource(depthSrc, 0, 2),
-		ImageResource(m_worldSpaceNormalImage, 0, 3),
-		ImageResource(m_skyLut, 0, 4),
-		ImageResource(m_shadowMaps[shadowCascadeIndex], 0, 10)
-	};
-	exe.genericInfo.resources.storageBuffers = {
-		StorageBufferResource(m_lightBuffer, true, 5),
-		StorageBufferResource(m_sdfInstanceBuffer, true, 6),
-		StorageBufferResource(m_sdfCameraCulledTiles, true, 7),
-		StorageBufferResource(m_sunShadowInfoBuffer, true, 9)
-	};
+    ImageHandle depthSrc = m_shadingConfig.indirectLightingHalfRes ? m_depthHalfRes : currentTarget.depthBuffer;
 
-	exe.genericInfo.resources.uniformBuffers = {
-		UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 8)
-	};
+    exe.genericInfo.resources.sampledImages = {
+        ImageResource(depthSrc, 0, 2),
+        ImageResource(m_worldSpaceNormalImage, 0, 3),
+        ImageResource(m_skyLut, 0, 4),
+        ImageResource(m_shadowMaps[shadowCascadeIndex], 0, 10)
+    };
+    exe.genericInfo.resources.storageBuffers = {
+        StorageBufferResource(m_lightBuffer, true, 5),
+        StorageBufferResource(m_sdfInstanceBuffer, true, 6),
+        StorageBufferResource(m_sdfCameraCulledTiles, true, 7),
+        StorageBufferResource(m_sunShadowInfoBuffer, true, 9)
+    };
 
-	const int resolutionDivider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
+    exe.genericInfo.resources.uniformBuffers = {
+        UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 8)
+    };
 
-	const float localThreadSize = 8.f;
-	const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(glm::vec2(
-		m_screenWidth / resolutionDivider, 
-		m_screenHeight / resolutionDivider) / localThreadSize));
-	exe.dispatchCount[0] = dispatchCount.x;
-	exe.dispatchCount[1] = dispatchCount.y;
-	exe.dispatchCount[2] = 1;
+    const int resolutionDivider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
 
-	gRenderBackend.setComputePassExecution(exe);
+    const float localThreadSize = 8.f;
+    const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(glm::vec2(
+        m_screenWidth / resolutionDivider, 
+        m_screenHeight / resolutionDivider) / localThreadSize));
+    exe.dispatchCount[0] = dispatchCount.x;
+    exe.dispatchCount[1] = dispatchCount.y;
+    exe.dispatchCount[2] = 1;
+
+    gRenderBackend.setComputePassExecution(exe);
 }
 
 void RenderFrontend::filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame) const {
 
-	const int resolutionDivider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
-	const glm::vec2 workingResolution = glm::vec2(m_screenWidth / resolutionDivider, m_screenHeight / resolutionDivider);
+    const int resolutionDivider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
+    const glm::vec2 workingResolution = glm::vec2(m_screenWidth / resolutionDivider, m_screenHeight / resolutionDivider);
 
-	const ImageHandle depthSrc = m_shadingConfig.indirectLightingHalfRes ? m_depthHalfRes : currentFrame.depthBuffer;
+    const ImageHandle depthSrc = m_shadingConfig.indirectLightingHalfRes ? m_depthHalfRes : currentFrame.depthBuffer;
 
-	//spatial filter on input
-	{
-		ComputePassExecution exe;
-		exe.genericInfo.handle = m_indirectDiffuseFilterSpatialPass[0];
-		exe.genericInfo.parents = { m_diffuseSDFTracePass };
+    //spatial filter on input
+    {
+        ComputePassExecution exe;
+        exe.genericInfo.handle = m_indirectDiffuseFilterSpatialPass[0];
+        exe.genericInfo.parents = { m_diffuseSDFTracePass };
 
-		exe.genericInfo.resources.storageImages = {
-			ImageResource(m_indirectDiffuse_Y_SH[1], 0, 0),
-			ImageResource(m_indirectDiffuse_CoCg[1], 0, 1)
-		};
-		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_indirectDiffuse_Y_SH[0], 0, 2),
-			ImageResource(m_indirectDiffuse_CoCg[0], 0, 3),
-			ImageResource(depthSrc, 0, 4),
-			ImageResource(m_worldSpaceNormalImage, 0, 5),
-		};
+    exe.genericInfo.resources.storageImages = {
+        ImageResource(m_indirectDiffuse_Y_SH[1], 0, 0),
+        ImageResource(m_indirectDiffuse_CoCg[1], 0, 1)
+    };
+    exe.genericInfo.resources.sampledImages = {
+        ImageResource(m_indirectDiffuse_Y_SH[0], 0, 2),
+        ImageResource(m_indirectDiffuse_CoCg[0], 0, 3),
+        ImageResource(depthSrc, 0, 4),
+        ImageResource(m_worldSpaceNormalImage, 0, 5),
+    };
 
-		const float localThreadSize = 8.f;
-		const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(workingResolution / localThreadSize));
-		exe.dispatchCount[0] = dispatchCount.x;
-		exe.dispatchCount[1] = dispatchCount.y;
-		exe.dispatchCount[2] = 1;
+        const float localThreadSize = 8.f;
+        const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(workingResolution / localThreadSize));
+        exe.dispatchCount[0] = dispatchCount.x;
+        exe.dispatchCount[1] = dispatchCount.y;
+        exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setComputePassExecution(exe);
-	}
-	//temporal filter
-	{
-		ComputePassExecution exe;
-		exe.genericInfo.handle = m_indirectDiffuseFilterTemporalPass;
-		exe.genericInfo.parents = { m_indirectDiffuseFilterSpatialPass[0] };
+        gRenderBackend.setComputePassExecution(exe);
+    }
+    //temporal filter
+    {
+        ComputePassExecution exe;
+        exe.genericInfo.handle = m_indirectDiffuseFilterTemporalPass;
+        exe.genericInfo.parents = { m_indirectDiffuseFilterSpatialPass[0] };
 
-		const uint32_t historySrcIndex = m_globalShaderInfo.frameIndex % 2;
-		const uint32_t historyDstIndex = historySrcIndex == 0 ? 1 : 0;
+        const uint32_t historySrcIndex = m_globalShaderInfo.frameIndex % 2;
+        const uint32_t historyDstIndex = historySrcIndex == 0 ? 1 : 0;
 
-		exe.genericInfo.resources.storageImages = {
-			ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
-			ImageResource(m_indirectDiffuse_CoCg[0], 0, 1),
-			ImageResource(m_indirectDiffuseHistory_Y_SH[1], 0, 2),
-			ImageResource(m_indirectDiffuseHistory_CoCg[1], 0, 3)
-		};
-		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_indirectDiffuse_Y_SH[1], 0, 4),
-			ImageResource(m_indirectDiffuse_CoCg[1], 0, 5),
-			ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 6),
-			ImageResource(m_indirectDiffuseHistory_CoCg[0], 0, 7),
-			ImageResource(currentFrame.motionBuffer, 0, 8),
-			ImageResource(lastFrame.motionBuffer, 0, 9)
-		};
+        exe.genericInfo.resources.storageImages = {
+            ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
+            ImageResource(m_indirectDiffuse_CoCg[0], 0, 1),
+            ImageResource(m_indirectDiffuseHistory_Y_SH[1], 0, 2),
+            ImageResource(m_indirectDiffuseHistory_CoCg[1], 0, 3)
+        };
+        exe.genericInfo.resources.sampledImages = {
+            ImageResource(m_indirectDiffuse_Y_SH[1], 0, 4),
+            ImageResource(m_indirectDiffuse_CoCg[1], 0, 5),
+            ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 6),
+            ImageResource(m_indirectDiffuseHistory_CoCg[0], 0, 7),
+            ImageResource(currentFrame.motionBuffer, 0, 8),
+            ImageResource(lastFrame.motionBuffer, 0, 9)
+        };
 
-		const float localThreadSize = 8.f;
-		const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(workingResolution / localThreadSize));
-		exe.dispatchCount[0] = dispatchCount.x;
-		exe.dispatchCount[1] = dispatchCount.y;
-		exe.dispatchCount[2] = 1;
+        const float localThreadSize = 8.f;
+        const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(workingResolution / localThreadSize));
+        exe.dispatchCount[0] = dispatchCount.x;
+        exe.dispatchCount[1] = dispatchCount.y;
+        exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setComputePassExecution(exe);
-	}
-	//spatial filter on history
-	{
-		ComputePassExecution exe;
-		exe.genericInfo.handle = m_indirectDiffuseFilterSpatialPass[1];
-		exe.genericInfo.parents = { m_indirectDiffuseFilterTemporalPass };
+        gRenderBackend.setComputePassExecution(exe);
+    }
+    //spatial filter on history
+    {
+        ComputePassExecution exe;
+        exe.genericInfo.handle = m_indirectDiffuseFilterSpatialPass[1];
+        exe.genericInfo.parents = { m_indirectDiffuseFilterTemporalPass };
 
-		exe.genericInfo.resources.storageImages = {
-			ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 0),
-			ImageResource(m_indirectDiffuseHistory_CoCg[0], 0, 1)
-		};
-		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_indirectDiffuseHistory_Y_SH[1], 0, 2),
-			ImageResource(m_indirectDiffuseHistory_CoCg[1], 0, 3),
-			ImageResource(depthSrc, 0, 4),
-			ImageResource(m_worldSpaceNormalImage, 0, 5),
-		};
+        exe.genericInfo.resources.storageImages = {
+            ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 0),
+            ImageResource(m_indirectDiffuseHistory_CoCg[0], 0, 1)
+        };
+        exe.genericInfo.resources.sampledImages = {
+            ImageResource(m_indirectDiffuseHistory_Y_SH[1], 0, 2),
+            ImageResource(m_indirectDiffuseHistory_CoCg[1], 0, 3),
+            ImageResource(depthSrc, 0, 4),
+            ImageResource(m_worldSpaceNormalImage, 0, 5),
+        };
 
-		const float localThreadSize = 8.f;
-		const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(workingResolution / localThreadSize));
-		exe.dispatchCount[0] = dispatchCount.x;
-		exe.dispatchCount[1] = dispatchCount.y;
-		exe.dispatchCount[2] = 1;
+        const float localThreadSize = 8.f;
+        const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(workingResolution / localThreadSize));
+        exe.dispatchCount[0] = dispatchCount.x;
+        exe.dispatchCount[1] = dispatchCount.y;
+        exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setComputePassExecution(exe);
-	}
-	//upscale
-	if(m_shadingConfig.indirectLightingHalfRes) {
-		ComputePassExecution exe;
-		exe.genericInfo.handle = m_indirectLightingUpscale;
-		exe.genericInfo.parents = { m_indirectDiffuseFilterSpatialPass[1] };
+        gRenderBackend.setComputePassExecution(exe);
+    }
+    //upscale
+    if(m_shadingConfig.indirectLightingHalfRes) {
+        ComputePassExecution exe;
+        exe.genericInfo.handle = m_indirectLightingUpscale;
+        exe.genericInfo.parents = { m_indirectDiffuseFilterSpatialPass[1] };
 
-		exe.genericInfo.resources.storageImages = {
-			ImageResource(m_indirectLightingFullRes_Y_SH, 0, 0),
-			ImageResource(m_indirectLightingFullRes_CoCg, 0, 1),
-		};
-		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 2),
-			ImageResource(m_indirectDiffuseHistory_CoCg[0], 0, 3),
-			ImageResource(currentFrame.depthBuffer, 0, 4),
-			ImageResource(m_depthHalfRes, 0, 5)
-		};
+        exe.genericInfo.resources.storageImages = {
+            ImageResource(m_indirectLightingFullRes_Y_SH, 0, 0),
+            ImageResource(m_indirectLightingFullRes_CoCg, 0, 1),
+        };
+        exe.genericInfo.resources.sampledImages = {
+            ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 2),
+            ImageResource(m_indirectDiffuseHistory_CoCg[0], 0, 3),
+            ImageResource(currentFrame.depthBuffer, 0, 4),
+            ImageResource(m_depthHalfRes, 0, 5)
+        };
 
-		const float localThreadSize = 8.f;
-		exe.dispatchCount[0] = (uint32_t)glm::ceil(m_screenWidth / localThreadSize);
-		exe.dispatchCount[1] = (uint32_t)glm::ceil(m_screenHeight / localThreadSize);
-		exe.dispatchCount[2] = 1;
+        const float localThreadSize = 8.f;
+        exe.dispatchCount[0] = (uint32_t)glm::ceil(m_screenWidth / localThreadSize);
+        exe.dispatchCount[1] = (uint32_t)glm::ceil(m_screenHeight / localThreadSize);
+        exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setComputePassExecution(exe);
-	}
+        gRenderBackend.setComputePassExecution(exe);
+    }
 }
 
 void RenderFrontend::downscaleDepth(const FrameRenderTargets& currentTarget) const {
-	ComputePassExecution exe;
-	exe.genericInfo.handle = m_depthDownscalePass;
-	exe.genericInfo.parents = { m_depthPrePass };
+    ComputePassExecution exe;
+    exe.genericInfo.handle = m_depthDownscalePass;
+    exe.genericInfo.parents = { m_depthPrePass };
 
-	const float localThreadSize = 8.f;
-	const glm::vec2 halfRes = glm::ivec2(m_screenWidth, m_screenHeight) / 2;
-	const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(halfRes / localThreadSize));
-	exe.dispatchCount[0] = dispatchCount.x;
-	exe.dispatchCount[1] = dispatchCount.y;
-	exe.dispatchCount[2] = 1;
-	
-	exe.genericInfo.resources.storageImages = {
-		ImageResource(m_depthHalfRes, 0, 0)
-	};
-	exe.genericInfo.resources.sampledImages = {
-		ImageResource(currentTarget.depthBuffer, 0, 1)
-	};
+    const float localThreadSize = 8.f;
+    const glm::vec2 halfRes = glm::ivec2(m_screenWidth, m_screenHeight) / 2;
+    const glm::ivec2 dispatchCount = glm::ivec2(glm::ceil(halfRes / localThreadSize));
+    exe.dispatchCount[0] = dispatchCount.x;
+    exe.dispatchCount[1] = dispatchCount.y;
+    exe.dispatchCount[2] = 1;
 
-	gRenderBackend.setComputePassExecution(exe);
+    exe.genericInfo.resources.storageImages = {
+        ImageResource(m_depthHalfRes, 0, 0)
+    };
+    exe.genericInfo.resources.sampledImages = {
+        ImageResource(currentTarget.depthBuffer, 0, 1)
+    };
+
+    gRenderBackend.setComputePassExecution(exe);
 }
 
 void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const {
@@ -1283,34 +1283,34 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
     const auto lightMatrixBuffer = StorageBufferResource(m_sunShadowInfoBuffer, true, 8);
 
-	GraphicPassExecution mainPassExecution;
+    GraphicPassExecution mainPassExecution;
     mainPassExecution.genericInfo.handle = m_mainPass;
     mainPassExecution.framebuffer = framebuffer;
     mainPassExecution.genericInfo.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer,
-		StorageBufferResource{m_mainPassTransformsBuffer, true, 17} };
+        StorageBufferResource{m_mainPassTransformsBuffer, true, 17} };
 
-	ImageHandle indirectSrc_Y_SH = m_indirectDiffuseHistory_Y_SH[0];
-	ImageHandle indirectSrc_CoCg = m_indirectDiffuseHistory_CoCg[0];
-	if (m_shadingConfig.indirectLightingHalfRes) {
-		indirectSrc_Y_SH = m_indirectLightingFullRes_Y_SH;
-		indirectSrc_CoCg = m_indirectLightingFullRes_CoCg;
-	}
+    ImageHandle indirectSrc_Y_SH = m_indirectDiffuseHistory_Y_SH[0];
+    ImageHandle indirectSrc_CoCg = m_indirectDiffuseHistory_CoCg[0];
+    if (m_shadingConfig.indirectLightingHalfRes) {
+        indirectSrc_Y_SH = m_indirectLightingFullRes_Y_SH;
+        indirectSrc_CoCg = m_indirectLightingFullRes_CoCg;
+    }
 
-	mainPassExecution.genericInfo.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource,
-		ImageResource(indirectSrc_Y_SH, 0, 15),
-		ImageResource(indirectSrc_CoCg, 0, 16),
-		ImageResource(m_volumetricIntegrationVolume, 0, 18)
-	};
+    mainPassExecution.genericInfo.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource,
+        ImageResource(indirectSrc_Y_SH, 0, 15),
+        ImageResource(indirectSrc_CoCg, 0, 16),
+        ImageResource(m_volumetricIntegrationVolume, 0, 18)
+    };
 
     //add shadow map cascade resources
-	//max count shadow maps are always allocated and bound, but may be unused
+    //max count shadow maps are always allocated and bound, but may be unused
     for (uint32_t i = 0; i < maxSunShadowCascadeCount; i++) {
         const auto shadowMapResource = ImageResource(m_shadowMaps[i], 0, 9 + i);
         mainPassExecution.genericInfo.resources.sampledImages.push_back(shadowMapResource);
     }
-	mainPassExecution.genericInfo.resources.uniformBuffers = {
-		UniformBufferResource(m_volumetricLightingSettingsUniforms, 19)
-	};
+    mainPassExecution.genericInfo.resources.uniformBuffers = {
+        UniformBufferResource(m_volumetricLightingSettingsUniforms, 19)
+    };
 
     mainPassExecution.genericInfo.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
     mainPassExecution.genericInfo.parents.insert(mainPassExecution.genericInfo.parents.begin(), externalDependencies.begin(), externalDependencies.end());
@@ -1325,7 +1325,7 @@ void RenderFrontend::computeTemporalSuperSampling(const FrameRenderTargets& curr
         const ImageResource srcResource(currentFrame.colorBuffer, 0, 0);
         const ImageResource dstResource(m_sceneLuminance, 0, 1);
 
-		ComputePassExecution exe;
+        ComputePassExecution exe;
         exe.genericInfo.handle = m_colorToLuminancePass;
         exe.genericInfo.resources.storageImages = { dstResource };
         exe.genericInfo.resources.sampledImages = { srcResource };
@@ -1347,7 +1347,7 @@ void RenderFrontend::computeTemporalSuperSampling(const FrameRenderTargets& curr
         const ImageResource currentLuminanceResource(m_sceneLuminance, 0, 7);
         const ImageResource lastLuminanceResource(m_lastFrameLuminance, 0, 8);
 
-		ComputePassExecution temporalSupersamplingExecution;
+        ComputePassExecution temporalSupersamplingExecution;
         temporalSupersamplingExecution.genericInfo.handle = m_temporalSupersamplingPass;
         temporalSupersamplingExecution.genericInfo.resources.storageImages = { targetResource };
         temporalSupersamplingExecution.genericInfo.resources.sampledImages = {
@@ -1378,7 +1378,7 @@ void RenderFrontend::computeTemporalFilter(const ImageHandle colorSrc, const Fra
     const ImageResource depthBufferResource(currentFrame.depthBuffer, 0, 5);
     const UniformBufferResource resolveWeightsResource(m_taaResolveWeightBuffer, 6);
 
-	ComputePassExecution temporalFilterExecution;
+    ComputePassExecution temporalFilterExecution;
     temporalFilterExecution.genericInfo.handle = m_temporalFilterPass;
     temporalFilterExecution.genericInfo.resources.storageImages = { outputImageResource, historyDstResource };
     temporalFilterExecution.genericInfo.resources.sampledImages = { inputImageResource, historySrcResource, motionBufferResource, depthBufferResource };
@@ -1396,7 +1396,7 @@ void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const Ima
     ImageResource targetResource(swapchainInput, 0, 0);
     ImageResource colorBufferResource(src, 0, 1);
 
-	ComputePassExecution tonemappingExecution;
+    ComputePassExecution tonemappingExecution;
     tonemappingExecution.genericInfo.handle = m_tonemappingPass;
     tonemappingExecution.genericInfo.resources.storageImages = { targetResource };
     tonemappingExecution.genericInfo.resources.sampledImages = { colorBufferResource };
@@ -1409,11 +1409,11 @@ void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const Ima
 }
 
 void RenderFrontend::renderDebugGeometry(const FramebufferHandle framebuffer) const {
-	GraphicPassExecution debugPassExecution;
+    GraphicPassExecution debugPassExecution;
     debugPassExecution.genericInfo.handle = m_debugGeoPass;
     debugPassExecution.framebuffer = framebuffer;
     debugPassExecution.genericInfo.parents = { m_mainPass };
-	debugPassExecution.genericInfo.resources.storageBuffers = { StorageBufferResource(m_boundingBoxDebugRenderMatrices, true, 0) };
+    debugPassExecution.genericInfo.resources.storageBuffers = { StorageBufferResource(m_boundingBoxDebugRenderMatrices, true, 0) };
     gRenderBackend.setGraphicPassExecution(debugPassExecution);
 }
 
@@ -1428,452 +1428,452 @@ void RenderFrontend::issueSkyDrawcalls() {
     const glm::mat4 spriteLattitudeRotation = glm::rotate(glm::mat4(1.f), glm::radians(m_sunDirection.y + lattitudeOffsetAngle), glm::vec3(-1, 0, 0));
     const glm::mat4 spriteLongitudeRotation = glm::rotate(glm::mat4(1.f), glm::radians(m_sunDirection.x + longitudeOffsetAngle), glm::vec3(0, -1, 0));
 
-	struct SunSpriteMatrices {
-		glm::mat4 model;
-		glm::mat4 mvp;
-	};
-	SunSpriteMatrices sunSpriteMatrices;
-	sunSpriteMatrices.model = spriteLongitudeRotation * spriteLattitudeRotation * spriteScaleMatrix;
-	sunSpriteMatrices.mvp = m_viewProjectionMatrix * sunSpriteMatrices.model;
+    struct SunSpriteMatrices {
+        glm::mat4 model;
+        glm::mat4 mvp;
+    };
+    SunSpriteMatrices sunSpriteMatrices;
+    sunSpriteMatrices.model = spriteLongitudeRotation * spriteLattitudeRotation * spriteScaleMatrix;
+    sunSpriteMatrices.mvp = m_viewProjectionMatrix * sunSpriteMatrices.model;
 
     gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, (char*)&sunSpriteMatrices, m_sunSpritePass, 0);
 }
 
 void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const{
 
-	const float sdfIncluenceRadius = m_sdfDebugSettings.useInfluenceRadiusForDebug ? 
-		m_sdfDiffuseTraceSettings.traceInfluenceRadius : 0.f;
+    const float sdfIncluenceRadius = m_sdfDebugSettings.useInfluenceRadiusForDebug ? 
+        m_sdfDiffuseTraceSettings.traceInfluenceRadius : 0.f;
 
-	bool useHiZCulling = false;
-	if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::CameraTileUsage && m_sdfDebugSettings.showCameraTileUsageWithHiZ) {
-		useHiZCulling = true;
-	}
-	const std::vector<RenderPassHandle> cullingParentPasses = sdfInstanceCulling(sdfIncluenceRadius, useHiZCulling, false);
+    bool useHiZCulling = false;
+    if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::CameraTileUsage && m_sdfDebugSettings.showCameraTileUsageWithHiZ) {
+        useHiZCulling = true;
+    }
+    const std::vector<RenderPassHandle> cullingParentPasses = sdfInstanceCulling(sdfIncluenceRadius, useHiZCulling, false);
 
-	const int shadowCascadeIndex = m_shadingConfig.sunShadowCascadeCount - 1;
+    const int shadowCascadeIndex = m_shadingConfig.sunShadowCascadeCount - 1;
 
-	ComputePassExecution exe;
-	exe.genericInfo.handle = m_sdfDebugVisualisationPass;
-	exe.genericInfo.resources.storageImages = { ImageResource(targetImage, 0, 0) };
-	exe.genericInfo.resources.sampledImages = { 
-		ImageResource(m_skyLut, 0, 2),
-		ImageResource(m_shadowMaps[shadowCascadeIndex], 0, 7)
-	};
-	exe.genericInfo.resources.storageBuffers = {
-		StorageBufferResource(m_lightBuffer, true, 1),
-		StorageBufferResource(m_sdfInstanceBuffer, true, 3),
-		StorageBufferResource(m_sdfCameraCulledTiles, true, 4),
-		StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 5),	
-		StorageBufferResource(m_sunShadowInfoBuffer, true, 6)
-	};
-	exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-	exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-	exe.dispatchCount[2] = 1;
-	exe.genericInfo.parents = cullingParentPasses;
-	exe.genericInfo.parents.push_back(parent);
-	exe.genericInfo.parents.push_back(m_lightMatrixPass);
-	exe.genericInfo.parents.push_back(m_shadowPasses[shadowCascadeIndex]);
+    ComputePassExecution exe;
+    exe.genericInfo.handle = m_sdfDebugVisualisationPass;
+    exe.genericInfo.resources.storageImages = { ImageResource(targetImage, 0, 0) };
+    exe.genericInfo.resources.sampledImages = { 
+        ImageResource(m_skyLut, 0, 2),
+        ImageResource(m_shadowMaps[shadowCascadeIndex], 0, 7)
+    };
+    exe.genericInfo.resources.storageBuffers = {
+        StorageBufferResource(m_lightBuffer, true, 1),
+        StorageBufferResource(m_sdfInstanceBuffer, true, 3),
+        StorageBufferResource(m_sdfCameraCulledTiles, true, 4),
+        StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 5),	
+        StorageBufferResource(m_sunShadowInfoBuffer, true, 6)
+    };
+    exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
+    exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
+    exe.dispatchCount[2] = 1;
+    exe.genericInfo.parents = cullingParentPasses;
+    exe.genericInfo.parents.push_back(parent);
+    exe.genericInfo.parents.push_back(m_lightMatrixPass);
+    exe.genericInfo.parents.push_back(m_shadowPasses[shadowCascadeIndex]);
 
-	gRenderBackend.setComputePassExecution(exe);
+    gRenderBackend.setComputePassExecution(exe);
 }
 
 void RenderFrontend::computeVolumetricLighting() {
 
-	static int jitterIndex = 0;
-	jitterIndex++;
-	const int sampleCount = 8;
-	jitterIndex %= sampleCount;
-	m_volumetricLightingSettings.sampleOffset = hammersley2D(jitterIndex).x - 0.5f;
+    static int jitterIndex = 0;
+    jitterIndex++;
+    const int sampleCount = 8;
+    jitterIndex %= sampleCount;
+    m_volumetricLightingSettings.sampleOffset = hammersley2D(jitterIndex).x - 0.5f;
 
-	m_volumetricLightingSettings.windSampleOffset += m_windVector * m_windSpeed * Timer::getDeltaTimeFloat();
+    m_volumetricLightingSettings.windSampleOffset += m_windVector * m_windSpeed * Timer::getDeltaTimeFloat();
 
-	gRenderBackend.setUniformBufferData(m_volumetricLightingSettingsUniforms, 
-		(void*)&m_volumetricLightingSettings, sizeof(m_volumetricLightingSettings));
+    gRenderBackend.setUniformBufferData(m_volumetricLightingSettingsUniforms, 
+        (void*)&m_volumetricLightingSettings, sizeof(m_volumetricLightingSettings));
 
-	const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
+    const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
 
-	//setup material volume
-	{
-		ComputePassExecution exe;
-		exe.genericInfo.handle = m_froxelVolumeMaterialPass;
-		exe.genericInfo.resources.storageImages = {
-			ImageResource(m_volumeMaterialVolume, 0, 0)
-		};
-		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_perlinNoise3D, 0, 1)
-		};
-		exe.genericInfo.resources.uniformBuffers = {
-			UniformBufferResource(m_volumetricLightingSettingsUniforms, 2)
-		};
+    //setup material volume
+    {
+        ComputePassExecution exe;
+        exe.genericInfo.handle = m_froxelVolumeMaterialPass;
+        exe.genericInfo.resources.storageImages = {
+            ImageResource(m_volumeMaterialVolume, 0, 0)
+        };
+        exe.genericInfo.resources.sampledImages = {
+            ImageResource(m_perlinNoise3D, 0, 1)
+        };
+        exe.genericInfo.resources.uniformBuffers = {
+            UniformBufferResource(m_volumetricLightingSettingsUniforms, 2)
+        };
 
-		const int groupSize = 4;
-		exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
-		exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
-		exe.dispatchCount[2] = (uint32_t)glm::ceil(froxelResolution.z / float(groupSize));
+        const int groupSize = 4;
+        exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
+        exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
+        exe.dispatchCount[2] = (uint32_t)glm::ceil(froxelResolution.z / float(groupSize));
 
-		gRenderBackend.setComputePassExecution(exe);
-	}
-	//scattering/transmittance computation
-	{
-		const int shadowMapIndex = m_shadingConfig.sunShadowCascadeCount - 1;
+        gRenderBackend.setComputePassExecution(exe);
+    }
+    //scattering/transmittance computation
+    {
+        const int shadowMapIndex = m_shadingConfig.sunShadowCascadeCount - 1;
 
-		ComputePassExecution exe;
-		exe.genericInfo.handle = m_froxelScatteringTransmittancePass;
-		exe.genericInfo.parents = { m_froxelVolumeMaterialPass, m_shadowPasses[shadowMapIndex], m_preExposeLightsPass };
-		exe.genericInfo.resources.storageImages = {
-			ImageResource(m_scatteringTransmittanceVolume, 0, 0)
-		};
-		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_shadowMaps[shadowMapIndex], 0, 1),
-			ImageResource(m_volumeMaterialVolume, 0, 2)
-		};
-		exe.genericInfo.resources.storageBuffers = {
-			StorageBufferResource(m_sunShadowInfoBuffer, true, 3),
-			StorageBufferResource(m_lightBuffer, true, 4)
-		};
-		exe.genericInfo.resources.uniformBuffers = {
-			UniformBufferResource(m_volumetricLightingSettingsUniforms, 5)
-		};
+        ComputePassExecution exe;
+        exe.genericInfo.handle = m_froxelScatteringTransmittancePass;
+        exe.genericInfo.parents = { m_froxelVolumeMaterialPass, m_shadowPasses[shadowMapIndex], m_preExposeLightsPass };
+        exe.genericInfo.resources.storageImages = {
+            ImageResource(m_scatteringTransmittanceVolume, 0, 0)
+        };
+        exe.genericInfo.resources.sampledImages = {
+            ImageResource(m_shadowMaps[shadowMapIndex], 0, 1),
+            ImageResource(m_volumeMaterialVolume, 0, 2)
+        };
+        exe.genericInfo.resources.storageBuffers = {
+            StorageBufferResource(m_sunShadowInfoBuffer, true, 3),
+            StorageBufferResource(m_lightBuffer, true, 4)
+        };
+        exe.genericInfo.resources.uniformBuffers = {
+            UniformBufferResource(m_volumetricLightingSettingsUniforms, 5)
+        };
 
-		const int groupSize = 4;
-		exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
-		exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
-		exe.dispatchCount[2] = (uint32_t)glm::ceil(froxelResolution.z / float(groupSize));
+        const int groupSize = 4;
+        exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
+        exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
+        exe.dispatchCount[2] = (uint32_t)glm::ceil(froxelResolution.z / float(groupSize));
 
-		gRenderBackend.setComputePassExecution(exe);
-	}
+        gRenderBackend.setComputePassExecution(exe);
+    }
 
-	const ImageHandle reprojectionTarget = m_volumetricLightingHistory[m_globalShaderInfo.frameIndexMod2];
-	const ImageHandle reprojectionHistory = m_volumetricLightingHistory[(m_globalShaderInfo.frameIndexMod2 + 1) % 2];
+    const ImageHandle reprojectionTarget = m_volumetricLightingHistory[m_globalShaderInfo.frameIndexMod2];
+    const ImageHandle reprojectionHistory = m_volumetricLightingHistory[(m_globalShaderInfo.frameIndexMod2 + 1) % 2];
 
-	//temporal reprojection
-	{
-		ComputePassExecution exe;
-		exe.genericInfo.handle = m_volumetricLightingReprojection;
-		exe.genericInfo.parents = { m_froxelScatteringTransmittancePass };
-		exe.genericInfo.resources.storageImages = {
-			ImageResource(reprojectionTarget, 0, 0)
-		};
-		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_scatteringTransmittanceVolume, 0, 1),
-			ImageResource(reprojectionHistory, 0, 2)
-		};
-		exe.genericInfo.resources.uniformBuffers = {
-			UniformBufferResource(m_volumetricLightingSettingsUniforms, 3)
-		};
+    //temporal reprojection
+    {
+        ComputePassExecution exe;
+        exe.genericInfo.handle = m_volumetricLightingReprojection;
+        exe.genericInfo.parents = { m_froxelScatteringTransmittancePass };
+        exe.genericInfo.resources.storageImages = {
+            ImageResource(reprojectionTarget, 0, 0)
+        };
+        exe.genericInfo.resources.sampledImages = {
+            ImageResource(m_scatteringTransmittanceVolume, 0, 1),
+            ImageResource(reprojectionHistory, 0, 2)
+        };
+        exe.genericInfo.resources.uniformBuffers = {
+            UniformBufferResource(m_volumetricLightingSettingsUniforms, 3)
+        };
 
-		const int groupSize = 4;
-		exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
-		exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
-		exe.dispatchCount[2] = (uint32_t)glm::ceil(froxelResolution.z / float(groupSize));
+        const int groupSize = 4;
+        exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
+        exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
+        exe.dispatchCount[2] = (uint32_t)glm::ceil(froxelResolution.z / float(groupSize));
 
-		gRenderBackend.setComputePassExecution(exe);
-	}
-	//integration
-	{
-		ComputePassExecution exe;
-		exe.genericInfo.handle = m_volumetricLightingIntegration;
-		exe.genericInfo.parents = { m_volumetricLightingReprojection };
-		exe.genericInfo.resources.storageImages = {
-			ImageResource(m_volumetricIntegrationVolume, 0, 0)
-		};
-		exe.genericInfo.resources.sampledImages = {
-			ImageResource(reprojectionTarget, 0, 1)
-		};
-		exe.genericInfo.resources.uniformBuffers = {
-			UniformBufferResource(m_volumetricLightingSettingsUniforms, 2)
-		};
+        gRenderBackend.setComputePassExecution(exe);
+    }
+    //integration
+    {
+        ComputePassExecution exe;
+        exe.genericInfo.handle = m_volumetricLightingIntegration;
+        exe.genericInfo.parents = { m_volumetricLightingReprojection };
+        exe.genericInfo.resources.storageImages = {
+            ImageResource(m_volumetricIntegrationVolume, 0, 0)
+        };
+        exe.genericInfo.resources.sampledImages = {
+            ImageResource(reprojectionTarget, 0, 1)
+        };
+        exe.genericInfo.resources.uniformBuffers = {
+            UniformBufferResource(m_volumetricLightingSettingsUniforms, 2)
+        };
 
-		const int groupSize = 8;
-		exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
-		exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
-		exe.dispatchCount[2] = 1;
+        const int groupSize = 8;
+        exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
+        exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
+        exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setComputePassExecution(exe);
-	}
+        gRenderBackend.setComputePassExecution(exe);
+    }
 }
 
 RenderPassHandle RenderFrontend::computeBloom(const RenderPassHandle parentPass, const ImageHandle targetImage) const {
 
-	RenderPassHandle currentParent = parentPass;
-	//downscale
-	for (int i = 0; i < m_bloomDownsamplePasses.size(); i++) {
-		ComputePassExecution exe;
-		exe.genericInfo.handle = m_bloomDownsamplePasses[i];
-		exe.genericInfo.parents = { currentParent };
+    RenderPassHandle currentParent = parentPass;
+    //downscale
+    for (int i = 0; i < m_bloomDownsamplePasses.size(); i++) {
+        ComputePassExecution exe;
+        exe.genericInfo.handle = m_bloomDownsamplePasses[i];
+        exe.genericInfo.parents = { currentParent };
 
-		const int sourceMip = i;
-		const int targetMip = i + 1;
+        const int sourceMip = i;
+        const int targetMip = i + 1;
 
-		const ImageHandle srcTexture = i == 0 ? targetImage : m_bloomDownscaleTexture;
+        const ImageHandle srcTexture = i == 0 ? targetImage : m_bloomDownscaleTexture;
 
-		exe.genericInfo.resources.storageImages = {
-			ImageResource(m_bloomDownscaleTexture, targetMip, 0)
-		};
-		exe.genericInfo.resources.sampledImages = {
-			ImageResource(srcTexture, sourceMip, 1)
-		};
+        exe.genericInfo.resources.storageImages = {
+            ImageResource(m_bloomDownscaleTexture, targetMip, 0)
+        };
+        exe.genericInfo.resources.sampledImages = {
+            ImageResource(srcTexture, sourceMip, 1)
+        };
 
-		const glm::ivec2 baseResolution = glm::ivec2(m_screenWidth, m_screenHeight);
-		const glm::ivec2 targetResolution = resolutionFromMip(glm::ivec3(baseResolution, 1), targetMip);
+        const glm::ivec2 baseResolution = glm::ivec2(m_screenWidth, m_screenHeight);
+        const glm::ivec2 targetResolution = resolutionFromMip(glm::ivec3(baseResolution, 1), targetMip);
 
-		const int groupSize = 8;
-		exe.dispatchCount[0] = (uint32_t)glm::ceil(targetResolution.x / float(groupSize));
-		exe.dispatchCount[1] = (uint32_t)glm::ceil(targetResolution.y / float(groupSize));
-		exe.dispatchCount[2] = 1;
+        const int groupSize = 8;
+        exe.dispatchCount[0] = (uint32_t)glm::ceil(targetResolution.x / float(groupSize));
+        exe.dispatchCount[1] = (uint32_t)glm::ceil(targetResolution.y / float(groupSize));
+        exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setComputePassExecution(exe);
+        gRenderBackend.setComputePassExecution(exe);
 
-		currentParent = exe.genericInfo.handle;
-	}
-	//upscale
-	for (int i = 0; i < m_bloomUpsamplePasses.size(); i++) {
-		ComputePassExecution exe;
-		exe.genericInfo.handle = m_bloomUpsamplePasses[i];
-		exe.genericInfo.parents = { currentParent };
+        currentParent = exe.genericInfo.handle;
+    }
+    //upscale
+    for (int i = 0; i < m_bloomUpsamplePasses.size(); i++) {
+        ComputePassExecution exe;
+        exe.genericInfo.handle = m_bloomUpsamplePasses[i];
+        exe.genericInfo.parents = { currentParent };
 
-		const int targetMip = bloomMipCount - 2 - i;
-		const int sourceMip = targetMip + 1;
+        const int targetMip = bloomMipCount - 2 - i;
+        const int sourceMip = targetMip + 1;
 
-		exe.genericInfo.resources.storageImages = {
-			ImageResource(m_bloomUpscaleTexture, targetMip, 0)
-		};
-		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_bloomUpscaleTexture, sourceMip, 1),
-			ImageResource(m_bloomDownscaleTexture, sourceMip, 2)
-		};
+        exe.genericInfo.resources.storageImages = {
+            ImageResource(m_bloomUpscaleTexture, targetMip, 0)
+        };
+        exe.genericInfo.resources.sampledImages = {
+            ImageResource(m_bloomUpscaleTexture, sourceMip, 1),
+            ImageResource(m_bloomDownscaleTexture, sourceMip, 2)
+        };
 
-		const glm::ivec2 baseResolution = glm::ivec2(m_screenWidth, m_screenHeight);
-		const glm::ivec2 targetResolution = resolutionFromMip(glm::ivec3(baseResolution, 1), targetMip);
+        const glm::ivec2 baseResolution = glm::ivec2(m_screenWidth, m_screenHeight);
+        const glm::ivec2 targetResolution = resolutionFromMip(glm::ivec3(baseResolution, 1), targetMip);
 
-		const int groupSize = 8;
-		exe.dispatchCount[0] = (uint32_t)glm::ceil(targetResolution.x / float(groupSize));
-		exe.dispatchCount[1] = (uint32_t)glm::ceil(targetResolution.y / float(groupSize));
-		exe.dispatchCount[2] = 1;
+        const int groupSize = 8;
+        exe.dispatchCount[0] = (uint32_t)glm::ceil(targetResolution.x / float(groupSize));
+        exe.dispatchCount[1] = (uint32_t)glm::ceil(targetResolution.y / float(groupSize));
+        exe.dispatchCount[2] = 1;
 
-		exe.pushConstants = dataToCharArray((void*)&m_bloomSettings.radius, sizeof(m_bloomSettings.radius));
+        exe.pushConstants = dataToCharArray((void*)&m_bloomSettings.radius, sizeof(m_bloomSettings.radius));
 
-		gRenderBackend.setComputePassExecution(exe);
+        gRenderBackend.setComputePassExecution(exe);
 
-		currentParent = exe.genericInfo.handle;
-	}
-	//apply bloom
-	{
-		ComputePassExecution exe;
-		exe.genericInfo.handle = m_applyBloomPass;
-		exe.genericInfo.parents = { currentParent };
+        currentParent = exe.genericInfo.handle;
+    }
+    //apply bloom
+    {
+        ComputePassExecution exe;
+        exe.genericInfo.handle = m_applyBloomPass;
+        exe.genericInfo.parents = { currentParent };
 
-		exe.genericInfo.resources.storageImages = {
-			ImageResource(targetImage, 0, 0)
-		};
-		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_bloomUpscaleTexture, 0, 1)
-		};
+        exe.genericInfo.resources.storageImages = {
+            ImageResource(targetImage, 0, 0)
+        };
+        exe.genericInfo.resources.sampledImages = {
+            ImageResource(m_bloomUpscaleTexture, 0, 1)
+        };
 
-		const int groupSize = 8;
-		exe.dispatchCount[0] = (uint32_t)glm::ceil(m_screenWidth / float(groupSize));
-		exe.dispatchCount[1] = (uint32_t)glm::ceil(m_screenHeight / float(groupSize));
-		exe.dispatchCount[2] = 1;
+        const int groupSize = 8;
+        exe.dispatchCount[0] = (uint32_t)glm::ceil(m_screenWidth / float(groupSize));
+        exe.dispatchCount[1] = (uint32_t)glm::ceil(m_screenHeight / float(groupSize));
+        exe.dispatchCount[2] = 1;
 
-		exe.pushConstants = dataToCharArray((void*)&m_bloomSettings.strength, sizeof(m_bloomSettings.strength));
+        exe.pushConstants = dataToCharArray((void*)&m_bloomSettings.strength, sizeof(m_bloomSettings.strength));
 
-		gRenderBackend.setComputePassExecution(exe);
-	}
-	return m_applyBloomPass;
+        gRenderBackend.setComputePassExecution(exe);
+    }
+    return m_applyBloomPass;
 }
 
 std::vector<RenderPassHandle> RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ, const bool tracingHalfRes) const{
-	//camera frustum culling
-	{
-		struct GPUFrustumData {
-			glm::vec4 points[6];
-			glm::vec4 normal[6];
-		};
-		GPUFrustumData frustumData;
-		//top
-		frustumData.points[0] = glm::vec4(m_cameraFrustum.points.l_u_f, 0);
-		frustumData.normal[0] = glm::vec4(m_cameraFrustum.normals.top, 0);
-		//bot
-		frustumData.points[1] = glm::vec4(m_cameraFrustum.points.l_l_f, 0);
-		frustumData.normal[1] = glm::vec4(m_cameraFrustum.normals.bot, 0);
-		//near
-		frustumData.points[2] = glm::vec4(m_cameraFrustum.points.l_l_n, 0);
-		frustumData.normal[2] = glm::vec4(m_cameraFrustum.normals.near, 0);
-		//far
-		frustumData.points[3] = glm::vec4(m_cameraFrustum.points.l_l_f, 0);
-		frustumData.normal[3] = glm::vec4(m_cameraFrustum.normals.far, 0);
-		//left
-		frustumData.points[4] = glm::vec4(m_cameraFrustum.points.l_l_f, 0);
-		frustumData.normal[4] = glm::vec4(m_cameraFrustum.normals.left, 0);
-		//right
-		frustumData.points[5] = glm::vec4(m_cameraFrustum.points.r_l_f, 0);
-		frustumData.normal[5] = glm::vec4(m_cameraFrustum.normals.right, 0);
+    //camera frustum culling
+    {
+        struct GPUFrustumData {
+            glm::vec4 points[6];
+            glm::vec4 normal[6];
+        };
+        GPUFrustumData frustumData;
+        //top
+        frustumData.points[0] = glm::vec4(m_cameraFrustum.points.l_u_f, 0);
+        frustumData.normal[0] = glm::vec4(m_cameraFrustum.normals.top, 0);
+        //bot
+        frustumData.points[1] = glm::vec4(m_cameraFrustum.points.l_l_f, 0);
+        frustumData.normal[1] = glm::vec4(m_cameraFrustum.normals.bot, 0);
+        //near
+        frustumData.points[2] = glm::vec4(m_cameraFrustum.points.l_l_n, 0);
+        frustumData.normal[2] = glm::vec4(m_cameraFrustum.normals.near, 0);
+        //far
+        frustumData.points[3] = glm::vec4(m_cameraFrustum.points.l_l_f, 0);
+        frustumData.normal[3] = glm::vec4(m_cameraFrustum.normals.far, 0);
+        //left
+        frustumData.points[4] = glm::vec4(m_cameraFrustum.points.l_l_f, 0);
+        frustumData.normal[4] = glm::vec4(m_cameraFrustum.normals.left, 0);
+        //right
+        frustumData.points[5] = glm::vec4(m_cameraFrustum.points.r_l_f, 0);
+        frustumData.normal[5] = glm::vec4(m_cameraFrustum.normals.right, 0);
 
-		gRenderBackend.setUniformBufferData(m_cameraFrustumBuffer, &frustumData, sizeof(frustumData));
+        gRenderBackend.setUniformBufferData(m_cameraFrustumBuffer, &frustumData, sizeof(frustumData));
 
-		//reset culled counter
-		uint32_t zero = 0;
-		gRenderBackend.setStorageBufferData(m_sdfCameraFrustumCulledInstances, &zero, sizeof(zero));
+        //reset culled counter
+        uint32_t zero = 0;
+        gRenderBackend.setStorageBufferData(m_sdfCameraFrustumCulledInstances, &zero, sizeof(zero));
 
-		ComputePassExecution exe;
-		exe.genericInfo.handle = m_sdfCameraFrustumCulling;
-		exe.genericInfo.resources.storageBuffers = {
-			StorageBufferResource(m_sdfInstanceBuffer, true, 0),
-			StorageBufferResource(m_sdfCameraFrustumCulledInstances, false, 2),
-			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 3)
-		};
-		exe.genericInfo.resources.uniformBuffers = {
-			UniformBufferResource(m_cameraFrustumBuffer, 1),
-			UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 4)
-		};
-		exe.dispatchCount[0] = uint32_t(glm::ceil(m_currentSDFInstanceCount / 64.f));
-		exe.dispatchCount[1] = 1;
-		exe.dispatchCount[2] = 1;
+        ComputePassExecution exe;
+        exe.genericInfo.handle = m_sdfCameraFrustumCulling;
+        exe.genericInfo.resources.storageBuffers = {
+            StorageBufferResource(m_sdfInstanceBuffer, true, 0),
+            StorageBufferResource(m_sdfCameraFrustumCulledInstances, false, 2),
+            StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 3)
+        };
+        exe.genericInfo.resources.uniformBuffers = {
+            UniformBufferResource(m_cameraFrustumBuffer, 1),
+            UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 4)
+        };
+        exe.dispatchCount[0] = uint32_t(glm::ceil(m_currentSDFInstanceCount / 64.f));
+        exe.dispatchCount[1] = 1;
+        exe.dispatchCount[2] = 1;
 
-		gRenderBackend.setComputePassExecution(exe);
-	}
-	//camera tile culling
-	const RenderPassHandle cameraTileCullingPass = useHiZ ? m_sdfCameraTileCullingHiZ : m_sdfCameraTileCulling;
-	{
-		ComputePassExecution exe;
-		exe.genericInfo.handle = cameraTileCullingPass;
-		exe.genericInfo.parents = { m_sdfCameraFrustumCulling };
-		if (useHiZ) {
-			exe.genericInfo.parents.push_back(m_depthPyramidPass);
-		};
+        gRenderBackend.setComputePassExecution(exe);
+    }
+       //camera tile culling
+    const RenderPassHandle cameraTileCullingPass = useHiZ ? m_sdfCameraTileCullingHiZ : m_sdfCameraTileCulling;
+    {
+        ComputePassExecution exe;
+        exe.genericInfo.handle = cameraTileCullingPass;
+        exe.genericInfo.parents = { m_sdfCameraFrustumCulling };
+        if (useHiZ) {
+            exe.genericInfo.parents.push_back(m_depthPyramidPass);
+        };
 
-		glm::uvec2 traceResolution = glm::uvec2(m_screenWidth, m_screenHeight);
-		if (tracingHalfRes) {
-			traceResolution /= 2;
-		}
+        glm::uvec2 traceResolution = glm::uvec2(m_screenWidth, m_screenHeight);
+        if (tracingHalfRes) {
+            traceResolution /= 2;
+        }
 
-		const glm::uvec2 tileCount = glm::uvec2(
-			glm::ceil(traceResolution.x / float(sdfCameraCullingTileSize)),
-			glm::ceil(traceResolution.y / float(sdfCameraCullingTileSize)));
+        const glm::uvec2 tileCount = glm::uvec2(
+            glm::ceil(traceResolution.x / float(sdfCameraCullingTileSize)),
+            glm::ceil(traceResolution.y / float(sdfCameraCullingTileSize)));
 
-		const uint32_t localGroupSize = 8;
+        const uint32_t localGroupSize = 8;
 
-		exe.dispatchCount[0] = uint32_t(glm::ceil(tileCount.x / float(localGroupSize)));
-		exe.dispatchCount[1] = uint32_t(glm::ceil(tileCount.y / float(localGroupSize)));
-		exe.dispatchCount[2] = 1;
+        exe.dispatchCount[0] = uint32_t(glm::ceil(tileCount.x / float(localGroupSize)));
+        exe.dispatchCount[1] = uint32_t(glm::ceil(tileCount.y / float(localGroupSize)));
+        exe.dispatchCount[2] = 1;
 
-		exe.pushConstants = dataToCharArray((void*)&tileCount, sizeof(tileCount));
+        exe.pushConstants = dataToCharArray((void*)&tileCount, sizeof(tileCount));
 
-		exe.genericInfo.resources.storageBuffers = {
-			StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 0),
-			StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 1),
-			StorageBufferResource(m_sdfCameraCulledTiles, false, 2)
-		};
+        exe.genericInfo.resources.storageBuffers = {
+            StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 0),
+            StorageBufferResource(m_sdfInstanceWorldBBBuffer, true, 1),
+            StorageBufferResource(m_sdfCameraCulledTiles, false, 2)
+        };
 
-		gRenderBackend.setUniformBufferData(m_sdfTraceInfluenceRangeBuffer, &sdfInfluenceRadius, sizeof(sdfInfluenceRadius));
+        gRenderBackend.setUniformBufferData(m_sdfTraceInfluenceRangeBuffer, &sdfInfluenceRadius, sizeof(sdfInfluenceRadius));
 
-		exe.genericInfo.resources.uniformBuffers = {
-			UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 3)
-		};
+        exe.genericInfo.resources.uniformBuffers = {
+            UniformBufferResource(m_sdfTraceInfluenceRangeBuffer, 3)
+        };
 
-		//-1 because pyramid is already half of screen resolution at base mip
-		const int depthPyramidMipLevel = (int)glm::log2(glm::ceil(float(sdfCameraCullingTileSize))) - 1;
-		assert(depthPyramidMipLevel == 4);
-		exe.genericInfo.resources.sampledImages = {
-			ImageResource(m_minMaxDepthPyramid, depthPyramidMipLevel, 4)
-		};
+        //-1 because pyramid is already half of screen resolution at base mip
+        const int depthPyramidMipLevel = (int)glm::log2(glm::ceil(float(sdfCameraCullingTileSize))) - 1;
+        assert(depthPyramidMipLevel == 4);
+        exe.genericInfo.resources.sampledImages = {
+            ImageResource(m_minMaxDepthPyramid, depthPyramidMipLevel, 4)
+        };
 
-		gRenderBackend.setComputePassExecution(exe);
-	}
-	return { cameraTileCullingPass };
+        gRenderBackend.setComputePassExecution(exe);
+    }
+    return { cameraTileCullingPass };
 }
 
 void RenderFrontend::updateSceneSDFInfo(const AxisAlignedBoundingBox& sceneBB) {
-	AxisAlignedBoundingBox paddedSceneBB = padSDFBoundingBox(sceneBB);
-	const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(paddedSceneBB);
-	gRenderBackend.setUniformBufferData(m_sdfVolumeInfoBuffer, &sdfVolumeInfo, sizeof(sdfVolumeInfo));
+    AxisAlignedBoundingBox paddedSceneBB = padSDFBoundingBox(sceneBB);
+    const VolumeInfo sdfVolumeInfo = volumeInfoFromBoundingBox(paddedSceneBB);
+    gRenderBackend.setUniformBufferData(m_sdfVolumeInfoBuffer, &sdfVolumeInfo, sizeof(sdfVolumeInfo));
 }
 
 void RenderFrontend::resizeIndirectLightingBuffers() {
-	const uint32_t divider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
-	gRenderBackend.resizeImages({
-		m_indirectDiffuse_Y_SH[0],
-		m_indirectDiffuse_Y_SH[1],
-		m_indirectDiffuse_CoCg[0],
-		m_indirectDiffuse_CoCg[1],
-		m_indirectDiffuseHistory_Y_SH[0],
-		m_indirectDiffuseHistory_Y_SH[1],
-		m_indirectDiffuseHistory_CoCg[0],
-		m_indirectDiffuseHistory_CoCg[1]
-		}, m_screenWidth / divider, m_screenHeight / divider);
+    const uint32_t divider = m_shadingConfig.indirectLightingHalfRes ? 2 : 1;
+    gRenderBackend.resizeImages({
+        m_indirectDiffuse_Y_SH[0],
+        m_indirectDiffuse_Y_SH[1],
+        m_indirectDiffuse_CoCg[0],
+        m_indirectDiffuse_CoCg[1],
+        m_indirectDiffuseHistory_Y_SH[0],
+        m_indirectDiffuseHistory_Y_SH[1],
+        m_indirectDiffuseHistory_CoCg[0],
+        m_indirectDiffuseHistory_CoCg[1]
+        }, m_screenWidth / divider, m_screenHeight / divider);
 }
 
 std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<std::filesystem::path>& imagePaths) {
 
-	//create set of paths which need to be loaded
-	std::unordered_set <std::string> requiredDataSet;
-	for (const fs::path path : imagePaths) {
-		if (path == "") {
-			continue;
-		}
-		if (m_textureMap.find(path.string()) == m_textureMap.end()) {
-			requiredDataSet.insert(path.string());
-		}
-	}
+    //create set of paths which need to be loaded
+    std::unordered_set <std::string> requiredDataSet;
+    for (const fs::path path : imagePaths) {
+        if (path == "") {
+            continue;
+        }
+        if (m_textureMap.find(path.string()) == m_textureMap.end()) {
+            requiredDataSet.insert(path.string());
+        }
+    }
 
-	//parallel load of required images
-	JobSystem::Counter loadingFinised;
-	std::mutex mapMutex;
-	std::unordered_map<std::string, std::pair<ImageDescription, size_t>> pathToDescriptionMap;
-	std::vector<std::vector<uint8_t>> imageDataList;
-	imageDataList.resize(requiredDataSet.size());
+    //parallel load of required images
+    JobSystem::Counter loadingFinised;
+    std::mutex mapMutex;
+    std::unordered_map<std::string, std::pair<ImageDescription, size_t>> pathToDescriptionMap;
+    std::vector<std::vector<uint8_t>> imageDataList;
+    imageDataList.resize(requiredDataSet.size());
 
-	size_t dataIndex = 0;
-	for (const std::string &path : requiredDataSet) {
+    size_t dataIndex = 0;
+    for (const std::string &path : requiredDataSet) {
 
-		//disable workerIndex unused parameter warning
-		#pragma warning( push )
-		#pragma warning( disable : 4100)
+        //disable workerIndex unused parameter warning
+        #pragma warning( push )
+        #pragma warning( disable : 4100)
 
-		JobSystem::addJob([path, dataIndex, &pathToDescriptionMap, &mapMutex, &imageDataList](int workerIndex) {
-			ImageDescription image;
-			if (loadImage(path, true, &image, &imageDataList[dataIndex])) {
-				mapMutex.lock();
-				pathToDescriptionMap[path] = std::pair(image, dataIndex);
-				mapMutex.unlock();
-			}
-		}, &loadingFinised);
+        JobSystem::addJob([path, dataIndex, &pathToDescriptionMap, &mapMutex, &imageDataList](int workerIndex) {
+            ImageDescription image;
+            if (loadImage(path, true, &image, &imageDataList[dataIndex])) {
+                mapMutex.lock();
+                pathToDescriptionMap[path] = std::pair(image, dataIndex);
+                mapMutex.unlock();
+            }
+        }, &loadingFinised);
 
-		//reenable warning
-		#pragma warning( pop )
+        //reenable warning
+        #pragma warning( pop )
 
-		dataIndex++;
-	}
-	JobSystem::waitOnCounter(loadingFinised);
+        dataIndex++;
+    }
+    JobSystem::waitOnCounter(loadingFinised);
 
-	//create images and store in map
-	for (const fs::path path : requiredDataSet) {
-		if (pathToDescriptionMap.find(path.string()) != pathToDescriptionMap.end()) {
-			const std::pair<ImageDescription, size_t>& descriptionDataIndexPair = pathToDescriptionMap[path.string()];
-			const std::vector<uint8_t>& data = imageDataList[descriptionDataIndexPair.second];
-			m_textureMap[path.string()] = gRenderBackend.createImage(
-				descriptionDataIndexPair.first,
-				data.data(),
-				data.size());
-		}
-	}
+    //create images and store in map
+    for (const fs::path path : requiredDataSet) {
+        if (pathToDescriptionMap.find(path.string()) != pathToDescriptionMap.end()) {
+            const std::pair<ImageDescription, size_t>& descriptionDataIndexPair = pathToDescriptionMap[path.string()];
+            const std::vector<uint8_t>& data = imageDataList[descriptionDataIndexPair.second];
+            m_textureMap[path.string()] = gRenderBackend.createImage(
+                descriptionDataIndexPair.first,
+                data.data(),
+                data.size());
+        }
+    }
 
-	//build result vector
-	std::vector<ImageHandle> result;
-	result.reserve(imagePaths.size());
+    //build result vector
+    std::vector<ImageHandle> result;
+    result.reserve(imagePaths.size());
 
-	ImageHandle invalidHandle;
-	invalidHandle.index = invalidIndex;
-	
-	for (const fs::path path : imagePaths) {
-		if (path == "" || m_textureMap.find(path.string()) == m_textureMap.end()) {
-			result.push_back(invalidHandle);
-		}
-		else {
-			result.push_back(m_textureMap[path.string()]);
-		}
-	}
-	return result;
+    ImageHandle invalidHandle;
+    invalidHandle.index = invalidIndex;
+
+    for (const fs::path path : imagePaths) {
+        if (path == "" || m_textureMap.find(path.string()) == m_textureMap.end()) {
+            result.push_back(invalidHandle);
+        }
+        else {
+            result.push_back(m_textureMap[path.string()]);
+        }
+    }
+    return result;
 }
 
 void RenderFrontend::skyIBLConvolution() {
@@ -1882,7 +1882,7 @@ void RenderFrontend::skyIBLConvolution() {
         const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 0);
         const auto skyLutResource = ImageResource(m_skyLut, 0, 1);
 
-		ComputePassExecution diffuseConvolutionExecution;
+        ComputePassExecution diffuseConvolutionExecution;
         diffuseConvolutionExecution.genericInfo.handle = m_skyDiffuseConvolutionPass;
         diffuseConvolutionExecution.genericInfo.parents = { m_skyLutPass };
         diffuseConvolutionExecution.genericInfo.resources.storageImages = { diffuseProbeResource };
@@ -1898,7 +1898,7 @@ void RenderFrontend::skyIBLConvolution() {
         const auto specularProbeResource = ImageResource(m_specularSkyProbe, mipLevel, 0);
         const auto skyLutResource = ImageResource(m_skyLut, 0, 1);
 
-		ComputePassExecution specularConvolutionExecution;
+        ComputePassExecution specularConvolutionExecution;
         specularConvolutionExecution.genericInfo.handle = m_skySpecularConvolutionPerMipPasses[mipLevel];
         specularConvolutionExecution.genericInfo.parents = { m_skyLutPass };
         specularConvolutionExecution.genericInfo.resources.storageImages = { specularProbeResource };
@@ -1914,7 +1914,7 @@ void RenderFrontend::computeBRDFLut() {
 
     const auto brdfLutStorageResource = ImageResource(m_brdfLut, 0, 0);
 
-	ComputePassExecution brdfLutExecution;
+    ComputePassExecution brdfLutExecution;
     brdfLutExecution.genericInfo.handle = m_brdfLutPass;
     brdfLutExecution.genericInfo.resources.storageImages = { brdfLutStorageResource };
     brdfLutExecution.dispatchCount[0] = brdfLutRes / 8;
@@ -1979,16 +1979,16 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
             2,                                                                          //location
             dataToCharArray((void*)&config.useGeometryAA, sizeof(config.useGeometryAA)) //value
             });
-		//indirect lighting tech
-		constants.push_back({
-				3,																											//location
-				dataToCharArray((void*)&m_shadingConfig.indirectLightingTech, sizeof(m_shadingConfig.indirectLightingTech)) //value
-			});
-		//sun shadow cascade count
-		constants.push_back({
-				4,																											  //location
-				dataToCharArray((void*)&m_shadingConfig.sunShadowCascadeCount, sizeof(m_shadingConfig.sunShadowCascadeCount)) //value
-			});
+        //indirect lighting tech
+        constants.push_back({
+            3,                                                                                                          //location
+            dataToCharArray((void*)&m_shadingConfig.indirectLightingTech, sizeof(m_shadingConfig.indirectLightingTech)) //value
+            });
+        //sun shadow cascade count
+        constants.push_back({
+            4,                                                                                                            //location
+            dataToCharArray((void*)&m_shadingConfig.sunShadowCascadeCount, sizeof(m_shadingConfig.sunShadowCascadeCount)) //value
+            });
     }
 
     return shaderDesc;
@@ -2056,54 +2056,54 @@ ShaderDescription RenderFrontend::createTemporalSupersamplingShaderDescription()
 }
 
 ShaderDescription RenderFrontend::createSDFDebugShaderDescription() {
-	ShaderDescription desc;
-	desc.srcPathRelative = "sdfDebugVisualisation.comp";
-	//visualisation mode
-	const SDFVisualisationMode& visualisationMode = m_sdfDebugSettings.visualisationMode;
-	desc.specialisationConstants.push_back({
-		0,																		//location
-		dataToCharArray((void*)&visualisationMode, sizeof(visualisationMode))	//value
-		});
-	//shadow cascade index
-	const int shadowCascadeIndex = m_shadingConfig.sunShadowCascadeCount - 1;	//always using highest cascade, index=count-1
-	desc.specialisationConstants.push_back({
-		1,																		//location
-		dataToCharArray((void*)&shadowCascadeIndex, sizeof(shadowCascadeIndex))	//value
-		});
-	return desc;
+    ShaderDescription desc;
+    desc.srcPathRelative = "sdfDebugVisualisation.comp";
+    //visualisation mode
+    const SDFVisualisationMode& visualisationMode = m_sdfDebugSettings.visualisationMode;
+    desc.specialisationConstants.push_back({
+        0,                                                                      //location
+        dataToCharArray((void*)&visualisationMode, sizeof(visualisationMode))   //value
+        });
+    //shadow cascade index
+    const int shadowCascadeIndex = m_shadingConfig.sunShadowCascadeCount - 1;   //always using highest cascade, index=count-1
+    desc.specialisationConstants.push_back({
+        1,                                                                      //location
+        dataToCharArray((void*)&shadowCascadeIndex, sizeof(shadowCascadeIndex)) //value
+        });
+    return desc;
 }
 
 ShaderDescription RenderFrontend::createSDFDiffuseTraceShaderDescription(const bool strictInfluenceRadiusCutoff) {
-	ShaderDescription desc;
-	desc.srcPathRelative = "sdfDiffuseTrace.comp";
-	//strict influence radius cutoff
-	desc.specialisationConstants.push_back({
-		0,																							//location
-		dataToCharArray((void*)&strictInfluenceRadiusCutoff, sizeof(strictInfluenceRadiusCutoff))	//value
-		});
-	//shadow cascade index
-	const int shadowCascadeIndex = m_shadingConfig.sunShadowCascadeCount - 1;	//always using highest cascade, index=count-1
-	desc.specialisationConstants.push_back({
-		1,																		//location
-		dataToCharArray((void*)&shadowCascadeIndex, sizeof(shadowCascadeIndex))	//value
-		});
-	return desc;
+    ShaderDescription desc;
+    desc.srcPathRelative = "sdfDiffuseTrace.comp";
+    //strict influence radius cutoff
+    desc.specialisationConstants.push_back({
+        0,                                                                                          //location
+        dataToCharArray((void*)&strictInfluenceRadiusCutoff, sizeof(strictInfluenceRadiusCutoff))   //value
+        });
+    //shadow cascade index
+    const int shadowCascadeIndex = m_shadingConfig.sunShadowCascadeCount - 1;   //always using highest cascade, index=count-1
+    desc.specialisationConstants.push_back({
+        1,                                                                      //location
+        dataToCharArray((void*)&shadowCascadeIndex, sizeof(shadowCascadeIndex)) //value
+        });
+    return desc;
 }
 
 ShaderDescription RenderFrontend::createLightMatrixShaderDescription() {
-	ShaderDescription desc;
-	desc.srcPathRelative = "lightMatrix.comp";
-	//sun shadow cascade count
-	desc.specialisationConstants.push_back({
-		0,																											  //location
-		dataToCharArray((void*)&m_shadingConfig.sunShadowCascadeCount, sizeof(m_shadingConfig.sunShadowCascadeCount)) //value
-	});
-	return desc;
+    ShaderDescription desc;
+    desc.srcPathRelative = "lightMatrix.comp";
+    //sun shadow cascade count
+    desc.specialisationConstants.push_back({
+        0,                                                                                                            //location
+        dataToCharArray((void*)&m_shadingConfig.sunShadowCascadeCount, sizeof(m_shadingConfig.sunShadowCascadeCount)) //value
+    });
+    return desc;
 }
 
 void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.sunDirection = glm::vec4(directionToVector(m_sunDirection), 0.f);
-	m_globalShaderInfo.cameraPosPrevious = m_globalShaderInfo.cameraPos;
+    m_globalShaderInfo.cameraPosPrevious = m_globalShaderInfo.cameraPos;
     m_globalShaderInfo.cameraPos = glm::vec4(m_camera.extrinsic.position, 1.f); 
 
     m_globalShaderInfo.deltaTime = Timer::getDeltaTimeFloat();
@@ -2113,7 +2113,7 @@ void RenderFrontend::updateGlobalShaderInfo() {
 
     m_globalShaderInfo.cameraRight      = glm::vec4(m_camera.extrinsic.right, 0);
     m_globalShaderInfo.cameraUp         = glm::vec4(m_camera.extrinsic.up, 0);
-	m_globalShaderInfo.cameraForwardPrevious = m_globalShaderInfo.cameraForward;
+    m_globalShaderInfo.cameraForwardPrevious = m_globalShaderInfo.cameraForward;
     m_globalShaderInfo.cameraForward    = glm::vec4(m_camera.extrinsic.forward, 0);
     m_globalShaderInfo.cameraTanFovHalf = glm::tan(glm::radians(m_camera.intrinsic.fov) * 0.5f);
     m_globalShaderInfo.cameraAspectRatio = m_camera.intrinsic.aspectRatio;
@@ -2338,196 +2338,196 @@ void RenderFrontend::initImages() {
         desc.mipCount = MipCount::One;
         desc.autoCreateMips = false;
 
-		const size_t channelCount = 2;
-		const std::vector<uint8_t> blueNoiseData = 
-			generateBlueNoiseTexture(glm::ivec2(noiseTextureWidth, noiseTextureHeight), channelCount);
+        const size_t channelCount = 2;
+        const std::vector<uint8_t> blueNoiseData = 
+            generateBlueNoiseTexture(glm::ivec2(noiseTextureWidth, noiseTextureHeight), channelCount);
 
         m_noiseTextures.push_back(gRenderBackend.createImage(desc, blueNoiseData.data(), sizeof(uint8_t) * blueNoiseData.size()));
-		m_globalShaderInfo.noiseTextureIndices[i] = gRenderBackend.getImageGlobalTextureArrayIndex(m_noiseTextures.back());
+        m_globalShaderInfo.noiseTextureIndices[i] = gRenderBackend.getImageGlobalTextureArrayIndex(m_noiseTextures.back());
     }
-	//indirect diffuse Y component spherical harmonics
-	{
-		ImageDescription desc;
-		desc.width = m_shadingConfig.indirectLightingHalfRes ? m_screenWidth / 2 : m_screenWidth;
-		desc.height = m_shadingConfig.indirectLightingHalfRes ? m_screenHeight / 2 : m_screenHeight;
-		desc.depth = 1;
-		desc.type = ImageType::Type2D;
-		desc.format = ImageFormat::RGBA16_sFloat;
-		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-		desc.mipCount = MipCount::One;
-		desc.manualMipCount = 1;
-		desc.autoCreateMips = false;
+    //indirect diffuse Y component spherical harmonics
+    {
+        ImageDescription desc;
+        desc.width = m_shadingConfig.indirectLightingHalfRes ? m_screenWidth / 2 : m_screenWidth;
+        desc.height = m_shadingConfig.indirectLightingHalfRes ? m_screenHeight / 2 : m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::RGBA16_sFloat;
+        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
 
-		m_indirectDiffuseHistory_Y_SH[0] = gRenderBackend.createImage(desc, nullptr, 0);
-		m_indirectDiffuseHistory_Y_SH[1] = gRenderBackend.createImage(desc, nullptr, 0);
+        m_indirectDiffuseHistory_Y_SH[0] = gRenderBackend.createImage(desc, nullptr, 0);
+        m_indirectDiffuseHistory_Y_SH[1] = gRenderBackend.createImage(desc, nullptr, 0);
 
-		m_indirectDiffuse_Y_SH[0] = gRenderBackend.createImage(desc, nullptr, 0);
-		m_indirectDiffuse_Y_SH[1] = gRenderBackend.createImage(desc, nullptr, 0);
-	}
-	//indirect diffuse CoCg component
-	{
-		ImageDescription desc;
-		desc.width = m_shadingConfig.indirectLightingHalfRes ? m_screenWidth / 2 : m_screenWidth;
-		desc.height = m_shadingConfig.indirectLightingHalfRes ? m_screenHeight / 2 : m_screenHeight;
-		desc.depth = 1;
-		desc.type = ImageType::Type2D;
-		desc.format = ImageFormat::RG16_sFloat;
-		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-		desc.mipCount = MipCount::One;
-		desc.manualMipCount = 1;
-		desc.autoCreateMips = false;
+        m_indirectDiffuse_Y_SH[0] = gRenderBackend.createImage(desc, nullptr, 0);
+        m_indirectDiffuse_Y_SH[1] = gRenderBackend.createImage(desc, nullptr, 0);
+    }
+    //indirect diffuse CoCg component
+    {
+        ImageDescription desc;
+        desc.width = m_shadingConfig.indirectLightingHalfRes ? m_screenWidth / 2 : m_screenWidth;
+        desc.height = m_shadingConfig.indirectLightingHalfRes ? m_screenHeight / 2 : m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::RG16_sFloat;
+        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
 
-		m_indirectDiffuse_CoCg[0] = gRenderBackend.createImage(desc, nullptr, 0);
-		m_indirectDiffuse_CoCg[1] = gRenderBackend.createImage(desc, nullptr, 0);
-		m_indirectDiffuseHistory_CoCg[0] = gRenderBackend.createImage(desc, nullptr, 0);
-		m_indirectDiffuseHistory_CoCg[1] = gRenderBackend.createImage(desc, nullptr, 0);
-	}
-	//world space normal buffer
-	{
-		ImageDescription desc;
-		desc.width = m_screenWidth;
-		desc.height = m_screenHeight;
-		desc.depth = 1;
-		desc.type = ImageType::Type2D;
-		desc.format = ImageFormat::RGBA8;
-		desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
-		desc.mipCount = MipCount::One;
-		desc.manualMipCount = 1;
-		desc.autoCreateMips = false;
+        m_indirectDiffuse_CoCg[0] = gRenderBackend.createImage(desc, nullptr, 0);
+        m_indirectDiffuse_CoCg[1] = gRenderBackend.createImage(desc, nullptr, 0);
+        m_indirectDiffuseHistory_CoCg[0] = gRenderBackend.createImage(desc, nullptr, 0);
+        m_indirectDiffuseHistory_CoCg[1] = gRenderBackend.createImage(desc, nullptr, 0);
+    }
+    //world space normal buffer
+    {
+        ImageDescription desc;
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::RGBA8;
+        desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
 
-		m_worldSpaceNormalImage = gRenderBackend.createImage(desc, nullptr, 0);
-	}
-	//half res depth
-	{
-		ImageDescription desc;
-		desc.width = m_screenWidth / 2;
-		desc.height = m_screenHeight / 2;
-		desc.depth = 1;
-		desc.type = ImageType::Type2D;
-		desc.format = ImageFormat::R16_sFloat;
-		desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-		desc.mipCount = MipCount::One;
-		
-		m_depthHalfRes = gRenderBackend.createImage(desc, nullptr, 0);
-	}
-	//indirect lighting full res Y component spherical harmonics
-	{
-		ImageDescription desc;
-		desc.width = m_screenWidth;
-		desc.height = m_screenHeight;
-		desc.depth = 1;
-		desc.type = ImageType::Type2D;
-		desc.format = ImageFormat::RGBA16_sFloat;
-		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-		desc.mipCount = MipCount::One;
-		desc.manualMipCount = 1;
-		desc.autoCreateMips = false;
+        m_worldSpaceNormalImage = gRenderBackend.createImage(desc, nullptr, 0);
+    }
+    //half res depth
+    {
+        ImageDescription desc;
+        desc.width = m_screenWidth / 2;
+        desc.height = m_screenHeight / 2;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::R16_sFloat;
+        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
+        desc.mipCount = MipCount::One;
 
-		m_indirectLightingFullRes_Y_SH = gRenderBackend.createImage(desc, nullptr, 0);
-	}
-	//indirect lighting full res CoCg component
-	{
-		ImageDescription desc;
-		desc.width = m_screenWidth;
-		desc.height = m_screenHeight;
-		desc.depth = 1;
-		desc.type = ImageType::Type2D;
-		desc.format = ImageFormat::RG16_sFloat;
-		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-		desc.mipCount = MipCount::One;
-		desc.manualMipCount = 1;
-		desc.autoCreateMips = false;
+        m_depthHalfRes = gRenderBackend.createImage(desc, nullptr, 0);
+    }
+    //indirect lighting full res Y component spherical harmonics
+    {
+        ImageDescription desc;
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::RGBA16_sFloat;
+        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
 
-		m_indirectLightingFullRes_CoCg = gRenderBackend.createImage(desc, nullptr, 0);
-	}
-	const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
-	//scattering/transmittance froxels
-	{
-		ImageDescription desc;
-		desc.width = froxelResolution.x;
-		desc.height = froxelResolution.y;
-		desc.depth = froxelResolution.z;
-		desc.type = ImageType::Type3D;
-		desc.format = ImageFormat::RGBA16_sFloat;
-		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-		desc.mipCount = MipCount::One;
-		desc.manualMipCount = 1;
-		desc.autoCreateMips = false;
+        m_indirectLightingFullRes_Y_SH = gRenderBackend.createImage(desc, nullptr, 0);
+    }
+    //indirect lighting full res CoCg component
+    {
+        ImageDescription desc;
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::RG16_sFloat;
+        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
 
-		m_scatteringTransmittanceVolume = gRenderBackend.createImage(desc, nullptr, 0);
-	}
-	//volumetric lighting integration froxels
-	{
-		ImageDescription desc;
-		desc.width = froxelResolution.x;
-		desc.height = froxelResolution.y;
-		desc.depth = froxelResolution.z;
-		desc.type = ImageType::Type3D;
-		desc.format = ImageFormat::RGBA16_sFloat;
-		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-		desc.mipCount = MipCount::One;
-		desc.manualMipCount = 1;
-		desc.autoCreateMips = false;
+        m_indirectLightingFullRes_CoCg = gRenderBackend.createImage(desc, nullptr, 0);
+    }
+    const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
+    //scattering/transmittance froxels
+    {
+        ImageDescription desc;
+        desc.width = froxelResolution.x;
+        desc.height = froxelResolution.y;
+        desc.depth = froxelResolution.z;
+        desc.type = ImageType::Type3D;
+        desc.format = ImageFormat::RGBA16_sFloat;
+        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
 
-		m_volumetricIntegrationVolume = gRenderBackend.createImage(desc, nullptr, 0);
-		m_volumetricLightingHistory[0] = gRenderBackend.createImage(desc, nullptr, 0);
-		m_volumetricLightingHistory[1] = gRenderBackend.createImage(desc, nullptr, 0);
-	}
-	//volume material froxels
-	{
-		ImageDescription desc;
-		desc.width = froxelResolution.x;
-		desc.height = froxelResolution.y;
-		desc.depth = froxelResolution.z;
-		desc.type = ImageType::Type3D;
-		desc.format = ImageFormat::RGBA16_sFloat;
-		desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-		desc.mipCount = MipCount::One;
-		desc.manualMipCount = 1;
-		desc.autoCreateMips = false;
+        m_scatteringTransmittanceVolume = gRenderBackend.createImage(desc, nullptr, 0);
+    }
+    //volumetric lighting integration froxels
+    {
+        ImageDescription desc;
+        desc.width = froxelResolution.x;
+        desc.height = froxelResolution.y;
+        desc.depth = froxelResolution.z;
+        desc.type = ImageType::Type3D;
+        desc.format = ImageFormat::RGBA16_sFloat;
+        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
 
-		m_volumeMaterialVolume = gRenderBackend.createImage(desc, nullptr, 0);
-	}
-	//perlin noise 3D
-	{
-		const int noiseResolution = 32;
+        m_volumetricIntegrationVolume = gRenderBackend.createImage(desc, nullptr, 0);
+        m_volumetricLightingHistory[0] = gRenderBackend.createImage(desc, nullptr, 0);
+        m_volumetricLightingHistory[1] = gRenderBackend.createImage(desc, nullptr, 0);
+    }
+    //volume material froxels
+    {
+        ImageDescription desc;
+        desc.width = froxelResolution.x;
+        desc.height = froxelResolution.y;
+        desc.depth = froxelResolution.z;
+        desc.type = ImageType::Type3D;
+        desc.format = ImageFormat::RGBA16_sFloat;
+        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
 
-		ImageDescription desc;
-		desc.width = noiseResolution;
-		desc.height = noiseResolution;
-		desc.depth = noiseResolution;
-		desc.type = ImageType::Type3D;
-		desc.format = ImageFormat::R8;
-		desc.usageFlags = ImageUsageFlags::Sampled;
-		desc.mipCount = MipCount::One;
-		desc.manualMipCount = 1;
-		desc.autoCreateMips = false;
+        m_volumeMaterialVolume = gRenderBackend.createImage(desc, nullptr, 0);
+    }
+    //perlin noise 3D
+    {
+        const int noiseResolution = 32;
 
-		const std::vector<uint8_t> perlinNoiseData = generate3DPerlinNoise(glm::ivec3(noiseResolution), 8);
-		m_perlinNoise3D = gRenderBackend.createImage(desc, perlinNoiseData.data(), sizeof(uint8_t) * perlinNoiseData.size());
-	}
-	//bloom texture
-	{
-		ImageDescription desc;
-		desc.width = m_screenWidth;
-		desc.height = m_screenHeight;
-		desc.depth = 1;
-		desc.type = ImageType::Type2D;
-		desc.format = ImageFormat::R11G11B10_uFloat;
-		desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-		desc.mipCount = MipCount::Manual;
-		desc.manualMipCount = bloomMipCount;
-		desc.autoCreateMips = false;
-		m_bloomUpscaleTexture = gRenderBackend.createImage(desc, nullptr, 0);
-		m_bloomDownscaleTexture = gRenderBackend.createImage(desc, nullptr, 0);
-	}
+        ImageDescription desc;
+        desc.width = noiseResolution;
+        desc.height = noiseResolution;
+        desc.depth = noiseResolution;
+        desc.type = ImageType::Type3D;
+        desc.format = ImageFormat::R8;
+        desc.usageFlags = ImageUsageFlags::Sampled;
+        desc.mipCount = MipCount::One;
+        desc.manualMipCount = 1;
+        desc.autoCreateMips = false;
+
+        const std::vector<uint8_t> perlinNoiseData = generate3DPerlinNoise(glm::ivec3(noiseResolution), 8);
+        m_perlinNoise3D = gRenderBackend.createImage(desc, perlinNoiseData.data(), sizeof(uint8_t) * perlinNoiseData.size());
+    }
+    //bloom texture
+    {
+        ImageDescription desc;
+        desc.width = m_screenWidth;
+        desc.height = m_screenHeight;
+        desc.depth = 1;
+        desc.type = ImageType::Type2D;
+        desc.format = ImageFormat::R11G11B10_uFloat;
+        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
+        desc.mipCount = MipCount::Manual;
+        desc.manualMipCount = bloomMipCount;
+        desc.autoCreateMips = false;
+        m_bloomUpscaleTexture = gRenderBackend.createImage(desc, nullptr, 0);
+        m_bloomDownscaleTexture = gRenderBackend.createImage(desc, nullptr, 0);
+    }
 }
 
 glm::ivec3 computeVolumetricLightingFroxelResolution(const uint32_t screenResolutionX, const uint32_t screenResolutionY) {
-	return glm::ivec3(
-		glm::ceil(screenResolutionX / float(scatteringTransmittanceFroxelTileSize)),
-		glm::ceil(screenResolutionY / float(scatteringTransmittanceFroxelTileSize)),
-		scatteringTransmittanceDepthSliceCount);
+    return glm::ivec3(
+        glm::ceil(screenResolutionX / float(scatteringTransmittanceFroxelTileSize)),
+        glm::ceil(screenResolutionY / float(scatteringTransmittanceFroxelTileSize)),
+        scatteringTransmittanceDepthSliceCount);
 }
 
 void RenderFrontend::initSamplers(){
@@ -2604,29 +2604,29 @@ void RenderFrontend::initSamplers(){
 
         m_sampler_linearWhiteBorder = gRenderBackend.createSampler(desc);
     }
-	//nearest repeat
-	{
-		SamplerDescription desc;
-		desc.interpolation = SamplerInterpolation::Nearest;
-		desc.maxMip = 20;
-		desc.useAnisotropy = false;
-		desc.wrapping = SamplerWrapping::Repeat;
-		desc.borderColor = SamplerBorderColor::Black;
+    //nearest repeat
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Nearest;
+        desc.maxMip = 20;
+        desc.useAnisotropy = false;
+        desc.wrapping = SamplerWrapping::Repeat;
+        desc.borderColor = SamplerBorderColor::Black;
 
-		m_sampler_nearestRepeat = gRenderBackend.createSampler(desc);
-	}
-	//nearest white border
-	{
-		SamplerDescription desc;
-		desc.interpolation = SamplerInterpolation::Nearest;
-		desc.wrapping = SamplerWrapping::Color;
-		desc.useAnisotropy = false;
-		desc.maxAnisotropy = 0;
-		desc.borderColor = SamplerBorderColor::White;
-		desc.maxMip = 20;
+        m_sampler_nearestRepeat = gRenderBackend.createSampler(desc);
+    }
+    //nearest white border
+    {
+        SamplerDescription desc;
+        desc.interpolation = SamplerInterpolation::Nearest;
+        desc.wrapping = SamplerWrapping::Color;
+        desc.useAnisotropy = false;
+        desc.maxAnisotropy = 0;
+        desc.borderColor = SamplerBorderColor::White;
+        desc.maxMip = 20;
 
-		m_sampler_nearestWhiteBorder = gRenderBackend.createSampler(desc);
-	}
+        m_sampler_nearestWhiteBorder = gRenderBackend.createSampler(desc);
+    }
 }
 
 void RenderFrontend::initFramebuffers() {
@@ -2646,20 +2646,20 @@ void RenderFrontend::initFramebuffers() {
 void RenderFrontend::initRenderTargets() {
     for (int i = 0; i < 2; i++) {
         //motion buffer
-		{
-			ImageDescription desc;
-			desc.width = m_screenWidth;
-			desc.height = m_screenHeight;
-			desc.depth = 1;
-			desc.format = ImageFormat::RG16_sNorm;
-			desc.autoCreateMips = false;
-			desc.manualMipCount = 1;
-			desc.mipCount = MipCount::One;
-			desc.type = ImageType::Type2D;
-			desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
+        {
+            ImageDescription desc;
+            desc.width = m_screenWidth;
+            desc.height = m_screenHeight;
+            desc.depth = 1;
+            desc.format = ImageFormat::RG16_sNorm;
+            desc.autoCreateMips = false;
+            desc.manualMipCount = 1;
+            desc.mipCount = MipCount::One;
+            desc.type = ImageType::Type2D;
+            desc.usageFlags = ImageUsageFlags::Attachment | ImageUsageFlags::Sampled;
 
-			m_frameRenderTargets[i].motionBuffer = gRenderBackend.createImage(desc, nullptr, 0);
-		}
+            m_frameRenderTargets[i].motionBuffer = gRenderBackend.createImage(desc, nullptr, 0);
+        }
         //color buffer
         {
             ImageDescription desc;
@@ -2712,9 +2712,9 @@ void RenderFrontend::initRenderTargets() {
             motionTarget.image = m_frameRenderTargets[i].motionBuffer;
             motionTarget.mipLevel = 0;
 
-			FramebufferTarget normalTarget;
-			normalTarget.image = m_worldSpaceNormalImage;
-			normalTarget.mipLevel = 0;
+            FramebufferTarget normalTarget;
+            normalTarget.image = m_worldSpaceNormalImage;
+            normalTarget.mipLevel = 0;
 
             FramebufferTarget depthTarget;
             depthTarget.image = m_frameRenderTargets[i].depthBuffer;
@@ -2796,71 +2796,71 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         desc.size = sizeof(VolumeInfo);
         m_sdfVolumeInfoBuffer = gRenderBackend.createUniformBuffer(desc);
     }
-	//main pass transforms buffer
-	{
-		StorageBufferDescription desc;
-		desc.size = sizeof(MainPassMatrices) * maxObjectCountMainScene;
-		m_mainPassTransformsBuffer = gRenderBackend.createStorageBuffer(desc);
-	}
-	//shadow pass transforms buffer
-	{
-		StorageBufferDescription desc;
-		desc.size = sizeof(glm::mat4) * maxObjectCountMainScene;
-		m_shadowPassTransformsBuffer = gRenderBackend.createStorageBuffer(desc);
-	}
-	//bounding box debug rendering matrices
-	{
-		StorageBufferDescription desc;
-		desc.size = maxObjectCountMainScene * sizeof(glm::mat4);
-		m_boundingBoxDebugRenderMatrices = gRenderBackend.createStorageBuffer(desc);
-	}
-	//sdf instance buffer
-	{
-		StorageBufferDescription desc;
-		desc.size = maxObjectCountMainScene * sizeof(SDFInstance) + sizeof(uint32_t) * 4; //extra uint for object count with padding to 16 byte
-		m_sdfInstanceBuffer = gRenderBackend.createStorageBuffer(desc);
-	}
-	//sdf camera frustum culled instances
-	{
-		StorageBufferDescription desc;
-		desc.size = maxObjectCountMainScene * sizeof(uint32_t) + sizeof(uint32_t);
-		m_sdfCameraFrustumCulledInstances = gRenderBackend.createStorageBuffer(desc);
-	}
-	//camera frustum buffer
-	{
-		UniformBufferDescription desc;
-		desc.size = 12 * sizeof(glm::vec4);
-		m_cameraFrustumBuffer = gRenderBackend.createUniformBuffer(desc);
-	}
-	//sdf instance world bounding boxes
-	{
-		StorageBufferDescription desc;
-		desc.size = maxObjectCountMainScene * 2 * sizeof(glm::vec4);
-		m_sdfInstanceWorldBBBuffer = gRenderBackend.createStorageBuffer(desc);
-	}
-	//sdf camera culled tiles
-	{
-		StorageBufferDescription desc;
-		//FIXME: handle bigger resolutions and don't allocate for worst case
-		const size_t maxWidth = 1920;
-		const size_t maxHeight = 1080;
-		const size_t tileCount = (size_t)glm::ceil(maxWidth / sdfCameraCullingTileSize) * (size_t)glm::ceil(maxHeight / sdfCameraCullingTileSize);
-		const size_t tileSize = maxSdfObjectsPerTile * sizeof(uint32_t) + sizeof(uint32_t); //one uint index per object + object count
-		desc.size = tileCount * tileSize;
-		m_sdfCameraCulledTiles = gRenderBackend.createStorageBuffer(desc);
-	}
-	//sdf trace influence range buffer
-	{
-		UniformBufferDescription desc;
-		desc.size = sizeof(float);
-		m_sdfTraceInfluenceRangeBuffer = gRenderBackend.createUniformBuffer(desc);
-	}
-	//volumetric lighting settings
-	{
-		UniformBufferDescription desc;
-		desc.size = sizeof(VolumetricLightingSettings);
-		m_volumetricLightingSettingsUniforms = gRenderBackend.createUniformBuffer(desc);
-	}
+    //main pass transforms buffer
+    {
+        StorageBufferDescription desc;
+        desc.size = sizeof(MainPassMatrices) * maxObjectCountMainScene;
+        m_mainPassTransformsBuffer = gRenderBackend.createStorageBuffer(desc);
+    }
+    //shadow pass transforms buffer
+    {
+        StorageBufferDescription desc;
+        desc.size = sizeof(glm::mat4) * maxObjectCountMainScene;
+        m_shadowPassTransformsBuffer = gRenderBackend.createStorageBuffer(desc);
+    }
+    //bounding box debug rendering matrices
+    {
+        StorageBufferDescription desc;
+        desc.size = maxObjectCountMainScene * sizeof(glm::mat4);
+        m_boundingBoxDebugRenderMatrices = gRenderBackend.createStorageBuffer(desc);
+    }
+    //sdf instance buffer
+    {
+        StorageBufferDescription desc;
+        desc.size = maxObjectCountMainScene * sizeof(SDFInstance) + sizeof(uint32_t) * 4; //extra uint for object count with padding to 16 byte
+        m_sdfInstanceBuffer = gRenderBackend.createStorageBuffer(desc);
+    }
+    //sdf camera frustum culled instances
+    {
+        StorageBufferDescription desc;
+        desc.size = maxObjectCountMainScene * sizeof(uint32_t) + sizeof(uint32_t);
+        m_sdfCameraFrustumCulledInstances = gRenderBackend.createStorageBuffer(desc);
+    }
+    //camera frustum buffer
+    {
+        UniformBufferDescription desc;
+        desc.size = 12 * sizeof(glm::vec4);
+        m_cameraFrustumBuffer = gRenderBackend.createUniformBuffer(desc);
+    }
+    //sdf instance world bounding boxes
+    {
+        StorageBufferDescription desc;
+        desc.size = maxObjectCountMainScene * 2 * sizeof(glm::vec4);
+        m_sdfInstanceWorldBBBuffer = gRenderBackend.createStorageBuffer(desc);
+    }
+    //sdf camera culled tiles
+    {
+        StorageBufferDescription desc;
+        //FIXME: handle bigger resolutions and don't allocate for worst case
+        const size_t maxWidth = 1920;
+        const size_t maxHeight = 1080;
+        const size_t tileCount = (size_t)glm::ceil(maxWidth / sdfCameraCullingTileSize) * (size_t)glm::ceil(maxHeight / sdfCameraCullingTileSize);
+        const size_t tileSize = maxSdfObjectsPerTile * sizeof(uint32_t) + sizeof(uint32_t); //one uint index per object + object count
+        desc.size = tileCount * tileSize;
+        m_sdfCameraCulledTiles = gRenderBackend.createStorageBuffer(desc);
+    }
+    //sdf trace influence range buffer
+    {
+        UniformBufferDescription desc;
+        desc.size = sizeof(float);
+        m_sdfTraceInfluenceRangeBuffer = gRenderBackend.createUniformBuffer(desc);
+    }
+    //volumetric lighting settings
+    {
+        UniformBufferDescription desc;
+        desc.size = sizeof(VolumetricLightingSettings);
+        m_volumetricLightingSettingsUniforms = gRenderBackend.createUniformBuffer(desc);
+    }
 }
 
 void RenderFrontend::initMeshs() {
@@ -2970,30 +2970,30 @@ void RenderFrontend::initMeshs() {
 
         m_quad = gRenderBackend.createMeshes(quadBinary).back();
     }
-	//bounding box mesh
-	//drawn using lines, so needs different positions than skybox
-	{
-		AxisAlignedBoundingBox normalizedBB;
-		normalizedBB.min = glm::vec3(-1);
-		normalizedBB.max = glm::vec3(1);
+    //bounding box mesh
+    //drawn using lines, so needs different positions than skybox
+    {
+        AxisAlignedBoundingBox normalizedBB;
+        normalizedBB.min = glm::vec3(-1);
+        normalizedBB.max = glm::vec3(1);
 
-		std::vector<glm::vec3> positions;
-		std::vector<uint32_t> indices;
-		axisAlignedBoundingBoxToLineMesh(normalizedBB, &positions, &indices);
+        std::vector<glm::vec3> positions;
+        std::vector<uint32_t> indices;
+        axisAlignedBoundingBoxToLineMesh(normalizedBB, &positions, &indices);
 
-		MeshBinary binary;
-		binary.boundingBox = normalizedBB;
-		binary.indexCount  = (uint32_t)indices.size();
-		binary.vertexCount = (uint32_t)positions.size();
-		binary.vertexBuffer.resize(sizeof(glm::vec3) * positions.size());
-		memcpy(binary.vertexBuffer.data(), positions.data(), binary.vertexBuffer.size());
-		//conversion to 16 bit index
-		for (const uint32_t& index : indices) {
-			binary.indexBuffer.push_back((uint16_t)index);
-		}
+        MeshBinary binary;
+        binary.boundingBox = normalizedBB;
+        binary.indexCount  = (uint32_t)indices.size();
+        binary.vertexCount = (uint32_t)positions.size();
+        binary.vertexBuffer.resize(sizeof(glm::vec3) * positions.size());
+        memcpy(binary.vertexBuffer.data(), positions.data(), binary.vertexBuffer.size());
+        //conversion to 16 bit index
+        for (const uint32_t& index : indices) {
+            binary.indexBuffer.push_back((uint16_t)index);
+        }
 
-		m_boundingBoxMesh = gRenderBackend.createMeshes({ binary }).back();
-	}
+        m_boundingBoxMesh = gRenderBackend.createMeshes({ binary }).back();
+    }
 }
 
 void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings) {
@@ -3281,7 +3281,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     {
         Attachment depthAttachment(ImageFormat::Depth32, AttachmentLoadOp::Clear);
         Attachment velocityAttachment(ImageFormat::RG16_sNorm, AttachmentLoadOp::Clear);
-		Attachment normalAttachment(ImageFormat::RGBA8, AttachmentLoadOp::Clear);
+        Attachment normalAttachment(ImageFormat::RGBA8, AttachmentLoadOp::Clear);
 
         GraphicPassDescription desc;
         desc.attachments = { velocityAttachment, normalAttachment, depthAttachment };
@@ -3310,7 +3310,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     {
         ComputePassDescription desc;
         desc.name = "Compute light matrix";
-		desc.shaderDescription = createLightMatrixShaderDescription();
+        desc.shaderDescription = createLightMatrixShaderDescription();
         m_lightMatrixPass = gRenderBackend.createComputePass(desc);
     }
     //tonemapping pass
@@ -3346,148 +3346,148 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
     {
         ComputePassDescription desc;
         desc.name = "Visualize SDF";
-		desc.shaderDescription = createSDFDebugShaderDescription();
-		m_sdfDebugVisualisationPass = gRenderBackend.createComputePass(desc);
+        desc.shaderDescription = createSDFDebugShaderDescription();
+        m_sdfDebugVisualisationPass = gRenderBackend.createComputePass(desc);
     }
-	//sdf indirect lighting
-	{
-		ComputePassDescription desc;
-		desc.name = "Indirect diffuse SDF trace";
-		desc.shaderDescription = createSDFDiffuseTraceShaderDescription(m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff);
-		m_diffuseSDFTracePass = gRenderBackend.createComputePass(desc);
-	}
-	//indirect diffuse spatial filter
-	{
-		for (int i = 0; i < 2; i++) {
-			ComputePassDescription desc;
-			desc.name = "Indirect diffuse spatial filter";
-			desc.shaderDescription.srcPathRelative = "filterIndirectDiffuseSpatial.comp";
+    //sdf indirect lighting
+    {
+        ComputePassDescription desc;
+        desc.name = "Indirect diffuse SDF trace";
+        desc.shaderDescription = createSDFDiffuseTraceShaderDescription(m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff);
+        m_diffuseSDFTracePass = gRenderBackend.createComputePass(desc);
+    }
+    //indirect diffuse spatial filter
+    {
+        for (int i = 0; i < 2; i++) {
+            ComputePassDescription desc;
+            desc.name = "Indirect diffuse spatial filter";
+            desc.shaderDescription.srcPathRelative = "filterIndirectDiffuseSpatial.comp";
 
-			//index constant
-			desc.shaderDescription.specialisationConstants.push_back({
-			0,										//location
-			dataToCharArray((void*)&i, sizeof(i))   //value
-			});
-			m_indirectDiffuseFilterSpatialPass[i] = gRenderBackend.createComputePass(desc);
-		}
-	}
-	//indirect diffuse temporal filter
-	{
-		ComputePassDescription desc;
-		desc.name = "Indirect diffuse temporal filter";
-		desc.shaderDescription.srcPathRelative = "filterIndirectDiffuseTemporal.comp";
-		m_indirectDiffuseFilterTemporalPass = gRenderBackend.createComputePass(desc);
-	}
-	//depth downscale
-	{
-		ComputePassDescription desc;
-		desc.name = "Depth downscale";
-		desc.shaderDescription.srcPathRelative = "depthDownscale.comp";
-		m_depthDownscalePass = gRenderBackend.createComputePass(desc);
-	}
-	//indirect lighting upscale
-	{
-		ComputePassDescription desc;
-		desc.name = "Indirect lighting upscale";
-		desc.shaderDescription.srcPathRelative = "indirectLightUpscale.comp";
-		m_indirectLightingUpscale = gRenderBackend.createComputePass(desc);
-	}
-	//sdf instance frustum culling
-	{
-		ComputePassDescription desc;
-		desc.name = "SDF camera frustum culling";
-		desc.shaderDescription.srcPathRelative = "sdfCameraFrustumCulling.comp";
-		m_sdfCameraFrustumCulling = gRenderBackend.createComputePass(desc);
-	}
-	//sdf camera tile culling
-	{
-		ComputePassDescription desc;
-		desc.name = "SDF camera tile culling";
-		desc.shaderDescription.srcPathRelative = "sdfCameraTileCulling.comp";
+            //index constant
+            desc.shaderDescription.specialisationConstants.push_back({
+            0,                                      //location
+            dataToCharArray((void*)&i, sizeof(i))   //value
+            });
+            m_indirectDiffuseFilterSpatialPass[i] = gRenderBackend.createComputePass(desc);
+        }
+    }
+    //indirect diffuse temporal filter
+    {
+        ComputePassDescription desc;
+        desc.name = "Indirect diffuse temporal filter";
+        desc.shaderDescription.srcPathRelative = "filterIndirectDiffuseTemporal.comp";
+        m_indirectDiffuseFilterTemporalPass = gRenderBackend.createComputePass(desc);
+    }
+    //depth downscale
+    {
+        ComputePassDescription desc;
+        desc.name = "Depth downscale";
+        desc.shaderDescription.srcPathRelative = "depthDownscale.comp";
+        m_depthDownscalePass = gRenderBackend.createComputePass(desc);
+    }
+    //indirect lighting upscale
+    {
+        ComputePassDescription desc;
+        desc.name = "Indirect lighting upscale";
+        desc.shaderDescription.srcPathRelative = "indirectLightUpscale.comp";
+        m_indirectLightingUpscale = gRenderBackend.createComputePass(desc);
+    }
+    //sdf instance frustum culling
+    {
+        ComputePassDescription desc;
+        desc.name = "SDF camera frustum culling";
+        desc.shaderDescription.srcPathRelative = "sdfCameraFrustumCulling.comp";
+        m_sdfCameraFrustumCulling = gRenderBackend.createComputePass(desc);
+    }
+    //sdf camera tile culling
+    {
+        ComputePassDescription desc;
+        desc.name = "SDF camera tile culling";
+        desc.shaderDescription.srcPathRelative = "sdfCameraTileCulling.comp";
 
-		//hi-z disabled
-		bool useHiZ = false;
-		desc.shaderDescription.specialisationConstants = {
-			{
-				0,                                              //location
-				dataToCharArray((void*)&useHiZ, sizeof(useHiZ))	//value
-			}
-		};
-		m_sdfCameraTileCulling = gRenderBackend.createComputePass(desc);
+        //hi-z disabled
+        bool useHiZ = false;
+        desc.shaderDescription.specialisationConstants = {
+        {
+            0,                                              //location
+            dataToCharArray((void*)&useHiZ, sizeof(useHiZ)) //value
+        }
+        };
+        m_sdfCameraTileCulling = gRenderBackend.createComputePass(desc);
 
-		//hi-z enabled
-		useHiZ = true;
-		desc.shaderDescription.specialisationConstants = {
-			{
-				0,                                              //location
-				dataToCharArray((void*)&useHiZ, sizeof(useHiZ))	//value
-			}
-		};
-		m_sdfCameraTileCullingHiZ = gRenderBackend.createComputePass(desc);
-	}
-	//froxel volume material
-	{
-		ComputePassDescription desc;
-		desc.name = "Froxel volume material";
-		desc.shaderDescription.srcPathRelative = "froxelVolumeMaterial.comp";
-		m_froxelVolumeMaterialPass = gRenderBackend.createComputePass(desc);
-	}
-	//froxel light scattering
-	{
-		ComputePassDescription desc;
-		desc.name = "Froxel light scattering";
-		desc.shaderDescription.srcPathRelative = "froxelLightScattering.comp";
-		m_froxelScatteringTransmittancePass = gRenderBackend.createComputePass(desc);
-	}
-	//froxel light integration
-	{
-		ComputePassDescription desc;
-		desc.name = "Volumetric light integration";
-		desc.shaderDescription.srcPathRelative = "volumetricLightingIntegration.comp";
-		m_volumetricLightingIntegration = gRenderBackend.createComputePass(desc);
-	}
-	//volumetric lighting reprojection
-	{
-		ComputePassDescription desc;
-		desc.name = "Volumetric lighting reprojection";
-		desc.shaderDescription.srcPathRelative = "volumeLightingReprojection.comp";
-		m_volumetricLightingReprojection = gRenderBackend.createComputePass(desc);
-	}
-	//bloom downsample
-	{
-		for (int i = 0; i < bloomMipCount - 1; i++) {
-			ComputePassDescription desc;
-			const int mip = i+1;
-			desc.name = "Bloom downsample mip " + std::to_string(mip);
-			desc.shaderDescription.srcPathRelative = "bloomDownsample.comp";
-			m_bloomDownsamplePasses.push_back(gRenderBackend.createComputePass(desc));
-		}
-	}
-	//bloom upsample
-	{
-		for (int i = 0; i < bloomMipCount - 1; i++) {
-			ComputePassDescription desc;
-			const int mip = bloomMipCount - 2 - i;
-			desc.name = "Bloom Upsample mip " + std::to_string(mip);
-			desc.shaderDescription.srcPathRelative = "bloomUpsample.comp";
+    //hi-z enabled
+    useHiZ = true;
+    desc.shaderDescription.specialisationConstants = {
+        {
+            0,                                              //location
+            dataToCharArray((void*)&useHiZ, sizeof(useHiZ)) //value
+        }
+    };
+    m_sdfCameraTileCullingHiZ = gRenderBackend.createComputePass(desc);
+    }
+    //froxel volume material
+    {
+        ComputePassDescription desc;
+        desc.name = "Froxel volume material";
+        desc.shaderDescription.srcPathRelative = "froxelVolumeMaterial.comp";
+        m_froxelVolumeMaterialPass = gRenderBackend.createComputePass(desc);
+    }
+    //froxel light scattering
+    {
+        ComputePassDescription desc;
+        desc.name = "Froxel light scattering";
+        desc.shaderDescription.srcPathRelative = "froxelLightScattering.comp";
+        m_froxelScatteringTransmittancePass = gRenderBackend.createComputePass(desc);
+    }
+    //froxel light integration
+    {
+        ComputePassDescription desc;
+        desc.name = "Volumetric light integration";
+        desc.shaderDescription.srcPathRelative = "volumetricLightingIntegration.comp";
+        m_volumetricLightingIntegration = gRenderBackend.createComputePass(desc);
+    }
+    //volumetric lighting reprojection
+    {
+        ComputePassDescription desc;
+        desc.name = "Volumetric lighting reprojection";
+        desc.shaderDescription.srcPathRelative = "volumeLightingReprojection.comp";
+        m_volumetricLightingReprojection = gRenderBackend.createComputePass(desc);
+    }
+    //bloom downsample
+    {
+        for (int i = 0; i < bloomMipCount - 1; i++) {
+            ComputePassDescription desc;
+            const int mip = i+1;
+            desc.name = "Bloom downsample mip " + std::to_string(mip);
+            desc.shaderDescription.srcPathRelative = "bloomDownsample.comp";
+            m_bloomDownsamplePasses.push_back(gRenderBackend.createComputePass(desc));
+        }
+    }
+    //bloom upsample
+    {
+        for (int i = 0; i < bloomMipCount - 1; i++) {
+            ComputePassDescription desc;
+            const int mip = bloomMipCount - 2 - i;
+            desc.name = "Bloom Upsample mip " + std::to_string(mip);
+            desc.shaderDescription.srcPathRelative = "bloomUpsample.comp";
 
-			const bool isLowestMip = i == 0;
-			desc.shaderDescription.specialisationConstants = {
-				SpecialisationConstant{
-					0,															//location
-					dataToCharArray((void*)&isLowestMip, sizeof(isLowestMip))}	//value
-			};
+            const bool isLowestMip = i == 0;
+            desc.shaderDescription.specialisationConstants = {
+                SpecialisationConstant{
+                    0,                                                          //location
+                    dataToCharArray((void*)&isLowestMip, sizeof(isLowestMip))}  //value
+            };
 
-			m_bloomUpsamplePasses.push_back(gRenderBackend.createComputePass(desc));
-		}
-	}
-	//apply bloom pass
-	{
-		ComputePassDescription desc;
-		desc.name = "Apply bloom";
-		desc.shaderDescription.srcPathRelative = "applyBloom.comp";
-		m_applyBloomPass = gRenderBackend.createComputePass(desc);
-	}
+            m_bloomUpsamplePasses.push_back(gRenderBackend.createComputePass(desc));
+        }
+    }
+    //apply bloom pass
+    {
+        ComputePassDescription desc;
+        desc.name = "Apply bloom";
+        desc.shaderDescription.srcPathRelative = "applyBloom.comp";
+        m_applyBloomPass = gRenderBackend.createComputePass(desc);
+    }
 }
 
 ShaderDescription RenderFrontend::createDepthPyramidShaderDescription(uint32_t* outThreadgroupCount) {
@@ -3551,18 +3551,18 @@ glm::ivec2 RenderFrontend::computeSinglePassMipChainDispatchCount(const uint32_t
 
 void RenderFrontend::drawUi() {
 
-	m_renderTimingTimeSinceLastUpdate += m_globalShaderInfo.deltaTime;
-	const bool updateTimings = m_renderTimingTimeSinceLastUpdate > m_renderTimingUpdateFrequency;
-	if (updateTimings) {
-		m_latestCPUTimeStatMs = gRenderBackend.getLastFrameCPUTime() * 1000;
-		m_latestDeltaTimeStatMs = m_globalShaderInfo.deltaTime * 1000;
-	}
+    m_renderTimingTimeSinceLastUpdate += m_globalShaderInfo.deltaTime;
+    const bool updateTimings = m_renderTimingTimeSinceLastUpdate > m_renderTimingUpdateFrequency;
+    if (updateTimings) {
+        m_latestCPUTimeStatMs = gRenderBackend.getLastFrameCPUTime() * 1000;
+        m_latestDeltaTimeStatMs = m_globalShaderInfo.deltaTime * 1000;
+    }
 
     //rendering stats
     {
         ImGui::Begin("Rendering stats");
         ImGui::Text(("DeltaTime: " + std::to_string(m_latestDeltaTimeStatMs) + "ms").c_str());
-		ImGui::Text(("CPU Time: " + std::to_string(m_latestCPUTimeStatMs) + "ms").c_str());
+        ImGui::Text(("CPU Time: " + std::to_string(m_latestCPUTimeStatMs) + "ms").c_str());
         ImGui::Text(("Mesh count: " + std::to_string(m_currentMeshCount)).c_str());
         ImGui::Text(("Main pass drawcalls: " + std::to_string(m_currentMainPassDrawcallCount)).c_str());
         ImGui::Text(("Shadow map drawcalls: " + std::to_string(m_currentShadowPassDrawcallCount)).c_str());
@@ -3605,30 +3605,30 @@ void RenderFrontend::drawUi() {
 
     ImGui::Begin("Rendering");
 
-	//SDF settings
-	if (ImGui::CollapsingHeader("SDF settings")) {
+    //SDF settings
+    if (ImGui::CollapsingHeader("SDF settings")) {
 
-		const char* sdfDebugOptions[] = { "None", "Visualize SDF", "Camera tile usage", "SDF Normals", "Raymarching count" };
-		m_isSDFDebugShaderDescriptionStale
-			= ImGui::Combo("SDF debug mode", (int*)&m_sdfDebugSettings.visualisationMode, sdfDebugOptions, 5);
+        const char* sdfDebugOptions[] = { "None", "Visualize SDF", "Camera tile usage", "SDF Normals", "Raymarching count" };
+        m_isSDFDebugShaderDescriptionStale
+            = ImGui::Combo("SDF debug mode", (int*)&m_sdfDebugSettings.visualisationMode, sdfDebugOptions, 5);
 
-		ImGui::InputFloat("Diffuse trace influence range", &m_sdfDiffuseTraceSettings.traceInfluenceRadius);
+        ImGui::InputFloat("Diffuse trace influence range", &m_sdfDiffuseTraceSettings.traceInfluenceRadius);
 
-		if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::None) {
-			m_isSDFDiffuseTraceShaderDescriptionStale |=
-				ImGui::Checkbox("Strict influence radius cutoff", &m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff);
-		}
-		else {
-			ImGui::Checkbox("Use influence radius for debug visualisation", &m_sdfDebugSettings.useInfluenceRadiusForDebug);
-		}
+        if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::None) {
+            m_isSDFDiffuseTraceShaderDescriptionStale |=
+                ImGui::Checkbox("Strict influence radius cutoff", &m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff);
+        }
+        else {
+            ImGui::Checkbox("Use influence radius for debug visualisation", &m_sdfDebugSettings.useInfluenceRadiusForDebug);
+        }
 
-		if (!m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff) {
-			ImGui::InputFloat("Shadow map extra padding", &m_sdfDiffuseTraceSettings.additionalSunShadowMapPadding);
-		}
-		if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::CameraTileUsage) {
-			ImGui::Checkbox("Camera tile usage with hi-Z culling", &m_sdfDebugSettings.showCameraTileUsageWithHiZ);
-		}
-	}
+        if (!m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff) {
+            ImGui::InputFloat("Shadow map extra padding", &m_sdfDiffuseTraceSettings.additionalSunShadowMapPadding);
+        }
+        if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::CameraTileUsage) {
+            ImGui::Checkbox("Camera tile usage with hi-Z culling", &m_sdfDebugSettings.showCameraTileUsageWithHiZ);
+        }
+    }
     //Temporal filter Settings
     if(ImGui::CollapsingHeader("Temporal filter settings")){
 
@@ -3649,38 +3649,38 @@ void RenderFrontend::drawUi() {
         m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Tonemap temporal supersample input", &m_temporalFilterSettings.filterUseTonemapping);
         ImGui::Checkbox("Use mip bias", &m_temporalFilterSettings.useMipBias);
     }
-	//volumetric lighting settings
-	if (ImGui::CollapsingHeader("Volumetric lighting settings")) {
-		static glm::vec2 windDirection = glm::vec2(100.f, 60.f);
-		ImGui::DragFloat2("Wind direction", &windDirection.x);
-		m_windVector = directionToVector(windDirection);
+    //volumetric lighting settings
+    if (ImGui::CollapsingHeader("Volumetric lighting settings")) {
+        static glm::vec2 windDirection = glm::vec2(100.f, 60.f);
+        ImGui::DragFloat2("Wind direction", &windDirection.x);
+        m_windVector = directionToVector(windDirection);
 
-		ImGui::DragFloat("Wind speed", &m_windSpeed, 0.1f);
+        ImGui::DragFloat("Wind speed", &m_windSpeed, 0.1f);
 
-		ImGui::ColorPicker3("Scattering color", &m_volumetricLightingSettings.scatteringCoefficients.x);
-		ImGui::DragFloat("Absorption", &m_volumetricLightingSettings.absorptionCoefficient, 0.1f, 0.f, 1.f);
-		ImGui::InputFloat("Max distance", &m_volumetricLightingSettings.maxDistance);
-		m_volumetricLightingSettings.maxDistance = glm::max(m_volumetricLightingSettings.maxDistance, 1.f);
-		ImGui::DragFloat("Base density", &m_volumetricLightingSettings.baseDensity, 0.01f, 0.f, 1.f);
-		ImGui::DragFloat("Density noise range", &m_volumetricLightingSettings.densityNoiseRange, 0.01f, 0.f, 1.f);
-		ImGui::DragFloat("Density noise scale", &m_volumetricLightingSettings.densityNoiseScale, 0.1f, 0.f);
-		ImGui::DragFloat("Phase function G", &m_volumetricLightingSettings.phaseFunctionG, 0.1f, -0.99f, 0.99f);
-	}
-	if (ImGui::CollapsingHeader("Sky settings")) {
-		ImGui::InputFloat3("Rayleigh scattering coefficients km", &m_atmosphereSettings.scatteringRayleighGround.x);
-		ImGui::InputFloat3("Rayleigh extinction coefficients km", &m_atmosphereSettings.extinctionRayleighGround.x);
-		ImGui::InputFloat("Mie scattering coefficients km", &m_atmosphereSettings.scatteringMieGround);
-		ImGui::InputFloat("Mie extinction coefficients km", &m_atmosphereSettings.extinctionMieGround);
-		ImGui::InputFloat("Mie scattering exponent", &m_atmosphereSettings.mieScatteringExponent);
-		ImGui::InputFloat3("Ozone extinction coefficients km", &m_atmosphereSettings.ozoneExtinction.x);
-		ImGui::InputFloat("Earth radius km", &m_atmosphereSettings.earthRadius);
-		ImGui::InputFloat("Atmosphere height km", &m_atmosphereSettings.atmosphereHeight);
-	}
-	if (ImGui::CollapsingHeader("Bloom settings")) {
-		ImGui::Checkbox("Bloom enabled", &m_bloomSettings.enabled);
-		ImGui::DragFloat("Bloom strength", &m_bloomSettings.strength, 0.05f, 0.f, 1.f);
-		ImGui::DragFloat("Bloom blur radius", &m_bloomSettings.radius, 0.1f, 0.f, 5.f);
-	}
+        ImGui::ColorPicker3("Scattering color", &m_volumetricLightingSettings.scatteringCoefficients.x);
+        ImGui::DragFloat("Absorption", &m_volumetricLightingSettings.absorptionCoefficient, 0.1f, 0.f, 1.f);
+        ImGui::InputFloat("Max distance", &m_volumetricLightingSettings.maxDistance);
+        m_volumetricLightingSettings.maxDistance = glm::max(m_volumetricLightingSettings.maxDistance, 1.f);
+        ImGui::DragFloat("Base density", &m_volumetricLightingSettings.baseDensity, 0.01f, 0.f, 1.f);
+        ImGui::DragFloat("Density noise range", &m_volumetricLightingSettings.densityNoiseRange, 0.01f, 0.f, 1.f);
+        ImGui::DragFloat("Density noise scale", &m_volumetricLightingSettings.densityNoiseScale, 0.1f, 0.f);
+        ImGui::DragFloat("Phase function G", &m_volumetricLightingSettings.phaseFunctionG, 0.1f, -0.99f, 0.99f);
+    }
+    if (ImGui::CollapsingHeader("Sky settings")) {
+        ImGui::InputFloat3("Rayleigh scattering coefficients km", &m_atmosphereSettings.scatteringRayleighGround.x);
+        ImGui::InputFloat3("Rayleigh extinction coefficients km", &m_atmosphereSettings.extinctionRayleighGround.x);
+        ImGui::InputFloat("Mie scattering coefficients km", &m_atmosphereSettings.scatteringMieGround);
+        ImGui::InputFloat("Mie extinction coefficients km", &m_atmosphereSettings.extinctionMieGround);
+        ImGui::InputFloat("Mie scattering exponent", &m_atmosphereSettings.mieScatteringExponent);
+        ImGui::InputFloat3("Ozone extinction coefficients km", &m_atmosphereSettings.ozoneExtinction.x);
+        ImGui::InputFloat("Earth radius km", &m_atmosphereSettings.earthRadius);
+        ImGui::InputFloat("Atmosphere height km", &m_atmosphereSettings.atmosphereHeight);
+    }
+    if (ImGui::CollapsingHeader("Bloom settings")) {
+        ImGui::Checkbox("Bloom enabled", &m_bloomSettings.enabled);
+        ImGui::DragFloat("Bloom strength", &m_bloomSettings.strength, 0.05f, 0.f, 1.f);
+        ImGui::DragFloat("Bloom blur radius", &m_bloomSettings.radius, 0.1f, 0.f, 5.f);
+    }
     //lighting settings
     if(ImGui::CollapsingHeader("Lighting settings")){
         ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
@@ -3705,33 +3705,33 @@ void RenderFrontend::drawUi() {
             (int*)&m_shadingConfig.directMultiscatter,
             directMultiscatterBRDFOptions, 4);
 
-		const char* indirectLightingLabels[] = { "SDF trace", "Constant ambient" };
-		m_isMainPassShaderDescriptionStale |= ImGui::Combo("Indirect lighting tech", (int*)&m_shadingConfig.indirectLightingTech,
-			indirectLightingLabels, 2);
+        const char* indirectLightingLabels[] = { "SDF trace", "Constant ambient" };
+        m_isMainPassShaderDescriptionStale |= ImGui::Combo("Indirect lighting tech", (int*)&m_shadingConfig.indirectLightingTech,
+            indirectLightingLabels, 2);
 
         m_isMainPassShaderDescriptionStale |= ImGui::Checkbox("Geometric AA", &m_shadingConfig.useGeometryAA);
 
-		if (ImGui::Checkbox("Indirect lighting half resolution", &m_shadingConfig.indirectLightingHalfRes)) {
-			resizeIndirectLightingBuffers();
-			m_globalShaderInfo.cameraCut = true;
-		}
+        if (ImGui::Checkbox("Indirect lighting half resolution", &m_shadingConfig.indirectLightingHalfRes)) {
+            resizeIndirectLightingBuffers();
+            m_globalShaderInfo.cameraCut = true;
+        }
 
-		const bool shadowCascadeCountChanged =
-			ImGui::InputInt("Sun shadow cascade count", &m_shadingConfig.sunShadowCascadeCount);
-		m_shadingConfig.sunShadowCascadeCount = glm::clamp(m_shadingConfig.sunShadowCascadeCount, 1, maxSunShadowCascadeCount);
+        const bool shadowCascadeCountChanged =
+            ImGui::InputInt("Sun shadow cascade count", &m_shadingConfig.sunShadowCascadeCount);
+        m_shadingConfig.sunShadowCascadeCount = glm::clamp(m_shadingConfig.sunShadowCascadeCount, 1, maxSunShadowCascadeCount);
 
-		m_isMainPassShaderDescriptionStale |= shadowCascadeCountChanged;
-		m_isLightMatrixPassShaderDescriptionStale |= shadowCascadeCountChanged;
-		m_isSDFDiffuseTraceShaderDescriptionStale |= shadowCascadeCountChanged;
-		m_isSDFDebugShaderDescriptionStale |= shadowCascadeCountChanged;
+        m_isMainPassShaderDescriptionStale |= shadowCascadeCountChanged;
+        m_isLightMatrixPassShaderDescriptionStale |= shadowCascadeCountChanged;
+        m_isSDFDiffuseTraceShaderDescriptionStale |= shadowCascadeCountChanged;
+        m_isSDFDebugShaderDescriptionStale |= shadowCascadeCountChanged;
     }
     //camera settings
     if (ImGui::CollapsingHeader("Camera settings")) {
         ImGui::InputFloat("Near plane", &m_camera.intrinsic.near);
         ImGui::InputFloat("Far plane", &m_camera.intrinsic.far);
     }
-	if (ImGui::CollapsingHeader("Debug settings")) {
-		ImGui::Checkbox("Render bounding boxes", &m_renderBoundingBoxes);
-	}
+    if (ImGui::CollapsingHeader("Debug settings")) {
+        ImGui::Checkbox("Render bounding boxes", &m_renderBoundingBoxes);
+    }
     ImGui::End();
 }

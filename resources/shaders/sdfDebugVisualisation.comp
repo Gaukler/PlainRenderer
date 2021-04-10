@@ -29,10 +29,10 @@ layout(set=1, binding = 1, std430) buffer lightStorageBuffer{
 layout(set=1, binding = 2) uniform texture2D skyLut;
 layout(set=1, binding = 3, std430) buffer sdfInstanceBuffer{
     uint instanceCount;
-	uint padding1;
-	uint padding2;
-	uint padding3;
-	SDFInstance sdfInstances[];
+    uint padding1;
+    uint padding2;
+    uint padding3;
+    SDFInstance sdfInstances[];
 };
 
 layout(set=1, binding = 4, std430) buffer cameraCulledTileBuffer{
@@ -41,7 +41,7 @@ layout(set=1, binding = 4, std430) buffer cameraCulledTileBuffer{
 
 layout(set=1, binding = 5, std430) buffer cameraCulledSdfInstanceBuffer{
     uint cameraCulledInstanceCount;
-	uint cameraCulledInstanceIndices[];
+    uint cameraCulledInstanceIndices[];
 };
 
 layout(set=1, binding = 6, std430) buffer sunShadowInfo{
@@ -53,80 +53,80 @@ layout(set=1, binding = 7) uniform texture2D shadowMap;
 layout(set=2, binding = 0) uniform texture3D[] textures;
 
 vec3 percentageToColor(float percentage){
-	if(percentage < 0.6){
-		return vec3(0, 1, 0);
-	}
-	else if(percentage < 0.8){
-		return vec3(1, 1, 0);
-	}
-	else if(percentage < 0.95f){
-		return vec3(1, 0.2, 0);
-	}
-	else if(percentage < 1.f){
-		return vec3(1, 0.1, 0);
-	}
-	else{
-		return vec3(1, 0, 0);
-	}
+    if(percentage < 0.6){
+        return vec3(0, 1, 0);
+    }
+    else if(percentage < 0.8){
+        return vec3(1, 1, 0);
+    }
+    else if(percentage < 0.95f){
+        return vec3(1, 0.2, 0);
+    }
+    else if(percentage < 1.f){
+        return vec3(1, 0.1, 0);
+    }
+    else{
+        return vec3(1, 0, 0);
+    }
 }
 
 void main(){
-	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
 
-	vec2 pixelCoor = (vec2(uv.xy) / g_screenResolution - 0.5) * 2;
-	vec3 cameraToPixel = -calculateViewDirectionFromPixel(pixelCoor, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
+    vec2 pixelCoor = (vec2(uv.xy) / g_screenResolution - 0.5) * 2;
+    vec3 cameraToPixel = -calculateViewDirectionFromPixel(pixelCoor, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 
-	//FIXME: get tile size from CPU
-	ivec2 tileUV = uv / ivec2(cullingTileSize);
-	uint tileIndex = tileIndexFromTileUV(tileUV);
+    //FIXME: get tile size from CPU
+    ivec2 tileUV = uv / ivec2(cullingTileSize);
+    uint tileIndex = tileIndexFromTileUV(tileUV);
 
-	vec3 rayStart = g_cameraPosition.xyz + g_nearPlane * cameraToPixel;
-		
-	TraceResult traceResult;
-	traceResult.hit = false;
-	traceResult.closestHitDistance = 10000.f;
-	
-	CulledInstancesPerTile cullingTile = cameraCulledTiles[tileIndex];
+    vec3 rayStart = g_cameraPosition.xyz + g_nearPlane * cameraToPixel;
 
-	//iterate all objects in culling tile
-	for(int instanceIndex = 0; instanceIndex < cullingTile.objectCount; instanceIndex++){
-		SDFInstance instance = sdfInstances[cullingTile.indices[instanceIndex]];
-		
-		traceRayTroughSDFInstance(instance, rayStart, textures[instance.sdfTextureIndex], cameraToPixel, traceResult);
-	}
+    TraceResult traceResult;
+    traceResult.hit = false;
+    traceResult.closestHitDistance = 10000.f;
 
-	float shadow = simpleShadow(traceResult.hitPos, sunShadowCascadeInfo.lightMatrices[shadowCascadeIndex], shadowMap, g_sampler_nearestBlackBorder);
+    CulledInstancesPerTile cullingTile = cameraCulledTiles[tileIndex];
 
-	vec3 color = vec3(0.f);
+    //iterate all objects in culling tile
+    for(int instanceIndex = 0; instanceIndex < cullingTile.objectCount; instanceIndex++){
+        SDFInstance instance = sdfInstances[cullingTile.indices[instanceIndex]];
 
-	//camera tile usage(debugMode == 2) should always be drawn, regardless of intersection
-	if(traceResult.hit || debugMode == 2){
+        traceRayTroughSDFInstance(instance, rayStart, textures[instance.sdfTextureIndex], cameraToPixel, traceResult);
+    }
 
-		//sdf visualisation
-		if(debugMode == 1){
-			vec3 sunLight = lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
-			sunLight *= shadow; 
-			vec3 ambient = vec3(0.15f);
-			float NoL = clamp(dot(traceResult.N, g_sunDirection.xyz), 0, 1);
-			color = traceResult.albedo * (ambient + sunLight * NoL);
-		}
-		//camera tile usage
-		else if(debugMode == 2){
-			float percentage = cullingTile.objectCount / float(maxObjectsPerTile);
-			color = percentage >= 1.f ? vec3(1, 0, 0) :  vec3(percentage);
-			//color = percentageToColor(percentage);
-		}
-		//normals
-		else if(debugMode == 3){
-			color = traceResult.N * 0.5 + 0.5;
-		}
-		//raymarching count
-		else if(debugMode == 4){
-			color = vec3(traceResult.hitCount / 128.f);
-		}
-	}
-	else{
-		color = sampleSkyLut(cameraToPixel, skyLut);
-	}
-	imageStore(imageOut, uv, vec4(color, 1.f));
+    float shadow = simpleShadow(traceResult.hitPos, sunShadowCascadeInfo.lightMatrices[shadowCascadeIndex], shadowMap, g_sampler_nearestBlackBorder);
+
+    vec3 color = vec3(0.f);
+
+    //camera tile usage(debugMode == 2) should always be drawn, regardless of intersection
+    if(traceResult.hit || debugMode == 2){
+
+        //sdf visualisation
+        if(debugMode == 1){
+            vec3 sunLight = lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
+            sunLight *= shadow; 
+            vec3 ambient = vec3(0.15f);
+            float NoL = clamp(dot(traceResult.N, g_sunDirection.xyz), 0, 1);
+            color = traceResult.albedo * (ambient + sunLight * NoL);
+        }
+        //camera tile usage
+        else if(debugMode == 2){
+            float percentage = cullingTile.objectCount / float(maxObjectsPerTile);
+            color = percentage >= 1.f ? vec3(1, 0, 0) :  vec3(percentage);
+            //color = percentageToColor(percentage);
+        }
+        //normals
+        else if(debugMode == 3){
+            color = traceResult.N * 0.5 + 0.5;
+        }
+        //raymarching count
+        else if(debugMode == 4){
+            color = vec3(traceResult.hitCount / 128.f);
+        }
+    }
+    else{
+        color = sampleSkyLut(cameraToPixel, skyLut);
+    }
+    imageStore(imageOut, uv, vec4(color, 1.f));
 }

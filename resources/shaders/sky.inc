@@ -39,7 +39,7 @@ AtmosphereCoefficients calculateCoefficients(float height, AtmosphereSettings at
         rayleighFactor  * atmosphere.extinctionRayleighGround + 
         mieFactor       * atmosphere.extinctionMieGround + 
         ozoneFactor     * atmosphere.ozoneExtinction;
-    
+
     return coefficients;
 }
 
@@ -63,16 +63,16 @@ Intersection rayEarthIntersection(vec3 P, vec3 D, vec3 C, float earthRadius, flo
     vec3 L = C - P;
     float t_ca = dot(L, D);
     float d = sqrt(dot(L, L) - t_ca * t_ca);
-    
+
     //earth intersection
     float t_hc_earth = sqrt(earthRadius * earthRadius - d * d);
     float t_earth = t_ca - t_hc_earth; //from outside, so uses different sign
-    
+
     //atmosphere intersection
     float r = earthRadius + atmosphere;
     float t_hc_atmosphere = sqrt(r * r - d * d);
     float t_atmosphere = t_ca + abs(t_hc_atmosphere);
-    
+
     //if ray intersect with earth in front then view is blocked by earth
     Intersection result;
     result.hitEarth = t_earth >= 0;
@@ -88,9 +88,9 @@ vec2 toSkyLut(vec3 V){
     float y_lowRange = y * 2 - 1;   //[-1, 1]
     float y_lowRangeScaled = sign(y_lowRange) * sqrt(abs(y_lowRange)); //[-1, 1]
     y = y_lowRangeScaled * 0.5 + 0.5;
-    
-	float phi = -atan(V.z, V.x);
-	return vec2(phi / (2.f * 3.1415) + 0.5f, y);
+
+    float phi = -atan(V.z, V.x);
+    return vec2(phi / (2.f * 3.1415) + 0.5f, y);
 }
 
 vec3 fromSkyLut(vec2 uv){
@@ -110,7 +110,7 @@ vec2 computeLutUV(float height, float atmoshphereHeight, vec3 up, vec3 direction
 }
 
 vec3 sampleSkyLut(vec3 V, texture2D skyLut){
-	vec2 uv = toSkyLut(V);
+    vec2 uv = toSkyLut(V);
     uv.y = clamp(uv.y, 0.005f, 0.995); //avoid wrapping artifact at extreme angles
     return texture(sampler2D(skyLut, g_sampler_linearRepeat), uv).rgb;
 }

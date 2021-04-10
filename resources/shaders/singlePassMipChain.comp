@@ -48,7 +48,7 @@ vec3 computeColor(ivec2 upperLeft, int srcMipLevel, ivec2 srcRes, bool extraRow,
     upperLeftUV += texelSize * 0.5f; //shift to texel center
     vec3 color = vec3(0);
     int texelCount = 0;
-    
+
     for(int texel = 0; texel < 4; texel++){
         vec2 uv = upperLeftUV + offsets[texel] * texelSize;
         color += textureLod(sampler2D(colorTexture, colorSampler), uv, srcMipLevel).rgb;
@@ -63,7 +63,7 @@ vec3 computeColor(ivec2 upperLeft, int srcMipLevel, ivec2 srcRes, bool extraRow,
             texelCount++;
         }
     }
-    
+
     if(extraColumn){
         vec2 extraColumnOffsets[2] = { vec2(2, 0), vec2(2, 1) };
         for(int texel = 0; texel < 2; texel++){
@@ -72,7 +72,7 @@ vec3 computeColor(ivec2 upperLeft, int srcMipLevel, ivec2 srcRes, bool extraRow,
             texelCount++;
         }
     }
-    
+
     if(extraRow && extraColumn){
         vec2 uv = upperLeftUV + ivec2(2, 2) * texelSize;
         color += textureLod(sampler2D(colorTexture, colorSampler), uv, srcMipLevel).rgb;     
@@ -80,20 +80,20 @@ vec3 computeColor(ivec2 upperLeft, int srcMipLevel, ivec2 srcRes, bool extraRow,
     }
     color /= texelCount;
     return color;
-} 
+}
 
 //single pass downscaling reference: https://github.com/GPUOpen-Effects/FidelityFX-SPD/tree/master/docs
 void main(){
-    
+
     int srcMipLevel = 0;
-    
+
     ivec2 srcMipRes = ivec2(inputResX, inputResY);
     ivec2 currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
-    
+
     //mip 1
     if((mipCount >= 12)){
         ivec2 offsets[4] = { ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1) };
-        
+
         for(int i = 0; i < 4; i++){
             ivec2 dstUV = ivec2(gl_GlobalInvocationID.xy) * 2 + offsets[i];
             if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
@@ -104,7 +104,7 @@ void main(){
         srcMipLevel++;
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
-    }   
+    }
     //mip 2
     if(mipCount >= 11){
         ivec2 dstUV = ivec2(gl_GlobalInvocationID.xy);
@@ -155,7 +155,7 @@ void main(){
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
     }
-    
+
     //mip 6
     if(mipCount >= 7){
         if(gl_LocalInvocationID.x < 1 && gl_LocalInvocationID.y < 1){
@@ -169,28 +169,28 @@ void main(){
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
     }
-    
+
     //increment counter once per threadgroup, write previous value to shared memory
     if(gl_LocalInvocationIndex == 0){
         threadCounter = atomicAdd(syncCounter, 1); 
     }
-    
+
     //wait until threadCounter has been updated
     barrier();
-    
+
     //only last group computes last mip levels
     if(threadCounter != threadGroupCount-1){
         return;
     }
     //reset counter for next frame
     syncCounter = 0;
-    
+
     //from here gl_LocalInvocationID must be used to compute uvs
-    
+
     //mip 7
     if(mipCount >= 6){
         ivec2 offsets[4] = { ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1) };
-        
+
         for(int i = 0; i < 4; i++){
             ivec2 dstUV = ivec2(gl_LocalInvocationID.xy) * 2 + offsets[i];
             if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){
@@ -239,10 +239,9 @@ void main(){
         srcMipRes = currentMipRes;
         currentMipRes = ivec2(max(srcMipRes / 2, ivec2(1)));
     }
-    
+
     //mip 11
     if(mipCount >= 2){
-        
         if(gl_LocalInvocationID.x < 2 && gl_LocalInvocationID.y < 2){
             ivec2 dstUV = ivec2(gl_LocalInvocationID.xy);
             if(dstUV.x < currentMipRes.x && dstUV.y < currentMipRes.y){

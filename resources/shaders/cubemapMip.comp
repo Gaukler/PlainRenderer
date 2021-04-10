@@ -7,15 +7,15 @@ layout(set=1, binding = 0, r11f_g11f_b10f) uniform imageCube src;
 layout(set=1, binding = 1, r11f_g11f_b10f) uniform imageCube dst;
 
 void main(){
-	ivec3 uv = ivec3(gl_GlobalInvocationID.xyz);	
-	
-	vec3 texels[4] = {
-		imageLoad(src, ivec3(uv.xy * 2, uv.z) + ivec3(0, 0, 0)).rgb,
-		imageLoad(src, ivec3(uv.xy * 2, uv.z) + ivec3(1, 0, 0)).rgb,
-		imageLoad(src, ivec3(uv.xy * 2, uv.z) + ivec3(0, 1, 0)).rgb,
-		imageLoad(src, ivec3(uv.xy * 2, uv.z) + ivec3(1, 1, 0)).rgb};
-	
-	vec3 color = texels[0] + texels[1] + texels[2] + texels[3];
-	color *= 0.25f;
-	imageStore(dst, uv, vec4(color, 1.f));
+    ivec3 uv = ivec3(gl_GlobalInvocationID.xyz);	
+
+    vec3 texels[4] = {
+        imageLoad(src, ivec3(uv.xy * 2, uv.z) + ivec3(0, 0, 0)).rgb,
+        imageLoad(src, ivec3(uv.xy * 2, uv.z) + ivec3(1, 0, 0)).rgb,
+        imageLoad(src, ivec3(uv.xy * 2, uv.z) + ivec3(0, 1, 0)).rgb,
+        imageLoad(src, ivec3(uv.xy * 2, uv.z) + ivec3(1, 1, 0)).rgb};
+
+    vec3 color = texels[0] + texels[1] + texels[2] + texels[3];
+    color *= 0.25f;
+    imageStore(dst, uv, vec4(color, 1.f));
 }

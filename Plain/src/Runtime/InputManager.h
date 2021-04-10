@@ -44,8 +44,8 @@ enum class KeyboardKey : uint8_t {
     keyShiftLeft = 36,
     keySpacebar = 37,
     keyEsc = 38,
-	keyLeftAlt = 39,
-	keyEnter = 40
+    keyLeftAlt = 39,
+    keyEnter = 40
 };
 
 #define KEYBOARD_KEY_COUNT 41
@@ -93,8 +93,8 @@ inline int keyCodeToGLFW[KEYBOARD_KEY_COUNT] = {
     GLFW_KEY_LEFT_SHIFT,
     GLFW_KEY_SPACE,
     GLFW_KEY_ESCAPE,
-	GLFW_KEY_LEFT_ALT,
-	GLFW_KEY_ENTER
+    GLFW_KEY_LEFT_ALT,
+    GLFW_KEY_ENTER
 };
 
 
@@ -122,10 +122,10 @@ public:
 
     glm::vec2 getMouseMovement();
     glm::vec2 getMousePosition();
-	KeyState getMouseButtonState(const MouseButton button);
-	KeyState getKeyboardKeyState(const KeyboardKey key);
-	bool isMouseButtonDown(const MouseButton button);
-	bool isKeyboardKeyDown(const KeyboardKey key);
+    KeyState getMouseButtonState(const MouseButton button);
+    KeyState getKeyboardKeyState(const KeyboardKey key);
+    bool isMouseButtonDown(const MouseButton button);
+    bool isKeyboardKeyDown(const KeyboardKey key);
 
 private:
     GLFWwindow* m_window;

@@ -9,7 +9,7 @@ public:
     static double getTime();
     static float getTimeFloat();
 private:
-	static double m_deltaTime;
-	static double m_lastFrameTime;
-	static float m_deltaTimeFloat;
+    static double m_deltaTime;
+    static double m_lastFrameTime;
+    static float m_deltaTimeFloat;
 };

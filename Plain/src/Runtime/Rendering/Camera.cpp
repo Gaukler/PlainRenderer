@@ -15,8 +15,8 @@ glm::mat4 projectionMatrixFromCameraIntrinsic(const CameraIntrinsic& intrinsic) 
     glm::mat4 projectionMatrix = 
         glm::perspective(glm::radians(intrinsic.fov), intrinsic.aspectRatio, intrinsic.near, intrinsic.far);
 
-	//negative y because of vulkan coordinate system
-	//negative z because of reverse z
+    //negative y because of vulkan coordinate system
+    //negative z because of reverse z
     const glm::mat4 coordinateSystemCorrection = glm::mat4(
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, -1.0f, 0.0f, 0.0f,

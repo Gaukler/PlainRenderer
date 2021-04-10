@@ -8,7 +8,7 @@
 
 layout(set=1, binding = 0, std430) buffer lightStorageBuffer{
     LightBuffer lightBuffer;
-}; 
+};
 
 layout(set=1, binding = 1) uniform texture2D transmissionLut;
 
@@ -37,7 +37,7 @@ void main(){
     vec2 lutUV = computeLutUV(0, 100, vec3(0, -1, 0), V);
     vec3 transmission = texture(sampler2D(transmissionLut, g_sampler_linearClamp), lutUV).rgb;
     color.rgb = lightBuffer.sunStrengthExposed * transmission * limbDarkening(distanceFromCenter);
-	//soft alpha blend at edge
-	color.a = 1.f - distanceFromCenter;
-	color.a *= color.a;
+    //soft alpha blend at edge
+    color.a = 1.f - distanceFromCenter;
+    color.a *= color.a;
 }

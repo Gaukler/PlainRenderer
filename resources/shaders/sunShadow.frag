@@ -10,8 +10,8 @@ layout(location = 0) in vec2 passUV;
 layout(set=2, binding = 0) uniform texture2D[] textures;
 
 layout(push_constant) uniform MatrixBlock {
-	uint albedoTextureIndex;
-	uint transformIndex;
+    uint albedoTextureIndex;
+    uint transformIndex;
 };
 
 void main(){

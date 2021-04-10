@@ -8,7 +8,7 @@
 //window management using glfw
 //only creation and management of one window is supported
 namespace Window {
-	void initWindowSystem();
-	GLFWwindow* createWindow(const int width, const int height);
-	void toggleFullscreen();
+    void initWindowSystem();
+    GLFWwindow* createWindow(const int width, const int height);
+    void toggleFullscreen();
 }

@@ -10,23 +10,23 @@ layout(set=1, binding = 0, r11f_g11f_b10f) uniform image2D target;
 layout(set=1, binding = 1) uniform texture2D bloomTexture;
 
 layout(push_constant) uniform PushConstants {
-	float bloomStrength;
+    float bloomStrength;
 };
 
 void main(){
-	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
-	ivec2 targetResolution = imageSize(target);
+    ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 targetResolution = imageSize(target);
 
-	if(any(greaterThan(iUV, targetResolution))){
-		return;
-	}
+    if(any(greaterThan(iUV, targetResolution))){
+        return;
+    }
 
-	vec2 uv = (iUV + 0.5f) / vec2(targetResolution);
-	vec3 bloom = textureLod(sampler2D(bloomTexture, g_sampler_linearClamp), uv, 0).rgb;
-	vec3 scene = imageLoad(target, iUV).rgb;
+    vec2 uv = (iUV + 0.5f) / vec2(targetResolution);
+    vec3 bloom = textureLod(sampler2D(bloomTexture, g_sampler_linearClamp), uv, 0).rgb;
+    vec3 scene = imageLoad(target, iUV).rgb;
 
-	vec3 color = scene + bloom * bloomStrength;
-	//color = bloom;
+    vec3 color = scene + bloom * bloomStrength;
+    //color = bloom;
 
-	imageStore(target, iUV, vec4(color, 0));
+    imageStore(target, iUV, vec4(color, 0));
 }

@@ -5,11 +5,11 @@
 
 class App {
 public:
-	App();
+    App();
     void setup(const std::string& sceneFilePath);
-	void runUpdate();
+    void runUpdate();
 private:
     CameraController m_cameraController;
-	std::vector<SceneObject> m_scene;
-	std::vector<AxisAlignedBoundingBox> m_bbs;
+    std::vector<SceneObject> m_scene;
+    std::vector<AxisAlignedBoundingBox> m_bbs;
 };

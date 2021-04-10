@@ -21,13 +21,13 @@ void main(){
     vec3 V = normalize(passPos); //from camera to sky
     color = sampleSkyLut(V, skyLut);
 
-	//this isn't 'correct' dithering as it's written to a R11G11B10 render target
-	//however it fixes the sky banding without introducing visible noise
-	//banding might come from quantization errors, but might also be caused by limited LUT resolution or sample counts
-	color = ditherRGB8(color, ivec2(gl_FragCoord.xy * g_screenResolution));
+    //this isn't 'correct' dithering as it's written to a R11G11B10 render target
+    //however it fixes the sky banding without introducing visible noise
+    //banding might come from quantization errors, but might also be caused by limited LUT resolution or sample counts
+    color = ditherRGB8(color, ivec2(gl_FragCoord.xy * g_screenResolution));
 
-	//apply local volumetric contribution
-	vec2 screenUV = gl_FragCoord.xy / g_screenResolution.xy;
-	vec4 inscatteringTransmittance = volumeTextureLookup(screenUV, maxVolumetricLightingDepth, volumetricLightingLUT, volumetricSettings.maxDistance);
-	color = applyInscatteringTransmittance(color, inscatteringTransmittance);
+    //apply local volumetric contribution
+    vec2 screenUV = gl_FragCoord.xy / g_screenResolution.xy;
+    vec4 inscatteringTransmittance = volumeTextureLookup(screenUV, maxVolumetricLightingDepth, volumetricLightingLUT, volumetricSettings.maxDistance);
+    color = applyInscatteringTransmittance(color, inscatteringTransmittance);
 }

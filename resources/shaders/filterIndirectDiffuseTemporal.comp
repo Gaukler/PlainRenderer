@@ -7,80 +7,80 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set=1, binding = 0, rgba16f) uniform image2D targetOut_Y_SH;
-layout(set=1, binding = 1, rg16f) 	uniform image2D targetOut_CoCg;
+layout(set=1, binding = 1, rg16f)   uniform image2D targetOut_CoCg;
 layout(set=1, binding = 2, rgba16f) uniform image2D historyOut_Y_SH;
-layout(set=1, binding = 3, rg16f) 	uniform image2D historyOut_CoCg;
-layout(set=1, binding = 4)			uniform texture2D input_Y_SH;
-layout(set=1, binding = 5)			uniform texture2D input_CoCg;
-layout(set=1, binding = 6)			uniform texture2D historyIn_Y_SH;
-layout(set=1, binding = 7)			uniform texture2D historyIn_CoCg;
-layout(set=1, binding = 8)			uniform texture2D velocityCurrent;
-layout(set=1, binding = 9)			uniform texture2D velocityLastFrame;
+layout(set=1, binding = 3, rg16f)   uniform image2D historyOut_CoCg;
+layout(set=1, binding = 4)          uniform texture2D input_Y_SH;
+layout(set=1, binding = 5)          uniform texture2D input_CoCg;
+layout(set=1, binding = 6)          uniform texture2D historyIn_Y_SH;
+layout(set=1, binding = 7)          uniform texture2D historyIn_CoCg;
+layout(set=1, binding = 8)          uniform texture2D velocityCurrent;
+layout(set=1, binding = 9)          uniform texture2D velocityLastFrame;
 
 void main(){
 
-	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
-	vec2 texelSize = 1.f / vec2(imageSize(targetOut_Y_SH));
-	vec2 uv = (vec2(iUV) + 0.5f) * texelSize;
+    ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
+    vec2 texelSize = 1.f / vec2(imageSize(targetOut_Y_SH));
+    vec2 uv = (vec2(iUV) + 0.5f) * texelSize;
 
-	vec4 current_Y_SH = texture(sampler2D(input_Y_SH, g_sampler_linearClamp), uv);
-	vec2 current_CoCg = texture(sampler2D(input_CoCg, g_sampler_linearClamp), uv).rg;
+    vec4 current_Y_SH = texture(sampler2D(input_Y_SH, g_sampler_linearClamp), uv);
+    vec2 current_CoCg = texture(sampler2D(input_CoCg, g_sampler_linearClamp), uv).rg;
 
-	vec2 motion = texture(sampler2D(velocityCurrent, g_sampler_linearClamp), uv).rg;
+    vec2 motion = texture(sampler2D(velocityCurrent, g_sampler_linearClamp), uv).rg;
 
-	vec2 uvReprojected = uv + motion;
-	vec4 history_Y_SH = texture(sampler2D(historyIn_Y_SH, g_sampler_linearClamp), uvReprojected);
-	vec2 history_CoCg = texture(sampler2D(historyIn_CoCg, g_sampler_linearClamp), uvReprojected).rg;
+    vec2 uvReprojected = uv + motion;
+    vec4 history_Y_SH = texture(sampler2D(historyIn_Y_SH, g_sampler_linearClamp), uvReprojected);
+    vec2 history_CoCg = texture(sampler2D(historyIn_CoCg, g_sampler_linearClamp), uvReprojected).rg;
 
-	//motion difference metric from SMAA paper
-	vec2 motionLastFrame = texture(sampler2D(velocityLastFrame, g_sampler_linearRepeat), uvReprojected).rg;
-	float motionDifference = sqrt(abs(length(motion) - length(motionLastFrame)));
-	float K = 10;
-	float motionDifferenceFactor = clamp(motionDifference * K, 0, 1);
+    //motion difference metric from SMAA paper
+    vec2 motionLastFrame = texture(sampler2D(velocityLastFrame, g_sampler_linearRepeat), uvReprojected).rg;
+    float motionDifference = sqrt(abs(length(motion) - length(motionLastFrame)));
+    float K = 10;
+    float motionDifferenceFactor = clamp(motionDifference * K, 0, 1);
 
-	float alphaDefault = 0.8f;
-	//the high min value leads to slight ghosting in movement
-	//however in indirect lighting, combined with TAA ghosting is less visible than noise
-	float alphaMin = 0.6f;
+    float alphaDefault = 0.8f;
+    //the high min value leads to slight ghosting in movement
+    //however in indirect lighting, combined with TAA ghosting is less visible than noise
+    float alphaMin = 0.6f;
 
-	//prevent easily visible ghosting of bright areas bleeding into dark areas and vice versa
-	alphaMin -= 0.3 * abs(length(current_Y_SH) - length(history_Y_SH));
-	alphaMin = max(alphaMin, 0);
+    //prevent easily visible ghosting of bright areas bleeding into dark areas and vice versa
+    alphaMin -= 0.3 * abs(length(current_Y_SH) - length(history_Y_SH));
+    alphaMin = max(alphaMin, 0);
 
-	float alpha = mix(alphaDefault, alphaMin, motionDifferenceFactor);
+    float alpha = mix(alphaDefault, alphaMin, motionDifferenceFactor);
 
-	//don't blend if current or previous pixel moves too fast
-	//see: https://bartwronski.com/2014/03/15/temporal-supersampling-and-antialiasing/
-	float pixelThreshold = 3.f;
-	if(
-		any(greaterThan(abs(motion)			 * g_screenResolution, vec2(pixelThreshold))) ||
-		any(greaterThan(abs(motionLastFrame) * g_screenResolution, vec2(pixelThreshold)))){
-		alpha = alphaMin;
-	}
-	
-	if(any(lessThan(uvReprojected, vec2(0))) || any(greaterThan(uvReprojected, vec2(1)))){
-		alpha = 0;
-	}
-	if(g_cameraCut){
-		alpha = 0;
-	}
-	//filter NaNs
-	//TODO: check if necessary
-	if(any(isnan(current_Y_SH)) || any(isnan(current_CoCg))){
-		alpha = 1;
-		if(any(isnan(history_Y_SH))){
-			history_Y_SH = vec4(0);
-		}
-		if(any(isnan(history_CoCg))){
-			history_CoCg = vec2(0);
-		}
-	}
-	//alpha = 0;	//debug shortcut: disable temporal filter
-	vec4 result_Y_SH = mix(current_Y_SH, history_Y_SH, alpha);
-	vec2 result_CoCg = mix(current_CoCg, history_CoCg, alpha);
+    //don't blend if current or previous pixel moves too fast
+    //see: https://bartwronski.com/2014/03/15/temporal-supersampling-and-antialiasing/
+    float pixelThreshold = 3.f;
+    if(
+        any(greaterThan(abs(motion)			 * g_screenResolution, vec2(pixelThreshold))) ||
+        any(greaterThan(abs(motionLastFrame) * g_screenResolution, vec2(pixelThreshold)))){
+        alpha = alphaMin;
+    }
 
-	imageStore(targetOut_Y_SH, iUV, result_Y_SH);
-	imageStore(targetOut_CoCg, iUV, vec4(result_CoCg, 0, 0));
-	imageStore(historyOut_Y_SH, iUV, result_Y_SH);
-	imageStore(historyOut_CoCg, iUV, vec4(result_CoCg, 0, 0));
+    if(any(lessThan(uvReprojected, vec2(0))) || any(greaterThan(uvReprojected, vec2(1)))){
+        alpha = 0;
+    }
+    if(g_cameraCut){
+        alpha = 0;
+    }
+    //filter NaNs
+    //TODO: check if necessary
+    if(any(isnan(current_Y_SH)) || any(isnan(current_CoCg))){
+        alpha = 1;
+        if(any(isnan(history_Y_SH))){
+            history_Y_SH = vec4(0);
+        }
+        if(any(isnan(history_CoCg))){
+            history_CoCg = vec2(0);
+        }
+    }
+    //alpha = 0;    //debug shortcut: disable temporal filter
+    vec4 result_Y_SH = mix(current_Y_SH, history_Y_SH, alpha);
+    vec2 result_CoCg = mix(current_CoCg, history_CoCg, alpha);
+
+    imageStore(targetOut_Y_SH, iUV, result_Y_SH);
+    imageStore(targetOut_CoCg, iUV, vec4(result_CoCg, 0, 0));
+    imageStore(historyOut_Y_SH, iUV, result_Y_SH);
+    imageStore(historyOut_CoCg, iUV, vec4(result_CoCg, 0, 0));
 };

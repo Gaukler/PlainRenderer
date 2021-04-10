@@ -12,32 +12,32 @@ layout(set=1, binding = 0, rgba16f) uniform image3D integrationVolume;
 layout(set=1, binding = 1) uniform texture3D scatteringTransmittanceVolume;
 
 layout(set=1, binding = 2) uniform SettingsBuffer {
-	VolumetricLightingSettings settings;
+    VolumetricLightingSettings settings;
 };
 
 void main(){
-	uvec2 iUV = gl_GlobalInvocationID.xy;
-	uvec3 volumeRes = imageSize(integrationVolume);
-	if(any(greaterThanEqual(iUV, volumeRes.xy))){
-		return;
-	}
+    uvec2 iUV = gl_GlobalInvocationID.xy;
+    uvec3 volumeRes = imageSize(integrationVolume);
+    if(any(greaterThanEqual(iUV, volumeRes.xy))){
+        return;
+    }
 
-	vec3 inscatteringTotal = vec3(0);
-	float transmittance = 1;
+    vec3 inscatteringTotal = vec3(0);
+    float transmittance = 1;
 
-	for(int z = 0; z <= volumeRes.z; z++){
-		vec4 inscatteringTransmittance = texelFetch(sampler3D(scatteringTransmittanceVolume, g_sampler_nearestClamp), ivec3(iUV.xy, z), 0);
+    for(int z = 0; z <= volumeRes.z; z++){
+        vec4 inscatteringTransmittance = texelFetch(sampler3D(scatteringTransmittanceVolume, g_sampler_nearestClamp), ivec3(iUV.xy, z), 0);
 
-		//segment length is recalculcated each iteration to account for the possibility that depth slices aren't linearly distributed
-		float depthStart = froxelUVToDepth(z	/ float(volumeRes.z), settings.maxDistance);
-		float depthEnd   = froxelUVToDepth((z+1)/ float(volumeRes.z), settings.maxDistance);
-		float segmentLength = depthEnd - depthStart;
+        //segment length is recalculcated each iteration to account for the possibility that depth slices aren't linearly distributed
+        float depthStart = froxelUVToDepth(z	/ float(volumeRes.z), settings.maxDistance);
+        float depthEnd   = froxelUVToDepth((z+1)/ float(volumeRes.z), settings.maxDistance);
+        float segmentLength = depthEnd - depthStart;
 
-		vec3 inscattering = integrateInscattering(inscatteringTransmittance.rgb, vec3(inscatteringTransmittance.a), segmentLength);
-		inscatteringTotal += inscattering;
+        vec3 inscattering = integrateInscattering(inscatteringTransmittance.rgb, vec3(inscatteringTransmittance.a), segmentLength);
+        inscatteringTotal += inscattering;
 
-		transmittance *= exp(-inscatteringTransmittance.a * segmentLength);
+        transmittance *= exp(-inscatteringTransmittance.a * segmentLength);
 
-		imageStore(integrationVolume, ivec3(iUV, z), vec4(inscatteringTotal, transmittance));
-	}	
+        imageStore(integrationVolume, ivec3(iUV, z), vec4(inscatteringTotal, transmittance));
+    }
 }

@@ -21,37 +21,37 @@ layout(constant_id = 1) const uint mipLevel = 0;
 //as the sky lut is already very low resolution color and brightness starts to deviate quickly on lower mips
 //instead use noise and a high sample count for acceptable quality
 void main(){
-	ivec3 storageCo = ivec3(gl_GlobalInvocationID.xyz);
-	
+    ivec3 storageCo = ivec3(gl_GlobalInvocationID.xyz);
+
     //r clamped to filter lowest mip slightly to avoid aliasing when the env map has high frequency detail
-	float r = max(float(mipLevel) / float(mipCount - 1), 0.05f); 
-	vec3 V = cubemapCoordinateToDirection(storageCo, imageSize(cubeOut).x);
-	vec3 N = V;
-	
+    float r = max(float(mipLevel) / float(mipCount - 1), 0.05f); 
+    vec3 V = cubemapCoordinateToDirection(storageCo, imageSize(cubeOut).x);
+    vec3 N = V;
+
     bool groundTruth = false;
-	int samples = groundTruth ? 500 : 24; //minimum of what is acceptable in combination with noise
-	vec3 color = vec3(0.f);
-	float weight = 0.f;
-    
-	for(int i = 0; i < samples; i++){
-		
-		vec2 xi = hammersley2d(i, samples);
+    int samples = groundTruth ? 500 : 24; //minimum of what is acceptable in combination with noise
+    vec3 color = vec3(0.f);
+    float weight = 0.f;
+
+    for(int i = 0; i < samples; i++){
+
+        vec2 xi = hammersley2d(i, samples);
         vec2 noise = hash32(samples + vec2(storageCo.yz)).xy;
         xi += groundTruth ? vec2(0) : noise;
         xi = fract(xi); //bring back into [0,1] range
-		vec3 H = importanceSampleGGX(xi, r, N);
-		vec3 L = normalize(2.f * dot(V, H ) * H - V); 
-    
-		float NoL = max(dot(N, L), 0.f);
-		float NoH = max(dot(N, H), 0.f);
-		float VoH = max(dot(V, H), 0.f);
-		
-		if(NoL > 0.f){
+        vec3 H = importanceSampleGGX(xi, r, N);
+        vec3 L = normalize(2.f * dot(V, H ) * H - V); 
+
+        float NoL = max(dot(N, L), 0.f);
+        float NoH = max(dot(N, H), 0.f);
+        float VoH = max(dot(V, H), 0.f);
+
+        if(NoL > 0.f){
             vec2 skyUV = toSkyLut(L);
-			color += texture(sampler2D(skyLut, g_sampler_linearRepeat), skyUV).rgb * NoL;
-			weight += NoL; 
-		}	
-	}
-	color /= weight;
-	imageStore(cubeOut, storageCo, vec4(color, 1.f));
+            color += texture(sampler2D(skyLut, g_sampler_linearRepeat), skyUV).rgb * NoL;
+            weight += NoL; 
+        }
+    }
+    color /= weight;
+    imageStore(cubeOut, storageCo, vec4(color, 1.f));
 }

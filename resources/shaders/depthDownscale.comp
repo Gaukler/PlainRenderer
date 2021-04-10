@@ -10,11 +10,11 @@ layout(set=1, binding = 0, r16f)	uniform image2D		halfResDst;
 layout(set=1, binding = 1) 			uniform texture2D	fullResSrc;
 
 void main(){
-	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
 
-	vec2 texelSize = 1.f / vec2(textureSize(sampler2D(fullResSrc, g_sampler_nearestClamp), 0));
-	vec2 uv = (vec2(iUV*2) + 0.5f) * texelSize;
-	float depth = texture(sampler2D(fullResSrc, g_sampler_nearestClamp), uv).r;
+    vec2 texelSize = 1.f / vec2(textureSize(sampler2D(fullResSrc, g_sampler_nearestClamp), 0));
+    vec2 uv = (vec2(iUV*2) + 0.5f) * texelSize;
+    float depth = texture(sampler2D(fullResSrc, g_sampler_nearestClamp), uv).r;
 
-	imageStore(halfResDst, iUV, vec4(depth, vec3(0)));
+    imageStore(halfResDst, iUV, vec4(depth, vec3(0)));
 }

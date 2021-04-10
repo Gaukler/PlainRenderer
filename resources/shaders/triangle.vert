@@ -17,24 +17,24 @@ layout(location = 2) out mat3 passTBN;
 
 
 layout(push_constant) uniform MatrixBlock {
-	uint albedoTextureIndex;
-	uint normalTextureIndex;
-	uint specularTextureIndex;
-	uint transformIndex;
+    uint albedoTextureIndex;
+    uint normalTextureIndex;
+    uint specularTextureIndex;
+    uint transformIndex;
 };
 
 layout(set=1, binding = 17, std430) buffer transformBuffer{
-	MainPassMatrices transforms[];
+    MainPassMatrices transforms[];
 };
 
 void main(){
-	gl_Position = transforms[transformIndex].mvp * vec4(inPos, 1.f);
-	passUV = inUv;
-	passPos = (transforms[transformIndex].model * vec4(inPos, 1.f)).xyz;
+    gl_Position = transforms[transformIndex].mvp * vec4(inPos, 1.f);
+    passUV = inUv;
+    passPos = (transforms[transformIndex].model * vec4(inPos, 1.f)).xyz;
 
-	vec3 T = normalize(mat3(transforms[transformIndex].model) * inTangent);
+    vec3 T = normalize(mat3(transforms[transformIndex].model) * inTangent);
     vec3 N = normalize(mat3(transforms[transformIndex].model) * inNormal);
     vec3 B = normalize(mat3(transforms[transformIndex].model) * inBitangent);
 
-	passTBN = mat3(T, B, N);
+    passTBN = mat3(T, B, N);
 }

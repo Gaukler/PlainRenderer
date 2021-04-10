@@ -11,10 +11,10 @@ layout(set=1, binding = 0) 		uniform texture2D srcTexture;
 layout(set=1, binding = 1, r8)	uniform image2D dstImage;
 
 void main(){
-	ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 iUV = ivec2(gl_GlobalInvocationID.xy);
 
-	vec3 color = texelFetch(sampler2D(srcTexture, g_sampler_linearClamp), iUV, 0).rgb;
-	float l = computeLuminance(color);
+    vec3 color = texelFetch(sampler2D(srcTexture, g_sampler_linearClamp), iUV, 0).rgb;
+    float l = computeLuminance(color);
 
-	imageStore(dstImage, iUV, vec4(l, vec3(0)));
+    imageStore(dstImage, iUV, vec4(l, vec3(0)));
 }

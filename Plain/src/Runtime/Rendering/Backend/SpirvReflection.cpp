@@ -73,7 +73,7 @@ void layoutFromSpirv(const std::vector<uint32_t>& spirv, const VkShaderStageFlag
     const spvc_reflected_resource*  storageImageList    = NULL;
     const spvc_reflected_resource*  storageBufferList   = NULL;
     const spvc_reflected_resource*  uniformBufferList   = NULL;
-   
+
     size_t                          samplerCount        = NULL;
     size_t                          sampledImageCount   = NULL;
     size_t                          storageImageCount   = NULL;
@@ -142,74 +142,74 @@ void layoutFromSpirv(const std::vector<uint32_t>& spirv, const VkShaderStageFlag
         }
     }
 
-	const spvc_reflected_resource* pushConstantList = nullptr;
-	size_t pushConstantCount = 0;
-	spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_PUSH_CONSTANT, &pushConstantList, &pushConstantCount);
+    const spvc_reflected_resource* pushConstantList = nullptr;
+    size_t pushConstantCount = 0;
+    spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_PUSH_CONSTANT, &pushConstantList, &pushConstantCount);
 
-	if (pushConstantCount > 1) {
-		std::cout << "Warning: layoutFromSpirv(), push constant count > 1 is unexpected\n";
-	}
+    if (pushConstantCount > 1) {
+        std::cout << "Warning: layoutFromSpirv(), push constant count > 1 is unexpected\n";
+    }
 
-	size_t pushConstantBlockSize = 0;
-	for (int i = 0; i < pushConstantCount; i++) {
-		const SpvId id = pushConstantList[i].id;
-		pushConstantBlockSize += getSpirvCrossTypeByteSizeRecursive(compiler, pushConstantList[i].type_id);
-	}
-	//push constant block size can vary from stage to stage, e.g. fragment stage only needs first two members, but vertex has four
-	//take maximum of all stages
-	outReflection->pushConstantByteSize = glm::max(outReflection->pushConstantByteSize, pushConstantBlockSize);
+    size_t pushConstantBlockSize = 0;
+    for (int i = 0; i < pushConstantCount; i++) {
+        const SpvId id = pushConstantList[i].id;
+        pushConstantBlockSize += getSpirvCrossTypeByteSizeRecursive(compiler, pushConstantList[i].type_id);
+    }
+    //push constant block size can vary from stage to stage, e.g. fragment stage only needs first two members, but vertex has four
+    //take maximum of all stages
+    outReflection->pushConstantByteSize = glm::max(outReflection->pushConstantByteSize, pushConstantBlockSize);
 
     spvc_context_destroy(spirvCrossContext);
 }
 
 //TODO: more robust struct handling with stride and arrays
 size_t getSpirvCrossTypeByteSizeRecursive(const spvc_compiler& compiler, const spvc_type_id typeId) {
-	const spvc_type typeHandle = spvc_compiler_get_type_handle(compiler, typeId);
-	const spvc_basetype baseType = spvc_type_get_basetype(typeHandle);
+    const spvc_type typeHandle = spvc_compiler_get_type_handle(compiler, typeId);
+    const spvc_basetype baseType = spvc_type_get_basetype(typeHandle);
 
-	size_t baseTypeSize = 0;
+    size_t baseTypeSize = 0;
 
-	if (baseType == spvc_basetype::SPVC_BASETYPE_BOOLEAN) {
-		baseTypeSize = 4;
-	}
-	else if (
-		baseType == spvc_basetype::SPVC_BASETYPE_INT8 ||
-		baseType == spvc_basetype::SPVC_BASETYPE_UINT8) {
-		baseTypeSize = 1;
-	}
-	else if (
-		baseType == spvc_basetype::SPVC_BASETYPE_INT16 || 
-		baseType == spvc_basetype::SPVC_BASETYPE_UINT16 || 
-		baseType == spvc_basetype::SPVC_BASETYPE_FP16) {
-		baseTypeSize = 2;
-	}
-	else if (
-		baseType == spvc_basetype::SPVC_BASETYPE_INT32 ||
-		baseType == spvc_basetype::SPVC_BASETYPE_UINT32 ||
-		baseType == spvc_basetype::SPVC_BASETYPE_FP32) {
-		baseTypeSize = 4;
-	}
-	else if (
-		baseType == spvc_basetype::SPVC_BASETYPE_INT64 ||
-		baseType == spvc_basetype::SPVC_BASETYPE_UINT64 ||
-		baseType == spvc_basetype::SPVC_BASETYPE_FP64) {
-		baseTypeSize = 8;
-	}
-	else if (baseType == spvc_basetype::SPVC_BASETYPE_STRUCT) {
-		const int structMemberCount = spvc_type_get_num_member_types(typeHandle);
-		for (int memberIndex = 0; memberIndex < structMemberCount; memberIndex++) {
-			const spvc_type_id memberId = spvc_type_get_member_type(typeHandle, memberIndex);
-			baseTypeSize += getSpirvCrossTypeByteSizeRecursive(compiler, memberId);
-		}
-	}
-	else {
-		std::cout << "Warning: getSpirvCrossTypeByteSizeRecursive(), encountered unknown type\n";
-		return 0;
-	}
-	
-	const size_t columns = spvc_type_get_columns(typeHandle);
-	const size_t rows = spvc_type_get_vector_size(typeHandle);
-	const size_t matrixEntryCount = columns * rows;
+    if (baseType == spvc_basetype::SPVC_BASETYPE_BOOLEAN) {
+        baseTypeSize = 4;
+    }
+    else if (
+        baseType == spvc_basetype::SPVC_BASETYPE_INT8 ||
+        baseType == spvc_basetype::SPVC_BASETYPE_UINT8) {
+        baseTypeSize = 1;
+    }
+    else if (
+        baseType == spvc_basetype::SPVC_BASETYPE_INT16 ||
+        baseType == spvc_basetype::SPVC_BASETYPE_UINT16 ||
+        baseType == spvc_basetype::SPVC_BASETYPE_FP16) {
+        baseTypeSize = 2;
+    }
+    else if (
+        baseType == spvc_basetype::SPVC_BASETYPE_INT32 ||
+        baseType == spvc_basetype::SPVC_BASETYPE_UINT32 ||
+        baseType == spvc_basetype::SPVC_BASETYPE_FP32) {
+        baseTypeSize = 4;
+    }
+    else if (
+        baseType == spvc_basetype::SPVC_BASETYPE_INT64 ||
+        baseType == spvc_basetype::SPVC_BASETYPE_UINT64 ||
+        baseType == spvc_basetype::SPVC_BASETYPE_FP64) {
+        baseTypeSize = 8;
+    }
+    else if (baseType == spvc_basetype::SPVC_BASETYPE_STRUCT) {
+        const int structMemberCount = spvc_type_get_num_member_types(typeHandle);
+        for (int memberIndex = 0; memberIndex < structMemberCount; memberIndex++) {
+            const spvc_type_id memberId = spvc_type_get_member_type(typeHandle, memberIndex);
+            baseTypeSize += getSpirvCrossTypeByteSizeRecursive(compiler, memberId);
+        }
+    }
+    else {
+        std::cout << "Warning: getSpirvCrossTypeByteSizeRecursive(), encountered unknown type\n";
+        return 0;
+    }
 
-	return baseTypeSize * matrixEntryCount;
+    const size_t columns = spvc_type_get_columns(typeHandle);
+    const size_t rows = spvc_type_get_vector_size(typeHandle);
+    const size_t matrixEntryCount = columns * rows;
+
+    return baseTypeSize * matrixEntryCount;
 }

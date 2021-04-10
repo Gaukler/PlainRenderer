@@ -33,7 +33,7 @@ struct Image {
 
     bool isSwapchainImage = false;
     VulkanAllocation memory;
-	int32_t globalDescriptorSetIndex = -1;
+    int32_t globalDescriptorSetIndex = -1;
 };
 
 struct Buffer {
@@ -89,16 +89,16 @@ struct GraphicPass {
     VkRenderPass            vulkanRenderPass    = VK_NULL_HANDLE;
     VkPipeline              pipeline            = VK_NULL_HANDLE;
     VkPipelineLayout        pipelineLayout      = VK_NULL_HANDLE;
-	//two sets to allow updating on while other is used for rendering
-	VkDescriptorSet         descriptorSets[2]	= { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    //two sets to allow updating on while other is used for rendering
+    VkDescriptorSet         descriptorSets[2]	= { VK_NULL_HANDLE, VK_NULL_HANDLE };
     VkDescriptorSetLayout   descriptorSetLayout = VK_NULL_HANDLE;
 
-    VertexInputFlags                vertexInputFlags = VertexInputFlags(0);
+    VertexInputFlags vertexInputFlags = VertexInputFlags(0);
 
-	//frameCount * workerCount command buffers
-	//every frame can be recorded while the other is executed
-	//and commands can be recorded in parallel on every worker thread
-	std::vector<VkCommandBuffer> meshCommandBuffers;
+    //frameCount * workerCount command buffers
+    //every frame can be recorded while the other is executed
+    //and commands can be recorded in parallel on every worker thread
+    std::vector<VkCommandBuffer> meshCommandBuffers;
 
     std::vector<VkClearValue> clearValues;
 
@@ -106,7 +106,7 @@ struct GraphicPass {
     std::string shaderCachePathAbsolute;
     std::string shaderSrcPathAbsolute;
 
-	size_t pushConstantSize = 0;
+    size_t pushConstantSize = 0;
 };
 
 struct ComputePass {
@@ -117,8 +117,8 @@ struct ComputePass {
     VkRenderPass            vulkanRenderPass    = VK_NULL_HANDLE;
     VkPipeline              pipeline            = VK_NULL_HANDLE;
     VkPipelineLayout        pipelineLayout      = VK_NULL_HANDLE;
-	//two sets to allow updating on while other is used for rendering
-	VkDescriptorSet         descriptorSets[2]	= { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    //two sets to allow updating on while other is used for rendering
+    VkDescriptorSet         descriptorSets[2]	= { VK_NULL_HANDLE, VK_NULL_HANDLE };
     VkDescriptorSetLayout   descriptorSetLayout = VK_NULL_HANDLE;
     VkRenderPassBeginInfo   beginInfo = {};
 
@@ -128,12 +128,12 @@ struct ComputePass {
     std::string shaderCachePathAbsolute;
     std::string shaderSrcPathAbsolute;
 
-	size_t pushConstantSize;
+    size_t pushConstantSize;
 };
 
 struct RenderPassBarriers {
-	std::vector<VkBufferMemoryBarrier>  memoryBarriers;
-	std::vector<VkImageMemoryBarrier>   imageBarriers;
+    std::vector<VkBufferMemoryBarrier>  memoryBarriers;
+    std::vector<VkImageMemoryBarrier>   imageBarriers;
 };
 
 struct Framebuffer {

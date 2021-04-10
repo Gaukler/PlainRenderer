@@ -11,18 +11,18 @@ not worth it to write an input handler for camera and a few hotkeys
 */
 class CameraController {
 public:
-	void update();
+    void update();
     CameraExtrinsic getExtrinsic();
 
-	//controls
-	float m_movementSpeed = 1.f;
-	float m_mouseSensitivity = 20.f;
-	float m_controllerSensitivity = 100.f;
-	float m_sprintSpeedFactor = 10.f;
+    //controls
+    float m_movementSpeed = 1.f;
+    float m_mouseSensitivity = 20.f;
+    float m_controllerSensitivity = 100.f;
+    float m_sprintSpeedFactor = 10.f;
 
 private:
-	float m_pitch = 0.f;
-	float m_yaw = -90.f;
+    float m_pitch = 0.f;
+    float m_yaw = -90.f;
 
     CameraExtrinsic m_extrinsic;
 };

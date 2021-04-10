@@ -15,7 +15,7 @@
 #pragma warning( pop )
 
 bool loadImage(const std::filesystem::path& path, const bool isFullPath,
-	ImageDescription* outDescription, std::vector<uint8_t>* outData) {
+    ImageDescription* outDescription, std::vector<uint8_t>* outData) {
 
     std::filesystem::path fullPath;
     if (isFullPath) {
@@ -29,24 +29,24 @@ bool loadImage(const std::filesystem::path& path, const bool isFullPath,
         return loadDDSFile(path, outDescription, outData);
     }
 
-	int width, height, components;
+    int width, height, components;
     unsigned char* data;
     const bool isHdr = path.extension().string() == ".hdr";
-    
+
     if (isHdr) {
         data = reinterpret_cast<unsigned char*>(stbi_loadf(fullPath.string().c_str(), &width, &height, &components, 0));
     }
     else {
         data = stbi_load(fullPath.string().c_str(), &width, &height, &components, 0);
     }
-	 
+
     uint32_t bytesPerComponent = isHdr ? 4 : 1;
     size_t dataSize = (size_t)width * (size_t)height * (size_t)components * (size_t)bytesPerComponent; //in bytes
 
-	if (data == nullptr) {
-		std::cout << "failed to open image: " << fullPath << std::endl;
+    if (data == nullptr) {
+        std::cout << "failed to open image: " << fullPath << std::endl;
         return false;
-	}
+    }
 
     if (isHdr) {
         assert(components == 4 || components == 3); //FIXME handle all components
@@ -54,7 +54,6 @@ bool loadImage(const std::filesystem::path& path, const bool isFullPath,
     else {
         assert(components == 4 || components == 3 || components == 1);
     }
-    
 
     ImageFormat format;
     if (isHdr) {
@@ -80,52 +79,40 @@ bool loadImage(const std::filesystem::path& path, const bool isFullPath,
     outDescription->autoCreateMips = true;
     outDescription->usageFlags = ImageUsageFlags::Sampled;
 
-    /*
-    simple copy 
-    */
+    //simple copy 
     if (components == 4 || components == 1 || components == 2) {
         outData->resize(dataSize);
         memcpy(outData->data(), data, dataSize);
     }
-    /*
-    requires padding to 4 compontens
-    */
+    //requires padding to 4 compontens
     else {
-		outData->reserve(size_t(dataSize * 1.25));
+        outData->reserve(size_t(dataSize * 1.25));
         if (isHdr) {
             for (int i = 0; i < dataSize; i += 12) {
-                /*
-                12 bytes data for rgb
-                */
+                //12 bytes data for rgb
                 for (int j = 0; j < 12; j++) {
-					outData->push_back(data[i + j]);
+                    outData->push_back(data[i + j]);
                 }
-                /*
-                4 byte padding for alpha channel
-                */
+                //4 byte padding for alpha channel
                 for (int j = 0; j < 4; j++) {
-					outData->push_back(1);
+                    outData->push_back(1);
                 }
             }
         }
         else{
             for (int i = 0; i < dataSize; i += 3) {
-                /*
-                3 bytes data for rgb
-                */
+                //3 bytes data for rgb
                 outData->push_back(data[i]);
                 outData->push_back(data[i + 1]);
                 outData->push_back(data[i + 2]);
-                /*
-                single byte padding for alpha
-                */
-				outData->push_back(0xff); //fill with 1, otherwise section will be cut out by alpha clipping
+                //single byte padding for alpha
+                outData->push_back(0xff); //fill with 1, otherwise section will be cut out by alpha clipping
             }
         }
     }
     
-	stbi_image_free(data);
-	return true;
+    stbi_image_free(data);
+    return true;
 }
 
 //reference: https://docs.microsoft.com/en-us/windows/win32/direct3ddds/dx-graphics-dds-reference
@@ -349,7 +336,7 @@ namespace DDS_pixelFormatCompressionCodes {
     const uint32_t DXT4 = 0x34545844;
     const uint32_t DXT5 = 0x35545844;
     const uint32_t DX10 = 0x30315844;
-	const uint32_t BC5	= 0x32495441;
+    const uint32_t BC5	= 0x32495441;
 }
 
 bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outDescription, std::vector<uint8_t>* outData) {
@@ -385,30 +372,30 @@ bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outDes
             outDescription->type = ImageType::Type1D;
         }
         else {
-			outDescription->type = ImageType::Type2D;
+            outDescription->type = ImageType::Type2D;
         }
     }
     else {
-		outDescription->type = ImageType::Type3D;
+        outDescription->type = ImageType::Type3D;
     }
-    
+
     outDescription->mipCount = MipCount::Manual;
     outDescription->manualMipCount = glm::max(header.mipMapCount, uint32_t(1));
     outDescription->autoCreateMips = false;
     outDescription->usageFlags = ImageUsageFlags::Sampled;
 
     bool isUsingDX10Header = false;
-	const bool isCompressedFormat = header.pixelFormat.flags & DDS_pixelformatFlags::fourCC;
+    const bool isCompressedFormat = header.pixelFormat.flags & DDS_pixelformatFlags::fourCC;
 
     //only limited formats supported at the moment
-    //more formats will be added as needed    
+    //more formats will be added as needed
     if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::DX10) {
         //indicates presence of DX10 header which includes image format details
         isUsingDX10Header = true;
         DDS_headerDX10 headerDX10;
         file.read((char*)&headerDX10, sizeof(DDS_headerDX10));
         if (headerDX10.dxgiFormat == DXGI_FORMAT_R16_FLOAT) {
-			outDescription->format = ImageFormat::R16_sFloat;
+            outDescription->format = ImageFormat::R16_sFloat;
         }
         else {
             std::cout << "DDS unsupported texture format: " << filename << std::endl;
@@ -416,14 +403,14 @@ bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outDes
         }
     }
     else if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::DXT1) {
-		outDescription->format = ImageFormat::BC1;
+        outDescription->format = ImageFormat::BC1;
     }
     else if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::DXT5) {
-		outDescription->format = ImageFormat::BC3;
+        outDescription->format = ImageFormat::BC3;
     }
-	else if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::BC5) {
-		outDescription->format = ImageFormat::BC5;
-	}
+    else if (header.pixelFormat.compressionCode == DDS_pixelFormatCompressionCodes::BC5) {
+        outDescription->format = ImageFormat::BC5;
+    }
     else {
         std::cout << "DDS unsupported texture format: " << filename << std::endl;
         return false;
@@ -436,7 +423,7 @@ bool loadDDSFile(const std::filesystem::path& filename, ImageDescription* outDes
     }
 
     //copy data
-	outData->resize(dataSize);
+    outData->resize(dataSize);
     file.read((char*)outData->data(), dataSize);
 
     file.close();
@@ -533,12 +520,12 @@ void writeDDSFile(const std::filesystem::path& pathAbsolute, const ImageDescript
             header.reserved1[i] = 0;
         }
         header.reserved2 = 0;
-    }    
+    }
 
     for (uint32_t i = 0; i < sizeof(DDS_header) / 4; i++) {
         binaryData.push_back((reinterpret_cast<uint32_t*>(&header))[i]);
     }
-    
+
     DDS_headerDX10 headerDX10;
     if (imageDescription.format == ImageFormat::RGBA8) {
         headerDX10.dxgiFormat = DXGI_FORMAT_R8G8B8A8_UNORM;

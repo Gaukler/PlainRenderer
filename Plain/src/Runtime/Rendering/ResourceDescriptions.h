@@ -62,15 +62,15 @@ struct RenderPassExecution {
 
 //contains RenderPassExecution and additional info for graphic pass
 struct GraphicPassExecution {
-	RenderPassExecution genericInfo;
-	FramebufferHandle framebuffer;
+    RenderPassExecution genericInfo;
+    FramebufferHandle framebuffer;
 };
 
 //contains RenderPassExecution and additional info for compute pass
 struct ComputePassExecution {
-	RenderPassExecution genericInfo;
-	std::vector<char> pushConstants;
-	uint32_t dispatchCount[3] = { 1, 1, 1 };
+    RenderPassExecution genericInfo;
+    std::vector<char> pushConstants;
+    uint32_t dispatchCount[3] = { 1, 1, 1 };
 };
 
 enum class RasterizationeMode { Fill, Line, Point };
@@ -80,7 +80,7 @@ struct RasterizationConfig {
     RasterizationeMode  mode = RasterizationeMode::Fill;
     CullMode            cullMode = CullMode::None;
     bool                clampDepth = false;
-	bool				conservative = false;
+	bool                conservative = false;
 };
 
 
@@ -168,16 +168,16 @@ struct SamplerDescription {
 };
 
 struct GlobalShaderInfo {
-	glm::mat4 viewProjection = glm::mat4(0.f);
-	glm::mat4 viewProjectionPrevious = glm::mat4(0.f);
+    glm::mat4 viewProjection = glm::mat4(0.f);
+    glm::mat4 viewProjectionPrevious = glm::mat4(0.f);
     glm::vec4 sunDirection  = glm::vec4(0.f, -1.f, 0.f, 0.f);
     glm::vec4 cameraPos     = glm::vec4(0.f);
-	glm::vec4 cameraPosPrevious = glm::vec4(0.f);
+    glm::vec4 cameraPosPrevious = glm::vec4(0.f);
     glm::vec4 cameraRight   = glm::vec4(1.f, 0.f, 0.f, 0.f);
     glm::vec4 cameraUp      = glm::vec4(0.f, -1.f, 0.f, 0.f);
     glm::vec4 cameraForward = glm::vec4(0.f, 0.f, -1.f, 0.f);
-	glm::vec4 cameraForwardPrevious = glm::vec4(0.f, 0.f, -1.f, 0.f);
-	glm::ivec4 noiseTextureIndices = glm::ivec4(0);
+    glm::vec4 cameraForwardPrevious = glm::vec4(0.f, 0.f, -1.f, 0.f);
+    glm::ivec4 noiseTextureIndices = glm::ivec4(0);
     glm::vec2 currentFrameCameraJitter  = glm::vec2(0.f);
     glm::vec2 previousFrameCameraJitter = glm::vec2(0.f);
     glm::ivec2 screenResolution = glm::ivec2(0);
@@ -192,10 +192,10 @@ struct GlobalShaderInfo {
     float time = 0.f;
     float mipBias = 0.f;
     bool cameraCut = false;
-	uint32_t frameIndex = 0;
-	uint32_t frameIndexMod2 = 0;
-	uint32_t frameIndexMod3 = 0;
-	uint32_t frameIndexMod4 = 0;
+    uint32_t frameIndex = 0;
+    uint32_t frameIndexMod2 = 0;
+    uint32_t frameIndexMod3 = 0;
+    uint32_t frameIndexMod4 = 0;
 };
 
 struct FramebufferTarget {

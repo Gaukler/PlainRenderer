@@ -23,17 +23,17 @@ void InputManager::shutdown() {
 }
 
 KeyState keystateFromBoolAndPreviousState(const bool isKeyDown, const KeyState previousState) {
-	if (isKeyDown) {
-		if (previousState == KeyState::Released) {
-			return KeyState::Pressed;
-		}
-		else {
-			return KeyState::Held;
-		}
-	}
-	else {
-		return KeyState::Released;
-	}
+    if (isKeyDown) {
+        if (previousState == KeyState::Released) {
+            return KeyState::Pressed;
+        }
+        else {
+            return KeyState::Held;
+        }
+    }
+    else {
+        return KeyState::Released;
+    }
 }
 
 void InputManager::update() {
@@ -52,14 +52,13 @@ void InputManager::update() {
     }
     //mouse buttons
     for (int i = 0; i < MOUSE_BUTTON_COUNT; i++) {
-		const bool isKeyDown = glfwGetMouseButton(m_window, mouseButtonCodeToGLFW[i]) == GLFW_PRESS;
-		m_mouseButtonStatus[i] = keystateFromBoolAndPreviousState(isKeyDown, m_mouseButtonStatus[i]);
-		
+        const bool isKeyDown = glfwGetMouseButton(m_window, mouseButtonCodeToGLFW[i]) == GLFW_PRESS;
+        m_mouseButtonStatus[i] = keystateFromBoolAndPreviousState(isKeyDown, m_mouseButtonStatus[i]);
     }
     //keyboard buttons
     for (int i = 0; i < KEYBOARD_KEY_COUNT; i++) {
         const bool isKeyDown = glfwGetKey(m_window, keyCodeToGLFW[i]) == GLFW_PRESS;
-		m_keyboardStatus[i] = keystateFromBoolAndPreviousState(isKeyDown, m_keyboardStatus[i]);
+        m_keyboardStatus[i] = keystateFromBoolAndPreviousState(isKeyDown, m_keyboardStatus[i]);
     }
 }
 
