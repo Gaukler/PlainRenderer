@@ -1,3 +1,6 @@
+#ifndef GEOMETRIC_AA_INC
+#define GEOMETRIC_AA_INC
+
 float modifiedRoughnessGeometricAA(vec3 N, float r){
     //reference: "Improved Geometric Specular Antialiasing"
     float kappa = 0.18f; //threshold
@@ -15,3 +18,5 @@ float modifiedRoughnessGeometricAA(vec3 N, float r){
     float rFiltered = clamp(sqrt(r * r + kernelRoughness2), 0.f, 1.f);
     return rFiltered;
 }
+
+#endif // #ifndef GEOMETRIC_AA_INC

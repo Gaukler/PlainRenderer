@@ -1,3 +1,6 @@
+#ifndef NOISE_INC
+#define NOISE_INC
+
 //from: "Next Generation Post Processing in Call Of Duty Advanced Warfare" slide page 123
 float interleavedGradientNoise(vec2 uv){
     vec3 magic = vec3(0.06711056, 0.00583715, 62.9829189);
@@ -49,3 +52,5 @@ float rand(inout uint state)
     state = x;
     return clamp(float(x)*uintBitsToFloat(0x2f800004u), 0, 1);	//clamped because rarely returns values otside of [0, 1]
 }
+
+#endif // #ifndef NOISE_INC

@@ -1,3 +1,6 @@
+#ifndef GLOBAL_INC
+#define GLOBAL_INC
+
 layout(set=0, binding = 0, std140) uniform global{
     mat4 g_viewProjection;
     mat4 g_viewProjectionPrevious;
@@ -39,3 +42,5 @@ layout(set=0, binding = 7) uniform sampler g_sampler_nearestRepeat;
 layout(set=0, binding = 8) uniform sampler g_sampler_nearestWhiteBorder;
 
 float pi = 3.1415926535f;
+
+#endif // #ifndef GLOBAL_INC

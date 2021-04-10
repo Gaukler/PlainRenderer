@@ -1,3 +1,6 @@
+#ifndef TEMPORAL_REPROJECTION_INC
+#define TEMPORAL_REPROJECTION_INC
+
 #include "luminance.inc"
 
 //from: "Temporal ReprojectionAnti-Aliasing in INSIDE"
@@ -82,3 +85,5 @@ vec2 getClosestFragmentMotion(ivec2 uv, texture2D depthTexture, texture2D veloci
 bool isUVOutOfImage(vec2 uv){
     return uv.x < 0 || uv.y < 0 || uv.x > 1 || uv.y > 1;
 }
+
+#endif // #ifndef TEMPORAL_REPROJECTION_INC

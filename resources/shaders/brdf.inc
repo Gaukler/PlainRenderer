@@ -1,3 +1,6 @@
+#ifndef BRDF_INC
+#define BRDF_INC
+
 float D_GGX(const float NoH, const float r){
     float a = NoH * r;
     float k = r / (1.0 - NoH * NoH + a * a);
@@ -74,3 +77,5 @@ vec3 GGXSingleScattering(float r, vec3 f0, float NoH, float NoV, float VoH, floa
     const vec3 F = F_Schlick(f0, vec3(1.f), VoH);
     return D * Vis * F;
 }
+
+#endif // #ifndef BRDF_INC

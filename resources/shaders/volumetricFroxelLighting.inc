@@ -1,3 +1,6 @@
+#ifndef VOLUMETRIC_FROXEL_LIGHTING_INC
+#define VOLUMETRIC_FROXEL_LIGHTING_INC
+
 const float maxVolumetricLightingDepth = 30.f; 
 
 struct VolumetricLightingSettings{
@@ -48,3 +51,5 @@ vec4 volumeTextureLookup(vec2 screenUV, float depth, texture3D froxelTexture, fl
 vec3 applyInscatteringTransmittance(vec3 originalColor, vec4 inscatteringTransmittance){
     return originalColor * inscatteringTransmittance.a + inscatteringTransmittance.rgb;
 }
+
+#endif // #ifndef VOLUMETRIC_FROXEL_LIGHTING_INC

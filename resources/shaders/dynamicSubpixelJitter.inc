@@ -1,3 +1,6 @@
+#ifndef DYNAMIC_SUBPIXEL_JITTER_INC
+#define DYNAMIC_SUBPIXEL_JITTER_INC
+
 vec2 computeDynamicSubpixelJitterScale(vec3 posObj, mat4 mvp, mat4 mvpPrevious, vec2 currentJitter, vec2 lastJitter){
 
     precise vec4 previousPos = mvpPrevious * vec4(posObj, 1.f);
@@ -32,3 +35,5 @@ vec2 testJitter(vec3 posObj, mat4 mvp, mat4 mvpPrevious){
 
     return mix(vec2(1), vec2(1), motion);
 }
+
+#endif // #ifndef DYNAMIC_SUBPIXEL_JITTER_INC

@@ -1,3 +1,6 @@
+#ifndef BICUBIC_SAMPLING_INC
+#define BICUBIC_SAMPLING_INC
+
 float catmullRomWeight1D(float d){
     float d1 = abs(d);
     float d2 = d1 * d1;
@@ -176,3 +179,5 @@ vec3 bicubicSample1Tap(texture2D srcTexture, sampler srcSampler, vec2 iUV, vec2 
     //total weight is stored in alpha
     return result.rgb / result.a;
 }
+
+#endif // #ifndef BICUBIC_SAMPLING_INC

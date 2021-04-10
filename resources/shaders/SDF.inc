@@ -1,3 +1,6 @@
+#ifndef SDF_INC
+#define SDF_INC
+
 struct SDFInstance{
     vec3    localExtends;
     uint    sdfTextureIndex;
@@ -193,3 +196,5 @@ void traceRayTroughSDFInstance(SDFInstance instance, vec3 rayStartWorld, texture
         hitDistanceLocal += abs(d);
     }
 }
+
+#endif // #ifndef SDF_INC

@@ -1,3 +1,6 @@
+#ifndef SUN_SHADOW_CASCADES
+#define SUN_SHADOW_CASCADES
+
 const int maxSunShadowCascadeCount = 4;
 float shadowSampleRadius = 0.03f; //world space
 
@@ -25,3 +28,5 @@ vec3 sunShadowCascadeDebugColors(int cascadeIndex){
     };
     return cascadeColors[cascadeIndex];
 }
+
+#endif // #ifndef SUN_SHADOW_CASCADES

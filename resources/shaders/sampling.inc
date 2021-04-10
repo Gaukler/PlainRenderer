@@ -1,3 +1,6 @@
+#ifndef SAMPLING_INC
+#define SAMPLING_INC
+
 vec3 importanceSampleGGX(vec2 xi, float r, vec3 N){
     float r_2 = r * r;
     float cosTheta = sqrt((1.f - xi.y) / (1.f + (r_2 * r_2 - 1.f) * xi.y));
@@ -53,3 +56,5 @@ float radicalInverse_VdC(uint bits) {
 vec2 hammersley2d(uint i, uint N) {
     return vec2(float(i)/float(N), radicalInverse_VdC(i));
 }
+
+#endif // #ifndef SAMPLING_INC

@@ -1,3 +1,6 @@
+#ifndef CUBEMAP_INC
+#define CUBEMAP_INC
+
 vec3 cubemapCoordinateToDirection(ivec3 co, int cubeRes){
     vec3 forwardPerFace[6] = {
         vec3(1.f, 0.f, 0.f),    //right
@@ -25,3 +28,5 @@ vec3 cubemapCoordinateToDirection(ivec3 co, int cubeRes){
 
     return normalize(forward + factors.y * up + factors.x * right);
 }
+
+#endif // #ifndef CUBEMAP_INC

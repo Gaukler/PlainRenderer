@@ -1,3 +1,6 @@
+#ifndef COLOR_CONVERSION_INC
+#define COLOR_CONVERSION_INC
+
 //reference: https://en.wikipedia.org/wiki/SRGB
 vec3 linearTosRGB(vec3 linear){
     vec3 sRGBLo = linear * 12.92;
@@ -33,3 +36,5 @@ vec3 YCoCgToLinear(vec3 YCoCg){
     YCoCg.x           + YCoCg.z,
     YCoCg.x - YCoCg.y - YCoCg.z);
 }
+
+#endif // #ifndef COLOR_CONVERSION_INC

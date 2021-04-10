@@ -1,3 +1,6 @@
+#ifndef VOLUME_SHADING_INC
+#define VOLUME_SHADING_INC
+
 float phaseGreenstein(float VoL, float g){
     return (1.f - g * g) / (4.f * pi * pow(1.f + g * g - 2.f * g * VoL, 1.5f));
 }
@@ -22,3 +25,5 @@ float cornetteShanksPhase(float VoL, float g){
 vec3 integrateInscattering(vec3 inscattering, vec3 extinctionCoefficients, float length){
     return (inscattering - inscattering * exp(-extinctionCoefficients * length)) / max(extinctionCoefficients, 0.00001f);
 }
+
+#endif // #ifndef VOLUME_SHADING_INC

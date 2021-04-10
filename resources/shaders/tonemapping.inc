@@ -1,3 +1,6 @@
+#ifndef TONEMAPPING_INC
+#define TONEMAPPING_INC
+
 //simple fit from: https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
 vec3 ACESFilmApproximate(vec3 x)
 {
@@ -44,3 +47,5 @@ vec3 ACESFitted(vec3 color)
     color = clamp(color, 0, 1);
     return color;
 }
+
+#endif // #ifndef TONEMAPPING_INC
