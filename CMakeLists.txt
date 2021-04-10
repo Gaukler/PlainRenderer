@@ -48,20 +48,12 @@ include_directories(Plain/src/Common)
 #add vendor folder to allow direct inclusion of header libraries
 include_directories(Plain/vendor)
 
-#enable multi core compilation and set warning level 4 when using Visual Studio
-if(MSVC)
-  target_compile_options(PlainRuntime       PRIVATE "/MP" "/W4")
-  target_compile_options(PlainAssetPipeline PRIVATE "/MP" "/W4")
-endif()
-
 #add glfw
 add_subdirectory(Plain/vendor/glfw)
-include_directories(Plain/vendor/glfw)
 target_link_libraries(PlainRuntime glfw ${GLFW_LIBRARIES})
 
 #add SPIRV-Cross
 add_subdirectory(Plain/vendor/spirv-cross)
-include_directories(Plain/vendor/spirv-cross)
 target_link_libraries(PlainRuntime spirv-cross-c)
 
 #add glm
@@ -71,7 +63,6 @@ include_directories(Plain/vendor/glm)
 
 #add glslang
 add_subdirectory(Plain/vendor/glslang)
-include_directories(Plain/vendor/glslang)
 target_link_libraries(PlainRuntime glslang SPIRV)
 
 #add imgui
@@ -119,20 +110,24 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${UTILITIES_FILES})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ASSET_PIPELINE_FILES})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${COMMON_FILES})
 
+add_library(CommonCompileOptions INTERFACE)
+
 #configure VS configurations
 if(MSVC)
+
+    #enable multi core compilation and set warning level 4
+    target_compile_options(CommonCompileOptions INTERFACE "/MP" "/W4")
+
     #whole program optimization for release build
-    target_compile_options(PlainRuntime 		PRIVATE $<$<CONFIG:Release>:/GL>) 
-    target_compile_options(PlainAssetPipeline 	PRIVATE $<$<CONFIG:Release>:/GL>) 
+    target_compile_options(CommonCompileOptions INTERFACE $<$<CONFIG:Release>:/GL>) 
 
     #set development build debug settings
-    target_compile_options(PlainRuntime 	    PRIVATE $<$<CONFIG:Development>:/Zi>) 
-    target_compile_options(PlainAssetPipeline 	PRIVATE $<$<CONFIG:Development>:/Zi>)
-
-    target_link_options(PlainRuntime 	   PRIVATE $<$<CONFIG:Development>:/DEBUG>)
-    target_link_options(PlainAssetPipeline PRIVATE $<$<CONFIG:Development>:/DEBUG>)
+    target_compile_options(CommonCompileOptions INTERFACE $<$<CONFIG:Development>:/Zi>) 
+    target_link_options(CommonCompileOptions    INTERFACE $<$<CONFIG:Development>:/DEBUG>)
 endif()
 
-#macros per profile
-add_compile_definitions(PRIVATE $<$<CONFIG:Debug>:USE_VK_VALIDATION_LAYERS>)
-add_compile_definitions(PRIVATE $<$<CONFIG:Development>:USE_VK_VALIDATION_LAYERS>)
+target_link_libraries(PlainRuntime          CommonCompileOptions)
+target_link_libraries(PlainAssetPipeline    CommonCompileOptions)
+
+#runtime macros per config
+target_compile_definitions(PlainRuntime PRIVATE $<$<OR:$<CONFIG:Debug>,$<CONFIG:Development>>:USE_VK_VALIDATION_LAYERS>)
