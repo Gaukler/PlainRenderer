@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 file(GLOB_RECURSE RUNTIME_FILES
     ${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.c
     ${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.cpp
-       ${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.h
+    ${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.h
     ${CMAKE_SOURCE_DIR}/Plain/src/Runtime/*.hpp
     ${CMAKE_SOURCE_DIR}/resources/shaders/*.inc
     ${CMAKE_SOURCE_DIR}/resources/shaders/*.comp
@@ -23,13 +23,13 @@ file(GLOB_RECURSE RUNTIME_FILES
 file(GLOB_RECURSE ASSET_PIPELINE_FILES
     ${CMAKE_SOURCE_DIR}/Plain/src/AssetPipeline/*.c
     ${CMAKE_SOURCE_DIR}/Plain/src/AssetPipeline/*.cpp
-       ${CMAKE_SOURCE_DIR}/Plain/src/AssetPipeline/*.h
+    ${CMAKE_SOURCE_DIR}/Plain/src/AssetPipeline/*.h
     ${CMAKE_SOURCE_DIR}/Plain/src/AssetPipeline/*.hpp)
 
 file(GLOB_RECURSE COMMON_FILES
     ${CMAKE_SOURCE_DIR}/Plain/src/Common/*.c
     ${CMAKE_SOURCE_DIR}/Plain/src/Common/*.cpp
-       ${CMAKE_SOURCE_DIR}/Plain/src/Common/*.h
+    ${CMAKE_SOURCE_DIR}/Plain/src/Common/*.h
     ${CMAKE_SOURCE_DIR}/Plain/src/Common/*.hpp)
 
 add_executable(PlainRuntime
