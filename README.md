@@ -60,6 +60,7 @@ If the scene uses many copied objects, instancing should be used to lessen the m
 
 ## Gallery
 
+![Profiling and UI](https://raw.githubusercontent.com/Gaukler/gaukler.github.io/gh-pages/docs/images/Plain/profiling-UI.png)
 ![Sky screenshot](https://raw.githubusercontent.com/Gaukler/gaukler.github.io/gh-pages/docs/images/Plain/sky.png)
 ![Indirect lighting gif](https://raw.githubusercontent.com/Gaukler/gaukler.github.io/gh-pages/docs/images/Plain/indirectLighting.gif)
 
