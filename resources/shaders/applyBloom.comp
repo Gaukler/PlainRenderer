@@ -25,8 +25,7 @@ void main(){
     vec3 bloom = textureLod(sampler2D(bloomTexture, g_sampler_linearClamp), uv, 0).rgb;
     vec3 scene = imageLoad(target, iUV).rgb;
 
-    vec3 color = scene + bloom * bloomStrength;
-    //color = bloom;
+    vec3 color = mix(scene, bloom, bloomStrength);
 
     imageStore(target, iUV, vec4(color, 0));
 }
