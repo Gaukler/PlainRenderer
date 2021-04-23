@@ -69,15 +69,27 @@ void main(){
 
             vec3 transmission = vec3(1.f);
 
+            #define approximation
+            //assumes height and up vector is constant, allows sun transmission LUT lookup to be pulled out of loop
+            #ifdef approximation
+            float currentHeight = -currentPosition.y - atmosphereSettings.earthRadius;
+            #endif
+
             [[loop]]    //no effect on GCN Vega, but massive improvement on GTX 1660 TI
             for(int i = 0; i < innerSampleCount; i++){
 
                 currentPosition += V;
 
-                vec3 up = currentPosition - earthCenter;
+                vec3 up;
+                
+                #ifdef approximation
+                up = vec3(0, -1, 0);
+                #else
+                up = currentPosition - earthCenter;
                 float upLength = length(up);
                 float currentHeight = upLength - atmosphereSettings.earthRadius;
                 up /= upLength;
+                #endif
 
                 AtmosphereCoefficients coefficients = calculateCoefficients(height, atmosphereSettings);
                 vec3 scatteringCo = coefficients.scatterRayleigh + coefficients.scatterMie;
