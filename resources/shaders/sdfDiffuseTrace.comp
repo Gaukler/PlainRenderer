@@ -135,6 +135,7 @@ void main(){
     vec3 normalTexel = texture(sampler2D(normalTexture, g_sampler_nearestClamp), uv).rgb;
     vec3 N = normalTexel * 2 - 1;
 
+    //write depth and normal to shared memory for resolve
 	sharedRays[gl_LocalInvocationID.x][gl_LocalInvocationID.y].normal = N;
 	sharedRays[gl_LocalInvocationID.x][gl_LocalInvocationID.y].depth = depthLinear;
 
