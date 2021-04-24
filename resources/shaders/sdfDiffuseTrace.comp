@@ -67,14 +67,9 @@ struct RayInfo{
 shared RayInfo[8][8] sharedRays;
 
 //use neighbouring rays trough LDS, if appropriate
-vec3 resolveColor(vec3 initialColor, vec3 N, float depth){
+vec3 resolveColor(vec3 initialColor){
     //write ray to LDS
-    RayInfo ray;
-    ray.normal = N;
-    ray.depth = depth;
-    ray.color = initialColor;
-
-    sharedRays[gl_LocalInvocationID.x][gl_LocalInvocationID.y] = ray;
+    sharedRays[gl_LocalInvocationID.x][gl_LocalInvocationID.y].color = initialColor;
 
     barrier();
     memoryBarrier();
@@ -99,11 +94,11 @@ vec3 resolveColor(vec3 initialColor, vec3 N, float depth){
 
             //reject based on normal and depth
             float normalThreshold = 0.9f;
-            float NoN = clamp(dot(N, neighbourRay.normal), 0, 1);
+            float NoN = clamp(dot(sharedRays[gl_LocalInvocationID.x][gl_LocalInvocationID.y].normal, neighbourRay.normal), 0, 1);
             bool normalsMatch = NoN > normalThreshold;
 
             float depthThreshold = 0.5f;
-            bool depthMatch = abs(depth - neighbourRay.depth) < depthThreshold;
+            bool depthMatch = abs(sharedRays[gl_LocalInvocationID.x][gl_LocalInvocationID.y].depth - neighbourRay.depth) < depthThreshold;
 
             if(normalsMatch && depthMatch){
                 //works out to gauss kernel, if all samples are accepted
@@ -139,6 +134,13 @@ void main(){
 
     vec3 normalTexel = texture(sampler2D(normalTexture, g_sampler_nearestClamp), uv).rgb;
     vec3 N = normalTexel * 2 - 1;
+
+	sharedRays[gl_LocalInvocationID.x][gl_LocalInvocationID.y].normal = N;
+	sharedRays[gl_LocalInvocationID.x][gl_LocalInvocationID.y].depth = depthLinear;
+
+	barrier();
+    memoryBarrier();
+
     vec3 rayOrigin = pWorld + N * 0.2;
 
     vec3 L = importanceSampleCosine(xi, N);
@@ -163,15 +165,15 @@ void main(){
         traceRayTroughSDFInstance(instance, rayOrigin, textures[instance.sdfTextureIndex], L, traceResult);
     }
 
-    //white border means outside of shadow map are assumed shadowed
-    float shadow  = simpleShadow(traceResult.hitPos, sunShadowCascadeInfo.lightMatrices[shadowCascadeIndex], shadowMap, g_sampler_nearestWhiteBorder);
-
     vec3 hitColor;
 
     if(traceResult.hit){
-        vec3 sunLight = lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
-        sunLight *= shadow; 
-        float NoL = clamp(dot(traceResult.N, g_sunDirection.xyz), 0, 1);
+		//white border means outside of shadow map are assumed shadowed
+    	float shadow  = simpleShadow(traceResult.hitPos, sunShadowCascadeInfo.lightMatrices[shadowCascadeIndex], shadowMap, g_sampler_nearestWhiteBorder);
+		
+		float NoL = clamp(dot(traceResult.N, g_sunDirection.xyz), 0, 1);
+        vec3 sunLight = shadow * NoL * lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
+
         hitColor = traceResult.albedo * sunLight * NoL;
 
         //reject out of range hits
@@ -191,7 +193,7 @@ void main(){
         //hitColor = vec3(1, 0, 0);	//visualize self intersecting pixels in red 
     }
 
-    hitColor = resolveColor(hitColor, N, depthLinear);
+    hitColor = resolveColor(hitColor);
 
     vec3 YCoCg = linearToYCoCg(hitColor);
 
