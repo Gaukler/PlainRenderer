@@ -138,17 +138,16 @@ void main(){
 	sharedRays[gl_LocalInvocationID.x][gl_LocalInvocationID.y].normal = N;
 	sharedRays[gl_LocalInvocationID.x][gl_LocalInvocationID.y].depth = depthLinear;
 
-	barrier();
-    memoryBarrier();
-
     vec3 rayOrigin = pWorld + N * 0.2;
 
     vec3 L = importanceSampleCosine(xi, N);
 
+    barrier();
+    memoryBarrier();
+
     TraceResult traceResult;
     traceResult.hit = false;
     traceResult.closestHitDistance = 10000.f;
-    traceResult.selfIntersection = false;
 
     //ivec2 tileUV = iUV / ivec2(cullingTileSize);
     ivec2 tileUV = ivec2(gl_WorkGroupID.xy) / ivec2(cullingTileSize / 8);
@@ -186,11 +185,6 @@ void main(){
     }
     else{
         hitColor = sampleSkyLut(L, skyLut);
-    }
-    //discard self intersecting rays
-    if(traceResult.selfIntersection){
-        hitColor = vec3(0);
-        //hitColor = vec3(1, 0, 0);	//visualize self intersecting pixels in red 
     }
 
     hitColor = resolveColor(hitColor);

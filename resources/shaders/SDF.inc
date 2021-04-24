@@ -135,26 +135,6 @@ void traceRayTroughSDFInstance(SDFInstance instance, vec3 rayStartWorld, texture
     float dLast = 0.f;	//last step distance
     float d = 0.f;
 
-    //check for self intersection
-    /*  disabled self intersection test at it improves quality only a bit, but heavily increases vgpr pressure
-    {
-        vec3 initialUV = localSamplePositionToUV(localSamplePos, instance.localExtends);
-        float initialD = texture(sampler3D(sdfTexture, g_sampler_linearClamp), initialUV).r; 
-
-        if(initialD < distanceThreshold){
-            //in case of self intersection move sample point in normal direction
-            localSamplePos += normalFromSDF(initialUV, instance.localExtends, sdfTexture) * distanceThreshold;
-
-            //check if self intersection has been recitifed
-            initialUV = localSamplePositionToUV(localSamplePos, instance.localExtends);
-            initialD = texture(sampler3D(sdfTexture, g_sampler_linearClamp), initialUV).r; 
-            if(initialD < distanceThreshold){
-                traceResult.selfIntersection = true;
-            }
-        }
-    }
-    */
-
     float localToGlobalScale = 1.f / length(instance.worldToLocal[0].xyz);
 
     //skip object if AABB intersection is further away than current closest hit
