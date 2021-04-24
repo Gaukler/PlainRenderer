@@ -37,13 +37,13 @@ void main(){
 
     //calculate world position
     vec3 uv = (iUV + 0.5f + settings.sampleOffset) / volumeRes;
-    vec3 ndc = 2.f * (uv - 0.5f);
+    vec3 ndc = 2.f * uv - 1;
     vec3 V = calculateViewDirectionFromPixel(ndc.xy, g_cameraForward.xyz, g_cameraUp.xyz, g_cameraRight.xyz, g_cameraTanFovHalf, g_cameraAspectRatio);
 
     vec3 posWorld = g_cameraPosition.xyz - V / dot(-V, g_cameraForward.xyz) * froxelUVToDepth(uv.z, settings.maxDistance);
 
     float shadow = simpleShadow(posWorld, sunShadowCascadeInfo.lightMatrices[2], sunShadowMap, g_sampler_nearestBlackBorder);
-    vec3 sunLight = shadow * lightBuffer.sunColor.rgb * lightBuffer.sunStrengthExposed;
+    float sunStrength = shadow * lightBuffer.sunStrengthExposed;
 
     vec3 L = g_sunDirection.xyz;
     float VoL = dot(-V, L);
@@ -55,7 +55,7 @@ void main(){
 
     //indirect lighting is not volumetric, so no proper contribution to volumetric lighting is currently implemented
     vec3 constantAmbientLighting = vec3(0.02f);
-    vec3 inscattering = (sunLight * phase + constantAmbientLighting) * scatteringCoefficient;
+    vec3 inscattering = (sunStrength * phase * lightBuffer.sunColor.rgb + constantAmbientLighting) * scatteringCoefficient;
 
     vec3 extinctionCoefficient = scatteringCoefficient + absorptionCoefficient;
     float transmittance = computeLuminance(extinctionCoefficient);
