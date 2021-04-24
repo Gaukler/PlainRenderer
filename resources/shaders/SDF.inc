@@ -155,6 +155,11 @@ void traceRayTroughSDFInstance(SDFInstance instance, vec3 rayStartWorld, texture
 
     float localToGlobalScale = 1.f / length(instance.worldToLocal[0].xyz);
 
+    //skip object if AABB intersection is further away than current closest hit
+    if(localToGlobalScale * hitDistanceLocal > traceResult.closestHitDistance){
+        return;
+    }
+
     for(int i = 0; i < 128; i++){
     
         vec3 localExtendsHalf = instance.localExtends * 0.5;
