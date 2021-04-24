@@ -2,6 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_ARB_shader_ballot : enable
 
 #include "global.inc"
 #include "screenToWorld.inc"
@@ -27,11 +28,11 @@ layout(set=1, binding = 2)              uniform texture2D depthTexture;
 layout(set=1, binding = 3)              uniform texture2D normalTexture;
 layout(set=1, binding = 4)              uniform texture2D skyLut;
 
-layout(set=1, binding = 5, std430) buffer lightStorageBuffer{
+layout(set=1, binding = 5, std430) readonly buffer lightStorageBuffer{
     LightBuffer lightBuffer;
 };
 
-layout(set=1, binding = 6, std430) buffer sdfInstanceBuffer{
+layout(set=1, binding = 6, std430) readonly buffer sdfInstanceBuffer{
     uint instanceCount;
     uint padding1;
     uint padding2;
@@ -39,7 +40,7 @@ layout(set=1, binding = 6, std430) buffer sdfInstanceBuffer{
     SDFInstance sdfInstances[];
 };
 
-layout(set=1, binding = 7, std430) buffer cameraCulledTileBuffer{
+layout(set=1, binding = 7, std430) readonly buffer cameraCulledTileBuffer{
     CulledInstancesPerTile cameraCulledTiles[];
 };
 
@@ -47,7 +48,7 @@ layout(set=1, binding = 8, std140) uniform influenceRangeBuffer{
     float influenceRange;
 };
 
-layout(set=1, binding = 9, std430) buffer sunShadowInfo{
+layout(set=1, binding = 9, std430) readonly buffer sunShadowInfo{
     ShadowCascadeInfo sunShadowCascadeInfo;
 };
 
@@ -147,7 +148,12 @@ void main(){
     traceResult.closestHitDistance = 10000.f;
     traceResult.selfIntersection = false;
 
-    ivec2 tileUV = iUV / ivec2(cullingTileSize);
+    //ivec2 tileUV = iUV / ivec2(cullingTileSize);
+    ivec2 tileUV = ivec2(gl_WorkGroupID.xy) / ivec2(cullingTileSize / 8);
+    //use wave intrinsics to force scalarization
+    //computation of tileUV is same for all lanes, but nvidia compiler does not scalarize otherwise
+    tileUV = readFirstInvocationARB(tileUV);
+
     uint tileIndex = tileIndexFromTileUV(tileUV);
 
     //iterate all objects in culling tile
