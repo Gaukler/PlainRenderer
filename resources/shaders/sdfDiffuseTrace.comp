@@ -180,7 +180,10 @@ void main(){
         bool hitInRange = traceResult.closestHitDistance < influenceRange;
         //accept hit regardless of distance, if not using strict influence radius cutoff
         hitInRange = hitInRange || !strictInfluenceRadiusCutoff;
-        if(!hitInRange){
+
+        bool selfIntersection = traceResult.closestHitDistance < 0.0001;
+
+        if(!hitInRange || selfIntersection){
             hitColor = vec3(0);
         }
     }

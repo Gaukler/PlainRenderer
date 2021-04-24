@@ -92,7 +92,6 @@ struct TraceResult{
     vec3 N; 
     int hitCount;
     vec3 albedo;
-    bool selfIntersection;
 };
 
 vec3 localSamplePositionToUV(vec3 localPosition, vec3 AABBExtends){
