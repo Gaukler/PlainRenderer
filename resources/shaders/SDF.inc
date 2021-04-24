@@ -136,6 +136,7 @@ void traceRayTroughSDFInstance(SDFInstance instance, vec3 rayStartWorld, texture
     float d = 0.f;
 
     //check for self intersection
+    /*  disabled self intersection test at it improves quality only a bit, but heavily increases vgpr pressure
     {
         vec3 initialUV = localSamplePositionToUV(localSamplePos, instance.localExtends);
         float initialD = texture(sampler3D(sdfTexture, g_sampler_linearClamp), initialUV).r; 
@@ -152,6 +153,7 @@ void traceRayTroughSDFInstance(SDFInstance instance, vec3 rayStartWorld, texture
             }
         }
     }
+    */
 
     float localToGlobalScale = 1.f / length(instance.worldToLocal[0].xyz);
 
