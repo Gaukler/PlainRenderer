@@ -1279,6 +1279,10 @@ float RenderBackend::getLastFrameCPUTime() const {
     return m_lastFrameCPUTime;
 }
 
+ImageDescription RenderBackend::getImageDescription(const ImageHandle image) {
+    return m_images[image.index].desc;
+}
+
 std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers(const RenderPassExecutionOrder& executionOrder,
     const std::vector<GraphicPassExecution>& graphicExecutions,
     const std::vector<ComputePassExecution>& computeExecutions) {

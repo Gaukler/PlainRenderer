@@ -209,6 +209,8 @@ public:
     std::vector<RenderPassTime> getRenderpassTimings() const;
     float getLastFrameCPUTime() const;
 
+    ImageDescription getImageDescription(const ImageHandle image);
+
 private:
 
     ShaderFileManager m_shaderFileManager;
