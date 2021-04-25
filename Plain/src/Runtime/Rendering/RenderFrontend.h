@@ -11,6 +11,7 @@
 #include "Techniques/Bloom.h"
 #include "Techniques/Sky.h"
 #include "Techniques/TAA.h"
+#include "Techniques/Volumetrics.h"
 
 struct GLFWwindow;
 
@@ -52,19 +53,6 @@ struct SDFDiffuseTraceSettings {
     //highest sun shadow cascade used for shadowing trace hits
     //if strict influence radius cutoff is disabled hits can be outside influence radius, so extra padding is necessary
     float additionalSunShadowMapPadding = 3.f;
-};
-
-struct VolumetricLightingSettings {
-    glm::vec3 windSampleOffset = glm::vec3(0.f);	//offset to apply to density noise, caused by wind
-    float maxDistance = 30.f;
-    glm::vec3 scatteringCoefficients = glm::vec3(1.f);
-    float absorptionCoefficient = 1.f;
-
-    float sampleOffset = 0.f;
-    float baseDensity = 0.003f;
-    float densityNoiseRange = 0.008f;	//how strong the noise influences density
-    float densityNoiseScale = 0.5f;		//world space scale of the noise pattern
-    float phaseFunctionG = 0.2f;		//g of henyey greenstein phase function
 };
 
 enum class ShaderResourceType { SampledImage, Sampler, StorageImage, StorageBuffer, UniformBuffer };
@@ -142,7 +130,6 @@ private:
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const;
-    void computeVolumetricLighting();
 
     //returns list of passes that must be used as parent to wait for results
     //when culling for direct visualisation hi-z culling results in artifacts
@@ -211,10 +198,8 @@ private:
     ShadingConfig m_shadingConfig;
     SDFDebugSettings m_sdfDebugSettings;
     SDFDiffuseTraceSettings m_sdfDiffuseTraceSettings;
-    VolumetricLightingSettings m_volumetricLightingSettings;
 
-    glm::vec3 m_windVector = glm::vec3(0.f);
-    float m_windSpeed = 0.15f;
+    WindSettings m_windSettings;
 
     BloomSettings m_bloomSettings;
     Bloom m_bloom;
@@ -227,6 +212,9 @@ private:
 
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
+
+    VolumetricsSettings m_volumetricsSettings;
+    Volumetrics m_volumetrics;
 
     RenderPassHandle m_brdfLutPass;
     RenderPassHandle m_histogramPerTilePass;
@@ -247,10 +235,6 @@ private:
     RenderPassHandle m_sdfCameraTileCulling;
     RenderPassHandle m_sdfCameraTileCullingHiZ;
     RenderPassHandle m_sdfDebugVisualisationPass;
-    RenderPassHandle m_froxelVolumeMaterialPass;
-    RenderPassHandle m_froxelScatteringTransmittancePass;
-    RenderPassHandle m_volumetricLightingIntegration;
-    RenderPassHandle m_volumetricLightingReprojection;
 
     ImageHandle m_postProcessBuffers[2];
     ImageHandle m_brdfLut;
@@ -263,11 +247,6 @@ private:
     ImageHandle m_depthHalfRes;
     ImageHandle m_indirectLightingFullRes_Y_SH;
     ImageHandle m_indirectLightingFullRes_CoCg;
-    ImageHandle m_volumeMaterialVolume;
-    ImageHandle m_scatteringTransmittanceVolume;
-    ImageHandle m_volumetricLightingHistory[2];
-    ImageHandle m_volumetricIntegrationVolume;
-    ImageHandle m_perlinNoise3D;
 
     std::vector<ImageHandle> m_noiseTextures;
 
@@ -306,7 +285,6 @@ private:
     UniformBufferHandle m_sdfVolumeInfoBuffer;
     UniformBufferHandle m_cameraFrustumBuffer;
     UniformBufferHandle m_sdfTraceInfluenceRangeBuffer;
-    UniformBufferHandle m_volumetricLightingSettingsUniforms;
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);

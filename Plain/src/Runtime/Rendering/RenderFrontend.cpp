@@ -33,7 +33,7 @@ glm::ivec3 computeVolumetricLightingFroxelResolution(const uint32_t screenResolu
 
 //---- private constants ----
 
-//definition of extern variable from header
+// definition of extern variable from header
 RenderFrontend gRenderFrontend;
 
 const uint32_t shadowMapRes = 2048;
@@ -57,12 +57,9 @@ const uint32_t shadowSampleCount = 8;
 const uint32_t maxObjectCountMainScene = 1200;
 
 const size_t sdfCameraCullingTileSize = 32;
-const size_t maxSdfObjectsPerTile = 100;	//must be the same as shader constant maxObjectsPerTile in sdfCulling.inc
+const size_t maxSdfObjectsPerTile = 100;    // must be the same as shader constant maxObjectsPerTile in sdfCulling.inc
 
-const uint32_t scatteringTransmittanceFroxelTileSize = 8;
-const uint32_t scatteringTransmittanceDepthSliceCount = 64;
-
-//bindings of global shader uniforms
+// bindings of global shader uniforms
 const uint32_t globalUniformBufferBinding               = 0;
 const uint32_t globalSamplerAnisotropicRepeatBinding    = 1;
 const uint32_t globalSamplerNearestBlackBorderBinding   = 2;
@@ -74,10 +71,10 @@ const uint32_t globalSamplerNearestRepeatBinding		= 7;
 const uint32_t globalSamplerNearestWhiteBorderBinding	= 8;
 const uint32_t globalNoiseTextureBindingBinding         = 9;
 
-//currently rendering without attachment is not supported, so a small dummy is used
+// currently rendering without attachment is not supported, so a small dummy is used
 const ImageFormat dummyImageFormat = ImageFormat::R8;
 
-//matrices used in the main rendering pass for depth-prepass and forward
+// matrices used in the main rendering pass for depth-prepass and forward
 struct MainPassMatrices {
     glm::mat4 model;
     glm::mat4 mvp;
@@ -185,9 +182,10 @@ void RenderFrontend::setup(GLFWwindow* window) {
     initRenderTargets();
     initMeshs();
 
-    m_bloom.init(width, height);
-    m_taa.init(width, height, m_taaSettings);
     m_sky.init();
+    m_bloom.init(width, height);
+    m_volumetrics.init(width, height);
+    m_taa.init(width, height, m_taaSettings);
 
     setupGlobalShaderInfoResources();
 
@@ -224,12 +222,7 @@ void RenderFrontend::prepareNewFrame() {
 
         m_taa.resizeImages(m_screenWidth, m_screenHeight);
         m_bloom.resizeTextures(m_screenWidth, m_screenHeight);
-
-        const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
-        //volumetric textures
-        gRenderBackend.resizeImages({ m_scatteringTransmittanceVolume, m_volumetricIntegrationVolume, m_volumeMaterialVolume,
-            m_volumetricLightingHistory[0], m_volumetricLightingHistory[1] },
-            froxelResolution.x,	froxelResolution.y);
+        m_volumetrics.resizeTextures(m_screenWidth, m_screenHeight);
 
         resizeIndirectLightingBuffers();
 
@@ -384,8 +377,16 @@ void RenderFrontend::prepareRenderpasses(){
         filterIndirectDiffuse(currentRenderTarget, lastRenderTarget);
     }
 
-    computeVolumetricLighting();
-    forwardShadingDependencies.push_back(m_volumetricLightingIntegration);
+    const int maxShadowCascadeIndex = m_shadingConfig.sunShadowCascadeCount - 1;
+
+    Volumetrics::Dependencies volumetricsDependencies;
+    volumetricsDependencies.lightBuffer = m_lightBuffer;
+    volumetricsDependencies.shadowMap = m_shadowMaps[maxShadowCascadeIndex];
+    volumetricsDependencies.sunShadowInfoBuffer = m_sunShadowInfoBuffer;
+    volumetricsDependencies.parents = { m_shadowPasses[maxShadowCascadeIndex], m_preExposeLightsPass };
+
+    const RenderPassHandle volumetricPass = m_volumetrics.computeVolumetricLighting(m_volumetricsSettings, m_windSettings, volumetricsDependencies);
+    forwardShadingDependencies.push_back(volumetricPass);
 
     renderForwardShading(forwardShadingDependencies, currentRenderTarget.colorFramebuffer);
     RenderPassHandle skyParent = m_mainPass;
@@ -395,10 +396,10 @@ void RenderFrontend::prepareRenderpasses(){
     }
 
     Sky::SkyRenderingDependencies skyDependencies;
-    skyDependencies.volumetricIntegrationVolume = m_volumetricIntegrationVolume;
-    skyDependencies.volumetricLightingSettingsUniforms = m_volumetricLightingSettingsUniforms;
+    skyDependencies.volumetricIntegrationVolume = m_volumetrics.getIntegrationVolume();
+    skyDependencies.volumetricLightingSettingsUniforms = m_volumetrics.getVolumetricsInfoBuffer();
     skyDependencies.lightBuffer = m_lightBuffer;
-    skyDependencies.parents = { m_preExposeLightsPass, m_volumetricLightingIntegration, skyLutPass, skyParent };
+    skyDependencies.parents = { m_preExposeLightsPass, volumetricPass, skyLutPass, skyParent };
 
     RenderPassHandle currentPass = m_sky.renderSky(currentRenderTarget.colorFramebuffer, skyDependencies);
 
@@ -929,7 +930,7 @@ void RenderFrontend::computeSunLightMatrices() const{
 
     LightMatrixPushConstants pushConstants;
     pushConstants.highestCascadePaddingSize = m_sdfDiffuseTraceSettings.traceInfluenceRadius;
-    pushConstants.highestCascadeMinFarPlane = m_volumetricLightingSettings.maxDistance;
+    pushConstants.highestCascadeMinFarPlane = m_volumetricsSettings.maxDistance;
 
     //if strict cutoff enabled all hits outside influence radius are discarded anyways
     if (!m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff) {
@@ -1156,7 +1157,7 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
         brdfLutResource,
         ImageResource(indirectSrc_Y_SH, 0, 15),
         ImageResource(indirectSrc_CoCg, 0, 16),
-        ImageResource(m_volumetricIntegrationVolume, 0, 18)
+        ImageResource(m_volumetrics.getIntegrationVolume(), 0, 18)
     };
 
     //add shadow map cascade resources
@@ -1166,7 +1167,7 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
         mainPassExecution.genericInfo.resources.sampledImages.push_back(shadowMapResource);
     }
     mainPassExecution.genericInfo.resources.uniformBuffers = {
-        UniformBufferResource(m_volumetricLightingSettingsUniforms, 19)
+        UniformBufferResource(m_volumetrics.getVolumetricsInfoBuffer(), 19)
     };
 
     mainPassExecution.genericInfo.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
@@ -1237,122 +1238,6 @@ void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const
     exe.genericInfo.parents.push_back(m_shadowPasses[shadowCascadeIndex]);
 
     gRenderBackend.setComputePassExecution(exe);
-}
-
-void RenderFrontend::computeVolumetricLighting() {
-
-    static int jitterIndex = 0;
-    jitterIndex++;
-    const int sampleCount = 8;
-    jitterIndex %= sampleCount;
-    m_volumetricLightingSettings.sampleOffset = hammersley2D(jitterIndex).x - 0.5f;
-
-    m_volumetricLightingSettings.windSampleOffset += m_windVector * m_windSpeed * Timer::getDeltaTimeFloat();
-
-    gRenderBackend.setUniformBufferData(m_volumetricLightingSettingsUniforms, 
-        (void*)&m_volumetricLightingSettings, sizeof(m_volumetricLightingSettings));
-
-    const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
-
-    //setup material volume
-    {
-        ComputePassExecution exe;
-        exe.genericInfo.handle = m_froxelVolumeMaterialPass;
-        exe.genericInfo.resources.storageImages = {
-            ImageResource(m_volumeMaterialVolume, 0, 0)
-        };
-        exe.genericInfo.resources.sampledImages = {
-            ImageResource(m_perlinNoise3D, 0, 1)
-        };
-        exe.genericInfo.resources.uniformBuffers = {
-            UniformBufferResource(m_volumetricLightingSettingsUniforms, 2)
-        };
-
-        const int groupSize = 4;
-        exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
-        exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
-        exe.dispatchCount[2] = (uint32_t)glm::ceil(froxelResolution.z / float(groupSize));
-
-        gRenderBackend.setComputePassExecution(exe);
-    }
-    //scattering/transmittance computation
-    {
-        const int shadowMapIndex = m_shadingConfig.sunShadowCascadeCount - 1;
-
-        ComputePassExecution exe;
-        exe.genericInfo.handle = m_froxelScatteringTransmittancePass;
-        exe.genericInfo.parents = { m_froxelVolumeMaterialPass, m_shadowPasses[shadowMapIndex], m_preExposeLightsPass };
-        exe.genericInfo.resources.storageImages = {
-            ImageResource(m_scatteringTransmittanceVolume, 0, 0)
-        };
-        exe.genericInfo.resources.sampledImages = {
-            ImageResource(m_shadowMaps[shadowMapIndex], 0, 1),
-            ImageResource(m_volumeMaterialVolume, 0, 2)
-        };
-        exe.genericInfo.resources.storageBuffers = {
-            StorageBufferResource(m_sunShadowInfoBuffer, true, 3),
-            StorageBufferResource(m_lightBuffer, true, 4)
-        };
-        exe.genericInfo.resources.uniformBuffers = {
-            UniformBufferResource(m_volumetricLightingSettingsUniforms, 5)
-        };
-
-        const int groupSize = 4;
-        exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
-        exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
-        exe.dispatchCount[2] = (uint32_t)glm::ceil(froxelResolution.z / float(groupSize));
-
-        gRenderBackend.setComputePassExecution(exe);
-    }
-
-    const ImageHandle reprojectionTarget = m_volumetricLightingHistory[m_globalShaderInfo.frameIndexMod2];
-    const ImageHandle reprojectionHistory = m_volumetricLightingHistory[(m_globalShaderInfo.frameIndexMod2 + 1) % 2];
-
-    //temporal reprojection
-    {
-        ComputePassExecution exe;
-        exe.genericInfo.handle = m_volumetricLightingReprojection;
-        exe.genericInfo.parents = { m_froxelScatteringTransmittancePass };
-        exe.genericInfo.resources.storageImages = {
-            ImageResource(reprojectionTarget, 0, 0)
-        };
-        exe.genericInfo.resources.sampledImages = {
-            ImageResource(m_scatteringTransmittanceVolume, 0, 1),
-            ImageResource(reprojectionHistory, 0, 2)
-        };
-        exe.genericInfo.resources.uniformBuffers = {
-            UniformBufferResource(m_volumetricLightingSettingsUniforms, 3)
-        };
-
-        const int groupSize = 4;
-        exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
-        exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
-        exe.dispatchCount[2] = (uint32_t)glm::ceil(froxelResolution.z / float(groupSize));
-
-        gRenderBackend.setComputePassExecution(exe);
-    }
-    //integration
-    {
-        ComputePassExecution exe;
-        exe.genericInfo.handle = m_volumetricLightingIntegration;
-        exe.genericInfo.parents = { m_volumetricLightingReprojection };
-        exe.genericInfo.resources.storageImages = {
-            ImageResource(m_volumetricIntegrationVolume, 0, 0)
-        };
-        exe.genericInfo.resources.sampledImages = {
-            ImageResource(reprojectionTarget, 0, 1)
-        };
-        exe.genericInfo.resources.uniformBuffers = {
-            UniformBufferResource(m_volumetricLightingSettingsUniforms, 2)
-        };
-
-        const int groupSize = 8;
-        exe.dispatchCount[0] = (uint32_t)glm::ceil(froxelResolution.x / float(groupSize));
-        exe.dispatchCount[1] = (uint32_t)glm::ceil(froxelResolution.y / float(groupSize));
-        exe.dispatchCount[2] = 1;
-
-        gRenderBackend.setComputePassExecution(exe);
-    }
 }
 
 std::vector<RenderPassHandle> RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ, const bool tracingHalfRes) const{
@@ -1903,79 +1788,6 @@ void RenderFrontend::initImages() {
 
         m_indirectLightingFullRes_CoCg = gRenderBackend.createImage(desc, nullptr, 0);
     }
-    const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
-    //scattering/transmittance froxels
-    {
-        ImageDescription desc;
-        desc.width = froxelResolution.x;
-        desc.height = froxelResolution.y;
-        desc.depth = froxelResolution.z;
-        desc.type = ImageType::Type3D;
-        desc.format = ImageFormat::RGBA16_sFloat;
-        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        m_scatteringTransmittanceVolume = gRenderBackend.createImage(desc, nullptr, 0);
-    }
-    //volumetric lighting integration froxels
-    {
-        ImageDescription desc;
-        desc.width = froxelResolution.x;
-        desc.height = froxelResolution.y;
-        desc.depth = froxelResolution.z;
-        desc.type = ImageType::Type3D;
-        desc.format = ImageFormat::RGBA16_sFloat;
-        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        m_volumetricIntegrationVolume = gRenderBackend.createImage(desc, nullptr, 0);
-        m_volumetricLightingHistory[0] = gRenderBackend.createImage(desc, nullptr, 0);
-        m_volumetricLightingHistory[1] = gRenderBackend.createImage(desc, nullptr, 0);
-    }
-    //volume material froxels
-    {
-        ImageDescription desc;
-        desc.width = froxelResolution.x;
-        desc.height = froxelResolution.y;
-        desc.depth = froxelResolution.z;
-        desc.type = ImageType::Type3D;
-        desc.format = ImageFormat::RGBA16_sFloat;
-        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        m_volumeMaterialVolume = gRenderBackend.createImage(desc, nullptr, 0);
-    }
-    //perlin noise 3D
-    {
-        const int noiseResolution = 32;
-
-        ImageDescription desc;
-        desc.width = noiseResolution;
-        desc.height = noiseResolution;
-        desc.depth = noiseResolution;
-        desc.type = ImageType::Type3D;
-        desc.format = ImageFormat::R8;
-        desc.usageFlags = ImageUsageFlags::Sampled;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        const std::vector<uint8_t> perlinNoiseData = generate3DPerlinNoise(glm::ivec3(noiseResolution), 8);
-        m_perlinNoise3D = gRenderBackend.createImage(desc, perlinNoiseData.data(), sizeof(uint8_t) * perlinNoiseData.size());
-    }
-}
-
-glm::ivec3 computeVolumetricLightingFroxelResolution(const uint32_t screenResolutionX, const uint32_t screenResolutionY) {
-    return glm::ivec3(
-        glm::ceil(screenResolutionX / float(scatteringTransmittanceFroxelTileSize)),
-        glm::ceil(screenResolutionY / float(scatteringTransmittanceFroxelTileSize)),
-        scatteringTransmittanceDepthSliceCount);
 }
 
 void RenderFrontend::initSamplers(){
@@ -2178,13 +1990,13 @@ void RenderFrontend::initRenderTargets() {
 }
 
 void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
-    //histogram buffer
+    // histogram buffer
     {
         StorageBufferDescription histogramBufferDesc;
         histogramBufferDesc.size = nHistogramBins * sizeof(uint32_t);
         m_histogramBuffer = gRenderBackend.createStorageBuffer(histogramBufferDesc);
     }
-    //light buffer 
+    // light buffer 
     {
         struct LightBuffer {
             glm::vec3 sunColor;
@@ -2198,20 +2010,20 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         lightBufferDesc.initialData = &initialData;
         m_lightBuffer = gRenderBackend.createStorageBuffer(lightBufferDesc);
     }
-    //per tile histogram
+    // per tile histogram
     {
         StorageBufferDescription histogramPerTileBufferDesc;
         histogramPerTileBufferDesc.size = (size_t)histogramSettings.maxTileCount * nHistogramBins * sizeof(uint32_t);
         m_histogramPerTileBuffer = gRenderBackend.createStorageBuffer(histogramPerTileBufferDesc);
     }
-    //depth pyramid syncing buffer
+    // depth pyramid syncing buffer
     {
         StorageBufferDescription desc;
         desc.size = sizeof(uint32_t);
         desc.initialData = { (uint32_t)0 };
         m_depthPyramidSyncBuffer = gRenderBackend.createStorageBuffer(desc);
     }
-    //light matrix buffer
+    // light matrix buffer
     {
         StorageBufferDescription desc;
         const size_t splitSize = sizeof(glm::vec4);
@@ -2220,64 +2032,64 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         desc.size = splitSize + lightMatrixSize + scaleInfoSize;
         m_sunShadowInfoBuffer = gRenderBackend.createStorageBuffer(desc);
     }
-    //global uniform buffer
+    // global uniform buffer
     {
         UniformBufferDescription desc;
         desc.size = sizeof(m_globalShaderInfo);
         m_globalUniformBuffer = gRenderBackend.createUniformBuffer(desc);
     }
-    //scene signed distance field volume info
+    // scene signed distance field volume info
     {
         UniformBufferDescription desc;
         desc.size = sizeof(VolumeInfo);
         m_sdfVolumeInfoBuffer = gRenderBackend.createUniformBuffer(desc);
     }
-    //main pass transforms buffer
+    // main pass transforms buffer
     {
         StorageBufferDescription desc;
         desc.size = sizeof(MainPassMatrices) * maxObjectCountMainScene;
         m_mainPassTransformsBuffer = gRenderBackend.createStorageBuffer(desc);
     }
-    //shadow pass transforms buffer
+    // shadow pass transforms buffer
     {
         StorageBufferDescription desc;
         desc.size = sizeof(glm::mat4) * maxObjectCountMainScene;
         m_shadowPassTransformsBuffer = gRenderBackend.createStorageBuffer(desc);
     }
-    //bounding box debug rendering matrices
+    // bounding box debug rendering matrices
     {
         StorageBufferDescription desc;
         desc.size = maxObjectCountMainScene * sizeof(glm::mat4);
         m_boundingBoxDebugRenderMatrices = gRenderBackend.createStorageBuffer(desc);
     }
-    //sdf instance buffer
+    // sdf instance buffer
     {
         StorageBufferDescription desc;
         desc.size = maxObjectCountMainScene * sizeof(SDFInstance) + sizeof(uint32_t) * 4; //extra uint for object count with padding to 16 byte
         m_sdfInstanceBuffer = gRenderBackend.createStorageBuffer(desc);
     }
-    //sdf camera frustum culled instances
+    // sdf camera frustum culled instances
     {
         StorageBufferDescription desc;
         desc.size = maxObjectCountMainScene * sizeof(uint32_t) + sizeof(uint32_t);
         m_sdfCameraFrustumCulledInstances = gRenderBackend.createStorageBuffer(desc);
     }
-    //camera frustum buffer
+    // camera frustum buffer
     {
         UniformBufferDescription desc;
         desc.size = 12 * sizeof(glm::vec4);
         m_cameraFrustumBuffer = gRenderBackend.createUniformBuffer(desc);
     }
-    //sdf instance world bounding boxes
+    // sdf instance world bounding boxes
     {
         StorageBufferDescription desc;
         desc.size = maxObjectCountMainScene * 2 * sizeof(glm::vec4);
         m_sdfInstanceWorldBBBuffer = gRenderBackend.createStorageBuffer(desc);
     }
-    //sdf camera culled tiles
+    // sdf camera culled tiles
     {
         StorageBufferDescription desc;
-        //FIXME: handle bigger resolutions and don't allocate for worst case
+        // FIXME: handle bigger resolutions and don't allocate for worst case
         const size_t maxWidth = 1920;
         const size_t maxHeight = 1080;
         const size_t tileCount = (size_t)glm::ceil(maxWidth / sdfCameraCullingTileSize) * (size_t)glm::ceil(maxHeight / sdfCameraCullingTileSize);
@@ -2285,23 +2097,17 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         desc.size = tileCount * tileSize;
         m_sdfCameraCulledTiles = gRenderBackend.createStorageBuffer(desc);
     }
-    //sdf trace influence range buffer
+    // sdf trace influence range buffer
     {
         UniformBufferDescription desc;
         desc.size = sizeof(float);
         m_sdfTraceInfluenceRangeBuffer = gRenderBackend.createUniformBuffer(desc);
     }
-    //volumetric lighting settings
-    {
-        UniformBufferDescription desc;
-        desc.size = sizeof(VolumetricLightingSettings);
-        m_volumetricLightingSettingsUniforms = gRenderBackend.createUniformBuffer(desc);
-    }
 }
 
 void RenderFrontend::initMeshs() {
-    //bounding box mesh
-    //drawn using lines, so needs different positions than skybox
+    // bounding box mesh
+    // drawn using lines, so needs different positions than skybox
     {
         AxisAlignedBoundingBox normalizedBB;
         normalizedBB.min = glm::vec3(-1);
@@ -2327,7 +2133,7 @@ void RenderFrontend::initMeshs() {
 }
 
 void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings) {
-    //main shading pass
+    // main shading pass
     {
         const Attachment colorAttachment(ImageFormat::R11G11B10_uFloat, AttachmentLoadOp::Clear);
         const Attachment depthAttachment(ImageFormat::Depth32, AttachmentLoadOp::Load);
@@ -2345,7 +2151,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         m_mainPass = gRenderBackend.createGraphicPass(mainPassDesc);
     }
-    //shadow cascade passes
+    // shadow cascade passes
     for (uint32_t cascade = 0; cascade < maxSunShadowCascadeCount; cascade++) {
 
         const Attachment shadowMapAttachment(ImageFormat::Depth16, AttachmentLoadOp::Clear);
@@ -2363,24 +2169,24 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         shadowPassConfig.blending = BlendState::None;
         shadowPassConfig.vertexFormat = VertexFormat::Full;
 
-        //cascade index specialisation constant
+        // cascade index specialisation constant
         shadowPassConfig.shaderDescriptions.vertex.specialisationConstants = { {
-            0,                                                  //location
-            dataToCharArray((void*)&cascade, sizeof(cascade))   //value
+            0,                                                  // location
+            dataToCharArray((void*)&cascade, sizeof(cascade))   // value
             }};
         
 
         const auto shadowPass = gRenderBackend.createGraphicPass(shadowPassConfig);
         m_shadowPasses.push_back(shadowPass);
     }
-    //BRDF Lut creation pass
+    // BRDF Lut creation pass
     {
         ComputePassDescription brdfLutPassDesc;
         brdfLutPassDesc.name = "BRDF Lut creation";
         brdfLutPassDesc.shaderDescription = createBRDFLutShaderDescription(m_shadingConfig);
         m_brdfLutPass = gRenderBackend.createComputePass(brdfLutPassDesc);
     }
-    //geometry debug pass
+    // geometry debug pass
     {
         const auto colorAttachment = Attachment(ImageFormat::R11G11B10_uFloat, AttachmentLoadOp::Load);
         const auto depthAttachment = Attachment(ImageFormat::Depth32, AttachmentLoadOp::Load);
@@ -2399,7 +2205,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         m_debugGeoPass = gRenderBackend.createGraphicPass(debugPassConfig);
     }
-    //histogram per tile pass
+    // histogram per tile pass
     {
         ComputePassDescription histogramPerTileDesc;
         histogramPerTileDesc.name = "Histogram per tile";
@@ -2407,47 +2213,47 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         const uint32_t maxTilesSpecialisationConstantID = 4;
 
-        //specialisation constants
+        // specialisation constants
         {
             auto& constants = histogramPerTileDesc.shaderDescription.specialisationConstants;
 
-            //bin count
+            // bin count
             constants.push_back({
-                0,                                                                  //location
-                dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) //value
+                0,                                                              // location
+                dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) // value
                 });
-            //min luminance constant
+            // min luminance constant
             constants.push_back({
-                1,                                                                                      //location
-                dataToCharArray((void*)&histogramSettings.minValue, sizeof(histogramSettings.minValue)) //value
+                1,                                                                                      // location
+                dataToCharArray((void*)&histogramSettings.minValue, sizeof(histogramSettings.minValue)) // value
                 });
-            //max luminance constant
+            // max luminance constant
             constants.push_back({
-                2,                                                                                      //location
-                dataToCharArray((void*)&histogramSettings.maxValue, sizeof(histogramSettings.maxValue)) //value
+                2,                                                                                      // location
+                dataToCharArray((void*)&histogramSettings.maxValue, sizeof(histogramSettings.maxValue)) // value
                 });
             constants.push_back({
-                3,                                                                                              //location
-                dataToCharArray((void*)&histogramSettings.maxTileCount, sizeof(histogramSettings.maxTileCount)) //value
+                3,                                                                                              // location
+                dataToCharArray((void*)&histogramSettings.maxTileCount, sizeof(histogramSettings.maxTileCount)) // value
                 });
         }
         m_histogramPerTilePass = gRenderBackend.createComputePass(histogramPerTileDesc);
     }
-    //histogram reset pass
+    // histogram reset pass
     {
         ComputePassDescription resetDesc;
         resetDesc.name = "Histogram reset";
         resetDesc.shaderDescription.srcPathRelative = "histogramReset.comp";
 
-        //bin count constant
+        // bin count constant
         resetDesc.shaderDescription.specialisationConstants.push_back({
-            0,                                                                  //location
-            dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) //value
+            0,                                                              // location
+            dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) // value
             });
 
         m_histogramResetPass = gRenderBackend.createComputePass(resetDesc);
     }
-    //histogram combine tiles pass
+    // histogram combine tiles pass
     {
         const uint32_t maxTilesSpecialisationConstantID = 1;
 
@@ -2457,48 +2263,48 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         auto& constants = histogramCombineDesc.shaderDescription.specialisationConstants;
 
-        //bin count
+        // bin count
         constants.push_back({
-            0,                                                                  //location
-            dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) //value
+            0,                                                              // location
+            dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) // value
                 });
-        //max luminance constant
+        // max luminance constant
         constants.push_back({
-            1,                                                                                              //location
-            dataToCharArray((void*)&histogramSettings.maxTileCount, sizeof(histogramSettings.maxTileCount)) //value
+            1,                                                                                              // location
+            dataToCharArray((void*)&histogramSettings.maxTileCount, sizeof(histogramSettings.maxTileCount)) // value
                 });
 
         m_histogramCombinePass = gRenderBackend.createComputePass(histogramCombineDesc);
     }
-    //pre-expose lights pass
+    // pre-expose lights pass
     {
         ComputePassDescription preExposeLightsDesc;
         preExposeLightsDesc.name = "Pre-expose lights";
         preExposeLightsDesc.shaderDescription.srcPathRelative = "preExposeLights.comp";
 
-        //specialisation constants
+        // specialisation constants
         {
             auto& constants = preExposeLightsDesc.shaderDescription.specialisationConstants;
 
-            //bin count
+            // bin count
             constants.push_back({
-                0,                                                              //location
-                dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) //value
+                0,                                                              // location
+                dataToCharArray((void*)&nHistogramBins, sizeof(nHistogramBins)) // value
                 });
-            //min luminance constant
+            // min luminance constant
             constants.push_back({
-                1,                                                                                      //location
-                dataToCharArray((void*)&histogramSettings.minValue,sizeof(histogramSettings.minValue))  //value
+                1,                                                                                      // location
+                dataToCharArray((void*)&histogramSettings.minValue,sizeof(histogramSettings.minValue))  // value
                 });
-            //max luminance constant
+            // max luminance constant
             constants.push_back({
-                2,                                                                                      //location
-                dataToCharArray((void*)&histogramSettings.maxValue, sizeof(histogramSettings.maxValue)) //value
+                2,                                                                                      // location
+                dataToCharArray((void*)&histogramSettings.maxValue, sizeof(histogramSettings.maxValue)) // value
                 });
         }
         m_preExposeLightsPass = gRenderBackend.createComputePass(preExposeLightsDesc);
     }
-    //depth prepass
+    // depth prepass
     {
         Attachment depthAttachment(ImageFormat::Depth32, AttachmentLoadOp::Clear);
         Attachment velocityAttachment(ImageFormat::RG16_sNorm, AttachmentLoadOp::Clear);
@@ -2517,7 +2323,7 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         m_depthPrePass = gRenderBackend.createGraphicPass(desc);
     }
-    //depth pyramid pass
+    // depth pyramid pass
     {
         ComputePassDescription desc;
         desc.name = "Depth min/max pyramid creation";
@@ -2527,14 +2333,14 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         m_depthPyramidPass = gRenderBackend.createComputePass(desc);
     }
-    //light matrix pass
+    // light matrix pass
     {
         ComputePassDescription desc;
         desc.name = "Compute light matrix";
         desc.shaderDescription = createLightMatrixShaderDescription();
         m_lightMatrixPass = gRenderBackend.createComputePass(desc);
     }
-    //tonemapping pass
+    // tonemapping pass
     {
         ComputePassDescription desc;
         desc.name = "Tonemapping";
@@ -2542,116 +2348,88 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         m_tonemappingPass = gRenderBackend.createComputePass(desc);
     }
-    //sdf debug pass
+    // sdf debug pass
     {
         ComputePassDescription desc;
         desc.name = "Visualize SDF";
         desc.shaderDescription = createSDFDebugShaderDescription();
         m_sdfDebugVisualisationPass = gRenderBackend.createComputePass(desc);
     }
-    //sdf indirect lighting
+    // sdf indirect lighting
     {
         ComputePassDescription desc;
         desc.name = "Indirect diffuse SDF trace";
         desc.shaderDescription = createSDFDiffuseTraceShaderDescription(m_sdfDiffuseTraceSettings.strictInfluenceRadiusCutoff);
         m_diffuseSDFTracePass = gRenderBackend.createComputePass(desc);
     }
-    //indirect diffuse spatial filter
+    // indirect diffuse spatial filter
     {
         for (int i = 0; i < 2; i++) {
             ComputePassDescription desc;
             desc.name = "Indirect diffuse spatial filter";
             desc.shaderDescription.srcPathRelative = "filterIndirectDiffuseSpatial.comp";
 
-            //index constant
+            // index constant
             desc.shaderDescription.specialisationConstants.push_back({
-            0,                                      //location
-            dataToCharArray((void*)&i, sizeof(i))   //value
+            0,                                      // location
+            dataToCharArray((void*)&i, sizeof(i))   // value
             });
             m_indirectDiffuseFilterSpatialPass[i] = gRenderBackend.createComputePass(desc);
         }
     }
-    //indirect diffuse temporal filter
+    // indirect diffuse temporal filter
     {
         ComputePassDescription desc;
         desc.name = "Indirect diffuse temporal filter";
         desc.shaderDescription.srcPathRelative = "filterIndirectDiffuseTemporal.comp";
         m_indirectDiffuseFilterTemporalPass = gRenderBackend.createComputePass(desc);
     }
-    //depth downscale
+    // depth downscale
     {
         ComputePassDescription desc;
         desc.name = "Depth downscale";
         desc.shaderDescription.srcPathRelative = "depthDownscale.comp";
         m_depthDownscalePass = gRenderBackend.createComputePass(desc);
     }
-    //indirect lighting upscale
+    // indirect lighting upscale
     {
         ComputePassDescription desc;
         desc.name = "Indirect lighting upscale";
         desc.shaderDescription.srcPathRelative = "indirectLightUpscale.comp";
         m_indirectLightingUpscale = gRenderBackend.createComputePass(desc);
     }
-    //sdf instance frustum culling
+    // sdf instance frustum culling
     {
         ComputePassDescription desc;
         desc.name = "SDF camera frustum culling";
         desc.shaderDescription.srcPathRelative = "sdfCameraFrustumCulling.comp";
         m_sdfCameraFrustumCulling = gRenderBackend.createComputePass(desc);
     }
-    //sdf camera tile culling
+    // sdf camera tile culling
     {
         ComputePassDescription desc;
         desc.name = "SDF camera tile culling";
         desc.shaderDescription.srcPathRelative = "sdfCameraTileCulling.comp";
 
-        //hi-z disabled
+        // hi-z disabled
         bool useHiZ = false;
         desc.shaderDescription.specialisationConstants = {
         {
-            0,                                              //location
-            dataToCharArray((void*)&useHiZ, sizeof(useHiZ)) //value
+            0,                                              // location
+            dataToCharArray((void*)&useHiZ, sizeof(useHiZ)) // value
         }
         };
         m_sdfCameraTileCulling = gRenderBackend.createComputePass(desc);
 
-    //hi-z enabled
-    useHiZ = true;
-    desc.shaderDescription.specialisationConstants = {
-        {
-            0,                                              //location
-            dataToCharArray((void*)&useHiZ, sizeof(useHiZ)) //value
-        }
-    };
-    m_sdfCameraTileCullingHiZ = gRenderBackend.createComputePass(desc);
-    }
-    //froxel volume material
-    {
-        ComputePassDescription desc;
-        desc.name = "Froxel volume material";
-        desc.shaderDescription.srcPathRelative = "froxelVolumeMaterial.comp";
-        m_froxelVolumeMaterialPass = gRenderBackend.createComputePass(desc);
-    }
-    //froxel light scattering
-    {
-        ComputePassDescription desc;
-        desc.name = "Froxel light scattering";
-        desc.shaderDescription.srcPathRelative = "froxelLightScattering.comp";
-        m_froxelScatteringTransmittancePass = gRenderBackend.createComputePass(desc);
-    }
-    //froxel light integration
-    {
-        ComputePassDescription desc;
-        desc.name = "Volumetric light integration";
-        desc.shaderDescription.srcPathRelative = "volumetricLightingIntegration.comp";
-        m_volumetricLightingIntegration = gRenderBackend.createComputePass(desc);
-    }
-    //volumetric lighting reprojection
-    {
-        ComputePassDescription desc;
-        desc.name = "Volumetric lighting reprojection";
-        desc.shaderDescription.srcPathRelative = "volumeLightingReprojection.comp";
-        m_volumetricLightingReprojection = gRenderBackend.createComputePass(desc);
+        // hi-z enabled
+        useHiZ = true;
+        desc.shaderDescription.specialisationConstants = {
+            {
+                0,                                              // location
+                dataToCharArray((void*)&useHiZ, sizeof(useHiZ)) // value
+            }
+        };
+        m_sdfCameraTileCullingHiZ = gRenderBackend.createComputePass(desc);
     }
 }
 
@@ -2818,18 +2596,18 @@ void RenderFrontend::drawUi() {
     if (ImGui::CollapsingHeader("Volumetric lighting settings")) {
         static glm::vec2 windDirection = glm::vec2(100.f, 60.f);
         ImGui::DragFloat2("Wind direction", &windDirection.x);
-        m_windVector = directionToVector(windDirection);
+        m_windSettings.vector = directionToVector(windDirection);
 
-        ImGui::DragFloat("Wind speed", &m_windSpeed, 0.1f);
+        ImGui::DragFloat("Wind speed", &m_windSettings.speed, 0.1f);
 
-        ImGui::ColorPicker3("Scattering color", &m_volumetricLightingSettings.scatteringCoefficients.x);
-        ImGui::DragFloat("Absorption", &m_volumetricLightingSettings.absorptionCoefficient, 0.1f, 0.f, 1.f);
-        ImGui::InputFloat("Max distance", &m_volumetricLightingSettings.maxDistance);
-        m_volumetricLightingSettings.maxDistance = glm::max(m_volumetricLightingSettings.maxDistance, 1.f);
-        ImGui::DragFloat("Base density", &m_volumetricLightingSettings.baseDensity, 0.01f, 0.f, 1.f);
-        ImGui::DragFloat("Density noise range", &m_volumetricLightingSettings.densityNoiseRange, 0.01f, 0.f, 1.f);
-        ImGui::DragFloat("Density noise scale", &m_volumetricLightingSettings.densityNoiseScale, 0.1f, 0.f);
-        ImGui::DragFloat("Phase function G", &m_volumetricLightingSettings.phaseFunctionG, 0.1f, -0.99f, 0.99f);
+        ImGui::ColorPicker3("Scattering color", &m_volumetricsSettings.scatteringCoefficients.x);
+        ImGui::DragFloat("Absorption", &m_volumetricsSettings.absorptionCoefficient, 0.1f, 0.f, 1.f);
+        ImGui::InputFloat("Max distance", &m_volumetricsSettings.maxDistance);
+        m_volumetricsSettings.maxDistance = glm::max(m_volumetricsSettings.maxDistance, 1.f);
+        ImGui::DragFloat("Base density", &m_volumetricsSettings.baseDensity, 0.01f, 0.f, 1.f);
+        ImGui::DragFloat("Density noise range", &m_volumetricsSettings.densityNoiseRange, 0.01f, 0.f, 1.f);
+        ImGui::DragFloat("Density noise scale", &m_volumetricsSettings.densityNoiseScale, 0.1f, 0.f);
+        ImGui::DragFloat("Phase function G", &m_volumetricsSettings.phaseFunctionG, 0.1f, -0.99f, 0.99f);
     }
     if (ImGui::CollapsingHeader("Sky settings")) {
         ImGui::InputFloat3("Rayleigh scattering coefficients km", &m_atmosphereSettings.scatteringRayleighGround.x);
