@@ -10,6 +10,7 @@
 
 #include "Techniques/Bloom.h"
 #include "Techniques/Sky.h"
+#include "Techniques/TAA.h"
 
 struct GLFWwindow;
 
@@ -34,7 +35,6 @@ struct ShadingConfig {
     int sunShadowCascadeCount = 3;
 };
 
-enum class HistorySamplingTech : int { Bilinear=0, Bicubic16Tap=1, Bicubic9Tap=2, Bicubic5Tap=3, Bicubic1Tap=4 };
 enum class SDFVisualisationMode : int { None=0, VisualizeSDF=1, CameraTileUsage=2, SDFNormals=3, RaymarchingSteps=4};
 
 struct SDFDebugSettings {
@@ -52,17 +52,6 @@ struct SDFDiffuseTraceSettings {
     //highest sun shadow cascade used for shadowing trace hits
     //if strict influence radius cutoff is disabled hits can be outside influence radius, so extra padding is necessary
     float additionalSunShadowMapPadding = 3.f;
-};
-
-struct TemporalFilterSettings {
-    bool enabled = true;
-    bool useSeparateSupersampling = false;
-    bool useClipping = true;
-    bool useMotionVectorDilation = true;
-    HistorySamplingTech historySamplingTech = HistorySamplingTech::Bicubic1Tap;
-    bool supersampleUseTonemapping = true;
-    bool filterUseTonemapping = true;
-    bool useMipBias = true;
 };
 
 struct VolumetricLightingSettings {
@@ -85,17 +74,6 @@ struct DefaultTextures {
     ImageHandle specular;
     ImageHandle normal;
     ImageHandle sky;
-};
-
-//simple wrapper to keep all images and framebuffers used in a frame in one place
-//simplifies keeping resources of multiples frames around for temporal techniques
-//motion buffer is shared between all frames as it's never reused
-struct FrameRenderTargets {
-    ImageHandle colorBuffer;
-    ImageHandle motionBuffer;
-    ImageHandle depthBuffer;
-    FramebufferHandle colorFramebuffer;
-    FramebufferHandle prepassFramebuffer;
 };
 
 //texture indices for direct use in shader, index into global texture array
@@ -161,10 +139,6 @@ private:
     void filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame) const;
     void downscaleDepth(const FrameRenderTargets& currentTarget) const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const;
-    void computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
-        const ImageHandle target, const RenderPassHandle parent) const;
-    void computeTemporalFilter(const ImageHandle colorSrc, const FrameRenderTargets& currentFrame, const ImageHandle target, const RenderPassHandle parent,
-        const ImageHandle historyBufferSrc, const ImageHandle historyBufferDst) const;
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
     void renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const;
@@ -235,7 +209,6 @@ private:
     glm::vec2 m_sunDirection = glm::vec2(0.f, 0.f);
 
     ShadingConfig m_shadingConfig;
-    TemporalFilterSettings m_temporalFilterSettings;
     SDFDebugSettings m_sdfDebugSettings;
     SDFDiffuseTraceSettings m_sdfDiffuseTraceSettings;
     VolumetricLightingSettings m_volumetricLightingSettings;
@@ -248,6 +221,9 @@ private:
 
     AtmosphereSettings m_atmosphereSettings;
     Sky m_sky;
+
+    TAASettings m_taaSettings;
+    TAA m_taa;
 
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
@@ -262,9 +238,6 @@ private:
     RenderPassHandle m_depthPyramidPass;
     RenderPassHandle m_lightMatrixPass;
     RenderPassHandle m_tonemappingPass;
-    RenderPassHandle m_temporalSupersamplingPass;
-    RenderPassHandle m_temporalFilterPass;
-    RenderPassHandle m_colorToLuminancePass;
     RenderPassHandle m_diffuseSDFTracePass;
     RenderPassHandle m_indirectDiffuseFilterSpatialPass[2];
     RenderPassHandle m_indirectDiffuseFilterTemporalPass;
@@ -280,11 +253,8 @@ private:
     RenderPassHandle m_volumetricLightingReprojection;
 
     ImageHandle m_postProcessBuffers[2];
-    ImageHandle m_historyBuffers[2];
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
-    ImageHandle m_sceneLuminance;
-    ImageHandle m_lastFrameLuminance;
     ImageHandle m_indirectDiffuse_Y_SH[2];          //ping pong buffers for filtering, Y component of YCoCg color space as spherical harmonics		
     ImageHandle m_indirectDiffuse_CoCg[2];          //ping pong buffers for filtering, CoCg component of YCoCg color space
     ImageHandle m_indirectDiffuseHistory_Y_SH[2];   //Y component of YCoCg color space as spherical harmonics
@@ -333,7 +303,6 @@ private:
     StorageBufferHandle m_sdfCameraCulledTiles;
 
     UniformBufferHandle m_globalUniformBuffer;
-    UniformBufferHandle m_taaResolveWeightBuffer;
     UniformBufferHandle m_sdfVolumeInfoBuffer;
     UniformBufferHandle m_cameraFrustumBuffer;
     UniformBufferHandle m_sdfTraceInfluenceRangeBuffer;
@@ -341,16 +310,13 @@ private:
 
     GraphicPassShaderDescriptions createForwardPassShaderDescription(const ShadingConfig& config);
     ShaderDescription createBRDFLutShaderDescription(const ShadingConfig& config);
-    ShaderDescription createTemporalFilterShaderDescription();
-    ShaderDescription createTemporalSupersamplingShaderDescription();
     ShaderDescription createSDFDebugShaderDescription();
     ShaderDescription createSDFDiffuseTraceShaderDescription(const bool strictInfluenceRadiusCutoff);
     ShaderDescription createLightMatrixShaderDescription();
 
     bool m_isMainPassShaderDescriptionStale = false;
     bool m_isBRDFLutShaderDescriptionStale = false;
-    bool m_isTemporalFilterShaderDescriptionStale = false;
-    bool m_isTemporalSupersamplingShaderDescriptionStale = false;
+    bool m_taaSettingsChanged = false;
     bool m_isSDFDebugShaderDescriptionStale = false;
     bool m_isSDFDiffuseTraceShaderDescriptionStale = false;
     bool m_isLightMatrixPassShaderDescriptionStale = false;

@@ -11,7 +11,7 @@ struct BloomSettings {
 class Bloom {
 public:
     void init(const int textureWidth, const int textureHeight);
-    void rescaleBloomTextures(const int width, const int height);
+    void resizeTextures(const int width, const int height);
 
     //downscales and blurs screen sized target image in separate texture, then additively blends on top of targetImage
     //returns last render pass, which must be used as parent, when accessing target image for correct ordering

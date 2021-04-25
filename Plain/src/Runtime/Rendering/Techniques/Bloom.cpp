@@ -54,7 +54,7 @@ void Bloom::init(const int textureWidth, const int textureHeight) {
     }
 }
 
-void Bloom::rescaleBloomTextures(const int width, const int height) {
+void Bloom::resizeTextures(const int width, const int height) {
     gRenderBackend.resizeImages({
         m_bloomDownscaleTexture,
         m_bloomUpscaleTexture

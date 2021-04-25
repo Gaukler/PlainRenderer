@@ -29,9 +29,6 @@
 
 void resizeCallback(GLFWwindow* window, int width, int height);
 DefaultTextures createDefaultTextures();
-glm::vec2 computeProjectionMatrixJitter();
-glm::mat4 applyProjectionMatrixJitter(const glm::mat4& projectionMatrix, const glm::vec2& offset);
-std::array<float, 9> computeTaaResolveWeights(const glm::vec2 cameraJitterInPixels);
 glm::ivec3 computeVolumetricLightingFroxelResolution(const uint32_t screenResolutionX, const uint32_t screenResolutionY);
 
 //---- private constants ----
@@ -163,50 +160,6 @@ DefaultTextures createDefaultTextures() {
     return defaultTextures;
 }
 
-//returns jitter in pixels, must be multiplied with texel size before applying to projection matrix
-glm::vec2 computeProjectionMatrixJitter() {
-
-    glm::vec2 offset;
-    static int jitterIndex;
-    jitterIndex++;
-    jitterIndex %= 8;
-    offset = 2.f * hammersley2D(jitterIndex) - 1.f;
-
-    return offset;
-}
-
-glm::mat4 applyProjectionMatrixJitter(const glm::mat4& projectionMatrix, const glm::vec2& offset) {
-
-    glm::mat4 jitteredProjection = projectionMatrix;
-    jitteredProjection[2][0] = offset.x;
-    jitteredProjection[2][1] = offset.y;
-
-    return jitteredProjection;
-}
-
-//jitter must be in pixels, so before multipliying with screen pixel size
-std::array<float, 9> computeTaaResolveWeights(const glm::vec2 cameraJitterInPixels) {
-    std::array<float, 9> weights = {};
-    int index = 0;
-    float totalWeight = 0.f;
-    for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
-            const float d = glm::length(cameraJitterInPixels - glm::vec2(x, y));
-            //gaussian fit to blackman-Harris 3.3
-            //reference: "High Quality Temporal Supersampling", page 23
-            const float w = glm::exp(-2.29f * d*d);
-            weights[index] = w;
-            totalWeight += w;
-            index++;
-        }
-    }
-
-    for (float& w : weights) {
-        w /= totalWeight;
-    }
-    return weights;
-}
-
 void RenderFrontend::setup(GLFWwindow* window) {
     m_window = window;
 
@@ -233,6 +186,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     initMeshs();
 
     m_bloom.init(width, height);
+    m_taa.init(width, height, m_taaSettings);
     m_sky.init();
 
     setupGlobalShaderInfoResources();
@@ -260,10 +214,6 @@ void RenderFrontend::prepareNewFrame() {
             m_frameRenderTargets[1].depthBuffer,
             m_postProcessBuffers[0],
             m_postProcessBuffers[1],
-            m_historyBuffers[0],
-            m_historyBuffers[1],
-            m_sceneLuminance,
-            m_lastFrameLuminance,
             m_worldSpaceNormalImage,
             m_indirectLightingFullRes_Y_SH, 
             m_indirectLightingFullRes_CoCg 
@@ -271,6 +221,9 @@ void RenderFrontend::prepareNewFrame() {
             m_screenWidth, m_screenHeight);
         //half res render targets
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid, m_depthHalfRes }, m_screenWidth / 2, m_screenHeight / 2);
+
+        m_taa.resizeImages(m_screenWidth, m_screenHeight);
+        m_bloom.resizeTextures(m_screenWidth, m_screenHeight);
 
         const glm::ivec3 froxelResolution = computeVolumetricLightingFroxelResolution(m_screenWidth, m_screenHeight);
         //volumetric textures
@@ -301,13 +254,9 @@ void RenderFrontend::prepareNewFrame() {
         //don't reset m_isMainPassShaderDescriptionStale, this is done when rendering as it's used to trigger lut recreation
     }
 
-    if (m_isTemporalFilterShaderDescriptionStale) {
-        gRenderBackend.updateComputePassShaderDescription(m_temporalFilterPass, createTemporalFilterShaderDescription());
-        m_isTemporalFilterShaderDescriptionStale = false;
-    }
-    if (m_isTemporalSupersamplingShaderDescriptionStale) {
-        gRenderBackend.updateComputePassShaderDescription(m_temporalSupersamplingPass, createTemporalSupersamplingShaderDescription());
-        m_isTemporalSupersamplingShaderDescriptionStale = false;
+    if (m_taaSettingsChanged) {
+        m_taa.updateSettings(m_taaSettings);
+        m_taaSettingsChanged = false;
     }
     if (m_isSDFDebugShaderDescriptionStale) {
         gRenderBackend.updateComputePassShaderDescription(m_sdfDebugVisualisationPass, createSDFDebugShaderDescription());
@@ -324,11 +273,7 @@ void RenderFrontend::prepareNewFrame() {
     }
 
     gRenderBackend.updateShaderCode();
-    gRenderBackend.newFrame();    
-
-    const auto tempImage = m_sceneLuminance;
-    m_sceneLuminance = m_lastFrameLuminance;
-    m_lastFrameLuminance = tempImage;
+    gRenderBackend.newFrame();
 
     if (m_drawUI) {
         drawUi();
@@ -459,24 +404,18 @@ void RenderFrontend::prepareRenderpasses(){
 
     ImageHandle currentSrc = currentRenderTarget.colorBuffer;
 
-    if (m_temporalFilterSettings.enabled) {
+    if (m_taaSettings.enabled) {
 
-        if (m_temporalFilterSettings.useSeparateSupersampling) {
-            computeTemporalSuperSampling(currentRenderTarget, lastRenderTarget,
+        if (m_taaSettings.useSeparateSupersampling) {
+            currentPass = m_taa.computeTemporalSuperSampling(currentRenderTarget, lastRenderTarget,
                 m_postProcessBuffers[0], currentPass);
 
-            currentPass = m_temporalSupersamplingPass;
             currentSrc = m_postProcessBuffers[0];
         }
 
-        static int historyIndex;
-        const ImageHandle lastHistory = m_historyBuffers[historyIndex];
-        historyIndex++;
-        historyIndex %= 2;
-        const ImageHandle currentHistory = m_historyBuffers[historyIndex];
+        currentPass = m_taa.computeTemporalFilter(currentSrc, currentRenderTarget, m_postProcessBuffers[1], 
+            currentPass);
 
-        computeTemporalFilter(currentSrc, currentRenderTarget, m_postProcessBuffers[1], currentPass, currentHistory, lastHistory);
-        currentPass = m_temporalFilterPass;
         currentSrc = m_postProcessBuffers[1];        
     }
 
@@ -511,15 +450,14 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     const glm::mat4 projectionMatrix = projectionMatrixFromCameraIntrinsic(m_camera.intrinsic);
 
     //jitter matrix for temporal supersampling
-    if(m_temporalFilterSettings.enabled){
+    if(m_taaSettings.enabled){
         const glm::vec2 pixelSize = glm::vec2(1.f / m_screenWidth, 1.f / m_screenHeight);
 
-        const glm::vec2 jitterInPixels = computeProjectionMatrixJitter();
-        const std::array<float, 9> resolveWeights = computeTaaResolveWeights(jitterInPixels);
-        gRenderBackend.setUniformBufferData(m_taaResolveWeightBuffer, &resolveWeights[0], sizeof(float)*9);
-
+        const glm::vec2 jitterInPixels = m_taa.computeProjectionMatrixJitter();
+        m_taa.updateTaaResolveWeights(jitterInPixels);
+        
         m_globalShaderInfo.currentFrameCameraJitter = jitterInPixels * pixelSize;
-        const glm::mat4 jitteredProjection = applyProjectionMatrixJitter(projectionMatrix, m_globalShaderInfo.currentFrameCameraJitter);
+        const glm::mat4 jitteredProjection = m_taa.applyProjectionMatrixJitter(projectionMatrix, m_globalShaderInfo.currentFrameCameraJitter);
 
         m_viewProjectionMatrix = jitteredProjection * viewMatrix;
     }
@@ -1234,79 +1172,6 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     gRenderBackend.setGraphicPassExecution(mainPassExecution);
 }
 
-void RenderFrontend::computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame, 
-    const ImageHandle target, const RenderPassHandle parent) const {
-    //scene luminance
-    {
-        const ImageResource srcResource(currentFrame.colorBuffer, 0, 0);
-        const ImageResource dstResource(m_sceneLuminance, 0, 1);
-
-        ComputePassExecution exe;
-        exe.genericInfo.handle = m_colorToLuminancePass;
-        exe.genericInfo.resources.storageImages = { dstResource };
-        exe.genericInfo.resources.sampledImages = { srcResource };
-        exe.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-        exe.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-        exe.dispatchCount[2] = 1;
-        exe.genericInfo.parents = { parent };
-
-        gRenderBackend.setComputePassExecution(exe);
-    }
-    //temporal supersampling
-    {
-        const ImageResource currentFrameResource(currentFrame.colorBuffer, 0, 1);
-        const ImageResource lastFrameResource(lastFrame.colorBuffer, 0, 2);
-        const ImageResource targetResource(target, 0, 3);
-        const ImageResource velocityBufferResource(currentFrame.motionBuffer, 0, 4);
-        const ImageResource currentDepthResource(currentFrame.depthBuffer, 0, 5);
-        const ImageResource lastDepthResource(lastFrame.depthBuffer, 0, 6);
-        const ImageResource currentLuminanceResource(m_sceneLuminance, 0, 7);
-        const ImageResource lastLuminanceResource(m_lastFrameLuminance, 0, 8);
-
-        ComputePassExecution temporalSupersamplingExecution;
-        temporalSupersamplingExecution.genericInfo.handle = m_temporalSupersamplingPass;
-        temporalSupersamplingExecution.genericInfo.resources.storageImages = { targetResource };
-        temporalSupersamplingExecution.genericInfo.resources.sampledImages = {
-            currentFrameResource,
-            lastFrameResource,
-            velocityBufferResource,
-            currentDepthResource,
-            lastDepthResource,
-            currentLuminanceResource,
-            lastLuminanceResource };
-        temporalSupersamplingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-        temporalSupersamplingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-        temporalSupersamplingExecution.dispatchCount[2] = 1;
-        temporalSupersamplingExecution.genericInfo.parents = { m_colorToLuminancePass };
-
-        gRenderBackend.setComputePassExecution(temporalSupersamplingExecution);
-    }
-}
-
-void RenderFrontend::computeTemporalFilter(const ImageHandle colorSrc, const FrameRenderTargets& currentFrame, const ImageHandle target, const RenderPassHandle parent, 
-    const ImageHandle historyBufferSrc, const ImageHandle historyBufferDst) const {
-
-    const ImageResource inputImageResource(colorSrc, 0, 0);
-    const ImageResource outputImageResource(target, 0, 1);
-    const ImageResource historyDstResource(historyBufferDst, 0, 2);
-    const ImageResource historySrcResource(historyBufferSrc, 0, 3);
-    const ImageResource motionBufferResource(currentFrame.motionBuffer, 0, 4);
-    const ImageResource depthBufferResource(currentFrame.depthBuffer, 0, 5);
-    const UniformBufferResource resolveWeightsResource(m_taaResolveWeightBuffer, 6);
-
-    ComputePassExecution temporalFilterExecution;
-    temporalFilterExecution.genericInfo.handle = m_temporalFilterPass;
-    temporalFilterExecution.genericInfo.resources.storageImages = { outputImageResource, historyDstResource };
-    temporalFilterExecution.genericInfo.resources.sampledImages = { inputImageResource, historySrcResource, motionBufferResource, depthBufferResource };
-    temporalFilterExecution.genericInfo.resources.uniformBuffers = { resolveWeightsResource };
-    temporalFilterExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
-    temporalFilterExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
-    temporalFilterExecution.dispatchCount[2] = 1;
-    temporalFilterExecution.genericInfo.parents = { parent };
-
-    gRenderBackend.setComputePassExecution(temporalFilterExecution);
-}
-
 void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const {
     const auto swapchainInput = gRenderBackend.getSwapchainInputImage();
     ImageResource targetResource(swapchainInput, 0, 0);
@@ -1772,57 +1637,10 @@ ShaderDescription RenderFrontend::createBRDFLutShaderDescription(const ShadingCo
 
     //diffuse brdf specialisation constant
     desc.specialisationConstants.push_back({
-        0,                                                                      //location
-        dataToCharArray((void*)&config.diffuseBRDF, sizeof(config.diffuseBRDF)) //value
+        0,                                                                      // location
+        dataToCharArray((void*)&config.diffuseBRDF, sizeof(config.diffuseBRDF)) // value
         });
     
-    return desc;
-}
-
-ShaderDescription RenderFrontend::createTemporalFilterShaderDescription() {
-    ShaderDescription desc;
-    desc.srcPathRelative = "temporalFilter.comp";
-    
-    //specialisation constants
-    {
-        //use clipping
-        desc.specialisationConstants.push_back({
-            0,                                                                                                      //location
-            dataToCharArray(&m_temporalFilterSettings.useClipping, sizeof(m_temporalFilterSettings.useClipping))    //value
-            });
-        //use use motion vector dilation
-        desc.specialisationConstants.push_back({
-            1,                                                                                                                          //location
-            dataToCharArray(&m_temporalFilterSettings.useMotionVectorDilation, sizeof(m_temporalFilterSettings.useMotionVectorDilation))//value
-            });
-        //history sampling tech
-        desc.specialisationConstants.push_back({
-            2,                                                                                                                  //location
-            dataToCharArray(&m_temporalFilterSettings.historySamplingTech, sizeof(m_temporalFilterSettings.historySamplingTech))//value
-            });
-        //using tonemapping
-        desc.specialisationConstants.push_back({
-            3,                                                                                                                      //location
-            dataToCharArray(&m_temporalFilterSettings.filterUseTonemapping, sizeof(m_temporalFilterSettings.filterUseTonemapping))  //value
-            });
-    }
-
-    return desc;
-}
-
-ShaderDescription RenderFrontend::createTemporalSupersamplingShaderDescription() {
-    ShaderDescription desc;
-    desc.srcPathRelative = "temporalSupersampling.comp";
-
-    //specialisation constant
-    {
-        //using tonemapping
-        desc.specialisationConstants.push_back({
-            0,                                                                                                                                      //location
-            dataToCharArray((void*)&m_temporalFilterSettings.supersampleUseTonemapping, sizeof(m_temporalFilterSettings.supersampleUseTonemapping)) //value
-            });
-    }
-
     return desc;
 }
 
@@ -1832,8 +1650,8 @@ ShaderDescription RenderFrontend::createSDFDebugShaderDescription() {
     //visualisation mode
     const SDFVisualisationMode& visualisationMode = m_sdfDebugSettings.visualisationMode;
     desc.specialisationConstants.push_back({
-        0,                                                                      //location
-        dataToCharArray((void*)&visualisationMode, sizeof(visualisationMode))   //value
+        0,                                                                      // location
+        dataToCharArray((void*)&visualisationMode, sizeof(visualisationMode))   // value
         });
     //shadow cascade index
     const int shadowCascadeIndex = m_shadingConfig.sunShadowCascadeCount - 1;   //always using highest cascade, index=count-1
@@ -1895,7 +1713,7 @@ void RenderFrontend::updateGlobalShaderInfo() {
     //we spread 8 samples over a 2 pixel radius, resulting in an average distance of 2/8 = 0.25
     //the resulting diagonal distance between the samples is sqrt(0.25) = 0.5
     const float lodBiasSampleRadius = 0.5f;
-    m_globalShaderInfo.mipBias = m_temporalFilterSettings.enabled && m_temporalFilterSettings.useMipBias ? glm::log2(lodBiasSampleRadius) : 0.f;
+    m_globalShaderInfo.mipBias = m_taaSettings.enabled && m_taaSettings.useMipBias ? glm::log2(lodBiasSampleRadius) : 0.f;
 
     gRenderBackend.setUniformBufferData(m_globalUniformBuffer, &m_globalShaderInfo, sizeof(m_globalShaderInfo));
 }
@@ -1919,22 +1737,6 @@ void RenderFrontend::initImages() {
 
         m_postProcessBuffers[0] = gRenderBackend.createImage(desc, nullptr, 0);
         m_postProcessBuffers[1] = gRenderBackend.createImage(desc, nullptr, 0);
-    }
-    //history buffer for TAA
-    {
-        ImageDescription desc;
-        desc.width = m_screenWidth;
-        desc.height = m_screenHeight;
-        desc.depth = 1;
-        desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        m_historyBuffers[0] = gRenderBackend.createImage(desc, nullptr, 0);
-        m_historyBuffers[1] = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //shadow map cascades
     {
@@ -1983,22 +1785,6 @@ void RenderFrontend::initImages() {
         desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
 
         m_minMaxDepthPyramid = gRenderBackend.createImage(desc, nullptr, 0);
-    }
-    //scene and history luminance
-    {
-        ImageDescription desc;
-        desc.width = m_screenWidth;
-        desc.height = m_screenHeight;
-        desc.depth = 1;
-        desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::R8;
-        desc.usageFlags = ImageUsageFlags::Storage | ImageUsageFlags::Sampled;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        m_sceneLuminance = gRenderBackend.createImage(desc, nullptr, 0);
-        m_lastFrameLuminance = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //noise textures
     for (int i = 0; i < noiseTextureCount; i++) {
@@ -2437,12 +2223,6 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         desc.size = sizeof(m_globalShaderInfo);
         m_globalUniformBuffer = gRenderBackend.createUniformBuffer(desc);
     }
-    //taa resolve weight buffer
-    {
-        UniformBufferDescription desc;
-        desc.size = sizeof(float) * 9;
-        m_taaResolveWeightBuffer = gRenderBackend.createUniformBuffer(desc);
-    }
     //scene signed distance field volume info
     {
         UniformBufferDescription desc;
@@ -2759,27 +2539,6 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         m_tonemappingPass = gRenderBackend.createComputePass(desc);
     }
-    //temporal filter pass
-    {
-        ComputePassDescription desc;
-        desc.name = "Temporal filtering";
-        desc.shaderDescription = createTemporalFilterShaderDescription();
-        m_temporalFilterPass = gRenderBackend.createComputePass(desc);
-    }
-    //temporal supersampling pass
-    {
-        ComputePassDescription desc;
-        desc.name = "Temporal supersampling";
-        desc.shaderDescription = createTemporalSupersamplingShaderDescription();
-        m_temporalSupersamplingPass = gRenderBackend.createComputePass(desc);
-    }
-    //color to luminance pass
-    {
-        ComputePassDescription desc;
-        desc.name = "Color to Luminance";
-        desc.shaderDescription.srcPathRelative = "colorToLuminance.comp";
-        m_colorToLuminancePass = gRenderBackend.createComputePass(desc);
-    }
     //sdf debug pass
     {
         ComputePassDescription desc;
@@ -3035,22 +2794,22 @@ void RenderFrontend::drawUi() {
     //Temporal filter Settings
     if(ImGui::CollapsingHeader("Temporal filter settings")){
 
-        if (ImGui::Checkbox("Enabled", &m_temporalFilterSettings.enabled)) {
+        if (ImGui::Checkbox("Enabled", &m_taaSettings.enabled)) {
             m_globalShaderInfo.cameraCut = true;
         }
 
-        ImGui::Checkbox("Separate temporal supersampling", &m_temporalFilterSettings.useSeparateSupersampling);
+        ImGui::Checkbox("Separate temporal supersampling", &m_taaSettings.useSeparateSupersampling);
 
-        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Clipping", &m_temporalFilterSettings.useClipping);
-        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Dilate motion vector", &m_temporalFilterSettings.useMotionVectorDilation);
+        m_taaSettingsChanged |= ImGui::Checkbox("Clipping", &m_taaSettings.useClipping);
+        m_taaSettingsChanged |= ImGui::Checkbox("Dilate motion vector", &m_taaSettings.useMotionVectorDilation);
 
         const char* historySamplingOptions[] = { "Bilinear", "Bicubic16Tap", "Bicubic9Tap", "Bicubic5Tap", "Bicubic1Tap" };
-        m_isTemporalFilterShaderDescriptionStale |= ImGui::Combo("Bicubic history sample", 
-            (int*)&m_temporalFilterSettings.historySamplingTech, historySamplingOptions, 5);
+        m_taaSettingsChanged |= ImGui::Combo("Bicubic history sample",
+            (int*)&m_taaSettings.historySamplingTech, historySamplingOptions, 5);
 
-        m_isTemporalSupersamplingShaderDescriptionStale |= ImGui::Checkbox("Tonemap temporal filter input", &m_temporalFilterSettings.supersampleUseTonemapping);
-        m_isTemporalFilterShaderDescriptionStale |= ImGui::Checkbox("Tonemap temporal supersample input", &m_temporalFilterSettings.filterUseTonemapping);
-        ImGui::Checkbox("Use mip bias", &m_temporalFilterSettings.useMipBias);
+        m_taaSettingsChanged |= ImGui::Checkbox("Tonemap temporal filter input", &m_taaSettings.supersampleUseTonemapping);
+        m_taaSettingsChanged |= ImGui::Checkbox("Tonemap temporal supersample input", &m_taaSettings.filterUseTonemapping);
+        ImGui::Checkbox("Use mip bias", &m_taaSettings.useMipBias); //bias is set trough buffer, so no update is required on change
     }
     //volumetric lighting settings
     if (ImGui::CollapsingHeader("Volumetric lighting settings")) {

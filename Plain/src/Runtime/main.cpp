@@ -6,6 +6,7 @@
 #include "Common/TypeConversion.h"
 #include "Common/JobSystem.h"
 #include "Window.h"
+#include "FrameIndex.h"
 
 //expected command line arguments:
 //argv[0] = executablePath
@@ -77,6 +78,7 @@ void main(int argc, char* argv[]){
 
     while (!glfwWindowShouldClose(window)) {
         Timer::markNewFrame();
+        FrameIndex::markNewFrame();
         gInputManager.update();
         if (gInputManager.getKeyboardKeyState(KeyboardKey::keyEnter) == KeyState::Pressed && gInputManager.isKeyboardKeyDown(KeyboardKey::keyLeftAlt)) {
             Window::toggleFullscreen();
