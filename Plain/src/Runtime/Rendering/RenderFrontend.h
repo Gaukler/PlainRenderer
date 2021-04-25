@@ -7,7 +7,9 @@
 #include "AABB.h"
 #include "ViewFrustum.h"
 #include "Runtime/RuntimeScene.h"
+
 #include "Techniques/Bloom.h"
+#include "Techniques/Sky.h"
 
 struct GLFWwindow;
 
@@ -61,18 +63,6 @@ struct TemporalFilterSettings {
     bool supersampleUseTonemapping = true;
     bool filterUseTonemapping = true;
     bool useMipBias = true;
-};
-
-//everything in km
-struct AtmosphereSettings {
-    glm::vec3 scatteringRayleighGround = glm::vec3(0.0058f, 0.0135f, 0.0331f);
-    float earthRadius = 6371;
-    glm::vec3 extinctionRayleighGround = scatteringRayleighGround;
-    float atmosphereHeight = 100;
-    glm::vec3 ozoneExtinction = glm::vec3(0.000650f, 0.001881f, 0.000085f);
-    float scatteringMieGround = 0.006f;
-    float extinctionMieGround = 1.11f * scatteringMieGround;
-    float mieScatteringExponent = 0.76f;
 };
 
 struct VolumetricLightingSettings {
@@ -162,14 +152,12 @@ private:
 
     //computes image histogram using compute shaders
     void computeColorBufferHistogram(const ImageHandle lastFrameColor) const;
-    void updateSkyLut() const;
-    void renderSky(const FramebufferHandle framebuffer, const RenderPassHandle parent) const;
     void renderSunShadowCascades() const;
-    void computeExposure() const;
+    void computeExposure(const RenderPassHandle parent) const;  // parent must be the sky transmission pass
     void renderDepthPrepass(const FramebufferHandle framebuffer) const;
     void computeDepthPyramid(const ImageHandle depthBuffer) const;
     void computeSunLightMatrices() const;
-    void diffuseSDFTrace(const FrameRenderTargets& currentTarget) const;
+    void diffuseSDFTrace(const FrameRenderTargets& currentTarget, const RenderPassHandle skyLutPass) const;
     void filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame) const;
     void downscaleDepth(const FrameRenderTargets& currentTarget) const;
     void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const;
@@ -179,7 +167,6 @@ private:
         const ImageHandle historyBufferSrc, const ImageHandle historyBufferDst) const;
     void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
-    void issueSkyDrawcalls();
     void renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const;
     void computeVolumetricLighting();
 
@@ -199,9 +186,6 @@ private:
     std::unordered_map<std::string, ImageHandle> m_textureMap; //using string instead of path to use default string hash
 
     void computeBRDFLut();
-
-    //diffuse and specular convolution of sky lut for image based lighting
-    void skyIBLConvolution();
 
     std::vector<MeshFrontend> m_frontendMeshes;
 
@@ -252,7 +236,6 @@ private:
 
     ShadingConfig m_shadingConfig;
     TemporalFilterSettings m_temporalFilterSettings;
-    AtmosphereSettings m_atmosphereSettings;
     SDFDebugSettings m_sdfDebugSettings;
     SDFDiffuseTraceSettings m_sdfDiffuseTraceSettings;
     VolumetricLightingSettings m_volumetricLightingSettings;
@@ -263,18 +246,13 @@ private:
     BloomSettings m_bloomSettings;
     Bloom m_bloom;
 
+    AtmosphereSettings m_atmosphereSettings;
+    Sky m_sky;
+
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
-    RenderPassHandle m_skyTransmissionLutPass;
-    RenderPassHandle m_skyMultiscatterLutPass;
-    RenderPassHandle m_skyLutPass;
-    RenderPassHandle m_skyPass;
-    RenderPassHandle m_sunSpritePass;
-    RenderPassHandle m_toCubemapPass;
-    RenderPassHandle m_skyDiffuseConvolutionPass;
+
     RenderPassHandle m_brdfLutPass;
-    std::vector<RenderPassHandle> m_cubemapMipPasses;
-    std::vector<RenderPassHandle> m_skySpecularConvolutionPerMipPasses;
     RenderPassHandle m_histogramPerTilePass;
     RenderPassHandle m_histogramCombinePass;
     RenderPassHandle m_histogramResetPass;
@@ -301,16 +279,8 @@ private:
     RenderPassHandle m_volumetricLightingIntegration;
     RenderPassHandle m_volumetricLightingReprojection;
 
-    uint32_t m_specularSkyProbeMipCount = 0;
-
     ImageHandle m_postProcessBuffers[2];
     ImageHandle m_historyBuffers[2];
-    ImageHandle m_skyTexture;
-    ImageHandle m_diffuseSkyProbe;
-    ImageHandle m_specularSkyProbe;
-    ImageHandle m_skyTransmissionLut;
-    ImageHandle m_skyMultiscatterLut;
-    ImageHandle m_skyLut;
     ImageHandle m_brdfLut;
     ImageHandle m_minMaxDepthPyramid;
     ImageHandle m_sceneLuminance;
@@ -347,8 +317,6 @@ private:
     FramebufferHandle	m_shadowCascadeFramebuffers[4];
     FrameRenderTargets	m_frameRenderTargets[2];
 
-    MeshHandle m_skyCube;
-    MeshHandle m_quad;
     MeshHandle m_boundingBoxMesh;
 
     StorageBufferHandle m_histogramPerTileBuffer;
@@ -365,7 +333,6 @@ private:
     StorageBufferHandle m_sdfCameraCulledTiles;
 
     UniformBufferHandle m_globalUniformBuffer;
-    UniformBufferHandle m_atmosphereSettingsBuffer;
     UniformBufferHandle m_taaResolveWeightBuffer;
     UniformBufferHandle m_sdfVolumeInfoBuffer;
     UniformBufferHandle m_cameraFrustumBuffer;

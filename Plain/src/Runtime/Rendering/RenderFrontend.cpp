@@ -47,10 +47,6 @@ const uint32_t skyTextureMipCount = 8;
 const uint32_t brdfLutRes = 512;
 const uint32_t nHistogramBins = 128;
 const int maxSunShadowCascadeCount = 4;
-const uint32_t skyTransmissionLutResolution = 128;
-const uint32_t skyMultiscatterLutResolution = 32;
-const uint32_t skyLutWidth = 200;
-const uint32_t skyLutHeight = 100;
 
 const uint32_t histogramTileSizeX = 32;
 const uint32_t histogramTileSizeY = 32;
@@ -235,7 +231,9 @@ void RenderFrontend::setup(GLFWwindow* window) {
     initFramebuffers();
     initRenderTargets();
     initMeshs();
+
     m_bloom.init(width, height);
+    m_sky.init();
 
     setupGlobalShaderInfoResources();
 
@@ -388,11 +386,15 @@ void RenderFrontend::prepareRenderpasses(){
         renderDepthPrepass(currentRenderTarget.prepassFramebuffer);
         computeDepthPyramid(currentRenderTarget.depthBuffer);
         computeColorBufferHistogram(m_postProcessBuffers[0]);
-        computeExposure();
-        updateSkyLut();
+
+        const RenderPassHandle skyTransmissionPass = m_sky.updateTransmissionLut();
+        computeExposure(skyTransmissionPass);
+        const RenderPassHandle skyLutPass = m_sky.updateSkyLut(m_lightBuffer, { m_preExposeLightsPass, skyTransmissionPass }, 
+            m_atmosphereSettings);
+
         computeSunLightMatrices();
         renderSunShadowCascades();
-        renderSDFVisualization(m_postProcessBuffers[0], m_skyLutPass);
+        renderSDFVisualization(m_postProcessBuffers[0], skyLutPass);
         computeTonemapping(m_sdfDebugVisualisationPass, m_postProcessBuffers[0]);
         return;
     }
@@ -421,7 +423,11 @@ void RenderFrontend::prepareRenderpasses(){
     }
 
     computeColorBufferHistogram(lastRenderTarget.colorBuffer);
-    computeExposure();
+
+    const RenderPassHandle skyTransmissionPass = m_sky.updateTransmissionLut();
+    computeExposure(skyTransmissionPass);
+    const RenderPassHandle skyLutPass = m_sky.updateSkyLut(m_lightBuffer, { m_preExposeLightsPass, skyTransmissionPass }, m_atmosphereSettings);
+
     renderDepthPrepass(currentRenderTarget.prepassFramebuffer);
     computeDepthPyramid(currentRenderTarget.depthBuffer);
     computeSunLightMatrices();
@@ -429,7 +435,7 @@ void RenderFrontend::prepareRenderpasses(){
         if (m_shadingConfig.indirectLightingHalfRes) {
             downscaleDepth(currentRenderTarget);
         }
-        diffuseSDFTrace(currentRenderTarget);
+        diffuseSDFTrace(currentRenderTarget, skyLutPass);
         filterIndirectDiffuse(currentRenderTarget, lastRenderTarget);
     }
 
@@ -442,9 +448,15 @@ void RenderFrontend::prepareRenderpasses(){
         renderDebugGeometry(currentRenderTarget.colorFramebuffer);
         skyParent = m_debugGeoPass;
     }
-    renderSky(currentRenderTarget.colorFramebuffer, skyParent);
 
-    RenderPassHandle currentPass = m_sunSpritePass;
+    Sky::SkyRenderingDependencies skyDependencies;
+    skyDependencies.volumetricIntegrationVolume = m_volumetricIntegrationVolume;
+    skyDependencies.volumetricLightingSettingsUniforms = m_volumetricLightingSettingsUniforms;
+    skyDependencies.lightBuffer = m_lightBuffer;
+    skyDependencies.parents = { m_preExposeLightsPass, m_volumetricLightingIntegration, skyLutPass, skyParent };
+
+    RenderPassHandle currentPass = m_sky.renderSky(currentRenderTarget.colorFramebuffer, skyDependencies);
+
     ImageHandle currentSrc = currentRenderTarget.colorBuffer;
 
     if (m_temporalFilterSettings.enabled) {
@@ -809,18 +821,17 @@ void RenderFrontend::renderFrame() {
     if (m_minimized) {
         return;
     }
+
+    m_sky.issueSkyDrawcalls(m_sunDirection, m_viewProjectionMatrix);
+
     m_globalShaderInfo.frameIndex++;
     m_globalShaderInfo.frameIndexMod2 = m_globalShaderInfo.frameIndex % 2;
     m_globalShaderInfo.frameIndexMod3 = m_globalShaderInfo.frameIndex % 3;
     m_globalShaderInfo.frameIndexMod4 = m_globalShaderInfo.frameIndex % 4;
 
-    //no sky drawn in debug mode
-    if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::None) {
-        issueSkyDrawcalls();
-    }
     gRenderBackend.renderFrame(true);
 
-    //set after frame finished so logic before rendering can decide if cut should happen
+    // set after frame finished so logic before rendering can decide if cut should happen
     m_globalShaderInfo.cameraCut = false;
 }
 
@@ -829,7 +840,7 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
     StorageBufferResource histogramPerTileResource(m_histogramPerTileBuffer, false, 0);
     StorageBufferResource histogramResource(m_histogramBuffer, false, 1);
 
-    //histogram per tile
+    // histogram per tile
     {
         ImageResource colorTextureResource(lastFrameColor, 0, 2);
         StorageBufferResource lightBufferResource(m_lightBuffer, true, 3);
@@ -878,98 +889,6 @@ void RenderFrontend::toggleUI() {
     m_drawUI = !m_drawUI;
 }
 
-void RenderFrontend::updateSkyLut() const {
-    //compute transmission lut
-    {
-        ImageResource lutResource(m_skyTransmissionLut, 0, 0);
-        UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 1);
-
-        ComputePassExecution skyTransmissionLutExecution;
-        skyTransmissionLutExecution.genericInfo.handle = m_skyTransmissionLutPass;
-        skyTransmissionLutExecution.genericInfo.resources.storageImages = { lutResource };
-        skyTransmissionLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
-        skyTransmissionLutExecution.dispatchCount[0] = skyTransmissionLutResolution / 8;
-        skyTransmissionLutExecution.dispatchCount[1] = skyTransmissionLutResolution / 8;
-        skyTransmissionLutExecution.dispatchCount[2] = 1;
-        gRenderBackend.setComputePassExecution(skyTransmissionLutExecution);
-    }
-    //compute multiscatter lut
-    {
-        ImageResource multiscatterLutResource(m_skyMultiscatterLut, 0, 0);
-        ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
-        UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 3);
-
-        ComputePassExecution skyMultiscatterLutExecution;
-        skyMultiscatterLutExecution.genericInfo.handle = m_skyMultiscatterLutPass;
-        skyMultiscatterLutExecution.genericInfo.parents = { m_skyTransmissionLutPass };
-        skyMultiscatterLutExecution.genericInfo.resources.storageImages = { multiscatterLutResource };
-        skyMultiscatterLutExecution.genericInfo.resources.sampledImages = { transmissionLutResource };
-        skyMultiscatterLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
-        skyMultiscatterLutExecution.dispatchCount[0] = skyMultiscatterLutResolution / 8;
-        skyMultiscatterLutExecution.dispatchCount[1] = skyMultiscatterLutResolution / 8;
-        skyMultiscatterLutExecution.dispatchCount[2] = 1;
-        gRenderBackend.setComputePassExecution(skyMultiscatterLutExecution);
-    }
-    //compute sky lut
-    {
-        ImageResource lutResource(m_skyLut, 0, 0);
-        ImageResource lutTransmissionResource(m_skyTransmissionLut, 0, 1);
-        ImageResource lutMultiscatterResource(m_skyMultiscatterLut, 0, 2);
-        UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 4);
-        StorageBufferResource lightBufferResource(m_lightBuffer, true, 5);
-
-        ComputePassExecution skyLutExecution;
-        skyLutExecution.genericInfo.handle = m_skyLutPass;
-        skyLutExecution.genericInfo.resources.storageImages = { lutResource };
-        skyLutExecution.genericInfo.resources.sampledImages = { lutTransmissionResource, lutMultiscatterResource };
-        skyLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
-        skyLutExecution.genericInfo.resources.storageBuffers = { lightBufferResource };
-        skyLutExecution.dispatchCount[0] = skyLutWidth / 8;
-        skyLutExecution.dispatchCount[1] = skyLutHeight / 8;
-        skyLutExecution.dispatchCount[2] = 1;
-        skyLutExecution.genericInfo.parents = { m_skyTransmissionLutPass, m_skyMultiscatterLutPass, m_preExposeLightsPass };
-        gRenderBackend.setComputePassExecution(skyLutExecution);
-    }
-}
-
-void RenderFrontend::renderSky(const FramebufferHandle framebuffer, const RenderPassHandle parent) const {
-    gRenderBackend.setUniformBufferData(
-        m_atmosphereSettingsBuffer, 
-        &m_atmosphereSettings, 
-        sizeof(m_atmosphereSettings));
-    
-    updateSkyLut();
-
-    //render skybox
-    {
-        GraphicPassExecution skyPassExecution;
-        skyPassExecution.genericInfo.handle = m_skyPass;
-        skyPassExecution.framebuffer = framebuffer;
-        skyPassExecution.genericInfo.resources.sampledImages = { 
-            ImageResource(m_skyLut, 0, 0),
-            ImageResource(m_volumetricIntegrationVolume, 0, 1)
-        };
-        skyPassExecution.genericInfo.resources.uniformBuffers = {
-            UniformBufferResource(m_volumetricLightingSettingsUniforms, 2)
-        };
-        skyPassExecution.genericInfo.parents = { parent,  m_skyLutPass, m_volumetricLightingIntegration };
-        gRenderBackend.setGraphicPassExecution(skyPassExecution);
-    }
-    //sun sprite
-    {
-        const StorageBufferResource lightBufferResource(m_lightBuffer, true, 0);
-        const ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 1);
-
-        GraphicPassExecution sunSpritePassExecution;
-        sunSpritePassExecution.genericInfo.handle = m_sunSpritePass;
-        sunSpritePassExecution.framebuffer = framebuffer;
-        sunSpritePassExecution.genericInfo.parents = { m_skyPass };
-        sunSpritePassExecution.genericInfo.resources.storageBuffers = { lightBufferResource };
-        sunSpritePassExecution.genericInfo.resources.sampledImages = { transmissionLutResource };
-        gRenderBackend.setGraphicPassExecution(sunSpritePassExecution);
-    }
-}
-
 void RenderFrontend::renderSunShadowCascades() const {
     for (int i = 0; i < m_shadingConfig.sunShadowCascadeCount; i++) {
         GraphicPassExecution shadowPassExecution;
@@ -985,16 +904,16 @@ void RenderFrontend::renderSunShadowCascades() const {
     }
 }
 
-void RenderFrontend::computeExposure() const {
+void RenderFrontend::computeExposure(const RenderPassHandle parent) const {
     StorageBufferResource lightBufferResource(m_lightBuffer, false, 0);
     StorageBufferResource histogramResource(m_histogramBuffer, false, 1);
-    ImageResource transmissionLutResource(m_skyTransmissionLut, 0, 2);
+    ImageResource transmissionLutResource(m_sky.getTransmissionLut(), 0, 2);
 
     ComputePassExecution preExposeLightsExecution;
     preExposeLightsExecution.genericInfo.handle = m_preExposeLightsPass;
     preExposeLightsExecution.genericInfo.resources.storageBuffers = { histogramResource, lightBufferResource };
     preExposeLightsExecution.genericInfo.resources.sampledImages = { transmissionLutResource };
-    preExposeLightsExecution.genericInfo.parents = { m_histogramCombinePass, m_skyTransmissionLutPass };
+    preExposeLightsExecution.genericInfo.parents = { m_histogramCombinePass, parent };
     preExposeLightsExecution.dispatchCount[0] = 1;
     preExposeLightsExecution.dispatchCount[1] = 1;
     preExposeLightsExecution.dispatchCount[2] = 1;
@@ -1081,7 +1000,7 @@ void RenderFrontend::computeSunLightMatrices() const{
     gRenderBackend.setComputePassExecution(exe);
 }
 
-void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) const {
+void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget, const RenderPassHandle skyLutPass) const {
 
     const std::vector<RenderPassHandle> cullingParentPasses = 
         sdfInstanceCulling(m_sdfDiffuseTraceSettings.traceInfluenceRadius, true, m_shadingConfig.indirectLightingHalfRes);
@@ -1092,7 +1011,7 @@ void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) co
     exe.genericInfo.handle = m_diffuseSDFTracePass;
     exe.genericInfo.parents = cullingParentPasses;
     exe.genericInfo.parents.push_back(m_depthPrePass);
-    exe.genericInfo.parents.push_back(m_skyLutPass);
+    exe.genericInfo.parents.push_back(skyLutPass);
     exe.genericInfo.parents.push_back(m_lightMatrixPass);
     exe.genericInfo.parents.push_back(m_shadowPasses[shadowCascadeIndex]);
     if (m_shadingConfig.indirectLightingHalfRes) {
@@ -1109,7 +1028,7 @@ void RenderFrontend::diffuseSDFTrace(const FrameRenderTargets& currentTarget) co
     exe.genericInfo.resources.sampledImages = {
         ImageResource(depthSrc, 0, 2),
         ImageResource(m_worldSpaceNormalImage, 0, 3),
-        ImageResource(m_skyLut, 0, 4),
+        ImageResource(m_sky.getSkyLut(), 0, 4),
         ImageResource(m_shadowMaps[shadowCascadeIndex], 0, 10)
     };
     exe.genericInfo.resources.storageBuffers = {
@@ -1275,9 +1194,7 @@ void RenderFrontend::downscaleDepth(const FrameRenderTargets& currentTarget) con
 
 void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const {
 
-    const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 1);
     const auto brdfLutResource = ImageResource(m_brdfLut, 0, 3);
-    const auto specularProbeResource = ImageResource(m_specularSkyProbe, 0, 4);
     const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
     const auto lightMatrixBuffer = StorageBufferResource(m_sunShadowInfoBuffer, true, 8);
 
@@ -1294,7 +1211,8 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
         indirectSrc_CoCg = m_indirectLightingFullRes_CoCg;
     }
 
-    mainPassExecution.genericInfo.resources.sampledImages = { diffuseProbeResource, brdfLutResource, specularProbeResource,
+    mainPassExecution.genericInfo.resources.sampledImages = { 
+        brdfLutResource,
         ImageResource(indirectSrc_Y_SH, 0, 15),
         ImageResource(indirectSrc_CoCg, 0, 16),
         ImageResource(m_volumetricIntegrationVolume, 0, 18)
@@ -1415,28 +1333,6 @@ void RenderFrontend::renderDebugGeometry(const FramebufferHandle framebuffer) co
     gRenderBackend.setGraphicPassExecution(debugPassExecution);
 }
 
-void RenderFrontend::issueSkyDrawcalls() {
-    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_skyCube}, nullptr, m_skyPass, 0);
-
-    const float lattitudeOffsetAngle = 90;
-    const float longitudeOffsetAngle = -90;
-    const float sunAngularDiameter = 0.535f; //from "Physically Based Sky, Atmosphereand Cloud Rendering in Frostbite", page 25
-    const float spriteScale = glm::tan(glm::radians(sunAngularDiameter * 0.5f));
-    const glm::mat4 spriteScaleMatrix = glm::scale(glm::mat4(1.f), glm::vec3(spriteScale, spriteScale, 1.f));
-    const glm::mat4 spriteLattitudeRotation = glm::rotate(glm::mat4(1.f), glm::radians(m_sunDirection.y + lattitudeOffsetAngle), glm::vec3(-1, 0, 0));
-    const glm::mat4 spriteLongitudeRotation = glm::rotate(glm::mat4(1.f), glm::radians(m_sunDirection.x + longitudeOffsetAngle), glm::vec3(0, -1, 0));
-
-    struct SunSpriteMatrices {
-        glm::mat4 model;
-        glm::mat4 mvp;
-    };
-    SunSpriteMatrices sunSpriteMatrices;
-    sunSpriteMatrices.model = spriteLongitudeRotation * spriteLattitudeRotation * spriteScaleMatrix;
-    sunSpriteMatrices.mvp = m_viewProjectionMatrix * sunSpriteMatrices.model;
-
-    gRenderBackend.drawMeshes(std::vector<MeshHandle> {m_quad}, (char*)&sunSpriteMatrices, m_sunSpritePass, 0);
-}
-
 void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const{
 
     const float sdfIncluenceRadius = m_sdfDebugSettings.useInfluenceRadiusForDebug ? 
@@ -1454,7 +1350,7 @@ void RenderFrontend::renderSDFVisualization(const ImageHandle targetImage, const
     exe.genericInfo.handle = m_sdfDebugVisualisationPass;
     exe.genericInfo.resources.storageImages = { ImageResource(targetImage, 0, 0) };
     exe.genericInfo.resources.sampledImages = { 
-        ImageResource(m_skyLut, 0, 2),
+        ImageResource(m_sky.getSkyLut(), 0, 2),
         ImageResource(m_shadowMaps[shadowCascadeIndex], 0, 7)
     };
     exe.genericInfo.resources.storageBuffers = {
@@ -1785,40 +1681,6 @@ std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<s
     return result;
 }
 
-void RenderFrontend::skyIBLConvolution() {
-    //diffuse convolution
-    {
-        const auto diffuseProbeResource = ImageResource(m_diffuseSkyProbe, 0, 0);
-        const auto skyLutResource = ImageResource(m_skyLut, 0, 1);
-
-        ComputePassExecution diffuseConvolutionExecution;
-        diffuseConvolutionExecution.genericInfo.handle = m_skyDiffuseConvolutionPass;
-        diffuseConvolutionExecution.genericInfo.parents = { m_skyLutPass };
-        diffuseConvolutionExecution.genericInfo.resources.storageImages = { diffuseProbeResource };
-        diffuseConvolutionExecution.genericInfo.resources.sampledImages = { skyLutResource };
-        diffuseConvolutionExecution.dispatchCount[0] = uint32_t(std::ceil(diffuseSkyProbeRes / 8.f));
-        diffuseConvolutionExecution.dispatchCount[1] = uint32_t(std::ceil(diffuseSkyProbeRes / 8.f));
-        diffuseConvolutionExecution.dispatchCount[2] = 6;
-        gRenderBackend.setComputePassExecution(diffuseConvolutionExecution);
-    }
-    //specular probe convolution
-    for (uint32_t mipLevel = 0; mipLevel < m_specularSkyProbeMipCount; mipLevel++) {
-
-        const auto specularProbeResource = ImageResource(m_specularSkyProbe, mipLevel, 0);
-        const auto skyLutResource = ImageResource(m_skyLut, 0, 1);
-
-        ComputePassExecution specularConvolutionExecution;
-        specularConvolutionExecution.genericInfo.handle = m_skySpecularConvolutionPerMipPasses[mipLevel];
-        specularConvolutionExecution.genericInfo.parents = { m_skyLutPass };
-        specularConvolutionExecution.genericInfo.resources.storageImages = { specularProbeResource };
-        specularConvolutionExecution.genericInfo.resources.sampledImages = { skyLutResource };
-        specularConvolutionExecution.dispatchCount[0] = specularSkyProbeRes / uint32_t(pow(2, mipLevel)) / 8;
-        specularConvolutionExecution.dispatchCount[1] = specularSkyProbeRes / uint32_t(pow(2, mipLevel)) / 8;
-        specularConvolutionExecution.dispatchCount[2] = 6;
-        gRenderBackend.setComputePassExecution(specularConvolutionExecution);
-    }
-}
-
 void RenderFrontend::computeBRDFLut() {
 
     const auto brdfLutStorageResource = ImageResource(m_brdfLut, 0, 0);
@@ -2093,58 +1955,6 @@ void RenderFrontend::initImages() {
             m_shadowMaps.push_back(shadowMap);
         }
     }
-    //specular sky probe
-    {
-        m_specularSkyProbeMipCount = mipCountFromResolution(specularSkyProbeRes, specularSkyProbeRes, 1);
-        //don't use the last few mips as they are too small
-        const uint32_t mipsTooSmallCount = 4;
-        if (m_specularSkyProbeMipCount > mipsTooSmallCount) {
-            m_specularSkyProbeMipCount -= mipsTooSmallCount;
-        }
-
-        ImageDescription desc;
-        desc.width = specularSkyProbeRes;
-        desc.height = specularSkyProbeRes;
-        desc.depth = 1;
-        desc.type = ImageType::TypeCube;
-        desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-        desc.mipCount = MipCount::Manual;
-        desc.manualMipCount = m_specularSkyProbeMipCount;
-        desc.autoCreateMips = false;
-
-        m_specularSkyProbe = gRenderBackend.createImage(desc, nullptr, 0);
-    }
-    //diffuse sky probe
-    {
-        ImageDescription desc;
-        desc.width = diffuseSkyProbeRes;
-        desc.height = diffuseSkyProbeRes;
-        desc.depth = 1;
-        desc.type = ImageType::TypeCube;
-        desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 0;
-        desc.autoCreateMips = false;
-
-        m_diffuseSkyProbe = gRenderBackend.createImage(desc, nullptr, 0);
-    }
-    //sky cubemap
-    {
-        ImageDescription desc;
-        desc.width = skyTextureRes;
-        desc.height = skyTextureRes;
-        desc.depth = 1;
-        desc.type = ImageType::TypeCube;
-        desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-        desc.mipCount = MipCount::Manual;
-        desc.manualMipCount = 8;
-        desc.autoCreateMips = false;
-
-        m_skyTexture = gRenderBackend.createImage(desc, nullptr, 0);
-    }
     //brdf LUT
     {
         ImageDescription desc;
@@ -2159,51 +1969,6 @@ void RenderFrontend::initImages() {
         desc.autoCreateMips = false;
 
         m_brdfLut = gRenderBackend.createImage(desc, nullptr, 0);
-    }
-    //sky transmission lut
-    {
-        ImageDescription desc;
-        desc.width = skyTransmissionLutResolution;
-        desc.height = skyTransmissionLutResolution;
-        desc.depth = 1;
-        desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        m_skyTransmissionLut = gRenderBackend.createImage(desc, nullptr, 0);
-    }
-    //sky multiscatter lut
-    {
-        ImageDescription desc;
-        desc.width = skyMultiscatterLutResolution;
-        desc.height = skyMultiscatterLutResolution;
-        desc.depth = 1;
-        desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        m_skyMultiscatterLut = gRenderBackend.createImage(desc, nullptr, 0);
-    }
-    //sky lut
-    {
-        ImageDescription desc;
-        desc.width = skyLutWidth;
-        desc.height = skyLutHeight;
-        desc.depth = 1;
-        desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-        desc.mipCount = MipCount::One;
-        desc.manualMipCount = 1;
-        desc.autoCreateMips = false;
-
-        m_skyLut = gRenderBackend.createImage(desc, nullptr, 0);
     }
     //min/max depth pyramid
     {
@@ -2666,12 +2431,6 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
         desc.size = splitSize + lightMatrixSize + scaleInfoSize;
         m_sunShadowInfoBuffer = gRenderBackend.createStorageBuffer(desc);
     }
-    //sky atmosphere settings
-    {
-        UniformBufferDescription desc;
-        desc.size = sizeof(AtmosphereSettings);
-        m_atmosphereSettingsBuffer = gRenderBackend.createUniformBuffer(desc);
-    }
     //global uniform buffer
     {
         UniformBufferDescription desc;
@@ -2758,112 +2517,6 @@ void RenderFrontend::initBuffers(const HistogramSettings& histogramSettings) {
 }
 
 void RenderFrontend::initMeshs() {
-    //skybox cube
-    {
-        MeshData cubeData;
-        cubeData.positions = {
-            glm::vec3(-1.f, -1.f, -1.f),
-            glm::vec3(1.f, -1.f, -1.f),
-            glm::vec3(1.f, 1.f, -1.f),
-            glm::vec3(-1.f, 1.f, -1.f),
-            glm::vec3(-1.f, -1.f, 1.f),
-            glm::vec3(1.f, -1.f, 1.f),
-            glm::vec3(1.f, 1.f, 1.f),
-            glm::vec3(-1.f, 1.f, 1.f)
-        };
-        cubeData.uvs = {
-            glm::vec2(),
-            glm::vec2(),
-            glm::vec2(),
-            glm::vec2(),
-            glm::vec2(),
-            glm::vec2(),
-            glm::vec2(),
-            glm::vec2()
-        };
-        cubeData.normals = {
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3()
-        };
-        cubeData.tangents = {
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3()
-        };
-        cubeData.bitangents = {
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3()
-        };
-        cubeData.indices = {
-            0, 1, 3, 3, 1, 2,
-            1, 5, 2, 2, 5, 6,
-            5, 4, 6, 6, 4, 7,
-            4, 0, 7, 7, 0, 3,
-            3, 2, 7, 7, 2, 6,
-            4, 5, 0, 0, 5, 1
-        };
-        const std::vector<MeshBinary> cubeBinary = meshesToBinary(std::vector<MeshData>{cubeData}, AABBListFromMeshes({cubeData}));
-
-        m_skyCube = gRenderBackend.createMeshes(cubeBinary).back();
-    }
-    //quad 
-    {
-        MeshData quadData;
-        quadData.positions = {
-            glm::vec3(-1.f, -1.f, -1.f),
-            glm::vec3(1.f, 1.f, -1.f),
-            glm::vec3(1.f, -1.f, -1.f),
-            glm::vec3(-1.f, 1.f, -1.f)
-        };
-        quadData.uvs = {
-            glm::vec2(),
-            glm::vec2(),
-            glm::vec2(),
-            glm::vec2()
-        };
-        quadData.normals = {
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3()
-        };
-        quadData.tangents = {
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3()
-        };
-        quadData.bitangents = {
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3(),
-            glm::vec3()
-        };
-        quadData.indices = {
-            0, 1, 2, 
-            0, 1, 3
-        };
-        const std::vector<MeshBinary> quadBinary = meshesToBinary(std::vector<MeshData>{quadData}, AABBListFromMeshes({ quadData }));
-
-        m_quad = gRenderBackend.createMeshes(quadBinary).back();
-    }
     //bounding box mesh
     //drawn using lines, so needs different positions than skybox
     {
@@ -2936,115 +2589,6 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
 
         const auto shadowPass = gRenderBackend.createGraphicPass(shadowPassConfig);
         m_shadowPasses.push_back(shadowPass);
-    }
-    //sky copy pass
-    {
-        ComputePassDescription cubeWriteDesc;
-        cubeWriteDesc.name = "Copy sky to cubemap";
-        cubeWriteDesc.shaderDescription.srcPathRelative = "copyToCube.comp";
-        m_toCubemapPass = gRenderBackend.createComputePass(cubeWriteDesc);
-    }
-    //cubemap mip creation pass
-    {
-        ComputePassDescription cubemapMipPassDesc;
-        cubemapMipPassDesc.name = "Sky mip creation";
-        cubemapMipPassDesc.shaderDescription.srcPathRelative = "cubemapMip.comp";
-
-        //first map is written to by different shader        
-        for (uint32_t i = 0; i < skyTextureMipCount - 1; i++) {
-            m_cubemapMipPasses.push_back(gRenderBackend.createComputePass(cubemapMipPassDesc));
-        }
-    }
-    //specular convolution pass
-    {
-        for (uint32_t i = 0; i < m_specularSkyProbeMipCount; i++) {
-            ComputePassDescription specularConvolutionDesc;
-            specularConvolutionDesc.name = "Specular sky probe convolution";
-            specularConvolutionDesc.shaderDescription.srcPathRelative = "specularSkyConvolution.comp";
-
-            //specialisation constants
-            {
-                auto& constants = specularConvolutionDesc.shaderDescription.specialisationConstants;
-
-                //mip count specialisation constant
-                constants.push_back({
-                    0,                                                                                  //location
-                    dataToCharArray((void*)&m_specularSkyProbeMipCount, sizeof(m_specularSkyProbeMipCount))   //value
-                    });
-                //mip level
-                constants.push_back({
-                    1,                                      //location
-                    dataToCharArray((void*)&i, sizeof(i))   //value
-                    });
-            }
-            m_skySpecularConvolutionPerMipPasses.push_back(gRenderBackend.createComputePass(specularConvolutionDesc));
-        }
-    }
-    //diffuse convolution pass
-    {
-        ComputePassDescription diffuseConvolutionDesc;
-        diffuseConvolutionDesc.name = "Diffuse sky probe convolution";
-        diffuseConvolutionDesc.shaderDescription.srcPathRelative = "diffuseSkyConvolution.comp";
-        m_skyDiffuseConvolutionPass = gRenderBackend.createComputePass(diffuseConvolutionDesc);
-    }
-    //sky transmission lut creation pass
-    {
-        ComputePassDescription skyTransmissionLutPassDesc;
-        skyTransmissionLutPassDesc.name = "Sky transmission lut";
-        skyTransmissionLutPassDesc.shaderDescription.srcPathRelative = "skyTransmissionLut.comp";
-        m_skyTransmissionLutPass = gRenderBackend.createComputePass(skyTransmissionLutPassDesc);
-    }
-    //sky multiscatter lut
-    {
-        ComputePassDescription skyMultiscatterPassDesc;
-        skyMultiscatterPassDesc.name = "Sky multiscatter lut";
-        skyMultiscatterPassDesc.shaderDescription.srcPathRelative = "skyMultiscatterLut.comp";
-        m_skyMultiscatterLutPass = gRenderBackend.createComputePass(skyMultiscatterPassDesc);
-    }
-    //sky lut creation pass
-    {
-        ComputePassDescription skyLutPassDesc;
-        skyLutPassDesc.name = "Sky lut";
-        skyLutPassDesc.shaderDescription.srcPathRelative = "skyLut.comp";
-        m_skyLutPass = gRenderBackend.createComputePass(skyLutPassDesc);
-    }
-    //sky pass
-    {
-        const Attachment colorAttachment(ImageFormat::R11G11B10_uFloat, AttachmentLoadOp::Load);
-        const Attachment depthAttachment(ImageFormat::Depth32, AttachmentLoadOp::Load);
-
-        GraphicPassDescription skyPassConfig;
-        skyPassConfig.name = "Skybox render";
-        skyPassConfig.attachments = { colorAttachment, depthAttachment };
-        skyPassConfig.shaderDescriptions.vertex.srcPathRelative = "sky.vert";
-        skyPassConfig.shaderDescriptions.fragment.srcPathRelative = "sky.frag";
-        skyPassConfig.depthTest.function = DepthFunction::GreaterEqual;
-        skyPassConfig.depthTest.write = false;
-        skyPassConfig.rasterization.cullMode = CullMode::None;
-        skyPassConfig.rasterization.mode = RasterizationeMode::Fill;
-        skyPassConfig.blending = BlendState::None;
-        skyPassConfig.vertexFormat = VertexFormat::Full;
-
-        m_skyPass = gRenderBackend.createGraphicPass(skyPassConfig);
-    }
-    //sun sprite
-    {
-        const auto colorAttachment = Attachment(ImageFormat::R11G11B10_uFloat, AttachmentLoadOp::Load);
-        const auto depthAttachment = Attachment(ImageFormat::Depth32, AttachmentLoadOp::Load);
-
-        GraphicPassDescription desc;
-        desc.name = "Sun sprite";
-        desc.attachments = { colorAttachment, depthAttachment };
-        desc.shaderDescriptions.vertex.srcPathRelative = "sunSprite.vert";
-        desc.shaderDescriptions.fragment.srcPathRelative = "sunSprite.frag";
-        desc.depthTest.function = DepthFunction::GreaterEqual;
-        desc.depthTest.write = false;
-        desc.rasterization.cullMode = CullMode::None;
-        desc.rasterization.mode = RasterizationeMode::Fill;
-        desc.blending = BlendState::Additive;
-        desc.vertexFormat = VertexFormat::Full;
-
-        m_sunSpritePass = gRenderBackend.createGraphicPass(desc);
     }
     //BRDF Lut creation pass
     {
