@@ -7,6 +7,7 @@
 #include "AABB.h"
 #include "ViewFrustum.h"
 #include "Runtime/RuntimeScene.h"
+#include "Techniques/Bloom.h"
 
 struct GLFWwindow;
 
@@ -130,12 +131,6 @@ struct SDFInstance {
     glm::mat4x4 worldToLocal;
 };
 
-struct BloomSettings {
-    bool enabled = true;
-    float strength = 0.05f;
-    float radius = 1.5f;
-};
-
 class RenderFrontend {
 public:
     RenderFrontend() {};
@@ -187,11 +182,6 @@ private:
     void issueSkyDrawcalls();
     void renderSDFVisualization(const ImageHandle targetImage, const RenderPassHandle parent) const;
     void computeVolumetricLighting();
-
-    //downscales and blurs screen sized target image in separate texture, then additively blends on top of targetImage
-    //returns last render pass, which must be used as parent, when accessing target image for correct ordering
-    //parent pass is used as initial parent and must be last pass that used target image
-    RenderPassHandle computeBloom(const RenderPassHandle parentPass, const ImageHandle targetImage) const;
 
     //returns list of passes that must be used as parent to wait for results
     //when culling for direct visualisation hi-z culling results in artifacts
@@ -266,10 +256,12 @@ private:
     SDFDebugSettings m_sdfDebugSettings;
     SDFDiffuseTraceSettings m_sdfDiffuseTraceSettings;
     VolumetricLightingSettings m_volumetricLightingSettings;
-    BloomSettings m_bloomSettings;
 
     glm::vec3 m_windVector = glm::vec3(0.f);
     float m_windSpeed = 0.15f;
+
+    BloomSettings m_bloomSettings;
+    Bloom m_bloom;
 
     RenderPassHandle m_mainPass;
     std::vector<RenderPassHandle> m_shadowPasses;
@@ -308,9 +300,6 @@ private:
     RenderPassHandle m_froxelScatteringTransmittancePass;
     RenderPassHandle m_volumetricLightingIntegration;
     RenderPassHandle m_volumetricLightingReprojection;
-    std::vector<RenderPassHandle> m_bloomDownsamplePasses;
-    std::vector<RenderPassHandle> m_bloomUpsamplePasses;
-    RenderPassHandle m_applyBloomPass;
 
     uint32_t m_specularSkyProbeMipCount = 0;
 
@@ -326,10 +315,10 @@ private:
     ImageHandle m_minMaxDepthPyramid;
     ImageHandle m_sceneLuminance;
     ImageHandle m_lastFrameLuminance;
-    ImageHandle m_indirectDiffuse_Y_SH[2];			//ping pong buffers for filtering, Y component of YCoCg color space as spherical harmonics		
-    ImageHandle m_indirectDiffuse_CoCg[2];			//ping pong buffers for filtering, CoCg component of YCoCg color space
-    ImageHandle m_indirectDiffuseHistory_Y_SH[2];	//Y component of YCoCg color space as spherical harmonics
-    ImageHandle m_indirectDiffuseHistory_CoCg[2];	//CoCg component of YCoCg color space
+    ImageHandle m_indirectDiffuse_Y_SH[2];          //ping pong buffers for filtering, Y component of YCoCg color space as spherical harmonics		
+    ImageHandle m_indirectDiffuse_CoCg[2];          //ping pong buffers for filtering, CoCg component of YCoCg color space
+    ImageHandle m_indirectDiffuseHistory_Y_SH[2];   //Y component of YCoCg color space as spherical harmonics
+    ImageHandle m_indirectDiffuseHistory_CoCg[2];   //CoCg component of YCoCg color space
     ImageHandle m_worldSpaceNormalImage;
     ImageHandle m_depthHalfRes;
     ImageHandle m_indirectLightingFullRes_Y_SH;
@@ -339,8 +328,6 @@ private:
     ImageHandle m_volumetricLightingHistory[2];
     ImageHandle m_volumetricIntegrationVolume;
     ImageHandle m_perlinNoise3D;
-    ImageHandle m_bloomDownscaleTexture;
-    ImageHandle m_bloomUpscaleTexture;
 
     std::vector<ImageHandle> m_noiseTextures;
 

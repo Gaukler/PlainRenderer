@@ -66,8 +66,6 @@ const uint32_t maxObjectCountMainScene = 1200;
 const size_t sdfCameraCullingTileSize = 32;
 const size_t maxSdfObjectsPerTile = 100;	//must be the same as shader constant maxObjectsPerTile in sdfCulling.inc
 
-const int bloomMipCount = 6;
-
 const uint32_t scatteringTransmittanceFroxelTileSize = 8;
 const uint32_t scatteringTransmittanceDepthSliceCount = 64;
 
@@ -237,6 +235,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
     initFramebuffers();
     initRenderTargets();
     initMeshs();
+    m_bloom.init(width, height);
 
     setupGlobalShaderInfoResources();
 
@@ -269,9 +268,8 @@ void RenderFrontend::prepareNewFrame() {
             m_lastFrameLuminance,
             m_worldSpaceNormalImage,
             m_indirectLightingFullRes_Y_SH, 
-            m_indirectLightingFullRes_CoCg,
-            m_bloomDownscaleTexture,
-            m_bloomUpscaleTexture },
+            m_indirectLightingFullRes_CoCg 
+            },
             m_screenWidth, m_screenHeight);
         //half res render targets
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid, m_depthHalfRes }, m_screenWidth / 2, m_screenHeight / 2);
@@ -471,7 +469,7 @@ void RenderFrontend::prepareRenderpasses(){
     }
 
     if (m_bloomSettings.enabled) {
-        currentPass = computeBloom(currentPass, currentSrc);
+        currentPass = m_bloom.computeBloom(currentPass, currentSrc, m_bloomSettings);
     }
     computeTonemapping(currentPass, currentSrc);
 }
@@ -1593,95 +1591,6 @@ void RenderFrontend::computeVolumetricLighting() {
     }
 }
 
-RenderPassHandle RenderFrontend::computeBloom(const RenderPassHandle parentPass, const ImageHandle targetImage) const {
-
-    RenderPassHandle currentParent = parentPass;
-    //downscale
-    for (int i = 0; i < m_bloomDownsamplePasses.size(); i++) {
-        ComputePassExecution exe;
-        exe.genericInfo.handle = m_bloomDownsamplePasses[i];
-        exe.genericInfo.parents = { currentParent };
-
-        const int sourceMip = i;
-        const int targetMip = i + 1;
-
-        const ImageHandle srcTexture = i == 0 ? targetImage : m_bloomDownscaleTexture;
-
-        exe.genericInfo.resources.storageImages = {
-            ImageResource(m_bloomDownscaleTexture, targetMip, 0)
-        };
-        exe.genericInfo.resources.sampledImages = {
-            ImageResource(srcTexture, sourceMip, 1)
-        };
-
-        const glm::ivec2 baseResolution = glm::ivec2(m_screenWidth, m_screenHeight);
-        const glm::ivec2 targetResolution = resolutionFromMip(glm::ivec3(baseResolution, 1), targetMip);
-
-        const int groupSize = 8;
-        exe.dispatchCount[0] = (uint32_t)glm::ceil(targetResolution.x / float(groupSize));
-        exe.dispatchCount[1] = (uint32_t)glm::ceil(targetResolution.y / float(groupSize));
-        exe.dispatchCount[2] = 1;
-
-        gRenderBackend.setComputePassExecution(exe);
-
-        currentParent = exe.genericInfo.handle;
-    }
-    //upscale
-    for (int i = 0; i < m_bloomUpsamplePasses.size(); i++) {
-        ComputePassExecution exe;
-        exe.genericInfo.handle = m_bloomUpsamplePasses[i];
-        exe.genericInfo.parents = { currentParent };
-
-        const int targetMip = bloomMipCount - 2 - i;
-        const int sourceMip = targetMip + 1;
-
-        exe.genericInfo.resources.storageImages = {
-            ImageResource(m_bloomUpscaleTexture, targetMip, 0)
-        };
-        exe.genericInfo.resources.sampledImages = {
-            ImageResource(m_bloomUpscaleTexture, sourceMip, 1),
-            ImageResource(m_bloomDownscaleTexture, sourceMip, 2)
-        };
-
-        const glm::ivec2 baseResolution = glm::ivec2(m_screenWidth, m_screenHeight);
-        const glm::ivec2 targetResolution = resolutionFromMip(glm::ivec3(baseResolution, 1), targetMip);
-
-        const int groupSize = 8;
-        exe.dispatchCount[0] = (uint32_t)glm::ceil(targetResolution.x / float(groupSize));
-        exe.dispatchCount[1] = (uint32_t)glm::ceil(targetResolution.y / float(groupSize));
-        exe.dispatchCount[2] = 1;
-
-        exe.pushConstants = dataToCharArray((void*)&m_bloomSettings.radius, sizeof(m_bloomSettings.radius));
-
-        gRenderBackend.setComputePassExecution(exe);
-
-        currentParent = exe.genericInfo.handle;
-    }
-    //apply bloom
-    {
-        ComputePassExecution exe;
-        exe.genericInfo.handle = m_applyBloomPass;
-        exe.genericInfo.parents = { currentParent };
-
-        exe.genericInfo.resources.storageImages = {
-            ImageResource(targetImage, 0, 0)
-        };
-        exe.genericInfo.resources.sampledImages = {
-            ImageResource(m_bloomUpscaleTexture, 0, 1)
-        };
-
-        const int groupSize = 8;
-        exe.dispatchCount[0] = (uint32_t)glm::ceil(m_screenWidth / float(groupSize));
-        exe.dispatchCount[1] = (uint32_t)glm::ceil(m_screenHeight / float(groupSize));
-        exe.dispatchCount[2] = 1;
-
-        exe.pushConstants = dataToCharArray((void*)&m_bloomSettings.strength, sizeof(m_bloomSettings.strength));
-
-        gRenderBackend.setComputePassExecution(exe);
-    }
-    return m_applyBloomPass;
-}
-
 std::vector<RenderPassHandle> RenderFrontend::sdfInstanceCulling(const float sdfInfluenceRadius, const bool useHiZ, const bool tracingHalfRes) const{
     //camera frustum culling
     {
@@ -2505,21 +2414,6 @@ void RenderFrontend::initImages() {
 
         const std::vector<uint8_t> perlinNoiseData = generate3DPerlinNoise(glm::ivec3(noiseResolution), 8);
         m_perlinNoise3D = gRenderBackend.createImage(desc, perlinNoiseData.data(), sizeof(uint8_t) * perlinNoiseData.size());
-    }
-    //bloom texture
-    {
-        ImageDescription desc;
-        desc.width = m_screenWidth;
-        desc.height = m_screenHeight;
-        desc.depth = 1;
-        desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-        desc.mipCount = MipCount::Manual;
-        desc.manualMipCount = bloomMipCount;
-        desc.autoCreateMips = false;
-        m_bloomUpscaleTexture = gRenderBackend.createImage(desc, nullptr, 0);
-        m_bloomDownscaleTexture = gRenderBackend.createImage(desc, nullptr, 0);
     }
 }
 
@@ -3452,41 +3346,6 @@ void RenderFrontend::initRenderpasses(const HistogramSettings& histogramSettings
         desc.name = "Volumetric lighting reprojection";
         desc.shaderDescription.srcPathRelative = "volumeLightingReprojection.comp";
         m_volumetricLightingReprojection = gRenderBackend.createComputePass(desc);
-    }
-    //bloom downsample
-    {
-        for (int i = 0; i < bloomMipCount - 1; i++) {
-            ComputePassDescription desc;
-            const int mip = i+1;
-            desc.name = "Bloom downsample mip " + std::to_string(mip);
-            desc.shaderDescription.srcPathRelative = "bloomDownsample.comp";
-            m_bloomDownsamplePasses.push_back(gRenderBackend.createComputePass(desc));
-        }
-    }
-    //bloom upsample
-    {
-        for (int i = 0; i < bloomMipCount - 1; i++) {
-            ComputePassDescription desc;
-            const int mip = bloomMipCount - 2 - i;
-            desc.name = "Bloom Upsample mip " + std::to_string(mip);
-            desc.shaderDescription.srcPathRelative = "bloomUpsample.comp";
-
-            const bool isLowestMip = i == 0;
-            desc.shaderDescription.specialisationConstants = {
-                SpecialisationConstant{
-                    0,                                                          //location
-                    dataToCharArray((void*)&isLowestMip, sizeof(isLowestMip))}  //value
-            };
-
-            m_bloomUpsamplePasses.push_back(gRenderBackend.createComputePass(desc));
-        }
-    }
-    //apply bloom pass
-    {
-        ComputePassDescription desc;
-        desc.name = "Apply bloom";
-        desc.shaderDescription.srcPathRelative = "applyBloom.comp";
-        m_applyBloomPass = gRenderBackend.createComputePass(desc);
     }
 }
 
