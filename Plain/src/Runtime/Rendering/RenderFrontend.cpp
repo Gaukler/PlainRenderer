@@ -760,7 +760,10 @@ void RenderFrontend::renderFrame() {
         return;
     }
 
-    m_sky.issueSkyDrawcalls(m_sunDirection, m_viewProjectionMatrix);
+    //sdf visualisation is written with compute without depth, so sky is not rendered separately
+    if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::None) {
+        m_sky.issueSkyDrawcalls(m_sunDirection, m_viewProjectionMatrix);
+    }
 
     m_globalShaderInfo.frameIndex++;
     m_globalShaderInfo.frameIndexMod2 = m_globalShaderInfo.frameIndex % 2;
