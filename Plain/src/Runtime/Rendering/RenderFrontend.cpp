@@ -1,13 +1,13 @@
 #include "pch.h"
 #include "RenderFrontend.h"
 
-//disable ImGui warning
+// disable ImGui warning
 #pragma warning( push )
 #pragma warning( disable : 26495)
 
 #include <imgui/imgui.h>
 
-//reenable warning
+// reenable warning
 #pragma warning( pop )
 
 #include <Utilities/MathUtils.h>
@@ -86,7 +86,7 @@ void resizeCallback(GLFWwindow* window, int width, int height) {
 
 DefaultTextures createDefaultTextures() {
     DefaultTextures defaultTextures;
-    //albedo
+    // albedo
     {
         ImageDescription defaultDiffuseDesc;
         defaultDiffuseDesc.autoCreateMips = true;
@@ -102,7 +102,7 @@ DefaultTextures createDefaultTextures() {
         const uint8_t initialData[4] = { 255, 255, 255, 255 };
         defaultTextures.diffuse = gRenderBackend.createImage(defaultDiffuseDesc, initialData, sizeof(initialData));
     }
-    //specular
+    // specular
     {
         ImageDescription defaultSpecularDesc;
         defaultSpecularDesc.autoCreateMips = true;
@@ -118,7 +118,7 @@ DefaultTextures createDefaultTextures() {
         const uint8_t initialData[4] = { 0, 128, 255, 0 };
         defaultTextures.specular = gRenderBackend.createImage(defaultSpecularDesc, initialData, sizeof(initialData));
     }
-    //normal
+    // normal
     {
         ImageDescription defaultNormalDesc;
         defaultNormalDesc.autoCreateMips = true;
@@ -134,7 +134,7 @@ DefaultTextures createDefaultTextures() {
         const uint8_t initialData[2] = { 128, 128 };
         defaultTextures.normal = gRenderBackend.createImage(defaultNormalDesc, initialData, sizeof(initialData));
     }
-    //sky
+    // sky
     {
         ImageDescription defaultCubemapDesc;
         defaultCubemapDesc.autoCreateMips = true;
@@ -199,7 +199,7 @@ void RenderFrontend::prepareNewFrame() {
     if (m_didResolutionChange) {
 
         gRenderBackend.recreateSwapchain(m_screenWidth, m_screenHeight, m_window);
-        //full res render targets
+        // full res render targets
         gRenderBackend.resizeImages({
             m_frameRenderTargets[0].motionBuffer,
             m_frameRenderTargets[1].motionBuffer,
@@ -212,7 +212,7 @@ void RenderFrontend::prepareNewFrame() {
             m_worldSpaceNormalImage 
             },
             m_screenWidth, m_screenHeight);
-        //half res render targets
+        // half res render targets
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid, m_depthHalfRes }, m_screenWidth / 2, m_screenHeight / 2);
 
         m_taa.resizeImages(m_screenWidth, m_screenHeight);
@@ -238,7 +238,7 @@ void RenderFrontend::prepareNewFrame() {
 
     if (m_isBRDFLutShaderDescriptionStale) {
         gRenderBackend.updateComputePassShaderDescription(m_brdfLutPass, createBRDFLutShaderDescription(m_shadingConfig));
-        //don't reset m_isMainPassShaderDescriptionStale, this is done when rendering as it's used to trigger lut recreation
+        // don't reset m_isMainPassShaderDescriptionStale, this is done when rendering as it's used to trigger lut recreation
     }
 
     if (m_taaSettingsChanged) {
@@ -441,7 +441,7 @@ void RenderFrontend::prepareRenderpasses(){
 void RenderFrontend::setResolution(const uint32_t width, const uint32_t height) {
     m_screenWidth = width;
     m_screenHeight = height;
-    //avoid zeros when minimzed
+    // avoid zeros when minimzed
     m_camera.intrinsic.aspectRatio = glm::max((float)width / glm::max((float)height, 0.001f), 0.001f);
     if (width == 0 || height == 0) {
         m_minimized = true;
@@ -462,7 +462,7 @@ void RenderFrontend::setCameraExtrinsic(const CameraExtrinsic& extrinsic) {
     const glm::mat4 viewMatrix = viewMatrixFromCameraExtrinsic(extrinsic);
     const glm::mat4 projectionMatrix = projectionMatrixFromCameraIntrinsic(m_camera.intrinsic);
 
-    //jitter matrix for temporal supersampling
+    // jitter matrix for temporal supersampling
     if(m_taaSettings.enabled){
         const glm::vec2 pixelSize = glm::vec2(1.f / m_screenWidth, 1.f / m_screenHeight);
 
@@ -523,7 +523,7 @@ std::vector<MeshHandleFrontend> RenderFrontend::registerMeshes(const std::vector
 
         const size_t baseIndex = (size_t)4 * i;
 
-        //material
+        // material
         ImageHandle albedoHandle = meshImageHandles[baseIndex + 0];
         if (albedoHandle.index == invalidIndex) {
             albedoHandle = m_defaultTextures.diffuse;
@@ -558,15 +558,15 @@ void RenderFrontend::prepareForDrawcalls() {
     if (m_minimized) {
         return;
     }
-    //global shader info must be updated before drawcalls, else they would be invalidated by descriptor set update
-    //cant update at frame start as camera data must be set before updaing global info
+    // global shader info must be updated before drawcalls, else they would be invalidated by descriptor set update
+    // cant update at frame start as camera data must be set before updaing global info
     updateGlobalShaderInfo();
 }
 
 void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 
-    //if we prepare render commands without consuming them we will save up a huge amount of commands
-    //to avoid this commands are not recorded if minmized
+    // if we prepare render commands without consuming them we will save up a huge amount of commands
+    // to avoid this commands are not recorded if minmized
     if (m_minimized) {
         return;
     }
@@ -579,7 +579,7 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 
     const bool renderingSDFVisualisation = m_sdfDebugSettings.visualisationMode != SDFVisualisationMode::None;
 
-    //main and prepass
+    // main and prepass
     JobSystem::Counter recordingFinished;
 
     struct MainPassPushConstants {
@@ -588,13 +588,13 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
         uint32_t specularTextureIndex;
         uint32_t transformIndex;
     };
-    //data needed in outer scope to keep data pointer in scope when executing job
+    // data needed in outer scope to keep data pointer in scope when executing job
     std::vector<MainPassPushConstants> mainPassPushConstants;	
     std::vector<MeshHandle> mainPassCulledMeshes;
     {
         std::vector<MainPassMatrices> mainPassMatrices;
 
-        //frustum culling
+        // frustum culling
         for (const RenderObject& obj : scene) {
 
             const bool isVisible = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, obj.bbWorld);
@@ -618,7 +618,7 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
                 mainPassMatrices.push_back(matrices);
             }
         }
-        //only prepass drawcalls needed for sdf debug visualisation
+        // only prepass drawcalls needed for sdf debug visualisation
         if (renderingSDFVisualisation) {
             JobSystem::addJob([this, &mainPassCulledMeshes, &mainPassPushConstants](int workerIndex) {
                 gRenderBackend.drawMeshes(mainPassCulledMeshes, (char*)mainPassPushConstants.data(), m_depthPrePass, workerIndex);
@@ -636,7 +636,7 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
             sizeof(MainPassMatrices) * mainPassMatrices.size());
     }
 
-    //shadow pass
+    // shadow pass
     struct ShadowPushConstants {
         uint32_t albedoTextureIndex;
         uint32_t transformIndex;
@@ -645,9 +645,9 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
     std::vector<ShadowPushConstants> shadowPushConstantData;
     {
         const glm::vec3 sunDirection = directionToVector(m_sunDirection);
-        //we must not cull behind the shadow frustum near plane, as objects there cast shadows into the visible area
-        //for now we simply offset the near plane points very far into the light direction
-        //this means that all objects in that direction within the moved distance will intersect our frustum and aren't culled
+        // we must not cull behind the shadow frustum near plane, as objects there cast shadows into the visible area
+        // for now we simply offset the near plane points very far into the light direction
+        // this means that all objects in that direction within the moved distance will intersect our frustum and aren't culled
         const float nearPlaneExtensionLength = 10000.f;
         const glm::vec3 nearPlaneOffset = sunDirection * nearPlaneExtensionLength;
         m_sunShadowFrustum.points.l_l_n += nearPlaneOffset;
@@ -657,8 +657,8 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
 
         std::vector<glm::mat4> shadowModelMatrices;
 
-        //coarse frustum culling for shadow rendering, assuming shadow frustum if fitted to camera frustum
-        //actual frustum is fitted tightly to depth buffer values, but that is done on the GPU
+        // coarse frustum culling for shadow rendering, assuming shadow frustum if fitted to camera frustum
+        // actual frustum is fitted tightly to depth buffer values, but that is done on the GPU
         for (const RenderObject& obj : scene) {
 
             const bool isVisible = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_sunShadowFrustum, obj.bbWorld);
@@ -686,15 +686,15 @@ void RenderFrontend::renderScene(const std::vector<RenderObject>& scene) {
             sizeof(glm::mat4) * shadowModelMatrices.size());
     }
 
-    //bounding boxes
+    // bounding boxes
     std::vector<MeshHandle> bbMeshHandles;
-    std::vector<uint32_t> bbPushConstantData; //contains index to matrix
+    std::vector<uint32_t> bbPushConstantData; // contains index to matrix
 
     if (m_renderBoundingBoxes && !renderingSDFVisualisation) {
         std::vector<glm::mat4> boundingBoxMatrices;
         for (const RenderObject& obj : scene) {
-            //culling again is repeating work
-            //but keeps code nicely separated and is for debugging only
+            // culling again is repeating work
+            // but keeps code nicely separated and is for debugging only
             const bool isVisible = isAxisAlignedBoundingBoxIntersectingViewFrustum(m_cameraFrustum, obj.bbWorld);
             if (isVisible) {
                 const glm::vec3 offset = (obj.bbWorld.min + obj.bbWorld.max) * 0.5f;
@@ -721,7 +721,7 @@ void RenderFrontend::renderFrame() {
         return;
     }
 
-    //sdf visualisation is written with compute without depth, so sky is not rendered separately
+    // sdf visualisation is written with compute without depth, so sky is not rendered separately
     if (m_sdfDebugSettings.visualisationMode == SDFVisualisationMode::None) {
         m_sky.issueSkyDrawcalls(m_sunDirection, m_viewProjectionMatrix);
     }
@@ -759,7 +759,7 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
     }
 
     const float binsPerDispatch = 64.f;
-    //reset global tile
+    // reset global tile
     {
         ComputePassExecution histogramResetExecution;
         histogramResetExecution.genericInfo.handle = m_histogramResetPass;
@@ -770,7 +770,7 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
 
         gRenderBackend.setComputePassExecution(histogramResetExecution);
     }
-    //combine tiles
+    // combine tiles
     {
         ComputePassExecution histogramCombineTilesExecution;
         histogramCombineTilesExecution.genericInfo.handle = m_histogramCombinePass;
@@ -945,8 +945,8 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
         ImageResource(m_volumetrics.getIntegrationVolume(), 0, 18)
     };
 
-    //add shadow map cascade resources
-    //max count shadow maps are always allocated and bound, but may be unused
+    // add shadow map cascade resources
+    // max count shadow maps are always allocated and bound, but may be unused
     for (uint32_t i = 0; i < maxSunShadowCascadeCount; i++) {
         const auto shadowMapResource = ImageResource(m_shadowMaps[i], 0, 9 + i);
         mainPassExecution.genericInfo.resources.sampledImages.push_back(shadowMapResource);
@@ -989,7 +989,7 @@ void RenderFrontend::renderDebugGeometry(const FramebufferHandle framebuffer) co
 
 std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<std::filesystem::path>& imagePaths) {
 
-    //create set of paths which need to be loaded
+    // create set of paths which need to be loaded
     std::unordered_set <std::string> requiredDataSet;
     for (const fs::path path : imagePaths) {
         if (path == "") {
@@ -1000,7 +1000,7 @@ std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<s
         }
     }
 
-    //parallel load of required images
+    // parallel load of required images
     JobSystem::Counter loadingFinised;
     std::mutex mapMutex;
     std::unordered_map<std::string, std::pair<ImageDescription, size_t>> pathToDescriptionMap;
@@ -1010,7 +1010,7 @@ std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<s
     size_t dataIndex = 0;
     for (const std::string &path : requiredDataSet) {
 
-        //disable workerIndex unused parameter warning
+        // disable workerIndex unused parameter warning
         #pragma warning( push )
         #pragma warning( disable : 4100)
 
@@ -1023,14 +1023,14 @@ std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<s
             }
         }, &loadingFinised);
 
-        //reenable warning
+        // reenable warning
         #pragma warning( pop )
 
         dataIndex++;
     }
     JobSystem::waitOnCounter(loadingFinised);
 
-    //create images and store in map
+    // create images and store in map
     for (const fs::path path : requiredDataSet) {
         if (pathToDescriptionMap.find(path.string()) != pathToDescriptionMap.end()) {
             const std::pair<ImageDescription, size_t>& descriptionDataIndexPair = pathToDescriptionMap[path.string()];
@@ -1042,7 +1042,7 @@ std::vector<ImageHandle> RenderFrontend::loadImagesFromPaths(const std::vector<s
         }
     }
 
-    //build result vector
+    // build result vector
     std::vector<ImageHandle> result;
     result.reserve(imagePaths.size());
 
@@ -1076,7 +1076,7 @@ void RenderFrontend::computeBRDFLut() {
 void RenderFrontend::updateCameraFrustum() {
     m_cameraFrustum = computeViewFrustum(m_camera);
 
-    //debug geo
+    // debug geo
     std::vector<glm::vec3> frustumPoints;
     std::vector<uint32_t> frustumIndices;
 
@@ -1086,7 +1086,7 @@ void RenderFrontend::updateCameraFrustum() {
 void RenderFrontend::updateShadowFrustum() {
     m_sunShadowFrustum = computeOrthogonalFrustumFittedToCamera(m_cameraFrustum, directionToVector(m_sunDirection));
 
-    //debug geo
+    // debug geo
     std::vector<glm::vec3> frustumPoints;
     std::vector<uint32_t> frustumIndices;
     frustumToLineMesh(m_sunShadowFrustum, &frustumPoints, &frustumIndices);
@@ -1132,31 +1132,31 @@ GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription
     shaderDesc.vertex.srcPathRelative = "triangle.vert";
     shaderDesc.fragment.srcPathRelative = "triangle.frag";
 
-    //specialisation constants
+    // specialisation constants
     {
         auto& constants = shaderDesc.fragment.specialisationConstants;
 
-        //diffuse BRDF
+        // diffuse BRDF
         constants.push_back({
             0,                                                                      //location
             dataToCharArray((void*)&config.diffuseBRDF, sizeof(config.diffuseBRDF)) //value
             });
-        //direct specular multiscattering
+        // direct specular multiscattering
         constants.push_back({
             1,                                                                                      //location
             dataToCharArray((void*)&config.directMultiscatter, sizeof(config.directMultiscatter))   //value
             });
-        //use geometry AA
+        // use geometry AA
         constants.push_back({
             2,                                                                          //location
             dataToCharArray((void*)&config.useGeometryAA, sizeof(config.useGeometryAA)) //value
             });
-        //indirect lighting tech
+        // indirect lighting tech
         constants.push_back({
             3,                                                                                                          //location
             dataToCharArray((void*)&m_shadingConfig.indirectLightingTech, sizeof(m_shadingConfig.indirectLightingTech)) //value
             });
-        //sun shadow cascade count
+        // sun shadow cascade count
         constants.push_back({
             4,                                                                                                            //location
             dataToCharArray((void*)&m_shadingConfig.sunShadowCascadeCount, sizeof(m_shadingConfig.sunShadowCascadeCount)) //value
@@ -1171,7 +1171,7 @@ ShaderDescription RenderFrontend::createBRDFLutShaderDescription(const ShadingCo
     ShaderDescription desc;
     desc.srcPathRelative = "brdfLut.comp";
 
-    //diffuse brdf specialisation constant
+    // diffuse brdf specialisation constant
     desc.specialisationConstants.push_back({
         0,                                                                      // location
         dataToCharArray((void*)&config.diffuseBRDF, sizeof(config.diffuseBRDF)) // value
@@ -1183,7 +1183,7 @@ ShaderDescription RenderFrontend::createBRDFLutShaderDescription(const ShadingCo
 ShaderDescription RenderFrontend::createLightMatrixShaderDescription() {
     ShaderDescription desc;
     desc.srcPathRelative = "lightMatrix.comp";
-    //sun shadow cascade count
+    // sun shadow cascade count
     desc.specialisationConstants.push_back({
         0,                                                                                                            //location
         dataToCharArray((void*)&m_shadingConfig.sunShadowCascadeCount, sizeof(m_shadingConfig.sunShadowCascadeCount)) //value
@@ -1209,10 +1209,10 @@ void RenderFrontend::updateGlobalShaderInfo() {
     m_globalShaderInfo.cameraAspectRatio = m_camera.intrinsic.aspectRatio;
     m_globalShaderInfo.screenResolution = glm::ivec2(m_screenWidth, m_screenHeight);
 
-    //supersampling needs a lod bias as the derivatives are incorrect
-    //see "Filmic SMAA", page 117
-    //we spread 8 samples over a 2 pixel radius, resulting in an average distance of 2/8 = 0.25
-    //the resulting diagonal distance between the samples is sqrt(0.25) = 0.5
+    // supersampling needs a lod bias as the derivatives are incorrect
+    // see "Filmic SMAA", page 117
+    // we spread 8 samples over a 2 pixel radius, resulting in an average distance of 2/8 = 0.25
+    // the resulting diagonal distance between the samples is sqrt(0.25) = 0.5
     const float lodBiasSampleRadius = 0.5f;
     m_globalShaderInfo.mipBias = m_taaSettings.enabled && m_taaSettings.useMipBias ? glm::log2(lodBiasSampleRadius) : 0.f;
 
@@ -1220,10 +1220,7 @@ void RenderFrontend::updateGlobalShaderInfo() {
 }
 
 void RenderFrontend::initImages() {
-    //sky occlusion volume is created later
-    //its resolution is dependent on scene size in order to fit desired texel density
-
-    //post process buffer
+    // post process buffer
     {
         ImageDescription desc;
         desc.width = m_screenWidth;
@@ -1239,7 +1236,7 @@ void RenderFrontend::initImages() {
         m_postProcessBuffers[0] = gRenderBackend.createImage(desc, nullptr, 0);
         m_postProcessBuffers[1] = gRenderBackend.createImage(desc, nullptr, 0);
     }
-    //shadow map cascades
+    // shadow map cascades
     {
         ImageDescription desc;
         desc.width = shadowMapRes;
@@ -1258,7 +1255,7 @@ void RenderFrontend::initImages() {
             m_shadowMaps.push_back(shadowMap);
         }
     }
-    //brdf LUT
+    // brdf LUT
     {
         ImageDescription desc;
         desc.width = brdfLutRes;
@@ -1273,7 +1270,7 @@ void RenderFrontend::initImages() {
 
         m_brdfLut = gRenderBackend.createImage(desc, nullptr, 0);
     }
-    //min/max depth pyramid
+    // min/max depth pyramid
     {
         ImageDescription desc;
         desc.autoCreateMips = false;
@@ -1287,7 +1284,7 @@ void RenderFrontend::initImages() {
 
         m_minMaxDepthPyramid = gRenderBackend.createImage(desc, nullptr, 0);
     }
-    //noise textures
+    // noise textures
     for (int i = 0; i < noiseTextureCount; i++) {
         ImageDescription desc;
         desc.width = noiseTextureWidth;
@@ -1306,7 +1303,7 @@ void RenderFrontend::initImages() {
         m_noiseTextures.push_back(gRenderBackend.createImage(desc, blueNoiseData.data(), sizeof(uint8_t) * blueNoiseData.size()));
         m_globalShaderInfo.noiseTextureIndices[i] = gRenderBackend.getImageGlobalTextureArrayIndex(m_noiseTextures.back());
     }
-    //world space normal buffer
+    // world space normal buffer
     {
         ImageDescription desc;
         desc.width = m_screenWidth;
@@ -1321,7 +1318,7 @@ void RenderFrontend::initImages() {
 
         m_worldSpaceNormalImage = gRenderBackend.createImage(desc, nullptr, 0);
     }
-    //half res depth
+    // half res depth
     {
         ImageDescription desc;
         desc.width = m_screenWidth / 2;
@@ -1338,10 +1335,10 @@ void RenderFrontend::initImages() {
 
 void RenderFrontend::initSamplers(){
 
-    //all samplers have maxMip set to 20, even when not using anisotropy
-    //this ensures that shaders can use texelFetch and textureLod to access all mip levels
+    // all samplers have maxMip set to 20, even when not using anisotropy
+    // this ensures that shaders can use texelFetch and textureLod to access all mip levels
 
-    //anisotropic wrap
+    // anisotropic wrap
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Linear;
@@ -1352,7 +1349,7 @@ void RenderFrontend::initSamplers(){
 
         m_sampler_anisotropicRepeat = gRenderBackend.createSampler(desc);
     }
-    //nearest black border
+    // nearest black border
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Nearest;
@@ -1364,7 +1361,7 @@ void RenderFrontend::initSamplers(){
 
         m_sampler_nearestBlackBorder = gRenderBackend.createSampler(desc);
     }
-    //linear repeat
+    // linear repeat
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Linear;
@@ -1376,7 +1373,7 @@ void RenderFrontend::initSamplers(){
 
         m_sampler_linearRepeat = gRenderBackend.createSampler(desc);
     }
-    //linear clamp
+    // linear clamp
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Linear;
@@ -1388,7 +1385,7 @@ void RenderFrontend::initSamplers(){
 
         m_sampler_linearClamp = gRenderBackend.createSampler(desc);
     }
-    //nearest clamp
+    // nearest clamp
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Nearest;
@@ -1399,7 +1396,7 @@ void RenderFrontend::initSamplers(){
 
         m_sampler_nearestClamp = gRenderBackend.createSampler(desc);
     }
-    //linear White Border
+    // linear White Border
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Linear;
@@ -1410,7 +1407,7 @@ void RenderFrontend::initSamplers(){
 
         m_sampler_linearWhiteBorder = gRenderBackend.createSampler(desc);
     }
-    //nearest repeat
+    // nearest repeat
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Nearest;
@@ -1421,7 +1418,7 @@ void RenderFrontend::initSamplers(){
 
         m_sampler_nearestRepeat = gRenderBackend.createSampler(desc);
     }
-    //nearest white border
+    // nearest white border
     {
         SamplerDescription desc;
         desc.interpolation = SamplerInterpolation::Nearest;
@@ -1436,7 +1433,7 @@ void RenderFrontend::initSamplers(){
 }
 
 void RenderFrontend::initFramebuffers() {
-    //shadow map framebuffers
+    // shadow map framebuffers
     for (int i = 0; i < maxSunShadowCascadeCount; i++) {
         FramebufferTarget depthTarget;
         depthTarget.image = m_shadowMaps[i];
@@ -1451,7 +1448,7 @@ void RenderFrontend::initFramebuffers() {
 
 void RenderFrontend::initRenderTargets() {
     for (int i = 0; i < 2; i++) {
-        //motion buffer
+        // motion buffer
         {
             ImageDescription desc;
             desc.width = m_screenWidth;
@@ -1466,7 +1463,7 @@ void RenderFrontend::initRenderTargets() {
 
             m_frameRenderTargets[i].motionBuffer = gRenderBackend.createImage(desc, nullptr, 0);
         }
-        //color buffer
+        // color buffer
         {
             ImageDescription desc;
             desc.width = m_screenWidth;
@@ -1481,7 +1478,7 @@ void RenderFrontend::initRenderTargets() {
 
             m_frameRenderTargets[i].colorBuffer = gRenderBackend.createImage(desc, nullptr, 0);
         }
-        //depth buffer
+        // depth buffer
         {
             ImageDescription desc;
             desc.width = m_screenWidth;
@@ -1496,7 +1493,7 @@ void RenderFrontend::initRenderTargets() {
 
             m_frameRenderTargets[i].depthBuffer = gRenderBackend.createImage(desc, nullptr, 0);
         }
-        //color framebuffer
+        // color framebuffer
         {
             FramebufferTarget colorTarget;
             colorTarget.image = m_frameRenderTargets[i].colorBuffer;
@@ -1512,7 +1509,7 @@ void RenderFrontend::initRenderTargets() {
 
             m_frameRenderTargets[i].colorFramebuffer = gRenderBackend.createFramebuffer(desc);
         }
-        //prepass
+        // prepass
         {
             FramebufferTarget motionTarget;
             motionTarget.image = m_frameRenderTargets[i].motionBuffer;
@@ -1622,7 +1619,7 @@ void RenderFrontend::initMeshs() {
         binary.vertexCount = (uint32_t)positions.size();
         binary.vertexBuffer.resize(sizeof(glm::vec3) * positions.size());
         memcpy(binary.vertexBuffer.data(), positions.data(), binary.vertexBuffer.size());
-        //conversion to 16 bit index
+        // conversion to 16 bit index
         for (const uint32_t& index : indices) {
             binary.indexBuffer.push_back((uint16_t)index);
         }
@@ -1865,29 +1862,29 @@ ShaderDescription RenderFrontend::createDepthPyramidShaderDescription(uint32_t* 
     const uint32_t height = m_screenHeight / 2;
     const uint32_t depthMipCount = mipCountFromResolution(width, height, 1);
 
-    const uint32_t maxMipCount = 11; //see shader for details
+    const uint32_t maxMipCount = 11; // see shader for details
     const auto dispatchCount = computeSinglePassMipChainDispatchCount(width, height, depthMipCount, maxMipCount);
 
-    //mip count
+    // mip count
     desc.specialisationConstants.push_back({ 
-        0,                                                              //location
-        dataToCharArray((void*)&depthMipCount, sizeof(depthMipCount))   //value
+        0,                                                              // location
+        dataToCharArray((void*)&depthMipCount, sizeof(depthMipCount))   // value
             });
-    //depth buffer width
+    // depth buffer width
     desc.specialisationConstants.push_back({
-        1,                                                              //location
-        dataToCharArray((void*)&m_screenWidth, sizeof(m_screenWidth))   //value
+        1,                                                              // location
+        dataToCharArray((void*)&m_screenWidth, sizeof(m_screenWidth))   // value
             });
-    //depth buffer height
+    // depth buffer height
     desc.specialisationConstants.push_back({
-        2,                                                              //location
-        dataToCharArray((void*)&m_screenHeight, sizeof(m_screenHeight)) //value
+        2,                                                              // location
+        dataToCharArray((void*)&m_screenHeight, sizeof(m_screenHeight)) // value
             });
-    //threadgroup count
+    // threadgroup count
     *outThreadgroupCount = dispatchCount.x * dispatchCount.y;
     desc.specialisationConstants.push_back({
-        3,                                                                          //location
-        dataToCharArray((void*)outThreadgroupCount, sizeof(*outThreadgroupCount))   //value
+        3,                                                                          // location
+        dataToCharArray((void*)outThreadgroupCount, sizeof(*outThreadgroupCount))   // value
             });
 
     return desc;
@@ -1895,16 +1892,16 @@ ShaderDescription RenderFrontend::createDepthPyramidShaderDescription(uint32_t* 
 
 glm::ivec2 RenderFrontend::computeSinglePassMipChainDispatchCount(const uint32_t width, const uint32_t height, const uint32_t mipCount, const uint32_t maxMipCount) const {
 
-    //shader can process up to 12 mip levels
-    //thread group extent ranges from 16 to 1 depending on how many mips are used
+    // shader can process up to 12 mip levels
+    // thread group extent ranges from 16 to 1 depending on how many mips are used
     const uint32_t unusedMips = maxMipCount - mipCount;
 
-    //last 6 mips are processed by single thread group
+    // last 6 mips are processed by single thread group
     if (unusedMips >= 6) {
         return glm::ivec2(1, 1);
     }
     else {
-        //group size of 16x16 can compute up to a 32x32 area in mip0
+        // group size of 16x16 can compute up to a 32x32 area in mip0
         const uint32_t localThreadGroupExtent = 32 / (uint32_t)pow((uint32_t)2, unusedMips);
 
         glm::ivec2 count;
@@ -1923,8 +1920,7 @@ void RenderFrontend::drawUi() {
         m_latestCPUTimeStatMs = gRenderBackend.getLastFrameCPUTime() * 1000;
         m_latestDeltaTimeStatMs = m_globalShaderInfo.deltaTime * 1000;
     }
-
-    //rendering stats
+    // rendering stats
     {
         ImGui::Begin("Rendering stats");
         ImGui::Text(("DeltaTime: " + std::to_string(m_latestDeltaTimeStatMs) + "ms").c_str());
@@ -1945,7 +1941,7 @@ void RenderFrontend::drawUi() {
         ImGui::Text(("Used memory: " + std::to_string(usedMemorySizeMegaByte) + "mb").c_str());
     }
 
-    //pass timings shown in columns
+    // pass timings shown in columns
     {
         if (updateTimings) {
             m_currentRenderTimings = gRenderBackend.getRenderpassTimings();
@@ -1959,7 +1955,7 @@ void RenderFrontend::drawUi() {
         }
         ImGui::NextColumn();
         for (const auto timing : m_currentRenderTimings) {
-            //limit number of decimal places to improve readability
+            // limit number of decimal places to improve readability
             const size_t commaIndex = std::max(int(timing.timeMs) / 10, 1);
             const size_t decimalPlacesToKeep = 2;
             auto timeString = std::to_string(timing.timeMs);
@@ -1971,7 +1967,7 @@ void RenderFrontend::drawUi() {
 
     ImGui::Begin("Rendering");
 
-    //SDF settings
+    // SDF settings
     if (ImGui::CollapsingHeader("SDF settings")) {
 
         const char* sdfDebugOptions[] = { "None", "Visualize SDF", "Camera tile usage", "SDF Normals", "Raymarching count" };
@@ -1995,7 +1991,7 @@ void RenderFrontend::drawUi() {
             ImGui::Checkbox("Camera tile usage with hi-Z culling", &m_sdfDebugSettings.showCameraTileUsageWithHiZ);
         }
     }
-    //Temporal filter Settings
+    // Temporal filter Settings
     if(ImGui::CollapsingHeader("Temporal filter settings")){
 
         if (ImGui::Checkbox("Enabled", &m_taaSettings.enabled)) {
@@ -2015,7 +2011,7 @@ void RenderFrontend::drawUi() {
         m_taaSettingsChanged |= ImGui::Checkbox("Tonemap temporal supersample input", &m_taaSettings.filterUseTonemapping);
         ImGui::Checkbox("Use mip bias", &m_taaSettings.useMipBias); //bias is set trough buffer, so no update is required on change
     }
-    //volumetric lighting settings
+    // volumetric lighting settings
     if (ImGui::CollapsingHeader("Volumetric lighting settings")) {
         static glm::vec2 windDirection = glm::vec2(100.f, 60.f);
         ImGui::DragFloat2("Wind direction", &windDirection.x);
@@ -2047,17 +2043,17 @@ void RenderFrontend::drawUi() {
         ImGui::DragFloat("Bloom strength", &m_bloomSettings.strength, 0.05f, 0.f, 1.f);
         ImGui::DragFloat("Bloom blur radius", &m_bloomSettings.radius, 0.1f, 0.f, 5.f);
     }
-    //lighting settings
+    // lighting settings
     if(ImGui::CollapsingHeader("Lighting settings")){
         ImGui::DragFloat2("Sun direction", &m_sunDirection.x);
         ImGui::DragFloat("Exposure offset EV", &m_globalShaderInfo.exposureOffset, 0.1f);
         ImGui::DragFloat("Adaption speed EV/s", &m_globalShaderInfo.exposureAdaptionSpeedEvPerSec, 0.1f, 0.f);
         ImGui::InputFloat("Sun Illuminance Lux", &m_globalShaderInfo.sunIlluminanceLux);
     }
-    //shading settings
+    // shading settings
     if (ImGui::CollapsingHeader("Shading settings")) {
 
-        //naming and values rely on enum values being ordered same as names and indices being [0,3]
+        // naming and values rely on enum values being ordered same as names and indices being [0,3]
         const char* diffuseBRDFOptions[] = { "Lambert", "Disney", "CoD WWII", "Titanfall 2" };
         const bool diffuseBRDFChanged = ImGui::Combo("Diffuse BRDF",
             (int*)&m_shadingConfig.diffuseBRDF,
@@ -2065,7 +2061,7 @@ void RenderFrontend::drawUi() {
         m_isMainPassShaderDescriptionStale |= diffuseBRDFChanged;
         m_isBRDFLutShaderDescriptionStale = diffuseBRDFChanged;
 
-        //naming and values rely on enum values being ordered same as names and indices being [0,3]
+        // naming and values rely on enum values being ordered same as names and indices being [0,3]
         const char* directMultiscatterBRDFOptions[] = { "McAuley", "Simplified", "Scaled GGX lobe", "None" };
         m_isMainPassShaderDescriptionStale |= ImGui::Combo("Direct Multiscatter BRDF",
             (int*)&m_shadingConfig.directMultiscatter,
@@ -2090,7 +2086,7 @@ void RenderFrontend::drawUi() {
         m_isSDFDiffuseTraceShaderDescriptionStale   |= shadowCascadeCountChanged;
         m_isSDFDebugShaderDescriptionStale          |= shadowCascadeCountChanged;
     }
-    //camera settings
+    // camera settings
     if (ImGui::CollapsingHeader("Camera settings")) {
         ImGui::InputFloat("Near plane", &m_camera.intrinsic.near);
         ImGui::InputFloat("Far plane", &m_camera.intrinsic.far);
