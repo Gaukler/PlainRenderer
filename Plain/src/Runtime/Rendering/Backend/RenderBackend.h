@@ -210,6 +210,7 @@ public:
     float getLastFrameCPUTime() const;
 
     ImageDescription getImageDescription(const ImageHandle image);
+    void waitForGpuIdle();  // only use for rare events, such as resizing on settings change
 
 private:
 

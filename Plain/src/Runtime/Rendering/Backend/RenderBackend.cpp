@@ -16,7 +16,7 @@
 #include "Runtime/Timer.h"
 #include "JobSystem.h"
 
-//disable ImGui warnings
+// disable ImGui warnings
 #pragma warning( push )
 #pragma warning( disable : 26495 26812)
 
@@ -24,14 +24,14 @@
 #include <imgui/backends/imgui_impl_glfw.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 
-//definition of extern variable from header
+// definition of extern variable from header
 RenderBackend gRenderBackend;
 
-//reenable warnings
+// reenable warnings
 #pragma warning( pop )
 
-//vulkan uses enums, which result in a warning every time they are used
-//this warning is disabled for this entire file
+// vulkan uses enums, which result in a warning every time they are used
+// this warning is disabled for this entire file
 #pragma warning( disable : 26812) //C26812: Prefer 'enum class' over 'enum' 
 
 const uint32_t maxTextureCount = 1000;
@@ -56,7 +56,7 @@ RenderPasses
 */
 
 bool RenderPasses::isGraphicPassHandle(const RenderPassHandle handle) {
-    //checks first bit
+    // checks first bit
     const uint32_t upperBit = (uint32_t)1 << 31;
     return handle.index & upperBit;
 }
@@ -1281,6 +1281,10 @@ float RenderBackend::getLastFrameCPUTime() const {
 
 ImageDescription RenderBackend::getImageDescription(const ImageHandle image) {
     return m_images[image.index].desc;
+}
+
+void RenderBackend::waitForGpuIdle() {
+    vkDeviceWaitIdle(vkContext.device);
 }
 
 std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers(const RenderPassExecutionOrder& executionOrder,

@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "Runtime/Rendering/Backend/RenderBackend.h"
+#include "Runtime/Rendering/FrameRenderTargets.h"
 
 enum class HistorySamplingTech : int { Bilinear = 0, Bicubic16Tap = 1, Bicubic9Tap = 2, Bicubic5Tap = 3, Bicubic1Tap = 4 };
 
@@ -13,16 +14,6 @@ struct TAASettings {
     bool supersampleUseTonemapping = true;
     bool filterUseTonemapping = true;
     bool useMipBias = true;
-};
-
-//simple wrapper to keep all images and framebuffers used in a frame in one place
-//simplifies keeping resources of multiples frames around for temporal techniques
-struct FrameRenderTargets {
-    ImageHandle colorBuffer;
-    ImageHandle motionBuffer;
-    ImageHandle depthBuffer;
-    FramebufferHandle colorFramebuffer;
-    FramebufferHandle prepassFramebuffer;
 };
 
 class TAA {

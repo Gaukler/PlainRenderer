@@ -91,6 +91,8 @@ void main(){
     //iterate all objects in culling tile
     for(int instanceIndex = 0; instanceIndex < cullingTile.objectCount; instanceIndex++){
         SDFInstance instance = sdfInstances[cullingTile.indices[instanceIndex]];
+    //for(int instanceIndex = 0; instanceIndex < cameraCulledInstanceCount; instanceIndex++){
+    //    SDFInstance instance = sdfInstances[cameraCulledInstanceIndices[instanceIndex]];
 
         traceRayTroughSDFInstance(instance, rayStart, textures[instance.sdfTextureIndex], cameraToPixel, traceResult);
     }
