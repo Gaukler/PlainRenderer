@@ -314,7 +314,7 @@ void RenderFrontend::setupGlobalShaderInfoResources() {
 void RenderFrontend::prepareRenderpasses(){
 
     static int sceneRenderTargetIndex;
-    const FrameRenderTargets lastRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
+    const FrameRenderTargets previousRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
     sceneRenderTargetIndex++;
     sceneRenderTargetIndex %= 2;
     const FrameRenderTargets currentRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
@@ -331,16 +331,18 @@ void RenderFrontend::prepareRenderpasses(){
 
         computeSunLightMatrices();
         renderSunShadowCascades();
-        const RenderPassHandle sdfDebugPass = m_sdfGi.renderSDFVisualization(m_postProcessBuffers[0], m_sdfDebugSettings, 
-            m_sdfTraceSettings, 
-            m_sky.getSkyLut(), m_shadowMaps[m_shadingConfig.sunShadowCascadeCount-1], m_lightBuffer, m_cameraFrustum, 
-            m_sunShadowInfoBuffer, m_minMaxDepthPyramid, 
-            std::vector<RenderPassHandle>{ 
-                skyLutPass, 
-                m_shadowPasses[m_shadingConfig.sunShadowCascadeCount - 1],
-                m_depthPyramidPass, 
-                m_preExposeLightsPass
-            });
+
+        const std::vector<RenderPassHandle> sdfVisParents = {
+            skyLutPass,
+            m_shadowPasses[m_shadingConfig.sunShadowCascadeCount - 1],
+            m_depthPyramidPass,
+            m_preExposeLightsPass
+        };
+
+        SDFTraceDependencies traceDependencies = fillOutSdfGiDependencies(sdfVisParents, currentRenderTarget, previousRenderTarget);
+
+        const RenderPassHandle sdfDebugPass = m_sdfGi.renderSDFVisualization(m_postProcessBuffers[0], traceDependencies, 
+            m_sdfDebugSettings, m_sdfTraceSettings);
 
         computeTonemapping(sdfDebugPass, m_postProcessBuffers[0]);
         return;
@@ -359,7 +361,7 @@ void RenderFrontend::prepareRenderpasses(){
         forwardShadingDependencies.push_back(m_shadowPasses[i]);
     }
 
-    computeColorBufferHistogram(lastRenderTarget.colorBuffer);
+    computeColorBufferHistogram(previousRenderTarget.colorBuffer);
 
     const RenderPassHandle skyTransmissionPass = m_sky.updateTransmissionLut();
     computeExposure(skyTransmissionPass);
@@ -373,29 +375,16 @@ void RenderFrontend::prepareRenderpasses(){
             downscaleDepth(currentRenderTarget);
         }
 
-        SDFGI::SDFTraceDependencies traceDependencies;
-        traceDependencies.currentFrame = currentRenderTarget;
-        traceDependencies.previousFrame = lastRenderTarget;
-        traceDependencies.parents = { 
+        const std::vector<RenderPassHandle> indirectLightParents = {
             m_preExposeLightsPass,
-            skyLutPass,
-            m_depthPrePass,
-            m_shadowPasses[m_shadingConfig.sunShadowCascadeCount - 1],
-            m_depthPyramidPass
+                skyLutPass,
+                m_depthPrePass,
+                m_shadowPasses[m_shadingConfig.sunShadowCascadeCount - 1],
+                m_depthPyramidPass
         };
-        if (m_sdfTraceSettings.halfResTrace) {
-            traceDependencies.parents.push_back(m_depthDownscalePass);
-        }
-        traceDependencies.cameraFrustum = m_cameraFrustum;
-        traceDependencies.depthBuffer = m_sdfTraceSettings.halfResTrace ? m_depthHalfRes : currentRenderTarget.depthBuffer; // must be at appropriate resolution (half res if set to)
-        traceDependencies.worldSpaceNormals = m_worldSpaceNormalImage;
-        traceDependencies.skyLut = m_sky.getSkyLut();
-        traceDependencies.shadowMap = m_shadowMaps[m_shadingConfig.sunShadowCascadeCount - 1];
-        traceDependencies.lightBuffer = m_lightBuffer;
-        traceDependencies.sunShadowInfoBuffer = m_sunShadowInfoBuffer;
 
-        const RenderPassHandle indirectLightingPass = m_sdfGi.computeIndirectLighting(traceDependencies, 
-            m_minMaxDepthPyramid, m_sdfTraceSettings);
+        const SDFTraceDependencies traceDependencies = fillOutSdfGiDependencies(indirectLightParents, currentRenderTarget, previousRenderTarget);
+        const RenderPassHandle indirectLightingPass = m_sdfGi.computeIndirectLighting(traceDependencies, m_sdfTraceSettings);
 
         forwardShadingDependencies.push_back(indirectLightingPass);
     }
@@ -431,7 +420,7 @@ void RenderFrontend::prepareRenderpasses(){
     if (m_taaSettings.enabled) {
 
         if (m_taaSettings.useSeparateSupersampling) {
-            currentPass = m_taa.computeTemporalSuperSampling(currentRenderTarget, lastRenderTarget,
+            currentPass = m_taa.computeTemporalSuperSampling(currentRenderTarget, previousRenderTarget,
                 m_postProcessBuffers[0], currentPass);
 
             currentSrc = m_postProcessBuffers[0];
@@ -947,7 +936,7 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
     mainPassExecution.genericInfo.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer,
         StorageBufferResource{m_mainPassTransformsBuffer, true, 17} };
 
-    const SDFGI::IndirectLightingImages indirectLight = m_sdfGi.getIndirectLightingImages(m_sdfTraceSettings.halfResTrace);
+    const SDFGI::IndirectLightingImages indirectLight = m_sdfGi.getIndirectLightingResults(m_sdfTraceSettings.halfResTrace);
 
     mainPassExecution.genericInfo.resources.sampledImages = { 
         brdfLutResource,
@@ -1113,6 +1102,28 @@ HistogramSettings RenderFrontend::createHistogramSettings() {
     settings.maxTileCount = 1920 * 1080 / pixelsPerTile; //FIXME: update buffer on rescale
 
     return settings;
+}
+
+SDFTraceDependencies RenderFrontend::fillOutSdfGiDependencies(const std::vector<RenderPassHandle>& parents, 
+    const FrameRenderTargets& currentFrame, const FrameRenderTargets& previousFrame) {
+
+    SDFTraceDependencies traceDependencies;
+    traceDependencies.currentFrame = currentFrame;
+    traceDependencies.previousFrame = previousFrame;
+    traceDependencies.parents = parents; 
+    if (m_sdfTraceSettings.halfResTrace) {
+        traceDependencies.parents.push_back(m_depthDownscalePass);
+    }
+    traceDependencies.cameraFrustum = m_cameraFrustum;
+    traceDependencies.depthHalfRes = m_depthHalfRes;
+    traceDependencies.worldSpaceNormals = m_worldSpaceNormalImage;
+    traceDependencies.skyLut = m_sky.getSkyLut();
+    traceDependencies.shadowMap = m_shadowMaps[m_shadingConfig.sunShadowCascadeCount - 1];
+    traceDependencies.lightBuffer = m_lightBuffer;
+    traceDependencies.sunShadowInfoBuffer = m_sunShadowInfoBuffer;
+    traceDependencies.depthMinMaxPyramid = m_minMaxDepthPyramid;
+
+    return traceDependencies;
 }
 
 GraphicPassShaderDescriptions RenderFrontend::createForwardPassShaderDescription(const ShadingConfig& config) {

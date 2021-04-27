@@ -36,6 +36,20 @@ struct SDFInstance {
     glm::mat4x4 worldToLocal;
 };
 
+struct SDFTraceDependencies {
+    FrameRenderTargets currentFrame;
+    FrameRenderTargets previousFrame;
+    std::vector<RenderPassHandle> parents;
+    ViewFrustum cameraFrustum;
+    ImageHandle depthHalfRes;   // only used if tracing at half resolution
+    ImageHandle worldSpaceNormals;
+    ImageHandle skyLut;
+    ImageHandle shadowMap;
+    StorageBufferHandle lightBuffer;
+    StorageBufferHandle sunShadowInfoBuffer;
+    ImageHandle depthMinMaxPyramid;
+};
+
 class SDFGI {
 public:
     void init(const glm::ivec2 screenResolution, const SDFTraceSettings& traceSettings, 
@@ -50,29 +64,12 @@ public:
         ImageHandle CoCg;
     };
 
-    IndirectLightingImages getIndirectLightingImages(const bool tracedHalfRes) const;
+    IndirectLightingImages getIndirectLightingResults(const bool tracedHalfRes) const;
 
-    struct SDFTraceDependencies {
-        FrameRenderTargets currentFrame;
-        FrameRenderTargets previousFrame;
-        std::vector<RenderPassHandle> parents;
-        ViewFrustum cameraFrustum;
-        ImageHandle depthBuffer;    // must be at appropriate resolution (half res if set to)
-        ImageHandle worldSpaceNormals;
-        ImageHandle skyLut;
-        ImageHandle shadowMap;
-        StorageBufferHandle lightBuffer;
-        StorageBufferHandle sunShadowInfoBuffer;
-    };
+    RenderPassHandle computeIndirectLighting(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const;
 
-    RenderPassHandle computeIndirectLighting(const SDFTraceDependencies& dependencies,
-        const ImageHandle& depthMinMaxPyramid, const SDFTraceSettings& traceSettings);
-
-    RenderPassHandle renderSDFVisualization(const ImageHandle targetImage, const SDFDebugSettings& debugSettings,
-        const SDFTraceSettings& traceSettings, const ImageHandle skyLut,
-        const ImageHandle shadowMap, const StorageBufferHandle& lightBuffer, const ViewFrustum& cameraFrustum,
-        const StorageBufferHandle sunShadowInfoBuffer, const ImageHandle& depthMinMaxPyramid,
-        const std::vector<RenderPassHandle>& parents) const;
+    RenderPassHandle renderSDFVisualization(const ImageHandle target, const SDFTraceDependencies dependencies,
+        const SDFDebugSettings& debugSettings, const SDFTraceSettings& traceSettings) const;
 
     void updateSDFDebugSettings(const SDFDebugSettings& settings, const int sunShadowCascadeIndex);
     void updateSDFTraceSettings(const SDFTraceSettings& settings, const int sunShadowCascadeIndex);
@@ -82,16 +79,12 @@ private:
     // returns list of passes that must be used as parent to wait for results
     // when culling for direct visualisation hi-z culling results in artifacts
     // enable for indirect, disable for direct
-    std::vector<RenderPassHandle> sdfInstanceCulling(const bool useHiZ, const ViewFrustum& cameraFrustum, 
-        const ImageHandle& depthMinMaxPyramid, const std::vector<RenderPassHandle>& parents, 
-        const float influenceRadius, const glm::ivec2 targetResolution) const;
+    RenderPassHandle sdfInstanceCulling(const SDFTraceDependencies& dependencies, const glm::ivec2 targetResolution, 
+        const float influenceRadius, const bool hiZCulling) const;
 
-    RenderPassHandle diffuseSDFTrace(const SDFTraceDependencies& dependencies,
-        const ImageHandle& depthMinMaxPyramid, const std::vector<RenderPassHandle>& parents, 
-        const SDFTraceSettings& traceSettings) const;
+    RenderPassHandle diffuseSDFTrace(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const;
 
-    RenderPassHandle filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
-        const ImageHandle depthHalfRes, const ImageHandle worldSpaceNormals, const SDFTraceSettings& traceSettings) const;
+    RenderPassHandle filterIndirectDiffuse(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const;
 
     uint32_t m_sdfInstanceCount = 0;
 
@@ -104,10 +97,10 @@ private:
     RenderPassHandle m_sdfCameraTileCullingHiZ;
     RenderPassHandle m_sdfDebugVisualisationPass;
 
-    ImageHandle m_indirectDiffuse_Y_SH[2];          //ping pong buffers for filtering, Y component of YCoCg color space as spherical harmonics		
-    ImageHandle m_indirectDiffuse_CoCg[2];          //ping pong buffers for filtering, CoCg component of YCoCg color space
-    ImageHandle m_indirectDiffuseHistory_Y_SH[2];   //Y component of YCoCg color space as spherical harmonics
-    ImageHandle m_indirectDiffuseHistory_CoCg[2];   //CoCg component of YCoCg color space
+    ImageHandle m_indirectDiffuse_Y_SH[2];          // ping pong buffers for filtering, Y component of YCoCg color space as spherical harmonics		
+    ImageHandle m_indirectDiffuse_CoCg[2];          // ping pong buffers for filtering, CoCg component of YCoCg color space
+    ImageHandle m_indirectDiffuseHistory_Y_SH[2];   // Y component of YCoCg color space as spherical harmonics
+    ImageHandle m_indirectDiffuseHistory_CoCg[2];   // CoCg component of YCoCg color space
     ImageHandle m_indirectLightingFullRes_Y_SH;
     ImageHandle m_indirectLightingFullRes_CoCg;
 

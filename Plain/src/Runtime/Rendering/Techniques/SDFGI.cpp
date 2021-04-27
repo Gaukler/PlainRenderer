@@ -312,7 +312,7 @@ void SDFGI::updateSDFScene(const std::vector<RenderObject>& scene, const std::ve
         instanceWorldBBs.size() * sizeof(GPUBoundingBox));
 }
 
-SDFGI::IndirectLightingImages SDFGI::getIndirectLightingImages(const bool tracedHalfRes) const{
+SDFGI::IndirectLightingImages SDFGI::getIndirectLightingResults(const bool tracedHalfRes) const{
     IndirectLightingImages result;
     if (tracedHalfRes) {
         result.Y_SH = m_indirectLightingFullRes_Y_SH;
@@ -325,52 +325,49 @@ SDFGI::IndirectLightingImages SDFGI::getIndirectLightingImages(const bool traced
     return result;
 }
 
-RenderPassHandle SDFGI::computeIndirectLighting(const SDFTraceDependencies& dependencies,
-    const ImageHandle& depthMinMaxPyramid, const SDFTraceSettings& traceSettings) {
-    diffuseSDFTrace(dependencies, depthMinMaxPyramid, dependencies.parents, traceSettings);
-    return filterIndirectDiffuse(dependencies.currentFrame, dependencies.previousFrame, dependencies.depthBuffer, 
-        dependencies.worldSpaceNormals, traceSettings);
+RenderPassHandle SDFGI::computeIndirectLighting(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const {
+
+    diffuseSDFTrace(dependencies, traceSettings);
+    const RenderPassHandle filterPass = filterIndirectDiffuse(dependencies, traceSettings);
+
+    return filterPass;
 }
 
-RenderPassHandle SDFGI::renderSDFVisualization(const ImageHandle targetImage, const SDFDebugSettings& debugSettings, 
-    const SDFTraceSettings& traceSettings, const ImageHandle skyLut, 
-    const ImageHandle shadowMap, const StorageBufferHandle& lightBuffer, const ViewFrustum& cameraFrustum, 
-    const StorageBufferHandle sunShadowInfoBuffer, const ImageHandle& depthMinMaxPyramid,
-    const std::vector<RenderPassHandle>& parents) const {
+RenderPassHandle SDFGI::renderSDFVisualization(const ImageHandle target, const SDFTraceDependencies dependencies,
+    const SDFDebugSettings& debugSettings, const SDFTraceSettings& traceSettings) const {
 
-    const float sdfIncluenceRadius = debugSettings.useInfluenceRadiusForDebug ?
-        traceSettings.traceInfluenceRadius : 0.f;
+    const float sdfIncluenceRadius = debugSettings.useInfluenceRadiusForDebug ? traceSettings.traceInfluenceRadius : 0.f;
+
+    const ImageDescription targetDescription = gRenderBackend.getImageDescription(m_indirectLightingFullRes_CoCg);
+    const glm::ivec2 targetResolution = glm::ivec2(targetDescription.width, targetDescription.height);
 
     bool useHiZCulling = false;
     if (debugSettings.visualisationMode == SDFVisualisationMode::CameraTileUsage && debugSettings.showCameraTileUsageWithHiZ) {
         useHiZCulling = true;
     }
 
-    const ImageDescription targetDescription = gRenderBackend.getImageDescription(m_indirectLightingFullRes_CoCg);
-    const glm::ivec2 targetResolution = glm::ivec2(targetDescription.width, targetDescription.height);
-
-    const std::vector<RenderPassHandle> cullingParentPasses = sdfInstanceCulling(useHiZCulling, cameraFrustum, 
-        depthMinMaxPyramid, parents, sdfIncluenceRadius, targetResolution);
+    const RenderPassHandle cullingPass = sdfInstanceCulling(dependencies, targetResolution, 
+        sdfIncluenceRadius, useHiZCulling);
 
     ComputePassExecution exe;
     exe.genericInfo.handle = m_sdfDebugVisualisationPass;
-    exe.genericInfo.resources.storageImages = { ImageResource(targetImage, 0, 0) };
+    exe.genericInfo.resources.storageImages = { ImageResource(target, 0, 0) };
     exe.genericInfo.resources.sampledImages = {
-        ImageResource(skyLut, 0, 2),
-        ImageResource(shadowMap, 0, 7)
+        ImageResource(dependencies.skyLut, 0, 2),
+        ImageResource(dependencies.shadowMap, 0, 7)
     };
     exe.genericInfo.resources.storageBuffers = {
-        StorageBufferResource(lightBuffer, true, 1),
+        StorageBufferResource(dependencies.lightBuffer, true, 1),
         StorageBufferResource(m_sdfInstanceBuffer, true, 3),
         StorageBufferResource(m_sdfCameraCulledTiles, true, 4),
         StorageBufferResource(m_sdfCameraFrustumCulledInstances, true, 5),
-        StorageBufferResource(sunShadowInfoBuffer, true, 6)
+        StorageBufferResource(dependencies.sunShadowInfoBuffer, true, 6)
     };
 
     exe.dispatchCount[0] = (uint32_t)std::ceil(targetResolution.x  / 8.f);
     exe.dispatchCount[1] = (uint32_t)std::ceil(targetResolution.y / 8.f);
     exe.dispatchCount[2] = 1;
-    exe.genericInfo.parents = cullingParentPasses;
+    exe.genericInfo.parents = { cullingPass };
 
     gRenderBackend.setComputePassExecution(exe);
 
@@ -386,19 +383,16 @@ void SDFGI::updateSDFTraceSettings(const SDFTraceSettings& settings, const int s
         createSDFDiffuseTraceShaderDescription(settings, sunShadowCascadeIndex));
 }
 
-RenderPassHandle SDFGI::diffuseSDFTrace(const SDFTraceDependencies& dependencies,
-    const ImageHandle& depthMinMaxPyramid, const std::vector<RenderPassHandle>& parents,
-    const SDFTraceSettings& traceSettings) const {
+RenderPassHandle SDFGI::diffuseSDFTrace(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const {
 
     const ImageDescription targetDescription = gRenderBackend.getImageDescription(m_indirectDiffuse_CoCg[0]);
     const glm::ivec2 targetResolution = glm::ivec2(targetDescription.width, targetDescription.height);
 
-    const std::vector<RenderPassHandle> cullingParentPasses =
-        sdfInstanceCulling(true, dependencies.cameraFrustum, depthMinMaxPyramid, parents, traceSettings.traceInfluenceRadius, targetResolution);
+    const RenderPassHandle cullingPass = sdfInstanceCulling(dependencies, targetResolution, traceSettings.traceInfluenceRadius, true);
 
     ComputePassExecution exe;
     exe.genericInfo.handle = m_diffuseSDFTracePass;
-    exe.genericInfo.parents = cullingParentPasses;
+    exe.genericInfo.parents = { cullingPass };
     for (const auto& pass : dependencies.parents) {
         exe.genericInfo.parents.push_back(pass);
     }
@@ -409,7 +403,7 @@ RenderPassHandle SDFGI::diffuseSDFTrace(const SDFTraceDependencies& dependencies
     };
 
     exe.genericInfo.resources.sampledImages = {
-        ImageResource(dependencies.depthBuffer, 0, 2),
+        ImageResource(dependencies.currentFrame.depthBuffer, 0, 2),
         ImageResource(dependencies.worldSpaceNormals, 0, 3),
         ImageResource(dependencies.skyLut, 0, 4),
         ImageResource(dependencies.shadowMap, 0, 10)
@@ -436,10 +430,9 @@ RenderPassHandle SDFGI::diffuseSDFTrace(const SDFTraceDependencies& dependencies
     return m_diffuseSDFTracePass;
 }
 
-RenderPassHandle SDFGI::filterIndirectDiffuse(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
-    const ImageHandle depthHalfRes, const ImageHandle worldSpaceNormals, const SDFTraceSettings& traceSettings) const {
+RenderPassHandle SDFGI::filterIndirectDiffuse(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const {
 
-    const ImageHandle depthSrc = traceSettings.halfResTrace ? depthHalfRes : currentFrame.depthBuffer;
+    const ImageHandle depthSrc = traceSettings.halfResTrace ? dependencies.depthHalfRes : dependencies.currentFrame.depthBuffer;
 
     const ImageDescription targetDescription = gRenderBackend.getImageDescription(m_indirectDiffuse_Y_SH[1]);
     const glm::vec2 workingResolution = glm::ivec2(targetDescription.width, targetDescription.height);
@@ -458,7 +451,7 @@ RenderPassHandle SDFGI::filterIndirectDiffuse(const FrameRenderTargets& currentF
             ImageResource(m_indirectDiffuse_Y_SH[0], 0, 2),
             ImageResource(m_indirectDiffuse_CoCg[0], 0, 3),
             ImageResource(depthSrc, 0, 4),
-            ImageResource(worldSpaceNormals, 0, 5),
+            ImageResource(dependencies.worldSpaceNormals, 0, 5),
         };
 
         const float localThreadSize = 8.f;
@@ -489,8 +482,8 @@ RenderPassHandle SDFGI::filterIndirectDiffuse(const FrameRenderTargets& currentF
             ImageResource(m_indirectDiffuse_CoCg[1], 0, 5),
             ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 6),
             ImageResource(m_indirectDiffuseHistory_CoCg[0], 0, 7),
-            ImageResource(currentFrame.motionBuffer, 0, 8),
-            ImageResource(lastFrame.motionBuffer, 0, 9)
+            ImageResource(dependencies.currentFrame.motionBuffer, 0, 8),
+            ImageResource(dependencies.previousFrame.motionBuffer, 0, 9)
         };
 
         const float localThreadSize = 8.f;
@@ -515,7 +508,7 @@ RenderPassHandle SDFGI::filterIndirectDiffuse(const FrameRenderTargets& currentF
             ImageResource(m_indirectDiffuseHistory_Y_SH[1], 0, 2),
             ImageResource(m_indirectDiffuseHistory_CoCg[1], 0, 3),
             ImageResource(depthSrc, 0, 4),
-            ImageResource(worldSpaceNormals, 0, 5),
+            ImageResource(dependencies.worldSpaceNormals, 0, 5),
         };
 
         const float localThreadSize = 8.f;
@@ -542,8 +535,8 @@ RenderPassHandle SDFGI::filterIndirectDiffuse(const FrameRenderTargets& currentF
         exe.genericInfo.resources.sampledImages = {
             ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 2),
             ImageResource(m_indirectDiffuseHistory_CoCg[0], 0, 3),
-            ImageResource(currentFrame.depthBuffer, 0, 4),
-            ImageResource(depthHalfRes, 0, 5)
+            ImageResource(dependencies.currentFrame.depthBuffer, 0, 4),
+            ImageResource(dependencies.depthHalfRes, 0, 5)
         };
 
         const ImageDescription targetImageDescription = gRenderBackend.getImageDescription(m_indirectLightingFullRes_Y_SH);
@@ -559,9 +552,8 @@ RenderPassHandle SDFGI::filterIndirectDiffuse(const FrameRenderTargets& currentF
     return lastPass;
 }
 
-std::vector<RenderPassHandle> SDFGI::sdfInstanceCulling(const bool useHiZ, const ViewFrustum& cameraFrustum, 
-    const ImageHandle& depthMinMaxPyramid, const std::vector<RenderPassHandle>& parents, 
-    const float influenceRadius, const glm::ivec2 targetResolution) const {
+RenderPassHandle SDFGI::sdfInstanceCulling(const SDFTraceDependencies& dependencies, 
+    const glm::ivec2 targetResolution, const float influenceRadius, const bool hiZCulling) const {
 
     // camera frustum culling
     {
@@ -569,6 +561,7 @@ std::vector<RenderPassHandle> SDFGI::sdfInstanceCulling(const bool useHiZ, const
             glm::vec4 points[6];
             glm::vec4 normal[6];
         };
+        const ViewFrustum& cameraFrustum = dependencies.cameraFrustum;
         GPUFrustumData frustumData;
         // top
         frustumData.points[0] = glm::vec4(cameraFrustum.points.l_u_f, 0);
@@ -596,7 +589,7 @@ std::vector<RenderPassHandle> SDFGI::sdfInstanceCulling(const bool useHiZ, const
         gRenderBackend.setStorageBufferData(m_sdfCameraFrustumCulledInstances, &zero, sizeof(zero));
 
         ComputePassExecution exe;
-        exe.genericInfo.parents = parents;
+        exe.genericInfo.parents = dependencies.parents;
         exe.genericInfo.handle = m_sdfCameraFrustumCulling;
         exe.genericInfo.resources.storageBuffers = {
             StorageBufferResource(m_sdfInstanceBuffer, true, 0),
@@ -614,7 +607,7 @@ std::vector<RenderPassHandle> SDFGI::sdfInstanceCulling(const bool useHiZ, const
         gRenderBackend.setComputePassExecution(exe);
     }
     // camera tile culling
-    const RenderPassHandle cameraTileCullingPass = useHiZ ? m_sdfCameraTileCullingHiZ : m_sdfCameraTileCulling;
+    const RenderPassHandle cameraTileCullingPass = hiZCulling ? m_sdfCameraTileCullingHiZ : m_sdfCameraTileCulling;
     {
         ComputePassExecution exe;
         exe.genericInfo.handle = cameraTileCullingPass;
@@ -648,10 +641,10 @@ std::vector<RenderPassHandle> SDFGI::sdfInstanceCulling(const bool useHiZ, const
         const int depthPyramidMipLevel = (int)glm::log2(glm::ceil(float(sdfCameraCullingTileSize))) - 1;
         assert(depthPyramidMipLevel == 4);
         exe.genericInfo.resources.sampledImages = {
-            ImageResource(depthMinMaxPyramid, depthPyramidMipLevel, 4)
+            ImageResource(dependencies.depthMinMaxPyramid, depthPyramidMipLevel, 4)
         };
 
         gRenderBackend.setComputePassExecution(exe);
     }
-    return { cameraTileCullingPass };
+    return cameraTileCullingPass;
 }

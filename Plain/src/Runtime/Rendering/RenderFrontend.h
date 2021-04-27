@@ -163,6 +163,8 @@ private:
     SDFDebugSettings m_sdfDebugSettings;
     SDFTraceSettings m_sdfTraceSettings;
     SDFGI m_sdfGi;
+    SDFTraceDependencies fillOutSdfGiDependencies(const std::vector<RenderPassHandle>& parents,
+        const FrameRenderTargets& currentFrame, const FrameRenderTargets& previousFrame);
 
     RenderPassHandle m_brdfLutPass;
     RenderPassHandle m_histogramPerTilePass;
