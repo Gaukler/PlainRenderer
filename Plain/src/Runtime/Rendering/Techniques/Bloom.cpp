@@ -6,7 +6,7 @@
 const int bloomMipCount = 6;
 
 void Bloom::init(const int textureWidth, const int textureHeight) {
-    //bloom downsample
+    // bloom downsample
     for (int i = 0; i < bloomMipCount - 1; i++) {
         ComputePassDescription desc;
         const int mip = i + 1;
@@ -14,7 +14,7 @@ void Bloom::init(const int textureWidth, const int textureHeight) {
         desc.shaderDescription.srcPathRelative = "bloomDownsample.comp";
         m_bloomDownsamplePasses.push_back(gRenderBackend.createComputePass(desc));
     }
-    //bloom upsample
+    // bloom upsample
     for (int i = 0; i < bloomMipCount - 1; i++) {
         ComputePassDescription desc;
         const int mip = bloomMipCount - 2 - i;
@@ -30,14 +30,14 @@ void Bloom::init(const int textureWidth, const int textureHeight) {
 
         m_bloomUpsamplePasses.push_back(gRenderBackend.createComputePass(desc));
     }
-    //apply bloom pass
+    // apply bloom pass
     {
         ComputePassDescription desc;
         desc.name = "Apply bloom";
         desc.shaderDescription.srcPathRelative = "applyBloom.comp";
         m_applyBloomPass = gRenderBackend.createComputePass(desc);
     }
-    //bloom textures
+    // bloom textures
     {
         ImageDescription desc;
         desc.width = textureWidth;
@@ -68,7 +68,7 @@ RenderPassHandle Bloom::computeBloom(const RenderPassHandle parentPass, const Im
     const int height = bloomImageDescription.height;
 
     RenderPassHandle currentParent = parentPass;
-    //downscale
+    // downscale
     for (int i = 0; i < m_bloomDownsamplePasses.size(); i++) {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_bloomDownsamplePasses[i];
@@ -98,7 +98,7 @@ RenderPassHandle Bloom::computeBloom(const RenderPassHandle parentPass, const Im
 
         currentParent = exe.genericInfo.handle;
     }
-    //upscale
+    // upscale
     for (int i = 0; i < m_bloomUpsamplePasses.size(); i++) {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_bloomUpsamplePasses[i];
@@ -129,7 +129,7 @@ RenderPassHandle Bloom::computeBloom(const RenderPassHandle parentPass, const Im
 
         currentParent = exe.genericInfo.handle;
     }
-    //apply bloom
+    // apply bloom
     {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_applyBloomPass;

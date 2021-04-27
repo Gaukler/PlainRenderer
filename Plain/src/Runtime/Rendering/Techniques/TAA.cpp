@@ -35,7 +35,7 @@ void TAA::init(const int imageWidth, const int imageHeight, const TAASettings& s
         m_historyBuffers[0] = gRenderBackend.createImage(desc, nullptr, 0);
         m_historyBuffers[1] = gRenderBackend.createImage(desc, nullptr, 0);
     }
-    //scene and history luminance
+    // scene and history luminance
     {
         ImageDescription desc;
         desc.width = imageWidth;

@@ -259,7 +259,7 @@ void SDFGI::resize(const int width, const int height, const SDFTraceSettings& se
 
 void SDFGI::updateSDFScene(const std::vector<RenderObject>& scene, const std::vector<MeshFrontend>& frontendMeshes) {
 
-    //TODO: instead of updating complete scene transforms every frame, track dirty transforms and ony write changes using compute shader
+    // TODO: instead of updating complete scene transforms every frame, track dirty transforms and ony write changes using compute shader
 
     struct GPUBoundingBox {
         glm::vec3 min = glm::vec3(0);
@@ -274,12 +274,12 @@ void SDFGI::updateSDFScene(const std::vector<RenderObject>& scene, const std::ve
     for (const RenderObject& obj : scene) {
 
         const MeshFrontend& mesh = frontendMeshes[obj.mesh.index];
-        //skip meshes without sdf
+        // skip meshes without sdf
         if (mesh.sdfTextureIndex < 0) {
             continue;
         }
 
-        //culling requires the padded bounding box, used for rendering and computation
+        // culling requires the padded bounding box, used for rendering and computation
         const AxisAlignedBoundingBox paddedWorldBB = padSDFBoundingBox(obj.bbWorld);
         GPUBoundingBox worldBB;
         worldBB.min = paddedWorldBB.min;

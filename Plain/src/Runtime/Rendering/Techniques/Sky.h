@@ -20,7 +20,7 @@ public:
     ImageHandle getTransmissionLut() const;
     ImageHandle getSkyLut() const;
 
-    //FIXME: currently drawcalls can only be issued after renderpass executions are set
+    // FIXME: currently drawcalls can only be issued after renderpass executions are set
     // this makes for a pretty bad API for the sky rendering
     void issueSkyDrawcalls(const glm::vec2 sunDirection, const glm::mat4& viewProjectionMatrix);
 
@@ -64,5 +64,5 @@ private:
     UniformBufferHandle m_atmosphereSettingsBuffer;
 
     MeshHandle m_skyCube;
-    MeshHandle m_quad;      //used to render sun sprite
+    MeshHandle m_quad;      // used to render sun sprite
 };

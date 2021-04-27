@@ -11,7 +11,7 @@ enum class SDFVisualisationMode : int { None = 0, VisualizeSDF = 1, CameraTileUs
 struct SDFDebugSettings {
     SDFVisualisationMode visualisationMode = SDFVisualisationMode::None;
     bool showCameraTileUsageWithHiZ = true;
-    bool useInfluenceRadiusForDebug = false;    //less efficient, but tile usage is same as for indirect light tracing
+    bool useInfluenceRadiusForDebug = false;    // less efficient, but tile usage is same as for indirect light tracing
 };
 
 struct SDFTraceSettings {
