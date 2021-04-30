@@ -168,13 +168,12 @@ void main(){
     vec3 hitColor;
 
     if(traceResult.hit){
-		//white border means outside of shadow map are assumed shadowed
-    	float shadow  = simpleShadow(traceResult.hitPos, sunShadowCascadeInfo.lightMatrices[shadowCascadeIndex], shadowMap, g_sampler_nearestWhiteBorder);
-		
-		float NoL = clamp(dot(traceResult.N, g_sunDirection.xyz), 0, 1);
-        vec3 sunLight = shadow * NoL * lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
+        //white border means outside of shadow map are assumed shadowed
+        float shadow  = simpleShadow(traceResult.hitPos, sunShadowCascadeInfo.lightMatrices[shadowCascadeIndex], shadowMap, g_sampler_nearestWhiteBorder);
 
-        hitColor = traceResult.albedo * sunLight * NoL;
+        vec3 sunLight = shadow * lightBuffer.sunStrengthExposed * lightBuffer.sunColor;
+
+        hitColor = traceResult.albedo * sunLight;
 
         //reject out of range hits
         bool hitInRange = traceResult.closestHitDistance < influenceRange;
@@ -198,11 +197,10 @@ void main(){
     result_Y_SH += YCoCg.x * directionToSH_L1(L);
     result_CoCg += YCoCg.yz;
 
-    //multiplication by pi because PDF = NoL / pi
+    //PDF = NoL / pi, due to cosine sampling
     //division by PDF is multiplication with pi / NoL
-    //NoL is reduced with NoL from rendering equation 
-    result_Y_SH *= pi;
-    result_CoCg *= pi;
+    //NoL is reduced with NoL from rendering equation
+    //pi is reduced with pi from lambert brdf
 
     imageStore(imageOut_Y_SH, iUV, result_Y_SH);
     imageStore(imageOut_CoCg, iUV, vec4(result_CoCg, vec2(0.f)));
