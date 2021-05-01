@@ -200,7 +200,31 @@ bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handl
         }
         std::cout << "\n";
 
-        return loadGraphicPassShaders(paths, outSpirV);
+        if (loadGraphicPassShaders(paths, outSpirV)) {
+
+            const fs::path vertexCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.vertex.spirvCacheFileIndex];
+            writeBinaryFile(vertexCachePathAbsolute, outSpirV->vertex);
+
+            const fs::path fragCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.fragment.spirvCacheFileIndex];
+            writeBinaryFile(fragCachePathAbsolute, outSpirV->fragment);
+
+            if (srcInfo.loadInfo.geometry.has_value()) {
+                const fs::path geoCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.geometry.value().spirvCacheFileIndex];
+                writeBinaryFile(geoCachePathAbsolute, outSpirV->geometry.value());
+            }
+            if (srcInfo.loadInfo.tessellationControl.has_value()) {
+                const fs::path tessCtrlCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex];
+                writeBinaryFile(tessCtrlCachePathAbsolute, outSpirV->tessellationControl.value());
+            }
+            if (srcInfo.loadInfo.tessellationEvaluation.has_value()) {
+                const fs::path tessEvalCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex];
+                writeBinaryFile(tessEvalCachePathAbsolute, outSpirV->tessellationEvaluation.value());
+            }
+            return true;
+        }
+        else {
+            return false;
+        }
     }
     else {
         //load binary caches
@@ -208,60 +232,30 @@ bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handl
         //vertex
         {
             const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.vertex.spirvCacheFileIndex];
-            const bool vertexLoadSuccess = loadBinaryFile(path, &outSpirV->vertex);
-            success &= vertexLoadSuccess;
-
-            if (vertexLoadSuccess) {
-                const fs::path spirvCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.vertex.spirvCacheFileIndex];
-                writeBinaryFile(spirvCachePathAbsolute, outSpirV->vertex);
-            }
+            success &= loadBinaryFile(path, &outSpirV->vertex);
         }
         //fragment
         {
             const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.fragment.spirvCacheFileIndex];
-            const bool fragLoadSuccess = loadBinaryFile(path, &outSpirV->fragment);
-            success &= fragLoadSuccess;
-
-            if (fragLoadSuccess) {
-                const fs::path spirvCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.fragment.spirvCacheFileIndex];
-                writeBinaryFile(spirvCachePathAbsolute, outSpirV->fragment);
-            }
+            success &= loadBinaryFile(path, &outSpirV->fragment);
         }
         //geometry
         if (srcInfo.loadInfo.geometry.has_value()) {
             const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.geometry.value().spirvCacheFileIndex];
             outSpirV->geometry = std::vector<uint32_t>();
-            const bool geoLoadSuccess = loadBinaryFile(path, &outSpirV->geometry.value());
-            success &= geoLoadSuccess;
-
-            if (geoLoadSuccess) {
-                const fs::path spirvCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.geometry.value().spirvCacheFileIndex];
-                writeBinaryFile(spirvCachePathAbsolute, outSpirV->geometry.value());
-            }
+            success &= loadBinaryFile(path, &outSpirV->geometry.value());
         }
-        //tessellation evaluation
+        //tessellation control
         if (srcInfo.loadInfo.tessellationControl.has_value()) {
             const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex];
             outSpirV->tessellationControl = std::vector<uint32_t>();
-            const bool tessControlLoadSuccess = loadBinaryFile(path, &outSpirV->tessellationControl.value());
-            success &= tessControlLoadSuccess;
-
-            if (tessControlLoadSuccess) {
-                const fs::path spirvCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex];
-                writeBinaryFile(spirvCachePathAbsolute, outSpirV->tessellationControl.value());
-            }
+            success &= loadBinaryFile(path, &outSpirV->tessellationControl.value());
         }
-        //geometry
+        //tesselation evaluation
         if (srcInfo.loadInfo.tessellationEvaluation.has_value()) {
             const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex];
             outSpirV->tessellationEvaluation = std::vector<uint32_t>();
-            const bool tessEvalLoadSuccess = loadBinaryFile(path, &outSpirV->tessellationEvaluation.value());
-            success &= tessEvalLoadSuccess;
-
-            if (tessEvalLoadSuccess) {
-                const fs::path spirvCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex];
-                writeBinaryFile(spirvCachePathAbsolute, outSpirV->tessellationEvaluation.value());
-            }
+            success &= loadBinaryFile(path, &outSpirV->tessellationEvaluation.value());
         }
         return success;
     }
