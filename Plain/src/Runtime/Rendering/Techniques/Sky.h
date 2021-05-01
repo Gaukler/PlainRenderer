@@ -24,16 +24,12 @@ public:
     // this makes for a pretty bad API for the sky rendering
     void issueSkyDrawcalls(const glm::vec2 sunDirection, const glm::mat4& viewProjectionMatrix);
 
-    // returns pass that must be waited on before using the transmission lut
     // separate from the sky lut because the exposure pass depends on the transmission lut 
     // and the other sky luts depend on the exposure
-    RenderPassHandle updateTransmissionLut();
+    void updateTransmissionLut();
 
-    // returns pass that must be waited on before using the luts
     // lightBuffer required as it contains the pre-exposed sun brightness
-    // parents are the pass that writes to lightBuffer and the transmission lut pass
-    RenderPassHandle updateSkyLut(const StorageBufferHandle lightBuffer, const std::vector<RenderPassHandle> parents,
-        const AtmosphereSettings& atmosphereSettings) const;
+    void updateSkyLut(const StorageBufferHandle lightBuffer, const AtmosphereSettings& atmosphereSettings) const;
 
     struct SkyRenderingDependencies {
         // for applying local volume effects to sky
@@ -41,14 +37,10 @@ public:
         UniformBufferHandle volumetricLightingSettingsUniforms;
 
         StorageBufferHandle lightBuffer; // contains pre-exposed sun brightness
-
-        // must contain passes that write light buffer and volume integration
-        // and sky LUT pass if updated this frame
-        std::vector<RenderPassHandle> parents;
     };
 
     // returns pass that must be waited on before sky is rendered
-    RenderPassHandle renderSky(const FramebufferHandle framebuffer, const SkyRenderingDependencies dependencies) const;
+    void renderSky(const FramebufferHandle framebuffer, const SkyRenderingDependencies dependencies) const;
 
 private:
     RenderPassHandle m_skyTransmissionLutPass;

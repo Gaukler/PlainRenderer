@@ -88,10 +88,6 @@ struct RenderPassExecutionEntry {
     int index;
 };
 
-struct RenderPassExecutionOrder {
-    std::vector<RenderPassExecutionEntry> executions;
-};
-
 struct UniformBufferFillOrder {
     UniformBufferHandle buffer;
     std::vector<char> data;
@@ -229,10 +225,9 @@ private:
     size_t m_globalTextureArrayDescriptorSetTextureCount = 0;
     std::vector<int32_t> m_globalTextureArrayDescriptorSetFreeTextureIndices;
 
-    std::vector<RenderPassBarriers> createRenderPassBarriers(const RenderPassExecutionOrder& executionOrder,
-        const std::vector<GraphicPassExecution>& graphicExecutions,
-        const std::vector<ComputePassExecution>& computeExecutions);
+    std::vector<RenderPassBarriers> createRenderPassBarriers();
 
+    std::vector<RenderPassExecutionEntry> m_renderPassExecutions;
     std::vector<GraphicPassExecution> m_graphicPassExecutions;
     std::vector<ComputePassExecution> m_computePassExecutions;
 

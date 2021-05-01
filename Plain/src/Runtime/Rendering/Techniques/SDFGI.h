@@ -39,7 +39,6 @@ struct SDFInstance {
 struct SDFTraceDependencies {
     FrameRenderTargets currentFrame;
     FrameRenderTargets previousFrame;
-    std::vector<RenderPassHandle> parents;
     ViewFrustum cameraFrustum;
     ImageHandle depthHalfRes;   // only used if tracing at half resolution
     ImageHandle worldSpaceNormals;
@@ -66,9 +65,9 @@ public:
 
     IndirectLightingImages getIndirectLightingResults(const bool tracedHalfRes) const;
 
-    RenderPassHandle computeIndirectLighting(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const;
+    void computeIndirectLighting(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const;
 
-    RenderPassHandle renderSDFVisualization(const ImageHandle target, const SDFTraceDependencies dependencies,
+    void renderSDFVisualization(const ImageHandle target, const SDFTraceDependencies dependencies,
         const SDFDebugSettings& debugSettings, const SDFTraceSettings& traceSettings) const;
 
     void updateSDFDebugSettings(const SDFDebugSettings& settings, const int sunShadowCascadeIndex);
@@ -76,15 +75,14 @@ public:
 
 private:
 
-    // returns list of passes that must be used as parent to wait for results
     // when culling for direct visualisation hi-z culling results in artifacts
     // enable for indirect, disable for direct
-    RenderPassHandle sdfInstanceCulling(const SDFTraceDependencies& dependencies, const glm::ivec2 targetResolution, 
+    void sdfInstanceCulling(const SDFTraceDependencies& dependencies, const glm::ivec2 targetResolution,
         const float influenceRadius, const bool hiZCulling) const;
 
-    RenderPassHandle diffuseSDFTrace(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const;
+    void diffuseSDFTrace(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const;
 
-    RenderPassHandle filterIndirectDiffuse(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const;
+    void filterIndirectDiffuse(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const;
 
     uint32_t m_sdfInstanceCount = 0;
 

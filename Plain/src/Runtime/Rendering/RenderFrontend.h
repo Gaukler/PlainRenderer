@@ -79,13 +79,13 @@ private:
     // computes image histogram using compute shaders
     void computeColorBufferHistogram(const ImageHandle lastFrameColor) const;
     void renderSunShadowCascades() const;
-    void computeExposure(const RenderPassHandle parent) const;  // parent must be the sky transmission pass
+    void computeExposure() const;
     void renderDepthPrepass(const FramebufferHandle framebuffer) const;
     void computeDepthPyramid(const ImageHandle depthBuffer) const;
     void computeSunLightMatrices() const;
     void downscaleDepth(const FrameRenderTargets& currentTarget) const;
-    void renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const;
-    void computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const;
+    void renderForwardShading(const FramebufferHandle framebuffer) const;
+    void computeTonemapping(const ImageHandle& src) const;
     void renderDebugGeometry(const FramebufferHandle framebuffer) const;
 
     // load multiple images, loading from disk is parallel
@@ -163,8 +163,8 @@ private:
     SDFDebugSettings m_sdfDebugSettings;
     SDFTraceSettings m_sdfTraceSettings;
     SDFGI m_sdfGi;
-    SDFTraceDependencies fillOutSdfGiDependencies(const std::vector<RenderPassHandle>& parents,
-        const FrameRenderTargets& currentFrame, const FrameRenderTargets& previousFrame);
+    SDFTraceDependencies fillOutSdfGiDependencies(const FrameRenderTargets& currentFrame, 
+        const FrameRenderTargets& previousFrame);
 
     RenderPassHandle m_brdfLutPass;
     RenderPassHandle m_histogramPerTilePass;

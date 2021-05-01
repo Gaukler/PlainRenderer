@@ -26,10 +26,9 @@ public:
         ImageHandle shadowMap;
         StorageBufferHandle sunShadowInfoBuffer;
         StorageBufferHandle lightBuffer;
-        std::vector<RenderPassHandle> parents;  // must be passes that write shadow map and light buffer
     };
 
-    RenderPassHandle computeVolumetricLighting(const VolumetricsSettings& settings, const WindSettings& wind, 
+    void computeVolumetricLighting(const VolumetricsSettings& settings, const WindSettings& wind, 
         const Dependencies& dependencies);
 
     ImageHandle getIntegrationVolume() const;

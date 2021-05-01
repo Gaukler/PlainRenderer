@@ -23,11 +23,11 @@ public:
 
     void updateSettings(const TAASettings& settings);
 
-    RenderPassHandle computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
-        const ImageHandle target, const RenderPassHandle parent) const;
+    void computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
+        const ImageHandle target) const;
 
-    RenderPassHandle computeTemporalFilter(const ImageHandle colorSrc, const FrameRenderTargets& currentFrame, const ImageHandle target, 
-        const RenderPassHandle parent) const;
+    void computeTemporalFilter(const ImageHandle colorSrc, const FrameRenderTargets& currentFrame, 
+        const ImageHandle target) const;
 
     // returns jitter in pixels, must be multiplied with texel size before applying to projection matrix
     glm::vec2 computeProjectionMatrixJitter() const;

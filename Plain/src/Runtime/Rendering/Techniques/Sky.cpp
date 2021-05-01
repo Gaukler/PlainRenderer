@@ -257,7 +257,7 @@ void Sky::issueSkyDrawcalls(const glm::vec2 sunDirection, const glm::mat4& viewP
     gRenderBackend.drawMeshes(std::vector<MeshHandle> { m_quad }, (char*)&sunSpriteMatrices, m_sunSpritePass, 0);
 }
 
-RenderPassHandle Sky::updateTransmissionLut() {
+void Sky::updateTransmissionLut() {
     ImageResource lutResource(m_skyTransmissionLut, 0, 0);
     UniformBufferResource atmosphereBufferResource(m_atmosphereSettingsBuffer, 1);
 
@@ -269,12 +269,9 @@ RenderPassHandle Sky::updateTransmissionLut() {
     skyTransmissionLutExecution.dispatchCount[1] = skyTransmissionLutResolution / 8;
     skyTransmissionLutExecution.dispatchCount[2] = 1;
     gRenderBackend.setComputePassExecution(skyTransmissionLutExecution);
-
-    return m_skyTransmissionLutPass;
 }
 
-RenderPassHandle Sky::updateSkyLut(const StorageBufferHandle lightBuffer, const std::vector<RenderPassHandle> parents, 
-    const AtmosphereSettings& atmosphereSettings) const {
+void Sky::updateSkyLut(const StorageBufferHandle lightBuffer, const AtmosphereSettings& atmosphereSettings) const {
 
     gRenderBackend.setUniformBufferData(
         m_atmosphereSettingsBuffer,
@@ -289,7 +286,6 @@ RenderPassHandle Sky::updateSkyLut(const StorageBufferHandle lightBuffer, const 
 
         ComputePassExecution skyMultiscatterLutExecution;
         skyMultiscatterLutExecution.genericInfo.handle = m_skyMultiscatterLutPass;
-        skyMultiscatterLutExecution.genericInfo.parents = { m_skyTransmissionLutPass };
         skyMultiscatterLutExecution.genericInfo.resources.storageImages = { multiscatterLutResource };
         skyMultiscatterLutExecution.genericInfo.resources.sampledImages = { transmissionLutResource };
         skyMultiscatterLutExecution.genericInfo.resources.uniformBuffers = { atmosphereBufferResource };
@@ -315,13 +311,11 @@ RenderPassHandle Sky::updateSkyLut(const StorageBufferHandle lightBuffer, const 
         skyLutExecution.dispatchCount[0] = skyLutWidth / 8;
         skyLutExecution.dispatchCount[1] = skyLutHeight / 8;
         skyLutExecution.dispatchCount[2] = 1;
-        skyLutExecution.genericInfo.parents = parents;
         gRenderBackend.setComputePassExecution(skyLutExecution);
     }
-    return m_skyLutPass;
 }
 
-RenderPassHandle Sky::renderSky(const FramebufferHandle framebuffer, const SkyRenderingDependencies dependencies) const {
+void Sky::renderSky(const FramebufferHandle framebuffer, const SkyRenderingDependencies dependencies) const {
 
     // render skybox
     {
@@ -335,7 +329,6 @@ RenderPassHandle Sky::renderSky(const FramebufferHandle framebuffer, const SkyRe
         skyPassExecution.genericInfo.resources.uniformBuffers = {
             UniformBufferResource(dependencies.volumetricLightingSettingsUniforms, 2)
         };
-        skyPassExecution.genericInfo.parents = dependencies.parents;
         gRenderBackend.setGraphicPassExecution(skyPassExecution);
     }
     // sun sprite
@@ -346,10 +339,8 @@ RenderPassHandle Sky::renderSky(const FramebufferHandle framebuffer, const SkyRe
         GraphicPassExecution sunSpritePassExecution;
         sunSpritePassExecution.genericInfo.handle = m_sunSpritePass;
         sunSpritePassExecution.framebuffer = framebuffer;
-        sunSpritePassExecution.genericInfo.parents = { m_skyPass };
         sunSpritePassExecution.genericInfo.resources.storageBuffers = { lightBufferResource };
         sunSpritePassExecution.genericInfo.resources.sampledImages = { transmissionLutResource };
         gRenderBackend.setGraphicPassExecution(sunSpritePassExecution);
     }
-    return m_sunSpritePass;
 }

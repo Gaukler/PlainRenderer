@@ -325,15 +325,13 @@ SDFGI::IndirectLightingImages SDFGI::getIndirectLightingResults(const bool trace
     return result;
 }
 
-RenderPassHandle SDFGI::computeIndirectLighting(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const {
+void SDFGI::computeIndirectLighting(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const {
 
     diffuseSDFTrace(dependencies, traceSettings);
-    const RenderPassHandle filterPass = filterIndirectDiffuse(dependencies, traceSettings);
-
-    return filterPass;
+    filterIndirectDiffuse(dependencies, traceSettings);
 }
 
-RenderPassHandle SDFGI::renderSDFVisualization(const ImageHandle target, const SDFTraceDependencies dependencies,
+void SDFGI::renderSDFVisualization(const ImageHandle target, const SDFTraceDependencies dependencies,
     const SDFDebugSettings& debugSettings, const SDFTraceSettings& traceSettings) const {
 
     const float sdfIncluenceRadius = debugSettings.useInfluenceRadiusForDebug ? traceSettings.traceInfluenceRadius : 0.f;
@@ -346,8 +344,7 @@ RenderPassHandle SDFGI::renderSDFVisualization(const ImageHandle target, const S
         useHiZCulling = true;
     }
 
-    const RenderPassHandle cullingPass = sdfInstanceCulling(dependencies, targetResolution, 
-        sdfIncluenceRadius, useHiZCulling);
+    sdfInstanceCulling(dependencies, targetResolution, sdfIncluenceRadius, useHiZCulling);
 
     ComputePassExecution exe;
     exe.genericInfo.handle = m_sdfDebugVisualisationPass;
@@ -367,11 +364,8 @@ RenderPassHandle SDFGI::renderSDFVisualization(const ImageHandle target, const S
     exe.dispatchCount[0] = (uint32_t)std::ceil(targetResolution.x  / 8.f);
     exe.dispatchCount[1] = (uint32_t)std::ceil(targetResolution.y / 8.f);
     exe.dispatchCount[2] = 1;
-    exe.genericInfo.parents = { cullingPass };
 
     gRenderBackend.setComputePassExecution(exe);
-
-    return m_sdfDebugVisualisationPass;
 }
 
 void SDFGI::updateSDFDebugSettings(const SDFDebugSettings& settings, const int sunShadowCascadeIndex) {
@@ -383,19 +377,15 @@ void SDFGI::updateSDFTraceSettings(const SDFTraceSettings& settings, const int s
         createSDFDiffuseTraceShaderDescription(settings, sunShadowCascadeIndex));
 }
 
-RenderPassHandle SDFGI::diffuseSDFTrace(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const {
+void SDFGI::diffuseSDFTrace(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const {
 
     const ImageDescription targetDescription = gRenderBackend.getImageDescription(m_indirectDiffuse_CoCg[0]);
     const glm::ivec2 targetResolution = glm::ivec2(targetDescription.width, targetDescription.height);
 
-    const RenderPassHandle cullingPass = sdfInstanceCulling(dependencies, targetResolution, traceSettings.traceInfluenceRadius, true);
+    sdfInstanceCulling(dependencies, targetResolution, traceSettings.traceInfluenceRadius, true);
 
     ComputePassExecution exe;
     exe.genericInfo.handle = m_diffuseSDFTracePass;
-    exe.genericInfo.parents = { cullingPass };
-    for (const auto& pass : dependencies.parents) {
-        exe.genericInfo.parents.push_back(pass);
-    }
 
     exe.genericInfo.resources.storageImages = {
         ImageResource(m_indirectDiffuse_Y_SH[0], 0, 0),
@@ -426,11 +416,9 @@ RenderPassHandle SDFGI::diffuseSDFTrace(const SDFTraceDependencies& dependencies
     exe.dispatchCount[2] = 1;
 
     gRenderBackend.setComputePassExecution(exe);
-
-    return m_diffuseSDFTracePass;
 }
 
-RenderPassHandle SDFGI::filterIndirectDiffuse(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const {
+void SDFGI::filterIndirectDiffuse(const SDFTraceDependencies& dependencies, const SDFTraceSettings& traceSettings) const {
 
     const ImageHandle depthSrc = traceSettings.halfResTrace ? dependencies.depthHalfRes : dependencies.currentFrame.depthBuffer;
 
@@ -441,7 +429,6 @@ RenderPassHandle SDFGI::filterIndirectDiffuse(const SDFTraceDependencies& depend
     {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_indirectDiffuseFilterSpatialPass[0];
-        exe.genericInfo.parents = { m_diffuseSDFTracePass };
 
         exe.genericInfo.resources.storageImages = {
             ImageResource(m_indirectDiffuse_Y_SH[1], 0, 0),
@@ -466,7 +453,6 @@ RenderPassHandle SDFGI::filterIndirectDiffuse(const SDFTraceDependencies& depend
     {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_indirectDiffuseFilterTemporalPass;
-        exe.genericInfo.parents = { m_indirectDiffuseFilterSpatialPass[0] };
 
         const uint32_t historySrcIndex = FrameIndex::getFrameIndexMod2();
         const uint32_t historyDstIndex = historySrcIndex == 0 ? 1 : 0;
@@ -498,7 +484,6 @@ RenderPassHandle SDFGI::filterIndirectDiffuse(const SDFTraceDependencies& depend
     {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_indirectDiffuseFilterSpatialPass[1];
-        exe.genericInfo.parents = { m_indirectDiffuseFilterTemporalPass };
 
         exe.genericInfo.resources.storageImages = {
             ImageResource(m_indirectDiffuseHistory_Y_SH[0], 0, 0),
@@ -526,7 +511,6 @@ RenderPassHandle SDFGI::filterIndirectDiffuse(const SDFTraceDependencies& depend
     if (traceSettings.halfResTrace) {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_indirectLightingUpscale;
-        exe.genericInfo.parents = { m_indirectDiffuseFilterSpatialPass[1] };
 
         exe.genericInfo.resources.storageImages = {
             ImageResource(m_indirectLightingFullRes_Y_SH, 0, 0),
@@ -549,10 +533,9 @@ RenderPassHandle SDFGI::filterIndirectDiffuse(const SDFTraceDependencies& depend
         gRenderBackend.setComputePassExecution(exe);
         lastPass = m_indirectLightingUpscale;
     }
-    return lastPass;
 }
 
-RenderPassHandle SDFGI::sdfInstanceCulling(const SDFTraceDependencies& dependencies, 
+void SDFGI::sdfInstanceCulling(const SDFTraceDependencies& dependencies, 
     const glm::ivec2 targetResolution, const float influenceRadius, const bool hiZCulling) const {
 
     // camera frustum culling
@@ -589,7 +572,6 @@ RenderPassHandle SDFGI::sdfInstanceCulling(const SDFTraceDependencies& dependenc
         gRenderBackend.setStorageBufferData(m_sdfCameraFrustumCulledInstances, &zero, sizeof(zero));
 
         ComputePassExecution exe;
-        exe.genericInfo.parents = dependencies.parents;
         exe.genericInfo.handle = m_sdfCameraFrustumCulling;
         exe.genericInfo.resources.storageBuffers = {
             StorageBufferResource(m_sdfInstanceBuffer, true, 0),
@@ -611,7 +593,6 @@ RenderPassHandle SDFGI::sdfInstanceCulling(const SDFTraceDependencies& dependenc
     {
         ComputePassExecution exe;
         exe.genericInfo.handle = cameraTileCullingPass;
-        exe.genericInfo.parents = { m_sdfCameraFrustumCulling };
 
         const glm::uvec2 tileCount = glm::uvec2(
             glm::ceil(targetResolution.x / float(sdfCameraCullingTileSize)),
@@ -646,5 +627,4 @@ RenderPassHandle SDFGI::sdfInstanceCulling(const SDFTraceDependencies& dependenc
 
         gRenderBackend.setComputePassExecution(exe);
     }
-    return cameraTileCullingPass;
 }

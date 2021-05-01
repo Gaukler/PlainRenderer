@@ -57,7 +57,6 @@ struct RenderPassResources {
 struct RenderPassExecution {
     RenderPassHandle                handle;
     RenderPassResources             resources;
-    std::vector<RenderPassHandle>   parents;
 };
 
 //contains RenderPassExecution and additional info for graphic pass

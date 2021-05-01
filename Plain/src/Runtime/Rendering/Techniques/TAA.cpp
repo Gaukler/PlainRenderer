@@ -82,8 +82,8 @@ void TAA::updateSettings(const TAASettings& settings) {
     gRenderBackend.updateComputePassShaderDescription(m_temporalSupersamplingPass, createTemporalSupersamplingShaderDescription(settings));
 }
 
-RenderPassHandle TAA::computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
-    const ImageHandle target, const RenderPassHandle parent) const {
+void TAA::computeTemporalSuperSampling(const FrameRenderTargets& currentFrame, const FrameRenderTargets& lastFrame,
+    const ImageHandle target) const {
         
     const ImageDescription targetDescription = gRenderBackend.getImageDescription(target);
 
@@ -103,7 +103,6 @@ RenderPassHandle TAA::computeTemporalSuperSampling(const FrameRenderTargets& cur
         exe.dispatchCount[0] = (uint32_t)std::ceil(targetDescription.width  / 8.f);
         exe.dispatchCount[1] = (uint32_t)std::ceil(targetDescription.height / 8.f);
         exe.dispatchCount[2] = 1;
-        exe.genericInfo.parents = { parent };
 
         gRenderBackend.setComputePassExecution(exe);
     }
@@ -132,15 +131,13 @@ RenderPassHandle TAA::computeTemporalSuperSampling(const FrameRenderTargets& cur
         temporalSupersamplingExecution.dispatchCount[0] = (uint32_t)std::ceil(targetDescription.width  / 8.f);
         temporalSupersamplingExecution.dispatchCount[1] = (uint32_t)std::ceil(targetDescription.height / 8.f);
         temporalSupersamplingExecution.dispatchCount[2] = 1;
-        temporalSupersamplingExecution.genericInfo.parents = { m_colorToLuminancePass };
 
         gRenderBackend.setComputePassExecution(temporalSupersamplingExecution);
     }
-    return m_temporalSupersamplingPass;
 }
 
-RenderPassHandle TAA::computeTemporalFilter(const ImageHandle colorSrc, const FrameRenderTargets& currentFrame, const ImageHandle target, 
-    const RenderPassHandle parent) const {
+void TAA::computeTemporalFilter(const ImageHandle colorSrc, const FrameRenderTargets& currentFrame, 
+    const ImageHandle target) const {
 
     const size_t frameIndexMod2 = FrameIndex::getFrameIndexMod2();
     const ImageHandle historySrc = m_historyBuffers[frameIndexMod2];
@@ -164,11 +161,8 @@ RenderPassHandle TAA::computeTemporalFilter(const ImageHandle colorSrc, const Fr
     temporalFilterExecution.dispatchCount[0] = (uint32_t)std::ceil(targetDescription.width  / 8.f);
     temporalFilterExecution.dispatchCount[1] = (uint32_t)std::ceil(targetDescription.height / 8.f);
     temporalFilterExecution.dispatchCount[2] = 1;
-    temporalFilterExecution.genericInfo.parents = { parent };
 
     gRenderBackend.setComputePassExecution(temporalFilterExecution);
-
-    return m_temporalFilterPass;
 }
 
 glm::vec2 TAA::computeProjectionMatrixJitter() const {

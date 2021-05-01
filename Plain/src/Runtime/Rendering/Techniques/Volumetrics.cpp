@@ -133,7 +133,7 @@ void Volumetrics::resizeTextures(const int width, const int height) {
         froxelResolution.y);
 }
 
-RenderPassHandle Volumetrics::computeVolumetricLighting(const VolumetricsSettings& settings, const WindSettings& wind,
+void Volumetrics::computeVolumetricLighting(const VolumetricsSettings& settings, const WindSettings& wind,
     const Dependencies& dependencies) {
 
     const int jitterIndex = FrameIndex::getFrameIndexMod8();
@@ -173,8 +173,6 @@ RenderPassHandle Volumetrics::computeVolumetricLighting(const VolumetricsSetting
     {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_froxelScatteringTransmittancePass;
-        exe.genericInfo.parents = dependencies.parents;
-        exe.genericInfo.parents.push_back(m_froxelVolumeMaterialPass);
         exe.genericInfo.resources.storageImages = {
             ImageResource(m_scatteringTransmittanceVolume, 0, 0)
         };
@@ -207,7 +205,6 @@ RenderPassHandle Volumetrics::computeVolumetricLighting(const VolumetricsSetting
     {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_volumetricLightingReprojection;
-        exe.genericInfo.parents = { m_froxelScatteringTransmittancePass };
         exe.genericInfo.resources.storageImages = {
             ImageResource(reprojectionTarget, 0, 0)
         };
@@ -230,7 +227,6 @@ RenderPassHandle Volumetrics::computeVolumetricLighting(const VolumetricsSetting
     {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_volumetricLightingIntegration;
-        exe.genericInfo.parents = { m_volumetricLightingReprojection };
         exe.genericInfo.resources.storageImages = {
             ImageResource(m_volumetricIntegrationVolume, 0, 0)
         };
@@ -248,7 +244,6 @@ RenderPassHandle Volumetrics::computeVolumetricLighting(const VolumetricsSetting
 
         gRenderBackend.setComputePassExecution(exe);
     }
-    return m_volumetricLightingIntegration;
 }
 
 ImageHandle Volumetrics::getIntegrationVolume() const {

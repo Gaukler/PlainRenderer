@@ -42,9 +42,6 @@ RenderPassExecution getGenericRenderpassInfoFromExecutionEntry(const RenderPassE
     const std::vector<GraphicPassExecution>& graphicExecutions,
     const std::vector<ComputePassExecution>& computeExecutions);
 
-RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExecution>& graphicExecutions,
-    const std::vector<ComputePassExecution>& computeExecutions);
-
 //=====
 
 /*
@@ -438,6 +435,7 @@ void RenderBackend::newFrame() {
 
     m_graphicPassExecutions.clear();
     m_computePassExecutions.clear();
+    m_renderPassExecutions.clear();
 
     m_swapchainInputImageHandle.index = VK_NULL_HANDLE;
 
@@ -523,13 +521,23 @@ void RenderBackend::setGraphicPassExecution(const GraphicPassExecution& executio
         std::cout << "Framebuffer and renderpass are incompatible, skipping execution\n";
         return;
     }
-    
+
+    RenderPassExecutionEntry executionEntry;
+    executionEntry.index = m_graphicPassExecutions.size();
+    executionEntry.type = RenderPassType::Graphic;
+    m_renderPassExecutions.push_back(executionEntry);
+
     const VkDescriptorSet descriptorSet = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
     updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
     m_graphicPassExecutions.push_back(execution);
 }
 
 void RenderBackend::setComputePassExecution(const ComputePassExecution& execution) {
+    RenderPassExecutionEntry executionEntry;
+    executionEntry.index = m_computePassExecutions.size();
+    executionEntry.type = RenderPassType::Compute;
+    m_renderPassExecutions.push_back(executionEntry);
+
     const VkDescriptorSet descriptorSet = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
     updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
     m_computePassExecutions.push_back(execution);
@@ -642,93 +650,6 @@ RenderPassExecution getGenericRenderpassInfoFromExecutionEntry(const RenderPassE
     }
 }
 
-RenderPassExecutionOrder computeExecutionOrder(const std::vector<GraphicPassExecution>& graphicExecutions,
-    const std::vector<ComputePassExecution>& computeExecutions) {
-    
-    //create map and pending parent count lut to efficiently compute pass order
-    const size_t totalExecutionCount = graphicExecutions.size() + computeExecutions.size();
-    std::vector<size_t> pendingParentCount(totalExecutionCount, 0);
-    
-    std::vector<std::vector<size_t>> perPassChildren(totalExecutionCount);
-    
-    std::unordered_map<uint32_t, size_t> renderPassHandleToIndexMap;
-    
-    //fill map and set pending parent count
-    for (int i = 0; i < graphicExecutions.size(); i++) {
-        const std::vector<RenderPassHandle>& parents = graphicExecutions[i].genericInfo.parents;
-        pendingParentCount[i] = parents.size();
-        renderPassHandleToIndexMap[graphicExecutions[i].genericInfo.handle.index] = i;
-    }
-    for (int i = 0; i < computeExecutions.size(); i++) {
-        const std::vector<RenderPassHandle>& parents = computeExecutions[i].genericInfo.parents;
-        const size_t passIndex = i + graphicExecutions.size();
-        pendingParentCount[passIndex] = parents.size();
-        renderPassHandleToIndexMap[computeExecutions[i].genericInfo.handle.index] = passIndex;
-    }
-    
-    //collect children
-    for (int i = 0; i < graphicExecutions.size(); i++) {
-        for (const RenderPassHandle parent : graphicExecutions[i].genericInfo.parents) {
-            const size_t parentIndex = renderPassHandleToIndexMap[parent.index];
-            perPassChildren[parentIndex].push_back(i);
-        }
-    }
-    for (int i = 0; i < computeExecutions.size(); i++) {
-        for (const RenderPassHandle parent : computeExecutions[i].genericInfo.parents) {
-            const size_t parentIndex = renderPassHandleToIndexMap[parent.index];
-            const size_t childIndex = i + graphicExecutions.size();
-            perPassChildren[parentIndex].push_back(childIndex);
-        }
-    }
-    
-    //prepare entries beforehand
-    std::vector<RenderPassExecutionEntry> executionEntryPerPass;
-    executionEntryPerPass.reserve(totalExecutionCount);
-    //add graphic passes to list
-    for (int i = 0; i < graphicExecutions.size(); i++) {
-        RenderPassExecutionEntry entry;
-        entry.type = RenderPassType::Graphic;
-        entry.index = i;
-        executionEntryPerPass.push_back(entry);
-    }
-    //add compute passes to list
-    for (int i = 0; i < computeExecutions.size(); i++) {
-        RenderPassExecutionEntry entry;
-        entry.type = RenderPassType::Compute;
-        entry.index = i;
-        executionEntryPerPass.push_back(entry);
-    }
-    
-    //add initial passes, which don't have any parents
-    std::vector<size_t> addablePasses;
-    for (int i = 0; i < totalExecutionCount; i++) {
-        if (pendingParentCount[i] == 0) {
-            addablePasses.push_back(i);
-        }
-    }
-    
-    RenderPassExecutionOrder order;
-    order.executions.reserve(totalExecutionCount);
-    
-    //continue until no further passes can be added
-    while (addablePasses.size() > 0) {
-        //take last
-        const size_t passIndex = addablePasses.back();
-        addablePasses.pop_back();
-        //add
-        order.executions.push_back(executionEntryPerPass[passIndex]);
-        //reduce pending parent count of every child
-        for (const size_t childIndex : perPassChildren[passIndex]) {
-            pendingParentCount[childIndex]--;
-            if (pendingParentCount[childIndex] == 0) {
-                addablePasses.push_back(childIndex); //reduced to zero, we know we can add this
-            }
-        }
-    }
-    assert(order.executions.size() == totalExecutionCount); //all passes must have been added
-    return order;
-}
-
 void RenderBackend::renderFrame(const bool presentToScreen) {
 
     //reset doesn't work before waiting for render finished fence
@@ -757,12 +678,11 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
 
         m_timestampQueriesPerFrame[m_frameIndexMod2].push_back(frameQuery);
     }
-            
-    const RenderPassExecutionOrder executionOrder = computeExecutionOrder(m_graphicPassExecutions, m_computePassExecutions);
-    const std::vector<RenderPassBarriers> barriers = createRenderPassBarriers(executionOrder, m_graphicPassExecutions, m_computePassExecutions);
-    
-    for (int i = 0; i < executionOrder.executions.size(); i++) {
-        const RenderPassExecutionEntry& executionEntry = executionOrder.executions[i];
+
+    const std::vector<RenderPassBarriers> barriers = createRenderPassBarriers();
+
+    for (int i = 0; i < m_renderPassExecutions.size(); i++) {
+        const RenderPassExecutionEntry& executionEntry = m_renderPassExecutions[i];
         if (executionEntry.type == RenderPassType::Graphic) {
             submitGraphicPass(m_graphicPassExecutions[executionEntry.index], barriers[i], currentCommandBuffer);
         }
@@ -1287,16 +1207,14 @@ void RenderBackend::waitForGpuIdle() {
     vkDeviceWaitIdle(vkContext.device);
 }
 
-std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers(const RenderPassExecutionOrder& executionOrder,
-    const std::vector<GraphicPassExecution>& graphicExecutions,
-    const std::vector<ComputePassExecution>& computeExecutions) {
+std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
 
     std::vector<RenderPassBarriers> barrierList;
 
-    for (const RenderPassExecutionEntry executionEntry : executionOrder.executions) {
+    for (const RenderPassExecutionEntry executionEntry : m_renderPassExecutions) {
 
         const RenderPassExecution execution = getGenericRenderpassInfoFromExecutionEntry(executionEntry,
-            graphicExecutions, computeExecutions);
+            m_graphicPassExecutions, m_computePassExecutions);
 
         const RenderPassResources& resources = execution.resources;
         RenderPassBarriers barriers;
@@ -1370,7 +1288,7 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers(const Re
 
         //attachments        
         if (executionEntry.type == RenderPassType::Graphic) {
-            const GraphicPassExecution graphicExecutionInfo = graphicExecutions[executionEntry.index];
+            const GraphicPassExecution graphicExecutionInfo = m_graphicPassExecutions[executionEntry.index];
 
             const Framebuffer& framebuffer = m_framebuffers[graphicExecutionInfo.framebuffer.index];
             for (const FramebufferTarget& target : framebuffer.desc.targets) {

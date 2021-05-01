@@ -61,18 +61,16 @@ void Bloom::resizeTextures(const int width, const int height) {
     }, width, height);
 }
 
-RenderPassHandle Bloom::computeBloom(const RenderPassHandle parentPass, const ImageHandle targetImage, const BloomSettings& settings) const {
+void Bloom::computeBloom(const ImageHandle targetImage, const BloomSettings& settings) const {
 
     const ImageDescription bloomImageDescription = gRenderBackend.getImageDescription(m_bloomUpscaleTexture);
     const int width = bloomImageDescription.width;
     const int height = bloomImageDescription.height;
 
-    RenderPassHandle currentParent = parentPass;
     // downscale
     for (int i = 0; i < m_bloomDownsamplePasses.size(); i++) {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_bloomDownsamplePasses[i];
-        exe.genericInfo.parents = { currentParent };
 
         const int sourceMip = i;
         const int targetMip = i + 1;
@@ -95,14 +93,11 @@ RenderPassHandle Bloom::computeBloom(const RenderPassHandle parentPass, const Im
         exe.dispatchCount[2] = 1;
 
         gRenderBackend.setComputePassExecution(exe);
-
-        currentParent = exe.genericInfo.handle;
     }
     // upscale
     for (int i = 0; i < m_bloomUpsamplePasses.size(); i++) {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_bloomUpsamplePasses[i];
-        exe.genericInfo.parents = { currentParent };
 
         const int targetMip = bloomMipCount - 2 - i;
         const int sourceMip = targetMip + 1;
@@ -126,14 +121,11 @@ RenderPassHandle Bloom::computeBloom(const RenderPassHandle parentPass, const Im
         exe.pushConstants = dataToCharArray((void*)&settings.radius, sizeof(settings.radius));
 
         gRenderBackend.setComputePassExecution(exe);
-
-        currentParent = exe.genericInfo.handle;
     }
     // apply bloom
     {
         ComputePassExecution exe;
         exe.genericInfo.handle = m_applyBloomPass;
-        exe.genericInfo.parents = { currentParent };
 
         exe.genericInfo.resources.storageImages = {
             ImageResource(targetImage, 0, 0)
@@ -151,5 +143,4 @@ RenderPassHandle Bloom::computeBloom(const RenderPassHandle parentPass, const Im
 
         gRenderBackend.setComputePassExecution(exe);
     }
-    return m_applyBloomPass;
 }

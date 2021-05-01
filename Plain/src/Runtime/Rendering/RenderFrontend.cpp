@@ -324,69 +324,42 @@ void RenderFrontend::prepareRenderpasses(){
         computeDepthPyramid(currentRenderTarget.depthBuffer);
         computeColorBufferHistogram(m_postProcessBuffers[0]);
 
-        const RenderPassHandle skyTransmissionPass = m_sky.updateTransmissionLut();
-        computeExposure(skyTransmissionPass);
-        const RenderPassHandle skyLutPass = m_sky.updateSkyLut(m_lightBuffer, { m_preExposeLightsPass, skyTransmissionPass }, 
-            m_atmosphereSettings);
+        m_sky.updateTransmissionLut();
+        computeExposure();
+        m_sky.updateSkyLut(m_lightBuffer, m_atmosphereSettings);
 
         computeSunLightMatrices();
         renderSunShadowCascades();
 
-        const std::vector<RenderPassHandle> sdfVisParents = {
-            skyLutPass,
-            m_shadowPasses[m_shadingConfig.sunShadowCascadeCount - 1],
-            m_depthPyramidPass,
-            m_preExposeLightsPass
-        };
+        SDFTraceDependencies traceDependencies = fillOutSdfGiDependencies(currentRenderTarget, previousRenderTarget);
 
-        SDFTraceDependencies traceDependencies = fillOutSdfGiDependencies(sdfVisParents, currentRenderTarget, previousRenderTarget);
-
-        const RenderPassHandle sdfDebugPass = m_sdfGi.renderSDFVisualization(m_postProcessBuffers[0], traceDependencies, 
+        m_sdfGi.renderSDFVisualization(m_postProcessBuffers[0], traceDependencies, 
             m_sdfDebugSettings, m_sdfTraceSettings);
 
-        computeTonemapping(sdfDebugPass, m_postProcessBuffers[0]);
+        computeTonemapping(m_postProcessBuffers[0]);
         return;
     }
 
-    std::vector<RenderPassHandle> forwardShadingDependencies;
-
     if (m_isBRDFLutShaderDescriptionStale) {
         computeBRDFLut();
-        forwardShadingDependencies.push_back(m_brdfLutPass);
         m_isBRDFLutShaderDescriptionStale = false;
     }
 
-    renderSunShadowCascades();
-    for (int i = 0; i < m_shadingConfig.sunShadowCascadeCount; i++) {
-        forwardShadingDependencies.push_back(m_shadowPasses[i]);
-    }
-
     computeColorBufferHistogram(previousRenderTarget.colorBuffer);
-
-    const RenderPassHandle skyTransmissionPass = m_sky.updateTransmissionLut();
-    computeExposure(skyTransmissionPass);
-    const RenderPassHandle skyLutPass = m_sky.updateSkyLut(m_lightBuffer, { m_preExposeLightsPass, skyTransmissionPass }, m_atmosphereSettings);
-
+    m_sky.updateTransmissionLut();
+    computeExposure();
+    m_sky.updateSkyLut(m_lightBuffer, m_atmosphereSettings);
     renderDepthPrepass(currentRenderTarget.prepassFramebuffer);
     computeDepthPyramid(currentRenderTarget.depthBuffer);
     computeSunLightMatrices();
+    renderSunShadowCascades();
     if (m_shadingConfig.indirectLightingTech == IndirectLightingTech::SDFTrace) {
         if (m_sdfTraceSettings.halfResTrace) {
             downscaleDepth(currentRenderTarget);
         }
 
-        const std::vector<RenderPassHandle> indirectLightParents = {
-            m_preExposeLightsPass,
-                skyLutPass,
-                m_depthPrePass,
-                m_shadowPasses[m_shadingConfig.sunShadowCascadeCount - 1],
-                m_depthPyramidPass
-        };
-
-        const SDFTraceDependencies traceDependencies = fillOutSdfGiDependencies(indirectLightParents, currentRenderTarget, previousRenderTarget);
-        const RenderPassHandle indirectLightingPass = m_sdfGi.computeIndirectLighting(traceDependencies, m_sdfTraceSettings);
-
-        forwardShadingDependencies.push_back(indirectLightingPass);
+        const SDFTraceDependencies traceDependencies = fillOutSdfGiDependencies(currentRenderTarget, previousRenderTarget);
+        m_sdfGi.computeIndirectLighting(traceDependencies, m_sdfTraceSettings);
     }
 
     const int maxShadowCascadeIndex = m_shadingConfig.sunShadowCascadeCount - 1;
@@ -395,12 +368,10 @@ void RenderFrontend::prepareRenderpasses(){
     volumetricsDependencies.lightBuffer = m_lightBuffer;
     volumetricsDependencies.shadowMap = m_shadowMaps[maxShadowCascadeIndex];
     volumetricsDependencies.sunShadowInfoBuffer = m_sunShadowInfoBuffer;
-    volumetricsDependencies.parents = { m_shadowPasses[maxShadowCascadeIndex], m_preExposeLightsPass };
 
-    const RenderPassHandle volumetricPass = m_volumetrics.computeVolumetricLighting(m_volumetricsSettings, m_windSettings, volumetricsDependencies);
-    forwardShadingDependencies.push_back(volumetricPass);
+    m_volumetrics.computeVolumetricLighting(m_volumetricsSettings, m_windSettings, volumetricsDependencies);
 
-    renderForwardShading(forwardShadingDependencies, currentRenderTarget.colorFramebuffer);
+    renderForwardShading(currentRenderTarget.colorFramebuffer);
     RenderPassHandle skyParent = m_mainPass;
     if (m_renderBoundingBoxes) {
         renderDebugGeometry(currentRenderTarget.colorFramebuffer);
@@ -411,31 +382,28 @@ void RenderFrontend::prepareRenderpasses(){
     skyDependencies.volumetricIntegrationVolume = m_volumetrics.getIntegrationVolume();
     skyDependencies.volumetricLightingSettingsUniforms = m_volumetrics.getVolumetricsInfoBuffer();
     skyDependencies.lightBuffer = m_lightBuffer;
-    skyDependencies.parents = { m_preExposeLightsPass, volumetricPass, skyLutPass, skyParent };
 
-    RenderPassHandle currentPass = m_sky.renderSky(currentRenderTarget.colorFramebuffer, skyDependencies);
+    m_sky.renderSky(currentRenderTarget.colorFramebuffer, skyDependencies);
 
     ImageHandle currentSrc = currentRenderTarget.colorBuffer;
 
     if (m_taaSettings.enabled) {
 
         if (m_taaSettings.useSeparateSupersampling) {
-            currentPass = m_taa.computeTemporalSuperSampling(currentRenderTarget, previousRenderTarget,
-                m_postProcessBuffers[0], currentPass);
+            m_taa.computeTemporalSuperSampling(currentRenderTarget, previousRenderTarget, m_postProcessBuffers[0]);
 
             currentSrc = m_postProcessBuffers[0];
         }
 
-        currentPass = m_taa.computeTemporalFilter(currentSrc, currentRenderTarget, m_postProcessBuffers[1], 
-            currentPass);
+        m_taa.computeTemporalFilter(currentSrc, currentRenderTarget, m_postProcessBuffers[1]);
 
-        currentSrc = m_postProcessBuffers[1];        
+        currentSrc = m_postProcessBuffers[1];
     }
 
     if (m_bloomSettings.enabled) {
-        currentPass = m_bloom.computeBloom(currentPass, currentSrc, m_bloomSettings);
+        m_bloom.computeBloom(currentSrc, m_bloomSettings);
     }
-    computeTonemapping(currentPass, currentSrc);
+    computeTonemapping(currentSrc);
 }
 
 void RenderFrontend::setResolution(const uint32_t width, const uint32_t height) {
@@ -781,7 +749,6 @@ void RenderFrontend::computeColorBufferHistogram(const ImageHandle lastFrameColo
         histogramCombineTilesExecution.dispatchCount[0] = tileCount;
         histogramCombineTilesExecution.dispatchCount[1] = uint32_t(std::ceilf(float(nHistogramBins) / binsPerDispatch));
         histogramCombineTilesExecution.dispatchCount[2] = 1;
-        histogramCombineTilesExecution.genericInfo.parents = { m_histogramPerTilePass, m_histogramResetPass };
 
         gRenderBackend.setComputePassExecution(histogramCombineTilesExecution);
     }
@@ -795,7 +762,6 @@ void RenderFrontend::renderSunShadowCascades() const {
     for (int i = 0; i < m_shadingConfig.sunShadowCascadeCount; i++) {
         GraphicPassExecution shadowPassExecution;
         shadowPassExecution.genericInfo.handle = m_shadowPasses[i];
-        shadowPassExecution.genericInfo.parents = { m_lightMatrixPass };
         shadowPassExecution.framebuffer = m_shadowCascadeFramebuffers[i];
         shadowPassExecution.genericInfo.resources.storageBuffers = {
             StorageBufferResource(m_sunShadowInfoBuffer, true, 0),
@@ -806,7 +772,7 @@ void RenderFrontend::renderSunShadowCascades() const {
     }
 }
 
-void RenderFrontend::computeExposure(const RenderPassHandle parent) const {
+void RenderFrontend::computeExposure() const {
     StorageBufferResource lightBufferResource(m_lightBuffer, false, 0);
     StorageBufferResource histogramResource(m_histogramBuffer, false, 1);
     ImageResource transmissionLutResource(m_sky.getTransmissionLut(), 0, 2);
@@ -815,7 +781,6 @@ void RenderFrontend::computeExposure(const RenderPassHandle parent) const {
     preExposeLightsExecution.genericInfo.handle = m_preExposeLightsPass;
     preExposeLightsExecution.genericInfo.resources.storageBuffers = { histogramResource, lightBufferResource };
     preExposeLightsExecution.genericInfo.resources.sampledImages = { transmissionLutResource };
-    preExposeLightsExecution.genericInfo.parents = { m_histogramCombinePass, parent };
     preExposeLightsExecution.dispatchCount[0] = 1;
     preExposeLightsExecution.dispatchCount[1] = 1;
     preExposeLightsExecution.dispatchCount[2] = 1;
@@ -834,7 +799,6 @@ void RenderFrontend::renderDepthPrepass(const FramebufferHandle framebuffer) con
 void RenderFrontend::computeDepthPyramid(const ImageHandle depthBuffer) const {
     ComputePassExecution exe;
     exe.genericInfo.handle = m_depthPyramidPass;
-    exe.genericInfo.parents = { m_depthPrePass };
 
     const uint32_t width = m_screenWidth / 2;
     const uint32_t height = m_screenHeight / 2;
@@ -871,7 +835,6 @@ void RenderFrontend::computeDepthPyramid(const ImageHandle depthBuffer) const {
 void RenderFrontend::computeSunLightMatrices() const{
     ComputePassExecution exe;
     exe.genericInfo.handle = m_lightMatrixPass;
-    exe.genericInfo.parents = { m_depthPyramidPass };
     exe.dispatchCount[0] = 1;
     exe.dispatchCount[1] = 1;
     exe.dispatchCount[2] = 1;
@@ -905,7 +868,6 @@ void RenderFrontend::computeSunLightMatrices() const{
 void RenderFrontend::downscaleDepth(const FrameRenderTargets& currentTarget) const {
     ComputePassExecution exe;
     exe.genericInfo.handle = m_depthDownscalePass;
-    exe.genericInfo.parents = { m_depthPrePass };
 
     const float localThreadSize = 8.f;
     const glm::vec2 halfRes = glm::ivec2(m_screenWidth, m_screenHeight) / 2;
@@ -924,7 +886,7 @@ void RenderFrontend::downscaleDepth(const FrameRenderTargets& currentTarget) con
     gRenderBackend.setComputePassExecution(exe);
 }
 
-void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& externalDependencies, const FramebufferHandle framebuffer) const {
+void RenderFrontend::renderForwardShading(const FramebufferHandle framebuffer) const {
 
     const auto brdfLutResource = ImageResource(m_brdfLut, 0, 3);
     const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
@@ -955,13 +917,10 @@ void RenderFrontend::renderForwardShading(const std::vector<RenderPassHandle>& e
         UniformBufferResource(m_volumetrics.getVolumetricsInfoBuffer(), 19)
     };
 
-    mainPassExecution.genericInfo.parents = { m_preExposeLightsPass, m_depthPrePass, m_lightMatrixPass };
-    mainPassExecution.genericInfo.parents.insert(mainPassExecution.genericInfo.parents.begin(), externalDependencies.begin(), externalDependencies.end());
-
     gRenderBackend.setGraphicPassExecution(mainPassExecution);
 }
 
-void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const ImageHandle& src) const {
+void RenderFrontend::computeTonemapping(const ImageHandle& src) const {
     const auto swapchainInput = gRenderBackend.getSwapchainInputImage();
     ImageResource targetResource(swapchainInput, 0, 0);
     ImageResource colorBufferResource(src, 0, 1);
@@ -973,7 +932,6 @@ void RenderFrontend::computeTonemapping(const RenderPassHandle parent, const Ima
     tonemappingExecution.dispatchCount[0] = (uint32_t)std::ceil(m_screenWidth / 8.f);
     tonemappingExecution.dispatchCount[1] = (uint32_t)std::ceil(m_screenHeight / 8.f);
     tonemappingExecution.dispatchCount[2] = 1;
-    tonemappingExecution.genericInfo.parents = { parent };
 
     gRenderBackend.setComputePassExecution(tonemappingExecution);
 }
@@ -982,7 +940,6 @@ void RenderFrontend::renderDebugGeometry(const FramebufferHandle framebuffer) co
     GraphicPassExecution debugPassExecution;
     debugPassExecution.genericInfo.handle = m_debugGeoPass;
     debugPassExecution.framebuffer = framebuffer;
-    debugPassExecution.genericInfo.parents = { m_mainPass };
     debugPassExecution.genericInfo.resources.storageBuffers = { StorageBufferResource(m_boundingBoxDebugRenderMatrices, true, 0) };
     gRenderBackend.setGraphicPassExecution(debugPassExecution);
 }
@@ -1104,16 +1061,12 @@ HistogramSettings RenderFrontend::createHistogramSettings() {
     return settings;
 }
 
-SDFTraceDependencies RenderFrontend::fillOutSdfGiDependencies(const std::vector<RenderPassHandle>& parents, 
-    const FrameRenderTargets& currentFrame, const FrameRenderTargets& previousFrame) {
+SDFTraceDependencies RenderFrontend::fillOutSdfGiDependencies(const FrameRenderTargets& currentFrame, 
+    const FrameRenderTargets& previousFrame) {
 
     SDFTraceDependencies traceDependencies;
     traceDependencies.currentFrame = currentFrame;
     traceDependencies.previousFrame = previousFrame;
-    traceDependencies.parents = parents; 
-    if (m_sdfTraceSettings.halfResTrace) {
-        traceDependencies.parents.push_back(m_depthDownscalePass);
-    }
     traceDependencies.cameraFrustum = m_cameraFrustum;
     traceDependencies.depthHalfRes = m_depthHalfRes;
     traceDependencies.worldSpaceNormals = m_worldSpaceNormalImage;
