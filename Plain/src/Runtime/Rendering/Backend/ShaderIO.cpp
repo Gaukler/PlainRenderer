@@ -50,5 +50,5 @@ std::filesystem::path getShaderDirectory() {
 }
 
 std::filesystem::path getShaderCacheDirectory() {
-    return DirectoryUtils::getResourceDirectory() / "shaders\\cache\\";
+    return DirectoryUtils::getResourceDirectory() / "shaderCache\\";
 }

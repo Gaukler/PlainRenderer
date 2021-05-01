@@ -50,7 +50,6 @@ void ShaderFileManager::fileWatcherThread() {
     //using windows api to report file change details was inconsistent
     //because of this the windows api is now only used to inform about a change in the directory
     //the details of which files are out of date are handled manually
-    //TODO: fix callback triggers when writing spirv-cache files, causing unnecessary file out-of-date checks
     const fs::path shaderPath = DirectoryUtils::getResourceDirectory() / getShaderDirectory();
     HANDLE watchHandle = FindFirstChangeNotificationW((WCHAR*)shaderPath.c_str(), true, FILE_NOTIFY_CHANGE_LAST_WRITE);
     assert(INVALID_HANDLE_VALUE);

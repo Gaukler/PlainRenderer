@@ -2,5 +2,5 @@
 \.vs
 /resources/Models
 /resources/textures
-resources/shaders/cache/*
-!resources/shaders/cache/.gitkeep
+resources/shaderCache/*
+!resources/shaderCache/.gitkeep
