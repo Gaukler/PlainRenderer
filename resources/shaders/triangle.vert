@@ -13,7 +13,7 @@ layout(location = 4) in vec3 inBitangent;
 
 layout(location = 0) out vec2 passUV;
 layout(location = 1) out vec3 passPos;
-layout(location = 2) out mat3 passTBN; 
+layout(location = 2) out mat3 passTBN;
 
 
 layout(push_constant) uniform MatrixBlock {
