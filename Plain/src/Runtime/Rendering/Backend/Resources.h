@@ -15,20 +15,18 @@ struct ShaderLayout {
 };
 
 struct Image {
+
     VkImage                     vulkanHandle = VK_NULL_HANDLE;
     std::vector<VkImageView>    viewPerMip;
     VkFormat                    format = VK_FORMAT_MAX_ENUM;
     VkExtent3D                  extent = {};
     ImageType                   type = ImageType::Type2D;
 
-    /*
-    current status
-    */
     std::vector<VkImageLayout>  layoutPerMip;
     VkAccessFlags               currentAccess = 0;
     bool                        currentlyWriting = false;
 
-    //description backup in case of resize    
+    //description backup in case of resize
     ImageDescription desc;
 
     bool isSwapchainImage = false;

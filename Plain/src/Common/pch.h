@@ -10,6 +10,7 @@
 #include <fstream>
 #include <chrono>
 #include <sstream>
+#include <functional>
 
 //disable glm warnings
 #pragma warning( push )

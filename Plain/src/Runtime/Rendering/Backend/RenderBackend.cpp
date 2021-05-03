@@ -36,14 +36,6 @@ RenderBackend gRenderBackend;
 
 const uint32_t maxTextureCount = 1000;
 
-//===== private function declarations
-
-RenderPassExecution getGenericRenderpassInfoFromExecutionEntry(const RenderPassExecutionEntry& entry,
-    const std::vector<GraphicPassExecution>& graphicExecutions,
-    const std::vector<ComputePassExecution>& computeExecutions);
-
-//=====
-
 /*
 ==================
 
@@ -235,7 +227,9 @@ void RenderBackend::shutdown() {
     for (uint32_t i = 0; i < m_images.size(); i++) {
         destroyImage({ i });
     }
-
+    for (const AllocatedTempImage& tempImage : m_allocatedTempImages) {
+        destroyImageInternal(tempImage.image);
+    }
     for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
         destroyGraphicPass(m_renderPasses.getGraphicPassRefByIndex(i));
     }
@@ -315,21 +309,16 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
     vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
     vkDestroySurfaceKHR(vkContext.vulkanInstance, m_swapchain.surface, nullptr);
     
-    /*
-    recreate
-    */
+    
+    //recreate
     createSurface(window);
-    /*
-    queue families must revalidate present support for new surface
-    */
+
+    //queue families must revalidate present support for new surface
     getQueueFamilies(vkContext.physicalDevice, &vkContext.queueFamilies);
     createSwapChain();
     getSwapchainImages(width, height);
 
-    /*
-    recreate imgui pass framebuffer
-    */
-    
+    //recreate imgui pass framebuffer
     VkExtent2D extent;
     extent.width = width;
     extent.height = height;
@@ -385,9 +374,7 @@ void RenderBackend::updateShaderCode() {
 
 void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const uint32_t width, const uint32_t height) {
 
-    /*
-    recreate image
-    */
+    //recreate image    
     for (const auto image : images) {
         m_images[image.index].desc.width = width;
         m_images[image.index].desc.height = height;
@@ -436,6 +423,8 @@ void RenderBackend::newFrame() {
     m_graphicPassExecutions.clear();
     m_computePassExecutions.clear();
     m_renderPassExecutions.clear();
+    m_temporaryImages.clear();
+    resetAllocatedTempImages();
 
     m_swapchainInputImageHandle.index = VK_NULL_HANDLE;
 
@@ -447,68 +436,10 @@ void RenderBackend::newFrame() {
     ImGui::NewFrame();
 }
 
-void RenderBackend::startDrawcallRecording() {
-    //iterate over graphic passes that will be executed
-    for (const GraphicPassExecution execution : m_graphicPassExecutions) {
-
-        const RenderPassHandle passHandle = execution.genericInfo.handle;
-        const GraphicPass pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
-        const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
-
-        VkCommandBufferInheritanceInfo inheritanceInfo;
-        inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-        inheritanceInfo.pNext = nullptr;
-        inheritanceInfo.renderPass = pass.vulkanRenderPass;
-        inheritanceInfo.subpass = 0;
-        inheritanceInfo.framebuffer = framebuffer.vkHandle;
-        inheritanceInfo.occlusionQueryEnable = false;
-        inheritanceInfo.queryFlags = 0;
-        inheritanceInfo.pipelineStatistics = 0;
-
-        VkCommandBufferBeginInfo cmdBeginInfo;
-        cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        cmdBeginInfo.pNext = nullptr;
-        cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
-        cmdBeginInfo.pInheritanceInfo = &inheritanceInfo;
-
-        const int poolCount = m_drawcallCommandPools.size();
-        for (int cmdBufferIndex = 0; cmdBufferIndex < poolCount; cmdBufferIndex++) {
-            const int finalIndex = cmdBufferIndex + m_frameIndexMod2 * poolCount;
-            const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[finalIndex];
-            const auto res = vkResetCommandBuffer(meshCommandBuffer, 0);
-            assert(res == VK_SUCCESS);
-            
-            //reset command buffer
-            vkBeginCommandBuffer(meshCommandBuffer, &cmdBeginInfo);
-            
-            //prepare for drawcall recording
-            vkCmdBindPipeline(meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipeline);
-            
-            const glm::ivec2 resolution = resolutionFromFramebufferTargets(framebuffer.desc.targets);
-            
-            //set viewport
-            {
-                VkViewport viewport;
-                viewport.x = 0;
-                viewport.y = 0;
-                viewport.width = (float)resolution.x;
-                viewport.height = (float)resolution.y;
-                viewport.minDepth = 0.f;
-                viewport.maxDepth = 1.f;
-                
-                vkCmdSetViewport(meshCommandBuffer, 0, 1, &viewport);
-            }
-            //set scissor
-            {
-                VkRect2D scissor;
-                scissor.offset = { 0, 0 };
-                scissor.extent.width = resolution.x;
-                scissor.extent.height = resolution.y;
-                
-                vkCmdSetScissor(meshCommandBuffer, 0, 1, &scissor);
-            }
-        }
-    }
+void RenderBackend::prepareForDrawcallRecording() {
+    allocateTemporaryImages();
+    updateRenderPassDescriptorSets();
+    startGraphicPassRecording();
 }
 
 void RenderBackend::setGraphicPassExecution(const GraphicPassExecution& execution) {
@@ -526,9 +457,6 @@ void RenderBackend::setGraphicPassExecution(const GraphicPassExecution& executio
     executionEntry.index = m_graphicPassExecutions.size();
     executionEntry.type = RenderPassType::Graphic;
     m_renderPassExecutions.push_back(executionEntry);
-
-    const VkDescriptorSet descriptorSet = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
-    updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
     m_graphicPassExecutions.push_back(execution);
 }
 
@@ -537,9 +465,6 @@ void RenderBackend::setComputePassExecution(const ComputePassExecution& executio
     executionEntry.index = m_computePassExecutions.size();
     executionEntry.type = RenderPassType::Compute;
     m_renderPassExecutions.push_back(executionEntry);
-
-    const VkDescriptorSet descriptorSet = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
-    updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
     m_computePassExecutions.push_back(execution);
 }
 
@@ -796,9 +721,9 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
         //manually get every query for now
         //FIXME: proper solution
         for (size_t i = 0; i < previousFrameQueryCount; i++) {
-        	auto result = vkGetQueryPoolResults(vkContext.device, previousQueryPool, (uint32_t)i, 1,
-        		(uint32_t)timestamps.size() * sizeof(uint32_t), &timestamps[i], 0, VK_QUERY_RESULT_WAIT_BIT);
-        	checkVulkanResult(result);
+            auto result = vkGetQueryPoolResults(vkContext.device, previousQueryPool, (uint32_t)i, 1,
+                (uint32_t)timestamps.size() * sizeof(uint32_t), &timestamps[i], 0, VK_QUERY_RESULT_WAIT_BIT);
+            checkVulkanResult(result);
         }
         
         for (const TimestampQuery query : m_timestampQueriesPerFrame[previousFrameIndexMod2]) {
@@ -819,7 +744,7 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
 }
 
 uint32_t RenderBackend::getImageGlobalTextureArrayIndex(const ImageHandle image) {
-    return m_images[image.index].globalDescriptorSetIndex;
+    return getImageRef(image).globalDescriptorSetIndex;
 }
 
 RenderPassHandle RenderBackend::createComputePass(const ComputePassDescription& desc) {
@@ -903,153 +828,8 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
 
 ImageHandle RenderBackend::createImage(const ImageDescription& desc, const void* initialData, const size_t initialDataSize) {
 
-    const VkFormat format = imageFormatToVulkanFormat(desc.format);
-    const VkImageAspectFlagBits aspectFlag = imageFormatToVkAspectFlagBits(desc.format);
-    
-    VkImageType type;
-    VkImageViewType viewType;
-    switch (desc.type) {
-    case ImageType::Type1D:     type = VK_IMAGE_TYPE_1D; viewType = VK_IMAGE_VIEW_TYPE_1D; break;
-    case ImageType::Type2D:     type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_2D; break;
-    case ImageType::Type3D:     type = VK_IMAGE_TYPE_3D; viewType = VK_IMAGE_VIEW_TYPE_3D; break;
-    case ImageType::TypeCube:   type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_CUBE; break;
-    default: throw std::runtime_error("Unsuported type enum");
-    }
-    
-    uint32_t mipCount;
-    switch (desc.mipCount) {
-    case(MipCount::One): mipCount = 1; break;
-    case(MipCount::Manual): mipCount = desc.manualMipCount; break;
-    case(MipCount::FullChain): mipCount = mipCountFromResolution(desc.width, desc.height, desc.depth); break;
-    default: throw std::runtime_error("Unsuported mipCoun enum");
-    }
-    
-    VkImageUsageFlags usage = 0;
-    if (bool(desc.usageFlags & ImageUsageFlags::Attachment)) {
-        const VkImageUsageFlagBits attachmentUsage = isDepthFormat(format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        usage |= attachmentUsage;
-    }
-    if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
-        usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    }
-    if (bool(desc.usageFlags & ImageUsageFlags::Storage)) {
-        usage |= VK_IMAGE_USAGE_STORAGE_BIT;
-    }
-    if (initialDataSize > 0) {
-        usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    }
-    if (desc.autoCreateMips) {
-        usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    }
-    
-    Image image;
-    image.extent.width = desc.width;
-    image.extent.height = desc.height;
-    image.extent.depth = desc.depth;
-    image.desc = desc;
-    image.format = format;
-    image.type = desc.type;
-    
-    for (uint32_t i = 0; i < mipCount; i++) {
-        image.layoutPerMip.push_back(VK_IMAGE_LAYOUT_UNDEFINED);
-    }
-    
-    VkImageCreateFlags flags = 0;
-    uint32_t arrayLayers = 1;
-    if (desc.type == ImageType::TypeCube) {
-        flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-        arrayLayers = 6;
-        assert(desc.width == desc.height);
-        assert(desc.depth == 1);
-    }
-    
-    VkImageCreateInfo imageInfo = {};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.pNext = nullptr;
-    imageInfo.flags = flags;
-    imageInfo.imageType = type;
-    imageInfo.format = format;
-    imageInfo.extent = image.extent;
-    imageInfo.mipLevels = mipCount;
-    imageInfo.arrayLayers = arrayLayers;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = usage;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.queueFamilyIndexCount = 1;
-    imageInfo.pQueueFamilyIndices = &vkContext.queueFamilies.graphicsQueueIndex;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    const Image image = createImageInternal(desc, initialData, initialDataSize);
 
-    auto res = vkCreateImage(vkContext.device, &imageInfo, nullptr, &image.vulkanHandle);
-    checkVulkanResult(res);
-    
-    //bind memory
-    VkMemoryRequirements memoryRequirements;
-    vkGetImageMemoryRequirements(vkContext.device, image.vulkanHandle, &memoryRequirements);
-    const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &image.memory)) {
-        throw("Could not allocate image memory");
-    }
-    res = vkBindImageMemory(vkContext.device, image.vulkanHandle, image.memory.vkMemory, image.memory.offset);
-    assert(res == VK_SUCCESS);
-    
-    //create image view
-    image.viewPerMip.reserve(mipCount);
-    for (uint32_t i = 0; i < mipCount; i++) {
-        const auto view = createImageView(image, viewType, i, mipCount - i, aspectFlag);
-        image.viewPerMip.push_back(view);
-    }
-    
-    //fill with data
-    if (initialDataSize != 0) {
-        transferDataIntoImage(image, initialData, initialDataSize);
-    }
-    
-    //generate mipmaps
-    if (desc.autoCreateMips) {
-        generateMipChain(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    }
-    
-    //most textures with sampled usage are used by the material system
-    //the material systems assumes the read_only_optimal layout
-    //if no mips are generated the layout will still be transfer_dst or undefined
-    //to avoid issues all sampled images without mip generation are manually transitioned to read_only_optimal
-    if (bool(desc.usageFlags & ImageUsageFlags::Sampled) && !desc.autoCreateMips) {
-        const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
-        
-        const auto newLayoutBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
-        barriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
-        
-        //end recording
-        res = vkEndCommandBuffer(transitionCmdBuffer);
-        assert(res == VK_SUCCESS);
-        
-        //submit
-        VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
-        
-        res = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        assert(res == VK_SUCCESS);
-        
-        //cleanup
-        vkDestroyFence(vkContext.device, fence, nullptr);
-        vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &transitionCmdBuffer);
-    }
-    
-    //add to global texture descriptor array, if image can be sampled
-    if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
-        if (m_globalTextureArrayDescriptorSetFreeTextureIndices.size() > 0) {
-            image.globalDescriptorSetIndex = m_globalTextureArrayDescriptorSetFreeTextureIndices.back();
-            m_globalTextureArrayDescriptorSetFreeTextureIndices.pop_back();
-        }
-        else {
-            image.globalDescriptorSetIndex = (int32_t)m_globalTextureArrayDescriptorSetTextureCount;
-            m_globalTextureArrayDescriptorSetTextureCount++;
-        }
-        
-        setGlobalTextureArrayDescriptorSetTexture(image.viewPerMip[0], image.globalDescriptorSetIndex);
-    }
-    
     //reuse a free image handle or create a new one
     ImageHandle handle;
     if (m_freeImageHandles.size() > 0) {
@@ -1176,6 +956,18 @@ FramebufferHandle RenderBackend::createFramebuffer(const FramebufferDescription&
     return handle;
 }
 
+ImageHandle RenderBackend::createTemporaryImage(const ImageDescription& description) {
+    ImageHandle handle;
+    handle.index = m_temporaryImages.size();
+    handle.index |= 0x80000000;
+
+    TemporaryImage tempImage;
+    tempImage.desc = description;
+    m_temporaryImages.push_back(tempImage);
+
+    return handle;
+}
+
 ImageHandle RenderBackend::getSwapchainInputImage() {
     auto result = vkAcquireNextImageKHR(vkContext.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvaible, VK_NULL_HANDLE, &m_swapchainInputImageIndex);
     checkVulkanResult(result);
@@ -1199,8 +991,26 @@ float RenderBackend::getLastFrameCPUTime() const {
     return m_lastFrameCPUTime;
 }
 
+struct ImageHandleDecoded {
+    bool isTempImage = false;
+    int index = 0;
+};
+
+ImageHandleDecoded decodeImageHandle(const ImageHandle handle) {
+    ImageHandleDecoded decoded;
+    decoded.isTempImage = bool(handle.index >> 31); //first bit indicates if image is temp
+    decoded.index = handle.index & 0x7FFFFFFF;      //mask out first bit for index
+    return decoded;
+}
+
 ImageDescription RenderBackend::getImageDescription(const ImageHandle image) {
-    return m_images[image.index].desc;
+    const ImageHandleDecoded decoded = decodeImageHandle(image);
+    if (decoded.isTempImage) {
+        return m_temporaryImages[decoded.index].desc;
+    }
+    else {
+        return m_images[decoded.index].desc;
+    }
 }
 
 void RenderBackend::waitForGpuIdle() {
@@ -1221,7 +1031,7 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
 
         //storage images        
         for (const ImageResource& storageImage : resources.storageImages) {
-            Image& image = m_images[storageImage.image.index];
+            Image& image = getImageRef(storageImage.image);
 
             //check if any mip levels need a layout transition            
             const VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -1267,7 +1077,7 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
                 continue;
             }
 
-            Image& image = m_images[sampledImage.image.index];
+            Image& image = getImageRef(sampledImage.image);
 
             //check if any mip levels need a layout transition            
             VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -1292,7 +1102,7 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
 
             const Framebuffer& framebuffer = m_framebuffers[graphicExecutionInfo.framebuffer.index];
             for (const FramebufferTarget& target : framebuffer.desc.targets) {
-                Image& image = m_images[target.image.index];
+                Image& image = getImageRef(target.image);
 
             //check if any mip levels need a layout transition                
             const VkImageLayout requiredLayout = isDepthFormat(image.format) ?
@@ -1457,7 +1267,7 @@ bool RenderBackend::validateFramebufferTargetGraphicPassCombination(const std::v
     for (int i = 0; i < targets.size(); i++) {
         const FramebufferTarget& target = targets[i];
         const Attachment& attachment = renderpassAttachments[i];
-        const Image& targetImage = m_images[target.image.index];
+        const Image& targetImage = getImageRef(target.image);
         if (imageFormatToVulkanFormat(attachment.format) != targetImage.format) {
             std::cout << failureMessagePrologue << "attachment and target image format mismatch\n";
             return false;
@@ -2013,6 +1823,369 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
         info.pClearValues = nullptr;
         m_ui.passBeginInfos.push_back(info);
     }
+}
+
+Image& RenderBackend::getImageRef(const ImageHandle handle) {
+    const ImageHandleDecoded decoded = decodeImageHandle(handle);
+    if (decoded.isTempImage) {
+        const int allocationIndex = m_temporaryImages[decoded.index].allocationIndex;
+        assert(allocationIndex >= allocationIndex);
+        assert(allocationIndex < m_allocatedTempImages.size());
+        return m_allocatedTempImages[allocationIndex].image;
+    }
+    else {
+        return m_images[decoded.index];
+    }
+}
+
+bool imageDescriptionsMatch(const ImageDescription& d1, const ImageDescription& d2) {
+    return
+        d1.format       == d2.format    &&
+        d1.width        == d2.width     &&
+        d1.height       == d2.height    &&
+        d1.depth        == d2.depth     &&
+        d1.mipCount     == d2.mipCount  &&
+        d1.type         == d2.type      &&
+        d1.usageFlags   == d2.usageFlags;
+}
+
+void RenderBackend::mapOverRenderpassTempImages(std::function<void(const int renderpassImage, 
+    const int tempImageIndex)> function) {
+
+    for (int i = 0; i < m_renderPassExecutions.size(); i++) {
+        const auto& executionEntry = m_renderPassExecutions[i];
+        const RenderPassExecution& execution = getGenericRenderpassInfoFromExecutionEntry(executionEntry,
+            m_graphicPassExecutions, m_computePassExecutions);
+
+        for (const auto& imageResource : execution.resources.sampledImages) {
+            const auto decodedImageHandle = decodeImageHandle(imageResource.image);
+            if (decodedImageHandle.isTempImage) {
+                function(i, decodedImageHandle.index);
+            }
+        }
+
+        for (const auto& imageResource : execution.resources.storageImages) {
+            const auto decodedImageHandle = decodeImageHandle(imageResource.image);
+            if (decodedImageHandle.isTempImage) {
+                function(i, decodedImageHandle.index);
+            }
+        }
+        if (executionEntry.type == RenderPassType::Graphic) {
+            const auto& graphicPass = m_graphicPassExecutions[executionEntry.index];
+            const auto& framebuffer = m_framebuffers[graphicPass.framebuffer.index];
+            for (const auto& target : framebuffer.desc.targets) {
+                const auto decodedImageHandle = decodeImageHandle(target.image);
+                if (decodedImageHandle.isTempImage) {
+                    function(i, decodedImageHandle.index);
+                }
+            }
+        }
+    }
+}
+
+void RenderBackend::allocateTemporaryImages() {
+
+    //compute temp image usage
+    struct TempImageUsage {
+        int firstUse = std::numeric_limits<int>::max();
+        int lastUse = 0;
+    };
+    std::vector<TempImageUsage> imagesUsage(m_temporaryImages.size());
+
+    std::function<void(const int, const int)> usageLambda = [&imagesUsage](const int renderpassIndex, const int tempImageIndex) {
+        TempImageUsage& usage = imagesUsage[tempImageIndex];
+        usage.firstUse = std::min(usage.firstUse, renderpassIndex);
+        usage.lastUse = std::max(usage.lastUse, renderpassIndex);
+    };
+
+    mapOverRenderpassTempImages(usageLambda);
+
+    std::vector<int> allocatedImageLatestUsedPass(m_allocatedTempImages.size(), 0);
+
+    std::function<void(const int, const int)> allocationLambda =
+        [&imagesUsage, &allocatedImageLatestUsedPass, this](const int renderPassIndex, const int tempImageIndex) {
+
+        auto& tempImage = m_temporaryImages[tempImageIndex];
+
+        const bool isAlreadyAllocated = tempImage.allocationIndex >= 0;
+        if (isAlreadyAllocated) {
+            return;
+        }
+
+        bool foundAllocatedImage = false;
+        const TempImageUsage& usage = imagesUsage[tempImageIndex];
+
+        for (int allocatedImageIndex = 0; allocatedImageIndex < m_allocatedTempImages.size(); allocatedImageIndex++) {
+
+            int& allocatedImageLastUse = allocatedImageLatestUsedPass[allocatedImageIndex];
+            auto& allocatedImage = m_allocatedTempImages[allocatedImageIndex];
+            const bool allocatedImageAvailable = allocatedImageLastUse < renderPassIndex;
+
+            const bool requirementsMatching = imageDescriptionsMatch(tempImage.desc, allocatedImage.image.desc);
+            if (allocatedImageAvailable && requirementsMatching) {
+                tempImage.allocationIndex = allocatedImageIndex;
+                allocatedImageLastUse = usage.lastUse;
+                foundAllocatedImage = true;
+                allocatedImage.usedThisFrame = true;
+                break;
+            }
+        }
+        if (!foundAllocatedImage) {
+            std::cout << "Allocated temp image\n";
+            AllocatedTempImage allocatedImage;
+            allocatedImage.image = createImageInternal(tempImage.desc, nullptr, 0);
+            allocatedImage.usedThisFrame = true;
+            tempImage.allocationIndex = m_allocatedTempImages.size();
+            m_allocatedTempImages.push_back(allocatedImage);
+            allocatedImageLatestUsedPass.push_back(usage.lastUse);
+        }
+    };
+    mapOverRenderpassTempImages(allocationLambda);
+}
+
+void RenderBackend::resetAllocatedTempImages() {
+    for (int i = 0; i < m_allocatedTempImages.size(); i++) {
+        if (!m_allocatedTempImages[i].usedThisFrame) {
+            //delete unused image
+            std::swap(m_allocatedTempImages.back(), m_allocatedTempImages[i]);
+            vkDeviceWaitIdle(vkContext.device); //FIXME: don't use wait idle, use deferred destruction queue instead
+            destroyImageInternal(m_allocatedTempImages.back().image);
+            m_allocatedTempImages.pop_back();
+            std::cout << "Deleted unused image\n";
+        }
+        else {
+            //reset usage
+            m_allocatedTempImages[i].usedThisFrame = false;
+        }
+    }
+}
+
+void RenderBackend::updateRenderPassDescriptorSets() {
+    for (const auto& executionEntry : m_renderPassExecutions) {
+        if (executionEntry.type == RenderPassType::Graphic) {
+            const auto& execution = m_graphicPassExecutions[executionEntry.index];
+            const VkDescriptorSet descriptorSet = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
+            updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
+        }
+        else {
+            const auto& execution = m_computePassExecutions[executionEntry.index];
+            const VkDescriptorSet descriptorSet = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
+            updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
+        }
+    }
+}
+
+void RenderBackend::startGraphicPassRecording() {
+    for (const GraphicPassExecution execution : m_graphicPassExecutions) {
+
+        const RenderPassHandle passHandle = execution.genericInfo.handle;
+        const GraphicPass pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+        const Framebuffer framebuffer = m_framebuffers[execution.framebuffer.index];
+
+        VkCommandBufferInheritanceInfo inheritanceInfo;
+        inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+        inheritanceInfo.pNext = nullptr;
+        inheritanceInfo.renderPass = pass.vulkanRenderPass;
+        inheritanceInfo.subpass = 0;
+        inheritanceInfo.framebuffer = framebuffer.vkHandle;
+        inheritanceInfo.occlusionQueryEnable = false;
+        inheritanceInfo.queryFlags = 0;
+        inheritanceInfo.pipelineStatistics = 0;
+
+        VkCommandBufferBeginInfo cmdBeginInfo;
+        cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        cmdBeginInfo.pNext = nullptr;
+        cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+        cmdBeginInfo.pInheritanceInfo = &inheritanceInfo;
+
+        const int poolCount = m_drawcallCommandPools.size();
+        for (int cmdBufferIndex = 0; cmdBufferIndex < poolCount; cmdBufferIndex++) {
+            const int finalIndex = cmdBufferIndex + m_frameIndexMod2 * poolCount;
+            const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[finalIndex];
+            const auto res = vkResetCommandBuffer(meshCommandBuffer, 0);
+            assert(res == VK_SUCCESS);
+
+            //reset command buffer
+            vkBeginCommandBuffer(meshCommandBuffer, &cmdBeginInfo);
+
+            //prepare for drawcall recording
+            vkCmdBindPipeline(meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipeline);
+
+            const glm::ivec2 resolution = resolutionFromFramebufferTargets(framebuffer.desc.targets);
+
+            //set viewport
+            {
+                VkViewport viewport;
+                viewport.x = 0;
+                viewport.y = 0;
+                viewport.width = (float)resolution.x;
+                viewport.height = (float)resolution.y;
+                viewport.minDepth = 0.f;
+                viewport.maxDepth = 1.f;
+
+                vkCmdSetViewport(meshCommandBuffer, 0, 1, &viewport);
+            }
+            //set scissor
+            {
+                VkRect2D scissor;
+                scissor.offset = { 0, 0 };
+                scissor.extent.width = resolution.x;
+                scissor.extent.height = resolution.y;
+
+                vkCmdSetScissor(meshCommandBuffer, 0, 1, &scissor);
+            }
+        }
+    }
+}
+
+Image RenderBackend::createImageInternal(const ImageDescription& desc, const void* initialData, const size_t initialDataSize) {
+    const VkFormat format = imageFormatToVulkanFormat(desc.format);
+    const VkImageAspectFlagBits aspectFlag = imageFormatToVkAspectFlagBits(desc.format);
+
+    VkImageType type;
+    VkImageViewType viewType;
+    switch (desc.type) {
+    case ImageType::Type1D:     type = VK_IMAGE_TYPE_1D; viewType = VK_IMAGE_VIEW_TYPE_1D; break;
+    case ImageType::Type2D:     type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_2D; break;
+    case ImageType::Type3D:     type = VK_IMAGE_TYPE_3D; viewType = VK_IMAGE_VIEW_TYPE_3D; break;
+    case ImageType::TypeCube:   type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_CUBE; break;
+    default: throw std::runtime_error("Unsuported type enum");
+    }
+
+    uint32_t mipCount;
+    switch (desc.mipCount) {
+    case(MipCount::One): mipCount = 1; break;
+    case(MipCount::Manual): mipCount = desc.manualMipCount; break;
+    case(MipCount::FullChain): mipCount = mipCountFromResolution(desc.width, desc.height, desc.depth); break;
+    default: throw std::runtime_error("Unsuported mipCoun enum");
+    }
+
+    VkImageUsageFlags usage = 0;
+    if (bool(desc.usageFlags & ImageUsageFlags::Attachment)) {
+        const VkImageUsageFlagBits attachmentUsage = isDepthFormat(format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        usage |= attachmentUsage;
+    }
+    if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
+        usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    }
+    if (bool(desc.usageFlags & ImageUsageFlags::Storage)) {
+        usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+    }
+    if (initialDataSize > 0) {
+        usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    }
+    if (desc.autoCreateMips) {
+        usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    }
+
+    Image image;
+    image.extent.width = desc.width;
+    image.extent.height = desc.height;
+    image.extent.depth = desc.depth;
+    image.desc = desc;
+    image.format = format;
+    image.type = desc.type;
+
+    for (uint32_t i = 0; i < mipCount; i++) {
+        image.layoutPerMip.push_back(VK_IMAGE_LAYOUT_UNDEFINED);
+    }
+
+    VkImageCreateFlags flags = 0;
+    uint32_t arrayLayers = 1;
+    if (desc.type == ImageType::TypeCube) {
+        flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+        arrayLayers = 6;
+        assert(desc.width == desc.height);
+        assert(desc.depth == 1);
+    }
+
+    VkImageCreateInfo imageInfo = {};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.pNext = nullptr;
+    imageInfo.flags = flags;
+    imageInfo.imageType = type;
+    imageInfo.format = format;
+    imageInfo.extent = image.extent;
+    imageInfo.mipLevels = mipCount;
+    imageInfo.arrayLayers = arrayLayers;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = usage;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.queueFamilyIndexCount = 1;
+    imageInfo.pQueueFamilyIndices = &vkContext.queueFamilies.graphicsQueueIndex;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    auto res = vkCreateImage(vkContext.device, &imageInfo, nullptr, &image.vulkanHandle);
+    checkVulkanResult(res);
+
+    //bind memory
+    VkMemoryRequirements memoryRequirements;
+    vkGetImageMemoryRequirements(vkContext.device, image.vulkanHandle, &memoryRequirements);
+    const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &image.memory)) {
+        throw("Could not allocate image memory");
+    }
+    res = vkBindImageMemory(vkContext.device, image.vulkanHandle, image.memory.vkMemory, image.memory.offset);
+    assert(res == VK_SUCCESS);
+
+    //create image view
+    image.viewPerMip.reserve(mipCount);
+    for (uint32_t i = 0; i < mipCount; i++) {
+        const auto view = createImageView(image, viewType, i, mipCount - i, aspectFlag);
+        image.viewPerMip.push_back(view);
+    }
+
+    //fill with data
+    if (initialDataSize != 0) {
+        transferDataIntoImage(image, initialData, initialDataSize);
+    }
+
+    //generate mipmaps
+    if (desc.autoCreateMips) {
+        generateMipChain(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+
+    //most textures with sampled usage are used by the material system
+    //the material systems assumes the read_only_optimal layout
+    //if no mips are generated the layout will still be transfer_dst or undefined
+    //to avoid issues all sampled images without mip generation are manually transitioned to read_only_optimal
+    if (bool(desc.usageFlags & ImageUsageFlags::Sampled) && !desc.autoCreateMips) {
+        const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
+
+        const auto newLayoutBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
+        barriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
+
+        //end recording
+        res = vkEndCommandBuffer(transitionCmdBuffer);
+        assert(res == VK_SUCCESS);
+
+        //submit
+        VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
+
+        res = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        assert(res == VK_SUCCESS);
+
+        //cleanup
+        vkDestroyFence(vkContext.device, fence, nullptr);
+        vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &transitionCmdBuffer);
+    }
+
+    //add to global texture descriptor array, if image can be sampled
+    if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
+        if (m_globalTextureArrayDescriptorSetFreeTextureIndices.size() > 0) {
+            image.globalDescriptorSetIndex = m_globalTextureArrayDescriptorSetFreeTextureIndices.back();
+            m_globalTextureArrayDescriptorSetFreeTextureIndices.pop_back();
+        }
+        else {
+            image.globalDescriptorSetIndex = (int32_t)m_globalTextureArrayDescriptorSetTextureCount;
+            m_globalTextureArrayDescriptorSetTextureCount++;
+        }
+
+        setGlobalTextureArrayDescriptorSetTexture(image.viewPerMip[0], image.globalDescriptorSetIndex);
+    }
+    return image;
 }
 
 VkImageView RenderBackend::createImageView(const Image& image, const VkImageViewType viewType, 
@@ -2642,7 +2815,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
         }
 
-        imageInfo.imageView = m_images[resource.image.index].viewPerMip[resource.mipLevel];
+        imageInfo.imageView = getImageRef(resource.image).viewPerMip[resource.mipLevel];
         imageInfos[imageInfoIndex] = imageInfo;
         const auto writeSet = createWriteDescriptorSet(resource.binding, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 
             nullptr, &imageInfos[imageInfoIndex]);
@@ -2654,7 +2827,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
     for (const auto& resource : resources.storageImages) {
         VkDescriptorImageInfo imageInfo;
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        imageInfo.imageView = m_images[resource.image.index].viewPerMip[resource.mipLevel];
+        imageInfo.imageView = getImageRef(resource.image).viewPerMip[resource.mipLevel];
         imageInfos[imageInfoIndex] = imageInfo;
         const auto writeSet = createWriteDescriptorSet(resource.binding, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &imageInfos[imageInfoIndex]);
         imageInfoIndex++;
@@ -3138,7 +3311,7 @@ bool RenderBackend::validateAttachments(const std::vector<FramebufferTarget>& ta
 
     for (const auto attachmentDefinition : targets) {
 
-        const Image attachment = m_images[attachmentDefinition.image.index];
+        const Image& attachment = getImageRef(attachmentDefinition.image);
 
         if (!validateImageFitForFramebuffer(attachment)) {
             std::cout << failureMessagePrologue << "attachment image not fit for framebuffer\n";
@@ -3164,7 +3337,7 @@ glm::uvec2 RenderBackend::resolutionFromFramebufferTargets(const std::vector<Fra
     if (targets.size() == 0) {
         return glm::uvec2(0);
     }
-    const Image firstImage = m_images[targets[0].image.index];
+    const Image& firstImage = getImageRef(targets[0].image);
     return glm::uvec2(firstImage.extent.width, firstImage.extent.height);
 }
 
@@ -3256,7 +3429,7 @@ VkFramebuffer RenderBackend::createVulkanFramebuffer(const std::vector<Framebuff
 
     std::vector<VkImageView> views;
     for (const auto& target : targets) {
-        const auto image = m_images[target.image.index];
+        const auto& image = getImageRef(target.image);
         const auto view = image.viewPerMip[target.mipLevel];
         views.push_back(view);
     }
@@ -3662,10 +3835,12 @@ void RenderBackend::checkVulkanResult(const VkResult result) {
 #pragma warning( pop )
 
 void RenderBackend::destroyImage(const ImageHandle handle) {
-
     m_freeImageHandles.push_back(handle);
+    const Image& image = getImageRef(handle);
+    destroyImageInternal(image);
+}
 
-    const Image image = m_images[handle.index];
+void RenderBackend::destroyImageInternal(const Image& image) {
 
     if (bool(image.desc.usageFlags & ImageUsageFlags::Sampled)) {
         m_globalTextureArrayDescriptorSetFreeTextureIndices.push_back(image.globalDescriptorSetIndex);
@@ -3674,7 +3849,6 @@ void RenderBackend::destroyImage(const ImageHandle handle) {
     for (const auto& view : image.viewPerMip) {
         vkDestroyImageView(vkContext.device, view, nullptr);
     }
-
 
     //swapchain images have no manualy allocated memory
     //they are deleted by the swapchain

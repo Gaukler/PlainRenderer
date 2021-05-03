@@ -188,6 +188,7 @@ void RenderFrontend::setup(GLFWwindow* window) {
 
     gRenderBackend.newFrame();
     computeBRDFLut();
+    gRenderBackend.prepareForDrawcallRecording();
     gRenderBackend.renderFrame(false);
 }
 
@@ -216,7 +217,6 @@ void RenderFrontend::prepareNewFrame() {
         gRenderBackend.resizeImages({ m_minMaxDepthPyramid, m_depthHalfRes }, m_screenWidth / 2, m_screenHeight / 2);
 
         m_taa.resizeImages(m_screenWidth, m_screenHeight);
-        m_bloom.resizeTextures(m_screenWidth, m_screenHeight);
         m_volumetrics.resizeTextures(m_screenWidth, m_screenHeight);
         m_sdfGi.resize(m_screenWidth, m_screenHeight, m_sdfTraceSettings);
 
@@ -271,7 +271,7 @@ void RenderFrontend::prepareNewFrame() {
         drawUi();
     }
     prepareRenderpasses();
-    gRenderBackend.startDrawcallRecording();
+    gRenderBackend.prepareForDrawcallRecording();
 
     m_currentMeshCount = 0;
     m_currentMainPassDrawcallCount = 0;

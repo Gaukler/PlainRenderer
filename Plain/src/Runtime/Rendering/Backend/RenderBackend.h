@@ -158,7 +158,7 @@ public:
     void setComputePassExecution(const ComputePassExecution& execution);
 
     //prepares for mesh drawcalls, must be called after all render pass executions have been set
-    void startDrawcallRecording();
+    void prepareForDrawcallRecording();
 
     //must be called after startDrawcallRecording
     void drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData, const RenderPassHandle passHandle, const int workerIndex);
@@ -197,6 +197,11 @@ public:
     StorageBufferHandle     createStorageBuffer(const StorageBufferDescription& desc);
     SamplerHandle           createSampler(const SamplerDescription& description);
     FramebufferHandle       createFramebuffer(const FramebufferDescription& desc);
+
+    // temporary images are the preferred way to create render targets and other temp images
+    // they are valid for one frame
+    // their lifetime is automatically managed and existing images are reused where possible
+    ImageHandle createTemporaryImage(const ImageDescription& description);
 
     ImageHandle getSwapchainInputImage();
 
@@ -314,6 +319,28 @@ private:
     std::vector<Buffer>     m_uniformBuffers;
     std::vector<Buffer>     m_storageBuffers;
 
+    Image& getImageRef(const ImageHandle handle);
+
+    struct TemporaryImage {
+        ImageDescription desc;
+        int allocationIndex = -1;
+    };
+
+    void mapOverRenderpassTempImages(std::function<void(const int renderpassImage, const int tempImageIndex)> function);
+    void allocateTemporaryImages();
+    void resetAllocatedTempImages();
+    void updateRenderPassDescriptorSets();
+    void startGraphicPassRecording(); // after this drawcalls can be submitted, but no renderpass executions issued anymore
+
+    std::vector<TemporaryImage> m_temporaryImages;
+
+    struct AllocatedTempImage {
+        bool usedThisFrame = false;
+        Image image;
+    };
+
+    std::vector<AllocatedTempImage> m_allocatedTempImages;  //allocated images are shared by non-overlapping temporary images
+
     std::vector<UniformBufferFillOrder> m_deferredUniformBufferFills;
     std::vector<StorageBufferFillOrder> m_deferredStorageBufferFills;
 
@@ -324,6 +351,7 @@ private:
     VkDeviceSize m_stagingBufferSize = 1048576; //1mb
     Buffer m_stagingBuffer;
 
+    Image createImageInternal(const ImageDescription& description, const void* initialData, const size_t initialDataSize);
     VkImageView createImageView(const Image& image, const VkImageViewType viewType, const uint32_t baseMip, const uint32_t mipLevels, const VkImageAspectFlags aspectMask);
     Buffer      createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
 
@@ -504,6 +532,7 @@ private:
     =========
     */
     void destroyImage(const ImageHandle handle);
+    void destroyImageInternal(const Image& image);
     void destroyBuffer(const Buffer& buffer);
     void destroyMesh(const Mesh& mesh);
     void destroyDynamicMesh(const DynamicMesh& mesh);

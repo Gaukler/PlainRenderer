@@ -37,35 +37,30 @@ void Bloom::init(const int textureWidth, const int textureHeight) {
         desc.shaderDescription.srcPathRelative = "applyBloom.comp";
         m_applyBloomPass = gRenderBackend.createComputePass(desc);
     }
-    // bloom textures
-    {
-        ImageDescription desc;
-        desc.width = textureWidth;
-        desc.height = textureHeight;
-        desc.depth = 1;
-        desc.type = ImageType::Type2D;
-        desc.format = ImageFormat::R11G11B10_uFloat;
-        desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
-        desc.mipCount = MipCount::Manual;
-        desc.manualMipCount = bloomMipCount;
-        desc.autoCreateMips = false;
-        m_bloomUpscaleTexture = gRenderBackend.createImage(desc, nullptr, 0);
-        m_bloomDownscaleTexture = gRenderBackend.createImage(desc, nullptr, 0);
-    }
 }
 
-void Bloom::resizeTextures(const int width, const int height) {
-    gRenderBackend.resizeImages({
-        m_bloomDownscaleTexture,
-        m_bloomUpscaleTexture
-    }, width, height);
+ImageDescription getBloomImageDescription(const uint32_t width, const uint32_t height) {
+    ImageDescription desc;
+    desc.width = width;
+    desc.height = height;
+    desc.depth = 1;
+    desc.type = ImageType::Type2D;
+    desc.format = ImageFormat::R11G11B10_uFloat;
+    desc.usageFlags = ImageUsageFlags::Sampled | ImageUsageFlags::Storage;
+    desc.mipCount = MipCount::Manual;
+    desc.manualMipCount = bloomMipCount;
+    desc.autoCreateMips = false;
+    return desc;
 }
 
 void Bloom::computeBloom(const ImageHandle targetImage, const BloomSettings& settings) const {
 
-    const ImageDescription bloomImageDescription = gRenderBackend.getImageDescription(m_bloomUpscaleTexture);
+    const ImageDescription bloomImageDescription = gRenderBackend.getImageDescription(targetImage);
     const int width = bloomImageDescription.width;
     const int height = bloomImageDescription.height;
+
+    ImageDescription desc = getBloomImageDescription(width, height);
+    const ImageHandle downscaleTexture = gRenderBackend.createTemporaryImage(desc);
 
     // downscale
     for (int i = 0; i < m_bloomDownsamplePasses.size(); i++) {
@@ -75,10 +70,10 @@ void Bloom::computeBloom(const ImageHandle targetImage, const BloomSettings& set
         const int sourceMip = i;
         const int targetMip = i + 1;
 
-        const ImageHandle srcTexture = i == 0 ? targetImage : m_bloomDownscaleTexture;
+        const ImageHandle srcTexture = i == 0 ? targetImage : downscaleTexture;
 
         exe.genericInfo.resources.storageImages = {
-            ImageResource(m_bloomDownscaleTexture, targetMip, 0)
+            ImageResource(downscaleTexture, targetMip, 0)
         };
         exe.genericInfo.resources.sampledImages = {
             ImageResource(srcTexture, sourceMip, 1)
@@ -94,6 +89,9 @@ void Bloom::computeBloom(const ImageHandle targetImage, const BloomSettings& set
 
         gRenderBackend.setComputePassExecution(exe);
     }
+
+    const ImageHandle upscaleTexture = gRenderBackend.createTemporaryImage(desc);
+
     // upscale
     for (int i = 0; i < m_bloomUpsamplePasses.size(); i++) {
         ComputePassExecution exe;
@@ -103,11 +101,11 @@ void Bloom::computeBloom(const ImageHandle targetImage, const BloomSettings& set
         const int sourceMip = targetMip + 1;
 
         exe.genericInfo.resources.storageImages = {
-            ImageResource(m_bloomUpscaleTexture, targetMip, 0)
+            ImageResource(upscaleTexture, targetMip, 0)
         };
         exe.genericInfo.resources.sampledImages = {
-            ImageResource(m_bloomUpscaleTexture, sourceMip, 1),
-            ImageResource(m_bloomDownscaleTexture, sourceMip, 2)
+            ImageResource(upscaleTexture, sourceMip, 1),
+            ImageResource(downscaleTexture, sourceMip, 2)
         };
 
         const glm::ivec2 baseResolution = glm::ivec2(width, height);
@@ -131,7 +129,7 @@ void Bloom::computeBloom(const ImageHandle targetImage, const BloomSettings& set
             ImageResource(targetImage, 0, 0)
         };
         exe.genericInfo.resources.sampledImages = {
-            ImageResource(m_bloomUpscaleTexture, 0, 1)
+            ImageResource(upscaleTexture, 0, 1)
         };
 
         const int groupSize = 8;
