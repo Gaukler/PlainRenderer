@@ -18,7 +18,6 @@
 
 struct GLFWwindow;
 
-// settings are passed as specialisation constans, so they need to be encoded as ints
 struct HistogramSettings {
     float minValue;
     float maxValue;
