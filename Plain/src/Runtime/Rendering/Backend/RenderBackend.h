@@ -15,12 +15,12 @@
 struct GLFWwindow;
 
 struct Swapchain {
-    VkSurfaceKHR                    surface = VK_NULL_HANDLE;
-    VkSurfaceFormatKHR              surfaceFormat = {};
-    VkSwapchainKHR                  vulkanHandle;
-    uint32_t                        minImageCount;
-    std::vector<ImageHandle>        imageHandles;
-    VkSemaphore                     imageAvaible;
+    VkSurfaceKHR                surface = VK_NULL_HANDLE;
+    VkSurfaceFormatKHR          surfaceFormat = {};
+    VkSwapchainKHR              vulkanHandle;
+    uint32_t                    minImageCount;
+    std::vector<ImageHandle>    imageHandles;
+    VkSemaphore                 imageAvaible;
 };
 
 struct UIRenderInfo {
@@ -149,16 +149,16 @@ public:
 
     //the public create pass functions save the descriptions and create the handle, then call 
     //the internal ones for creation of actual API objects    
-    RenderPassHandle    createComputePass(const ComputePassDescription& desc);
-    RenderPassHandle    createGraphicPass(const GraphicPassDescription& desc);
+    RenderPassHandle createComputePass(const ComputePassDescription& desc);
+    RenderPassHandle createGraphicPass(const GraphicPassDescription& desc);
 
     std::vector<MeshHandle> createMeshes(const std::vector<MeshBinary>& meshes);
 
-    ImageHandle             createImage(const ImageDescription& description, const void* initialData, const size_t initialDataSize);
-    UniformBufferHandle     createUniformBuffer(const UniformBufferDescription& desc);
-    StorageBufferHandle     createStorageBuffer(const StorageBufferDescription& desc);
-    SamplerHandle           createSampler(const SamplerDescription& description);
-    FramebufferHandle       createFramebuffer(const FramebufferDescription& desc);
+    ImageHandle         createImage(const ImageDescription& description, const void* initialData, const size_t initialDataSize);
+    UniformBufferHandle createUniformBuffer(const UniformBufferDescription& desc);
+    StorageBufferHandle createStorageBuffer(const StorageBufferDescription& desc);
+    SamplerHandle       createSampler(const SamplerDescription& description);
+    FramebufferHandle   createFramebuffer(const FramebufferDescription& desc);
 
     // temporary images are the preferred way to create render targets and other temp images
     // they are valid for one frame
