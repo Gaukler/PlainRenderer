@@ -36,88 +36,6 @@ RenderBackend gRenderBackend;
 
 const uint32_t maxTextureCount = 1000;
 
-/*
-==================
-
-RenderPasses
-
-==================
-*/
-
-bool RenderPasses::isGraphicPassHandle(const RenderPassHandle handle) {
-    // checks first bit
-    const uint32_t upperBit = (uint32_t)1 << 31;
-    return handle.index & upperBit;
-}
-
-RenderPassHandle RenderPasses::addGraphicPass(const GraphicPass pass) {
-    uint32_t index = (uint32_t)m_graphicPasses.size();
-    m_graphicPasses.push_back(pass);
-    return indexToGraphicPassHandle(index);
-}
-
-RenderPassHandle RenderPasses::addComputePass(const ComputePass pass) {
-    uint32_t index = (uint32_t)m_computePasses.size();
-    m_computePasses.push_back(pass);
-    return indexToComputePassHandle(index);
-}
-
-uint32_t RenderPasses::getNGraphicPasses() {
-    return (uint32_t)m_graphicPasses.size();
-}
-
-uint32_t RenderPasses::getNComputePasses(){
-    return (uint32_t)m_computePasses.size();
-}
-
-GraphicPass& RenderPasses::getGraphicPassRefByHandle(const RenderPassHandle handle) {
-    assert(isGraphicPassHandle(handle));
-    return m_graphicPasses[graphicPassHandleToIndex(handle)];
-}
-
-ComputePass& RenderPasses::getComputePassRefByHandle(const RenderPassHandle handle) {
-    assert(!isGraphicPassHandle(handle));
-    return m_computePasses[computePassHandleToIndex(handle)];
-}
-
-GraphicPass& RenderPasses::getGraphicPassRefByIndex(const uint32_t index) {
-    return m_graphicPasses[index];
-}
-
-ComputePass& RenderPasses::getComputePassRefByIndex(const uint32_t index) {
-    return m_computePasses[index];
-}
-
-uint32_t RenderPasses::graphicPassHandleToIndex(const RenderPassHandle handle) {
-    //set first bit to 0
-    const uint32_t noUpperBit = ~(1 << 31);
-    return handle.index & noUpperBit;
-}
-
-uint32_t RenderPasses::computePassHandleToIndex(const RenderPassHandle handle) {
-    //first bit already 0, just return
-    return handle.index;
-}
-
-RenderPassHandle RenderPasses::indexToGraphicPassHandle(const uint32_t index) {
-    //set first bit to 1 and cast
-    const uint32_t upperBit = (uint32_t)1 << 31;
-    return { index | upperBit };
-}
-
-RenderPassHandle RenderPasses::indexToComputePassHandle(const uint32_t index) {
-    //first bit should already be 0, just cast
-    return { index };
-}
-
-/*
-==================
-
-RenderBackend
-
-==================
-*/
-
 //callback needs a lot of parameters which are not used
 //disable warning for this function
 #pragma warning( push )
@@ -230,10 +148,10 @@ void RenderBackend::shutdown() {
     for (const AllocatedTempImage& tempImage : m_allocatedTempImages) {
         destroyImageInternal(tempImage.image);
     }
-    for (uint32_t i = 0; i < m_renderPasses.getNGraphicPasses(); i++) {
+    for (uint32_t i = 0; i < m_renderPasses.getGraphicPassCount(); i++) {
         destroyGraphicPass(m_renderPasses.getGraphicPassRefByIndex(i));
     }
-    for (uint32_t i = 0; i < m_renderPasses.getNComputePasses(); i++) {
+    for (uint32_t i = 0; i < m_renderPasses.getComputePassCount(); i++) {
         destroyComputePass(m_renderPasses.getComputePassRefByIndex(i));
     }
     for (const auto& mesh : m_meshes) {
@@ -528,7 +446,7 @@ void RenderBackend::setGlobalDescriptorSetResources(const RenderPassResources& r
 }
 
 void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc) {
-    assert(m_renderPasses.isGraphicPassHandle(passHandle));
+    assert(getRenderPassType(passHandle) == RenderPassType::Graphic);
     GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
     pass.graphicPassDesc.shaderDescriptions = desc;
     GraphicPassShaderSpirV spirV;
@@ -543,7 +461,7 @@ void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle pa
 }
 
 void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle passHandle, const ShaderDescription& desc) {
-    assert(!m_renderPasses.isGraphicPassHandle(passHandle));
+    assert(getRenderPassType(passHandle) == RenderPassType::Compute);
     ComputePass& pass = m_renderPasses.getComputePassRefByHandle(passHandle);
     pass.computePassDesc.shaderDescription = desc;
     std::vector<uint32_t> spirV;
@@ -1252,7 +1170,7 @@ bool RenderBackend::validateFramebufferTargetGraphicPassCombination(const std::v
     const RenderPassHandle graphicPassHandle) {
 
     const std::string failureMessagePrologue = "Validation failed of framebuffertarget/renderpass combination: ";
-    if (!m_renderPasses.isGraphicPassHandle(graphicPassHandle)) {
+    if (getRenderPassType(graphicPassHandle) != RenderPassType::Graphic) {
         std::cout << failureMessagePrologue << "renderpass is not a graphic pass\n";
         return false;
     }

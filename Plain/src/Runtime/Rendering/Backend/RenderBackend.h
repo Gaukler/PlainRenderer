@@ -10,6 +10,7 @@
 #include "Runtime/Rendering/Backend/SpirvReflection.h"
 #include "Common/MeshData.h"
 #include "ShaderFileManager.h"
+#include "RenderPassManager.h"
 
 struct GLFWwindow;
 
@@ -81,8 +82,6 @@ struct VulkanRasterizationStateCreateInfo {
     VkPipelineRasterizationConservativeStateCreateInfoEXT conservativeInfo;
 };
 
-enum class RenderPassType { Graphic, Compute };
-
 struct RenderPassExecutionEntry {
     RenderPassType type;
     int index;
@@ -96,43 +95,6 @@ struct UniformBufferFillOrder {
 struct StorageBufferFillOrder {
     StorageBufferHandle buffer;
     std::vector<char> data;
-};
-
-/*
-RenderPass handles are shared between compute and graphics to allow easy dependency management in the frontend
-the first bit of the handle indicates wether a handle is a compute or graphic pass
-this class wraps the vectors and indexing to avoid having to explicitly call a translation function for every access
-e.g. passes(handleToIndex(handle))
-*/
-class RenderPasses {
-public:
-
-    bool isGraphicPassHandle(const RenderPassHandle handle);
-
-    RenderPassHandle addGraphicPass(const GraphicPass pass);
-    RenderPassHandle addComputePass(const ComputePass pass);
-
-    uint32_t getNGraphicPasses();
-    uint32_t getNComputePasses();
-
-    GraphicPass& getGraphicPassRefByHandle(const RenderPassHandle handle);
-    ComputePass& getComputePassRefByHandle(const RenderPassHandle handle);
-
-    GraphicPass& getGraphicPassRefByIndex(const uint32_t index);
-    ComputePass& getComputePassRefByIndex(const uint32_t index);
-
-private:
-    std::vector<GraphicPass> m_graphicPasses;
-    std::vector<ComputePass> m_computePasses;
-
-    //utilities
-    //renderpass handles are indices into the respective vector
-    //graphic passes have the first bit set to 1
-    
-    uint32_t graphicPassHandleToIndex(const RenderPassHandle handle);
-    uint32_t computePassHandleToIndex(const RenderPassHandle handle);
-    RenderPassHandle indexToGraphicPassHandle(const uint32_t index);
-    RenderPassHandle indexToComputePassHandle(const uint32_t index);
 };
 
 class RenderBackend {
@@ -310,7 +272,7 @@ private:
     */
     VkMemoryAllocator m_vkAllocator;
 
-    RenderPasses            m_renderPasses;
+    RenderPassManager            m_renderPasses;
     std::vector<Framebuffer>m_framebuffers;
     std::vector<Image>      m_images;
     std::vector<Mesh>       m_meshes;
