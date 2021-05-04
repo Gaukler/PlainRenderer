@@ -276,7 +276,6 @@ private:
     std::vector<Framebuffer>m_framebuffers;
     std::vector<Image>      m_images;
     std::vector<Mesh>       m_meshes;
-    std::vector<DynamicMesh>m_dynamicMeshes;
     std::vector<VkSampler>  m_samplers;
     std::vector<Buffer>     m_uniformBuffers;
     std::vector<Buffer>     m_storageBuffers;
@@ -497,7 +496,6 @@ private:
     void destroyImageInternal(const Image& image);
     void destroyBuffer(const Buffer& buffer);
     void destroyMesh(const Mesh& mesh);
-    void destroyDynamicMesh(const DynamicMesh& mesh);
     void destroyGraphicPass(const GraphicPass& pass);
     void destroyComputePass(const ComputePass& pass);
     void destroyFramebuffer(const Framebuffer& framebuffer);

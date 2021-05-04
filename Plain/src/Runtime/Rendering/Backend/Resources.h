@@ -55,13 +55,6 @@ struct Mesh {
 //reenable warning
 #pragma warning( pop )
 
-//can be updated, limited feature set
-struct DynamicMesh {
-    uint32_t    indexCount = 0;
-    Buffer      vertexBuffer;
-    Buffer      indexBuffer;
-};
-
 struct GraphicPassShaderSpirV {
     std::vector<uint32_t> vertex;
     std::vector<uint32_t> fragment;

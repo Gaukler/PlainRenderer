@@ -157,9 +157,6 @@ void RenderBackend::shutdown() {
     for (const auto& mesh : m_meshes) {
         destroyMesh(mesh);
     }
-    for (const auto& mesh : m_dynamicMeshes) {
-        destroyDynamicMesh(mesh);
-    }
     for (const auto& buffer : m_uniformBuffers) {
         destroyBuffer(buffer);
     }
@@ -3783,11 +3780,6 @@ void RenderBackend::destroyBuffer(const Buffer& buffer) {
 }
 
 void RenderBackend::destroyMesh(const Mesh& mesh) {
-    destroyBuffer(mesh.vertexBuffer);
-    destroyBuffer(mesh.indexBuffer);
-}
-
-void RenderBackend::destroyDynamicMesh(const DynamicMesh& mesh) {
     destroyBuffer(mesh.vertexBuffer);
     destroyBuffer(mesh.indexBuffer);
 }
