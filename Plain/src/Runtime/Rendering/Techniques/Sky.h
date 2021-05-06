@@ -39,8 +39,8 @@ public:
         StorageBufferHandle lightBuffer; // contains pre-exposed sun brightness
     };
 
-    // returns pass that must be waited on before sky is rendered
-    void renderSky(const FramebufferHandle framebuffer, const SkyRenderingDependencies dependencies) const;
+    void renderSky(const ImageHandle colorTarget, const ImageHandle depthTarget,
+        const SkyRenderingDependencies dependencies) const;
 
 private:
     RenderPassHandle m_skyTransmissionLutPass;

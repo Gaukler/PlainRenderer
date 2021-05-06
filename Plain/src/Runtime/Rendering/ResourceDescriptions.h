@@ -59,10 +59,15 @@ struct RenderPassExecution {
     RenderPassResources             resources;
 };
 
+struct RenderTarget {
+    ImageHandle image;
+    uint32_t mipLevel = 0;
+};
+
 //contains RenderPassExecution and additional info for graphic pass
 struct GraphicPassExecution {
     RenderPassExecution genericInfo;
-    FramebufferHandle framebuffer;
+    std::vector<RenderTarget> targets;
 };
 
 //contains RenderPassExecution and additional info for compute pass
@@ -195,14 +200,4 @@ struct GlobalShaderInfo {
     uint32_t frameIndexMod2 = 0;
     uint32_t frameIndexMod3 = 0;
     uint32_t frameIndexMod4 = 0;
-};
-
-struct FramebufferTarget {
-    ImageHandle image;
-    uint32_t mipLevel = 0;
-};
-
-struct FramebufferDescription {
-    std::vector<FramebufferTarget> targets;
-    RenderPassHandle compatibleRenderpass; //framebuffer can be used with this pass or compatible ones
 };

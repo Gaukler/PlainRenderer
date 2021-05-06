@@ -8,6 +8,4 @@ struct FrameRenderTargets {
     ImageHandle colorBuffer;
     ImageHandle motionBuffer;
     ImageHandle depthBuffer;
-    FramebufferHandle colorFramebuffer;
-    FramebufferHandle prepassFramebuffer;
 };

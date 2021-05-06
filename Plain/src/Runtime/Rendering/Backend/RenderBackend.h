@@ -158,7 +158,6 @@ public:
     UniformBufferHandle createUniformBuffer(const UniformBufferDescription& desc);
     StorageBufferHandle createStorageBuffer(const StorageBufferDescription& desc);
     SamplerHandle       createSampler(const SamplerDescription& description);
-    FramebufferHandle   createFramebuffer(const FramebufferDescription& desc);
 
     // temporary images are the preferred way to create render targets and other temp images
     // they are valid for one frame
@@ -199,15 +198,23 @@ private:
     std::vector<ComputePassExecution> m_computePassExecutions;
 
     void submitGraphicPass(const GraphicPassExecution& execution,
-        const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer);
+        const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer, const VkFramebuffer framebuffer);
 
     void submitComputePass(const ComputePassExecution& execution,
         const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer);
 
     void waitForRenderFinished();
 
-    bool validateFramebufferTargetGraphicPassCombination(const std::vector<FramebufferTarget>& targets,
-        const RenderPassHandle graphicPassHandle);
+    //framebuffer stuff
+    std::vector<VkFramebuffer> m_transientFramebuffers[2];
+
+    std::vector<VkFramebuffer> createGraphicPassFramebuffer(const std::vector<GraphicPassExecution>& execution);
+    VkFramebuffer createVulkanFramebuffer(const std::vector<RenderTarget>& targets, const VkRenderPass renderpass);
+    void destroyFramebuffer(const VkFramebuffer& framebuffer);
+
+    bool validateAttachments(const std::vector<RenderTarget>& attachments);
+    bool imageHasAttachmentUsageFlag(const Image& image);
+    glm::uvec2 getResolutionFromRenderTargets(const std::vector<RenderTarget>& targets);
 
     /*
     =========
@@ -272,8 +279,7 @@ private:
     */
     VkMemoryAllocator m_vkAllocator;
 
-    RenderPassManager            m_renderPasses;
-    std::vector<Framebuffer>m_framebuffers;
+    RenderPassManager       m_renderPasses;
     std::vector<Image>      m_images;
     std::vector<Mesh>       m_meshes;
     std::vector<VkSampler>  m_samplers;
@@ -413,12 +419,7 @@ private:
     ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
     GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
-    bool validateAttachments(const std::vector<FramebufferTarget>& attachments);
-    glm::uvec2 resolutionFromFramebufferTargets(const std::vector<FramebufferTarget>& attachments);
-
     VkRenderPass    createVulkanRenderPass(const std::vector<Attachment>& attachments);
-    VkFramebuffer   createVulkanFramebuffer(const std::vector<FramebufferTarget>& targets,
-        const VkRenderPass compatibleRenderpass);
     VkShaderModule  createShaderModule(const std::vector<uint32_t>& code);
 
     //outAdditionalInfo has to be from parent scope to keep pointers to info structs valid
@@ -498,7 +499,6 @@ private:
     void destroyMesh(const Mesh& mesh);
     void destroyGraphicPass(const GraphicPass& pass);
     void destroyComputePass(const ComputePass& pass);
-    void destroyFramebuffer(const Framebuffer& framebuffer);
 };
 
 extern RenderBackend gRenderBackend;

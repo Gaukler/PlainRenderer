@@ -79,13 +79,13 @@ private:
     void computeColorBufferHistogram(const ImageHandle lastFrameColor) const;
     void renderSunShadowCascades() const;
     void computeExposure() const;
-    void renderDepthPrepass(const FramebufferHandle framebuffer) const;
+    void renderDepthPrepass(const ImageHandle depth, const ImageHandle normal, const ImageHandle motion) const;
     void computeDepthPyramid(const ImageHandle depthBuffer) const;
     void computeSunLightMatrices() const;
     void downscaleDepth(const FrameRenderTargets& currentTarget) const;
-    void renderForwardShading(const FramebufferHandle framebuffer) const;
+    void renderForwardShading(const ImageHandle colorTarget, const ImageHandle depthTarget) const;
     void computeTonemapping(const ImageHandle& src) const;
-    void renderDebugGeometry(const FramebufferHandle framebuffer) const;
+    void renderDebugGeometry(const ImageHandle colorTarget, const ImageHandle depthTarget) const;
 
     // load multiple images, loading from disk is parallel
     // checks a map of all loaded images if it is avaible, returns existing image if possible
@@ -198,8 +198,7 @@ private:
     SamplerHandle m_sampler_nearestRepeat;
     SamplerHandle m_sampler_nearestWhiteBorder;
 
-    FramebufferHandle	m_shadowCascadeFramebuffers[4];
-    FrameRenderTargets	m_frameRenderTargets[2];
+    FrameRenderTargets m_frameRenderTargets[2];
 
     MeshHandle m_boundingBoxMesh;
 
@@ -232,9 +231,6 @@ private:
 
     void initImages();
     void initSamplers();
-
-    // must be called after initImages and initRenderpasses
-    void initFramebuffers();
 
     void initRenderTargets();
 

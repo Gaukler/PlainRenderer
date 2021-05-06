@@ -126,8 +126,3 @@ struct RenderPassBarriers {
     std::vector<VkBufferMemoryBarrier>  memoryBarriers;
     std::vector<VkImageMemoryBarrier>   imageBarriers;
 };
-
-struct Framebuffer {
-    FramebufferDescription desc; //stored for recreation after image resize
-    VkFramebuffer vkHandle;
-};

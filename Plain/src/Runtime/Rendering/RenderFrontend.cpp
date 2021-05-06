@@ -174,7 +174,6 @@ void RenderFrontend::setup(GLFWwindow* window) {
     const auto histogramSettings = createHistogramSettings();
     initBuffers(histogramSettings);
     initRenderpasses(histogramSettings);
-    initFramebuffers();
     initRenderTargets();
     initMeshs();
 
@@ -320,7 +319,7 @@ void RenderFrontend::prepareRenderpasses(){
     const FrameRenderTargets currentRenderTarget = m_frameRenderTargets[sceneRenderTargetIndex];
 
     if (m_sdfDebugSettings.visualisationMode != SDFVisualisationMode::None) {
-        renderDepthPrepass(currentRenderTarget.prepassFramebuffer);
+        renderDepthPrepass(currentRenderTarget.depthBuffer, m_worldSpaceNormalImage, currentRenderTarget.motionBuffer );
         computeDepthPyramid(currentRenderTarget.depthBuffer);
         computeColorBufferHistogram(m_postProcessBuffers[0]);
 
@@ -349,7 +348,7 @@ void RenderFrontend::prepareRenderpasses(){
     m_sky.updateTransmissionLut();
     computeExposure();
     m_sky.updateSkyLut(m_lightBuffer, m_atmosphereSettings);
-    renderDepthPrepass(currentRenderTarget.prepassFramebuffer);
+    renderDepthPrepass(currentRenderTarget.depthBuffer, m_worldSpaceNormalImage, currentRenderTarget.motionBuffer);
     computeDepthPyramid(currentRenderTarget.depthBuffer);
     computeSunLightMatrices();
     renderSunShadowCascades();
@@ -371,10 +370,10 @@ void RenderFrontend::prepareRenderpasses(){
 
     m_volumetrics.computeVolumetricLighting(m_volumetricsSettings, m_windSettings, volumetricsDependencies);
 
-    renderForwardShading(currentRenderTarget.colorFramebuffer);
+    renderForwardShading(currentRenderTarget.colorBuffer, currentRenderTarget.depthBuffer);
     RenderPassHandle skyParent = m_mainPass;
     if (m_renderBoundingBoxes) {
-        renderDebugGeometry(currentRenderTarget.colorFramebuffer);
+        renderDebugGeometry(currentRenderTarget.colorBuffer, currentRenderTarget.depthBuffer);
         skyParent = m_debugGeoPass;
     }
 
@@ -383,7 +382,7 @@ void RenderFrontend::prepareRenderpasses(){
     skyDependencies.volumetricLightingSettingsUniforms = m_volumetrics.getVolumetricsInfoBuffer();
     skyDependencies.lightBuffer = m_lightBuffer;
 
-    m_sky.renderSky(currentRenderTarget.colorFramebuffer, skyDependencies);
+    m_sky.renderSky(currentRenderTarget.colorBuffer, currentRenderTarget.depthBuffer, skyDependencies);
 
     ImageHandle currentSrc = currentRenderTarget.colorBuffer;
 
@@ -762,10 +761,12 @@ void RenderFrontend::renderSunShadowCascades() const {
     for (int i = 0; i < m_shadingConfig.sunShadowCascadeCount; i++) {
         GraphicPassExecution shadowPassExecution;
         shadowPassExecution.genericInfo.handle = m_shadowPasses[i];
-        shadowPassExecution.framebuffer = m_shadowCascadeFramebuffers[i];
         shadowPassExecution.genericInfo.resources.storageBuffers = {
             StorageBufferResource(m_sunShadowInfoBuffer, true, 0),
             StorageBufferResource(m_shadowPassTransformsBuffer, true, 1)
+        };
+        shadowPassExecution.targets = {
+            RenderTarget{ m_shadowMaps[i], 0 }
         };
 
         gRenderBackend.setGraphicPassExecution(shadowPassExecution);
@@ -788,10 +789,14 @@ void RenderFrontend::computeExposure() const {
     gRenderBackend.setComputePassExecution(preExposeLightsExecution);
 }
 
-void RenderFrontend::renderDepthPrepass(const FramebufferHandle framebuffer) const {
+void RenderFrontend::renderDepthPrepass(const ImageHandle depth, const ImageHandle normal, const ImageHandle motion) const {
     GraphicPassExecution prepassExe;
     prepassExe.genericInfo.handle = m_depthPrePass;
-    prepassExe.framebuffer = framebuffer;
+    prepassExe.targets = {
+        RenderTarget { motion, 0 },
+        RenderTarget { normal, 0 },
+        RenderTarget { depth, 0 }
+    };
     prepassExe.genericInfo.resources.storageBuffers = { StorageBufferResource(m_mainPassTransformsBuffer, true, 0) };
     gRenderBackend.setGraphicPassExecution(prepassExe);
 }
@@ -886,7 +891,7 @@ void RenderFrontend::downscaleDepth(const FrameRenderTargets& currentTarget) con
     gRenderBackend.setComputePassExecution(exe);
 }
 
-void RenderFrontend::renderForwardShading(const FramebufferHandle framebuffer) const {
+void RenderFrontend::renderForwardShading(const ImageHandle colorTarget, const ImageHandle depthTarget) const {
 
     const auto brdfLutResource = ImageResource(m_brdfLut, 0, 3);
     const auto lightBufferResource = StorageBufferResource(m_lightBuffer, true, 7);
@@ -894,7 +899,10 @@ void RenderFrontend::renderForwardShading(const FramebufferHandle framebuffer) c
 
     GraphicPassExecution mainPassExecution;
     mainPassExecution.genericInfo.handle = m_mainPass;
-    mainPassExecution.framebuffer = framebuffer;
+    mainPassExecution.targets = {
+        RenderTarget{ colorTarget, 0 },
+        RenderTarget{ depthTarget, 0 }
+    };
     mainPassExecution.genericInfo.resources.storageBuffers = { lightBufferResource, lightMatrixBuffer,
         StorageBufferResource{m_mainPassTransformsBuffer, true, 17} };
 
@@ -936,10 +944,13 @@ void RenderFrontend::computeTonemapping(const ImageHandle& src) const {
     gRenderBackend.setComputePassExecution(tonemappingExecution);
 }
 
-void RenderFrontend::renderDebugGeometry(const FramebufferHandle framebuffer) const {
+void RenderFrontend::renderDebugGeometry(const ImageHandle colorTarget, const ImageHandle depthTarget) const {
     GraphicPassExecution debugPassExecution;
     debugPassExecution.genericInfo.handle = m_debugGeoPass;
-    debugPassExecution.framebuffer = framebuffer;
+    debugPassExecution.targets = {
+        RenderTarget{ colorTarget, 0 },
+        RenderTarget{ depthTarget, 0 }
+    };
     debugPassExecution.genericInfo.resources.storageBuffers = { StorageBufferResource(m_boundingBoxDebugRenderMatrices, true, 0) };
     gRenderBackend.setGraphicPassExecution(debugPassExecution);
 }
@@ -1385,20 +1396,6 @@ void RenderFrontend::initSamplers(){
     }
 }
 
-void RenderFrontend::initFramebuffers() {
-    // shadow map framebuffers
-    for (int i = 0; i < maxSunShadowCascadeCount; i++) {
-        FramebufferTarget depthTarget;
-        depthTarget.image = m_shadowMaps[i];
-        depthTarget.mipLevel = 0;
-
-        FramebufferDescription desc;
-        desc.compatibleRenderpass = m_shadowPasses[i];
-        desc.targets = { depthTarget };
-        m_shadowCascadeFramebuffers[i] = gRenderBackend.createFramebuffer(desc);
-    }
-}
-
 void RenderFrontend::initRenderTargets() {
     for (int i = 0; i < 2; i++) {
         // motion buffer
@@ -1445,42 +1442,6 @@ void RenderFrontend::initRenderTargets() {
             desc.autoCreateMips = false;
 
             m_frameRenderTargets[i].depthBuffer = gRenderBackend.createImage(desc, nullptr, 0);
-        }
-        // color framebuffer
-        {
-            FramebufferTarget colorTarget;
-            colorTarget.image = m_frameRenderTargets[i].colorBuffer;
-            colorTarget.mipLevel = 0;
-
-            FramebufferTarget depthTarget;
-            depthTarget.image = m_frameRenderTargets[i].depthBuffer;
-            depthTarget.mipLevel = 0;
-
-            FramebufferDescription desc;
-            desc.compatibleRenderpass = m_mainPass;
-            desc.targets = { colorTarget, depthTarget };
-
-            m_frameRenderTargets[i].colorFramebuffer = gRenderBackend.createFramebuffer(desc);
-        }
-        // prepass
-        {
-            FramebufferTarget motionTarget;
-            motionTarget.image = m_frameRenderTargets[i].motionBuffer;
-            motionTarget.mipLevel = 0;
-
-            FramebufferTarget normalTarget;
-            normalTarget.image = m_worldSpaceNormalImage;
-            normalTarget.mipLevel = 0;
-
-            FramebufferTarget depthTarget;
-            depthTarget.image = m_frameRenderTargets[i].depthBuffer;
-            depthTarget.mipLevel = 0;
-
-            FramebufferDescription desc;
-            desc.compatibleRenderpass = m_depthPrePass;
-            desc.targets = { motionTarget, normalTarget, depthTarget };
-
-            m_frameRenderTargets[i].prepassFramebuffer = gRenderBackend.createFramebuffer(desc);
         }
     }
 }

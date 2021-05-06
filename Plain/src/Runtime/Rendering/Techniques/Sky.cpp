@@ -315,13 +315,17 @@ void Sky::updateSkyLut(const StorageBufferHandle lightBuffer, const AtmosphereSe
     }
 }
 
-void Sky::renderSky(const FramebufferHandle framebuffer, const SkyRenderingDependencies dependencies) const {
+void Sky::renderSky(const ImageHandle colorTarget, const ImageHandle depthTarget,
+    const SkyRenderingDependencies dependencies) const {
 
     // render skybox
     {
         GraphicPassExecution skyPassExecution;
         skyPassExecution.genericInfo.handle = m_skyPass;
-        skyPassExecution.framebuffer = framebuffer;
+        skyPassExecution.targets = {
+            RenderTarget { colorTarget, 0 },
+            RenderTarget { depthTarget, 0 }
+        };
         skyPassExecution.genericInfo.resources.sampledImages = {
             ImageResource(m_skyLut, 0, 0),
             ImageResource(dependencies.volumetricIntegrationVolume, 0, 1)
@@ -338,7 +342,10 @@ void Sky::renderSky(const FramebufferHandle framebuffer, const SkyRenderingDepen
 
         GraphicPassExecution sunSpritePassExecution;
         sunSpritePassExecution.genericInfo.handle = m_sunSpritePass;
-        sunSpritePassExecution.framebuffer = framebuffer;
+        sunSpritePassExecution.targets = {
+            RenderTarget { colorTarget, 0 },
+            RenderTarget { depthTarget, 0 }
+        };
         sunSpritePassExecution.genericInfo.resources.storageBuffers = { lightBufferResource };
         sunSpritePassExecution.genericInfo.resources.sampledImages = { transmissionLutResource };
         gRenderBackend.setGraphicPassExecution(sunSpritePassExecution);
