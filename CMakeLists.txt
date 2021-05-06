@@ -80,6 +80,7 @@ set(IMGUI_FILES
     Plain/vendor/imgui/imgui_demo.cpp
     Plain/vendor/imgui/imgui_draw.cpp
     Plain/vendor/imgui/imgui_widgets.cpp
+    Plain/vendor/imgui/imgui_tables.cpp
     Plain/vendor/imgui/backends/imgui_impl_vulkan.cpp
     Plain/vendor/imgui/backends/imgui_impl_glfw.cpp)
 target_sources(PlainRuntime PRIVATE ${IMGUI_FILES})
