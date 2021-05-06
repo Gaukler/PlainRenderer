@@ -341,7 +341,7 @@ void RenderBackend::newFrame() {
     m_temporaryImages.clear();
     resetAllocatedTempImages();
 
-    m_swapchainInputImageHandle.index = VK_NULL_HANDLE;
+    m_swapchainInputImageHandle.index = 0;
 
     m_frameIndex++;
     m_frameIndexMod2 = m_frameIndex % 2;
