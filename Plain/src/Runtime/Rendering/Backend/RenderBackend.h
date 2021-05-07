@@ -277,8 +277,6 @@ private:
     resources
     =========
     */
-    VkMemoryAllocator m_vkAllocator;
-
     std::vector<Image>      m_images;
     std::vector<Mesh>       m_meshes;
     std::vector<VkSampler>  m_samplers;

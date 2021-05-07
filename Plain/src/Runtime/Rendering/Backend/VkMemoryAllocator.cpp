@@ -4,6 +4,11 @@
 
 VulkanContext vkContext;
 
+VkMemoryAllocator& VkMemoryAllocator::getRef() {
+    static VkMemoryAllocator instance;
+    return instance;
+}
+
 bool VkMemoryPool::create(const uint32_t memoryIndex) {
     VkMemoryAllocateInfo allocateInfo = {};
     allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;

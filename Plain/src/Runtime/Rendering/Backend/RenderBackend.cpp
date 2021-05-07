@@ -103,7 +103,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_renderFinishedSemaphore = createSemaphore();
     m_renderFinishedFence = createFence();
 
-    m_vkAllocator.create();
+    VkMemoryAllocator::getRef().create();
 
     //staging buffer
     {
@@ -179,7 +179,7 @@ void RenderBackend::shutdown() {
     vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
     vkDestroySurfaceKHR(vkContext.vulkanInstance, m_swapchain.surface, nullptr);
 
-    m_vkAllocator.destroy();
+    VkMemoryAllocator::getRef().destroy();
 
     //destroy ui
     for (const auto& framebuffer : m_ui.framebuffers) {
@@ -852,7 +852,7 @@ ImageHandle RenderBackend::getSwapchainInputImage() {
 void RenderBackend::getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsedSize) const{
     assert(outAllocatedSize != nullptr);
     assert(outUsedSize != nullptr);
-    m_vkAllocator.getMemoryStats(outAllocatedSize, outUsedSize);
+    VkMemoryAllocator::getRef().getMemoryStats(outAllocatedSize, outUsedSize);
     *outAllocatedSize   += (uint32_t)m_stagingBufferSize;
     *outUsedSize        += (uint32_t)m_stagingBufferSize;
 }
@@ -2062,7 +2062,7 @@ Image RenderBackend::createImageInternal(const ImageDescription& desc, const voi
     VkMemoryRequirements memoryRequirements;
     vkGetImageMemoryRequirements(vkContext.device, image.vulkanHandle, &memoryRequirements);
     const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &image.memory)) {
+    if (!VkMemoryAllocator::getRef().allocate(memoryRequirements, memoryFlags, &image.memory)) {
         throw("Could not allocate image memory");
     }
     res = vkBindImageMemory(vkContext.device, image.vulkanHandle, image.memory.vkMemory, image.memory.offset);
@@ -2201,7 +2201,7 @@ Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::v
     //memory
     VkMemoryRequirements memoryRequirements;
     vkGetBufferMemoryRequirements(vkContext.device, buffer.vulkanHandle, &memoryRequirements);
-    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &buffer.memory)) {
+    if (!VkMemoryAllocator::getRef().allocate(memoryRequirements, memoryFlags, &buffer.memory)) {
         throw("Could not allocate buffer memory");
     }
     res = vkBindBufferMemory(vkContext.device, buffer.vulkanHandle, buffer.memory.vkMemory, buffer.memory.offset);
@@ -3711,14 +3711,14 @@ void RenderBackend::destroyImageInternal(const Image& image) {
     //they are deleted by the swapchain
     //view has to be destroyed manually though
     if (!image.isSwapchainImage) {
-        m_vkAllocator.free(image.memory);
+        VkMemoryAllocator::getRef().free(image.memory);
         vkDestroyImage(vkContext.device, image.vulkanHandle, nullptr);
     }
 }
 
 void RenderBackend::destroyBuffer(const Buffer& buffer) {
     vkDestroyBuffer(vkContext.device, buffer.vulkanHandle, nullptr);
-    m_vkAllocator.free(buffer.memory);
+    VkMemoryAllocator::getRef().free(buffer.memory);
 }
 
 void RenderBackend::destroyMesh(const Mesh& mesh) {
