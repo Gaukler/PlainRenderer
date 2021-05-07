@@ -12,11 +12,6 @@ RenderPassType getRenderPassType(const RenderPassHandle handle) {
     }
 }
 
-RenderPassManager& RenderPassManager::getRef() {
-    static RenderPassManager instance;
-    return instance;
-}
-
 RenderPassHandle RenderPassManager::addGraphicPass(const GraphicPass pass) {
     uint32_t index = (uint32_t)m_graphicPasses.size();
     m_graphicPasses.push_back(pass);

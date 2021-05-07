@@ -15,11 +15,6 @@
 #include "VulkanImageFormats.h"
 #include "Runtime/Timer.h"
 #include "JobSystem.h"
-#include "UniformBufferManager.h"
-#include "StorageBufferManager.h"
-#include "Buffer.h"
-#include "Sampler.h"
-#include "SamplerManager.h"
 
 // disable ImGui warnings
 #pragma warning( push )
@@ -108,14 +103,14 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_renderFinishedSemaphore = createSemaphore();
     m_renderFinishedFence = createFence();
 
-    VkMemoryAllocator::getRef().create();
+    m_vkAllocator.create();
 
     //staging buffer
     {
         const auto stagingBufferUsageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         const auto stagingBufferMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         const std::vector<uint32_t> stagingBufferQueueFamilies = { vkContext.queueFamilies.transferQueueFamilyIndex };
-        m_stagingBuffer = createVulkanBuffer(
+        m_stagingBuffer = createBufferInternal(
             m_stagingBufferSize, 
             stagingBufferQueueFamilies, 
             stagingBufferUsageFlags, 
@@ -153,14 +148,23 @@ void RenderBackend::shutdown() {
     for (const AllocatedTempImage& tempImage : m_allocatedTempImages) {
         destroyImageInternal(tempImage.image);
     }
-    for (uint32_t i = 0; i < RenderPassManager::getRef().getGraphicPassCount(); i++) {
-        destroyGraphicPass(RenderPassManager::getRef().getGraphicPassRefByIndex(i));
+    for (uint32_t i = 0; i < m_renderPasses.getGraphicPassCount(); i++) {
+        destroyGraphicPass(m_renderPasses.getGraphicPassRefByIndex(i));
     }
-    for (uint32_t i = 0; i < RenderPassManager::getRef().getComputePassCount(); i++) {
-        destroyComputePass(RenderPassManager::getRef().getComputePassRefByIndex(i));
+    for (uint32_t i = 0; i < m_renderPasses.getComputePassCount(); i++) {
+        destroyComputePass(m_renderPasses.getComputePassRefByIndex(i));
     }
     for (const auto& mesh : m_meshes) {
         destroyMesh(mesh);
+    }
+    for (const auto& buffer : m_uniformBuffers) {
+        destroyBuffer(buffer);
+    }
+    for (const auto& buffer : m_storageBuffers) {
+        destroyBuffer(buffer);
+    }
+    for (const auto& sampler : m_samplers) {
+        vkDestroySampler(vkContext.device, sampler, nullptr);
     }
     for (const auto& f : m_transientFramebuffers[0]) {
         destroyFramebuffer(f);
@@ -168,9 +172,6 @@ void RenderBackend::shutdown() {
     for (const auto& f : m_transientFramebuffers[1]) {
         destroyFramebuffer(f);
     }
-    UniformBufferManager::getRef().shutdown();
-    StorageBufferManager::getRef().shutdown();
-    SamplerManager::getRef().shutdown();
 
     vkDestroyDescriptorSetLayout(vkContext.device, m_globalTextureArrayDescriporSetLayout, nullptr);
 
@@ -178,7 +179,7 @@ void RenderBackend::shutdown() {
     vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
     vkDestroySurfaceKHR(vkContext.vulkanInstance, m_swapchain.surface, nullptr);
 
-    VkMemoryAllocator::getRef().destroy();
+    m_vkAllocator.destroy();
 
     //destroy ui
     for (const auto& framebuffer : m_ui.framebuffers) {
@@ -187,7 +188,7 @@ void RenderBackend::shutdown() {
     vkDestroyRenderPass(vkContext.device, m_ui.renderPass, nullptr);
     ImGui_ImplVulkan_Shutdown();
 
-    destroyVulkanBuffer(m_stagingBuffer);
+    destroyBuffer(m_stagingBuffer);
 
     for (const auto& pool : m_descriptorPools) {
         vkDestroyDescriptorPool(vkContext.device, pool.vkPool, nullptr);
@@ -273,7 +274,7 @@ void RenderBackend::updateShaderCode() {
 
     //recreate compute passes
     for (const ComputePassShaderReloadInfo& reloadInfo : computeShadersReloadInfos) {
-        ComputePass& pass = RenderPassManager::getRef().getComputePassRefByHandle(reloadInfo.renderpass);
+        ComputePass& pass = m_renderPasses.getComputePassRefByHandle(reloadInfo.renderpass);
         ComputeShaderHandle shaderHandle = pass.shaderHandle;
         destroyComputePass(pass);
         pass = createComputePassInternal(pass.computePassDesc, reloadInfo.spirV);
@@ -282,7 +283,7 @@ void RenderBackend::updateShaderCode() {
 
     //recreate graphic passes
     for (const GraphicPassShaderReloadInfo& reloadInfo : graphicShadersReloadInfos) {
-        GraphicPass& pass = RenderPassManager::getRef().getGraphicPassRefByHandle(reloadInfo.renderpass);
+        GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(reloadInfo.renderpass);
         const GraphicShadersHandle shaderHandle = pass.shaderHandle;
         destroyGraphicPass(pass);
         pass = createGraphicPassInternal(pass.graphicPassDesc, reloadInfo.spirV);
@@ -357,7 +358,7 @@ void RenderBackend::setComputePassExecution(const ComputePassExecution& executio
 }
 
 void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData,const RenderPassHandle passHandle, const int workerIndex) {
-    const GraphicPass& pass = RenderPassManager::getRef().getGraphicPassRefByHandle(passHandle);
+    const GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
 
     VkShaderStageFlags pushConstantStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     if (pass.graphicPassDesc.shaderDescriptions.geometry.has_value()) {
@@ -417,7 +418,7 @@ void RenderBackend::setGlobalDescriptorSetResources(const RenderPassResources& r
 
 void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc) {
     assert(getRenderPassType(passHandle) == RenderPassType::Graphic);
-    GraphicPass& pass = RenderPassManager::getRef().getGraphicPassRefByHandle(passHandle);
+    GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
     pass.graphicPassDesc.shaderDescriptions = desc;
     GraphicPassShaderSpirV spirV;
     if (m_shaderFileManager.loadGraphicShadersSpirV(pass.shaderHandle, &spirV)) {
@@ -432,7 +433,7 @@ void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle pa
 
 void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle passHandle, const ShaderDescription& desc) {
     assert(getRenderPassType(passHandle) == RenderPassType::Compute);
-    ComputePass& pass = RenderPassManager::getRef().getComputePassRefByHandle(passHandle);
+    ComputePass& pass = m_renderPasses.getComputePassRefByHandle(passHandle);
     pass.computePassDesc.shaderDescription = desc;
     std::vector<uint32_t> spirV;
     std::vector<char> glsl;
@@ -560,12 +561,10 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
     
     //execute deferred buffer fill orders
     for (const UniformBufferFillOrder& order : m_deferredUniformBufferFills) {
-        const auto buffer = UniformBufferManager::getRef().getUniformBufferRef(order.buffer);
-        fillBuffer(buffer, order.data.data(), order.data.size());
+        fillBuffer(m_uniformBuffers[order.buffer.index], order.data.data(), order.data.size());
     }
     for (const StorageBufferFillOrder& order : m_deferredStorageBufferFills) {
-        const auto buffer = StorageBufferManager::getRef().getStorageBufferRef(order.buffer);
-        fillBuffer(buffer, order.data.data(), order.data.size());
+        fillBuffer(m_storageBuffers[order.buffer.index], order.data.data(), order.data.size());
     }
     m_deferredUniformBufferFills.clear();
     m_deferredStorageBufferFills.clear();
@@ -653,7 +652,7 @@ RenderPassHandle RenderBackend::createComputePass(const ComputePassDescription& 
 
     ComputePass pass = createComputePassInternal(desc, spirV);
     pass.shaderHandle = shaderHandle;
-    RenderPassHandle passHandle = RenderPassManager::getRef().addComputePass(pass);
+    RenderPassHandle passHandle = m_renderPasses.addComputePass(pass);
     m_shaderFileManager.setComputePassHandle(shaderHandle, passHandle);
     return passHandle;
 }
@@ -671,7 +670,7 @@ RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& 
     //create vulkan pass and handle
     GraphicPass pass = createGraphicPassInternal(desc, spirV);
     pass.shaderHandle = shaderHandle;
-    RenderPassHandle passHandle = RenderPassManager::getRef().addGraphicPass(pass); 
+    RenderPassHandle passHandle = m_renderPasses.addGraphicPass(pass); 
     m_shaderFileManager.setGraphicPassHandle(shaderHandle, passHandle);
     return passHandle;
 }
@@ -696,7 +695,7 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
         }
 
         const VkDeviceSize indexBufferSize = meshData.indexBuffer.size() * sizeof(uint16_t);
-        mesh.indexBuffer = createVulkanBuffer(
+        mesh.indexBuffer = createBufferInternal(
             indexBufferSize, 
             queueFamilies, 
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
@@ -705,7 +704,7 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
 
         //vertex buffer
         const VkDeviceSize vertexBufferSize = meshData.vertexBuffer.size() * sizeof(uint8_t);
-        mesh.vertexBuffer = createVulkanBuffer(
+        mesh.vertexBuffer = createBufferInternal(
             vertexBufferSize, 
             queueFamilies,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
@@ -745,13 +744,16 @@ UniformBufferHandle RenderBackend::createUniformBuffer(const UniformBufferDescri
         vkContext.queueFamilies.graphicsQueueIndex,
         vkContext.queueFamilies.computeQueueIndex };
 
-    Buffer uniformBuffer = createVulkanBuffer(desc.size, queueFamilies,
+    Buffer uniformBuffer = createBufferInternal(desc.size, queueFamilies,
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     if (desc.initialData != nullptr) {
         fillBuffer(uniformBuffer, desc.initialData, desc.size);
     }
-    return UniformBufferManager::getRef().addUniformBuffer(uniformBuffer);
+
+    UniformBufferHandle handle = { (uint32_t)m_uniformBuffers.size() };
+    m_uniformBuffers.push_back(uniformBuffer);
+    return handle;
 }
 
 StorageBufferHandle RenderBackend::createStorageBuffer(const StorageBufferDescription& desc) {
@@ -761,19 +763,71 @@ StorageBufferHandle RenderBackend::createStorageBuffer(const StorageBufferDescri
         vkContext.queueFamilies.graphicsQueueIndex,
         vkContext.queueFamilies.computeQueueIndex};
 
-    Buffer storageBuffer = createVulkanBuffer(desc.size, queueFamilies,
+    Buffer storageBuffer = createBufferInternal(desc.size, queueFamilies, 
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     if (desc.initialData != nullptr) {
         fillBuffer(storageBuffer, desc.initialData, desc.size);
     }
 
-    return StorageBufferManager::getRef().addStorageBuffer(storageBuffer);
+    StorageBufferHandle handle = { (uint32_t)m_storageBuffers.size() };
+    m_storageBuffers.push_back(storageBuffer);
+    return handle;
 }
 
 SamplerHandle RenderBackend::createSampler(const SamplerDescription& desc) {
-    const VkSampler sampler = createVulkanSampler(desc);
-    return SamplerManager::getRef().addSampler(sampler);
+
+    //TODO proper min and mag filters
+    //TODO allow unnormalized coordinates
+    VkFilter filter;
+    switch (desc.interpolation) {
+    case(SamplerInterpolation::Linear): filter = VK_FILTER_LINEAR; break;
+    case(SamplerInterpolation::Nearest): filter = VK_FILTER_NEAREST; break;
+    default: throw std::runtime_error("unsupported sampler interpolation");
+    }
+
+    VkSamplerAddressMode wrapping;
+    switch (desc.wrapping) {
+    case(SamplerWrapping::Clamp): wrapping = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; break;
+    case(SamplerWrapping::Color): wrapping = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER; break;
+    case(SamplerWrapping::Repeat): wrapping = VK_SAMPLER_ADDRESS_MODE_REPEAT; break;
+    default: throw std::runtime_error("unsupported sampler wrapping mode");
+    }
+
+    VkBorderColor borderColor;
+    switch (desc.borderColor) {
+    case(SamplerBorderColor::Black): borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK; break;
+    case(SamplerBorderColor::White): borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE; break;
+    default: throw std::runtime_error("unsupported sampler border color");
+    }
+
+    VkSamplerCreateInfo samplerInfo;
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.pNext = nullptr;
+    samplerInfo.flags = 0;
+    samplerInfo.magFilter = filter;
+    samplerInfo.minFilter = filter;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.addressModeU = wrapping;
+    samplerInfo.addressModeV = wrapping;
+    samplerInfo.addressModeW = wrapping;
+    samplerInfo.mipLodBias = 0.f;
+    samplerInfo.anisotropyEnable = desc.useAnisotropy ? VK_TRUE : VK_FALSE;
+    samplerInfo.maxAnisotropy = 8.f;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_NEVER;
+    samplerInfo.minLod = 0.f;
+    samplerInfo.maxLod = (float)desc.maxMip;
+    samplerInfo.borderColor = borderColor;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+
+    VkSampler sampler;
+    const auto result = vkCreateSampler(vkContext.device, &samplerInfo, nullptr, &sampler);
+    checkVulkanResult(result);
+
+    SamplerHandle handle = { (uint32_t)m_samplers.size() };
+    m_samplers.push_back(sampler);
+    return handle;
 }
 
 ImageHandle RenderBackend::createTemporaryImage(const ImageDescription& description) {
@@ -798,7 +852,7 @@ ImageHandle RenderBackend::getSwapchainInputImage() {
 void RenderBackend::getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsedSize) const{
     assert(outAllocatedSize != nullptr);
     assert(outUsedSize != nullptr);
-    VkMemoryAllocator::getRef().getMemoryStats(outAllocatedSize, outUsedSize);
+    m_vkAllocator.getMemoryStats(outAllocatedSize, outUsedSize);
     *outAllocatedSize   += (uint32_t)m_stagingBufferSize;
     *outUsedSize        += (uint32_t)m_stagingBufferSize;
 }
@@ -949,7 +1003,7 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
         //storage buffer barriers
         for (const auto& bufferResource : resources.storageBuffers) {
         	StorageBufferHandle handle = bufferResource.buffer;
-        	Buffer& buffer = StorageBufferManager::getRef().getStorageBufferRef(handle);
+        	Buffer& buffer = m_storageBuffers[handle.index];
         	const bool needsBarrier = buffer.isBeingWritten;
         	if (needsBarrier) {
         		VkBufferMemoryBarrier barrier = createBufferBarrier(buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
@@ -990,7 +1044,7 @@ VkRenderPassBeginInfo createBeginInfo(const uint32_t width, const uint32_t heigh
 void RenderBackend::submitGraphicPass(const GraphicPassExecution& execution,
     const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer, const VkFramebuffer framebuffer) {
 
-    GraphicPass& pass = RenderPassManager::getRef().getGraphicPassRefByHandle(execution.genericInfo.handle);
+    GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle);
     startDebugLabel(commandBuffer, pass.graphicPassDesc.name);
 
     TimestampQuery timeQuery;
@@ -1031,7 +1085,7 @@ void RenderBackend::submitComputePass(const ComputePassExecution& execution,
     TimestampQuery timeQuery;
 
     //TODO: add push constants for compute passes
-    ComputePass& pass = RenderPassManager::getRef().getComputePassRefByHandle(execution.genericInfo.handle);
+    ComputePass& pass = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle);
     startDebugLabel(commandBuffer, pass.computePassDesc.name);
 
     timeQuery.name = pass.computePassDesc.name;
@@ -1069,7 +1123,7 @@ void RenderBackend::waitForRenderFinished() {
 std::vector<VkFramebuffer> RenderBackend::createGraphicPassFramebuffer(const std::vector<GraphicPassExecution>& execution) {
     std::vector<VkFramebuffer> framebuffers;
     for (const GraphicPassExecution& exe : execution) {
-        const GraphicPass pass = RenderPassManager::getRef().getGraphicPassRefByHandle(exe.genericInfo.handle);
+        const GraphicPass pass = m_renderPasses.getGraphicPassRefByHandle(exe.genericInfo.handle);
         const VkFramebuffer newFramebuffer = createVulkanFramebuffer(exe.targets, pass.vulkanRenderPass);
         framebuffers.push_back(newFramebuffer);
     }
@@ -1850,12 +1904,12 @@ void RenderBackend::updateRenderPassDescriptorSets() {
     for (const auto& executionEntry : m_renderPassExecutions) {
         if (executionEntry.type == RenderPassType::Graphic) {
             const auto& execution = m_graphicPassExecutions[executionEntry.index];
-            const VkDescriptorSet descriptorSet = RenderPassManager::getRef().getGraphicPassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
+            const VkDescriptorSet descriptorSet = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
             updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
         }
         else {
             const auto& execution = m_computePassExecutions[executionEntry.index];
-            const VkDescriptorSet descriptorSet = RenderPassManager::getRef().getComputePassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
+            const VkDescriptorSet descriptorSet = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
             updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
         }
     }
@@ -1865,7 +1919,7 @@ void RenderBackend::startGraphicPassRecording() {
     for (int i = 0; i < m_graphicPassExecutions.size(); i++) {
         const GraphicPassExecution execution = m_graphicPassExecutions[i];
         const RenderPassHandle passHandle = execution.genericInfo.handle;
-        const GraphicPass pass = RenderPassManager::getRef().getGraphicPassRefByHandle(passHandle);
+        const GraphicPass pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
 
         VkCommandBufferInheritanceInfo inheritanceInfo;
         inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
@@ -2008,7 +2062,7 @@ Image RenderBackend::createImageInternal(const ImageDescription& desc, const voi
     VkMemoryRequirements memoryRequirements;
     vkGetImageMemoryRequirements(vkContext.device, image.vulkanHandle, &memoryRequirements);
     const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    if (!VkMemoryAllocator::getRef().allocate(memoryRequirements, memoryFlags, &image.memory)) {
+    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &image.memory)) {
         throw("Could not allocate image memory");
     }
     res = vkBindImageMemory(vkContext.device, image.vulkanHandle, image.memory.vkMemory, image.memory.offset);
@@ -2110,6 +2164,50 @@ VkImageView RenderBackend::createImageView(const Image& image, const VkImageView
     checkVulkanResult(res);
 
     return view;
+}
+
+Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags) {
+
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.pNext = nullptr;
+    bufferInfo.flags = 0;
+    bufferInfo.size = size;
+    bufferInfo.usage = usage;
+
+    //find unique queue families    
+    std::vector<uint32_t> uniqueQueueFamilies;
+    for (const auto& index : queueFamilies) {
+        if (!vectorContains(uniqueQueueFamilies, index)) {
+            uniqueQueueFamilies.push_back(index);
+        }
+    }
+
+    if (queueFamilies.size() > 1) {
+        bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+    }
+    else {
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    }
+
+    bufferInfo.queueFamilyIndexCount = (uint32_t)uniqueQueueFamilies.size();
+    bufferInfo.pQueueFamilyIndices = uniqueQueueFamilies.data();
+
+    Buffer buffer;
+    buffer.size = size;
+    auto res = vkCreateBuffer(vkContext.device, &bufferInfo, nullptr, &buffer.vulkanHandle);
+    assert(res == VK_SUCCESS);
+
+    //memory
+    VkMemoryRequirements memoryRequirements;
+    vkGetBufferMemoryRequirements(vkContext.device, buffer.vulkanHandle, &memoryRequirements);
+    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &buffer.memory)) {
+        throw("Could not allocate buffer memory");
+    }
+    res = vkBindBufferMemory(vkContext.device, buffer.vulkanHandle, buffer.memory.vkMemory, buffer.memory.offset);
+    assert(res == VK_SUCCESS);
+
+    return buffer;
 }
 
 VkImageSubresourceLayers RenderBackend::createSubresourceLayers(const Image& image, const uint32_t mipLevel) {
@@ -2633,7 +2731,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
     //samplers
     for (const auto& resource : resources.samplers) {
         VkDescriptorImageInfo samplerInfo;
-        samplerInfo.sampler = SamplerManager::getRef().getSampler(resource.sampler);
+        samplerInfo.sampler = m_samplers[resource.sampler.index];
         imageInfos[imageInfoIndex] = samplerInfo;
         const auto writeSet = createWriteDescriptorSet(resource.binding, VK_DESCRIPTOR_TYPE_SAMPLER, nullptr, &imageInfos[imageInfoIndex]);
         imageInfoIndex++;
@@ -2677,7 +2775,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
 
     //uniform buffer
     for (const auto& resource : resources.uniformBuffers) {
-        const Buffer& buffer = UniformBufferManager::getRef().getUniformBufferRef(resource.buffer);
+        Buffer buffer = m_uniformBuffers[resource.buffer.index];
         VkDescriptorBufferInfo bufferInfo;
         bufferInfo.buffer = buffer.vulkanHandle;
         bufferInfo.offset = 0;
@@ -2690,7 +2788,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
 
     //storage buffer
     for (const auto& resource : resources.storageBuffers) {
-        Buffer buffer = StorageBufferManager::getRef().getStorageBufferRef(resource.buffer);
+        Buffer buffer = m_storageBuffers[resource.buffer.index];
         VkDescriptorBufferInfo bufferInfo;
         bufferInfo.buffer = buffer.vulkanHandle;
         bufferInfo.offset = 0;
@@ -3613,14 +3711,19 @@ void RenderBackend::destroyImageInternal(const Image& image) {
     //they are deleted by the swapchain
     //view has to be destroyed manually though
     if (!image.isSwapchainImage) {
-        VkMemoryAllocator::getRef().free(image.memory);
+        m_vkAllocator.free(image.memory);
         vkDestroyImage(vkContext.device, image.vulkanHandle, nullptr);
     }
 }
 
+void RenderBackend::destroyBuffer(const Buffer& buffer) {
+    vkDestroyBuffer(vkContext.device, buffer.vulkanHandle, nullptr);
+    m_vkAllocator.free(buffer.memory);
+}
+
 void RenderBackend::destroyMesh(const Mesh& mesh) {
-    destroyVulkanBuffer(mesh.vertexBuffer);
-    destroyVulkanBuffer(mesh.indexBuffer);
+    destroyBuffer(mesh.vertexBuffer);
+    destroyBuffer(mesh.indexBuffer);
 }
 
 void RenderBackend::destroyGraphicPass(const GraphicPass& pass) {

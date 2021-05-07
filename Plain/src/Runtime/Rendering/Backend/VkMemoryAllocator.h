@@ -38,9 +38,6 @@ private:
 //has a list of memory pools, if no pool can allocate the memory a new pool is created
 class VkMemoryAllocator {
 public:
-    static VkMemoryAllocator& getRef();
-    VkMemoryAllocator(const VkMemoryAllocator&) = delete;
-
     void create();
     void destroy();
 
@@ -49,7 +46,6 @@ public:
 
     void getMemoryStats(VkDeviceSize* outAllocatedSize, VkDeviceSize* outUsedSize) const;
 private:
-    VkMemoryAllocator() {};
     uint32_t findMemoryIndex(const VkMemoryPropertyFlags flags, const uint32_t memoryTypeBitsRequirement);
 
     std::vector<std::vector<VkMemoryPool>> m_memoryPoolsPerMemoryIndex;
