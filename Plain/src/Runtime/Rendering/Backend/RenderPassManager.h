@@ -15,6 +15,9 @@ e.g. passes(handleToIndex(handle))
 class RenderPassManager {
 public:
 
+    static RenderPassManager& getRef();
+    RenderPassManager(const RenderPassManager&) = delete;
+
     RenderPassHandle addGraphicPass(const GraphicPass pass);
     RenderPassHandle addComputePass(const ComputePass pass);
 
@@ -28,6 +31,7 @@ public:
     ComputePass& getComputePassRefByIndex(const uint32_t index);
 
 private:
+    RenderPassManager() {};
     std::vector<GraphicPass> m_graphicPasses;
     std::vector<ComputePass> m_computePasses;
 

@@ -279,7 +279,6 @@ private:
     */
     VkMemoryAllocator m_vkAllocator;
 
-    RenderPassManager       m_renderPasses;
     std::vector<Image>      m_images;
     std::vector<Mesh>       m_meshes;
     std::vector<VkSampler>  m_samplers;

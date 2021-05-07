@@ -148,11 +148,11 @@ void RenderBackend::shutdown() {
     for (const AllocatedTempImage& tempImage : m_allocatedTempImages) {
         destroyImageInternal(tempImage.image);
     }
-    for (uint32_t i = 0; i < m_renderPasses.getGraphicPassCount(); i++) {
-        destroyGraphicPass(m_renderPasses.getGraphicPassRefByIndex(i));
+    for (uint32_t i = 0; i < RenderPassManager::getRef().getGraphicPassCount(); i++) {
+        destroyGraphicPass(RenderPassManager::getRef().getGraphicPassRefByIndex(i));
     }
-    for (uint32_t i = 0; i < m_renderPasses.getComputePassCount(); i++) {
-        destroyComputePass(m_renderPasses.getComputePassRefByIndex(i));
+    for (uint32_t i = 0; i < RenderPassManager::getRef().getComputePassCount(); i++) {
+        destroyComputePass(RenderPassManager::getRef().getComputePassRefByIndex(i));
     }
     for (const auto& mesh : m_meshes) {
         destroyMesh(mesh);
@@ -274,7 +274,7 @@ void RenderBackend::updateShaderCode() {
 
     //recreate compute passes
     for (const ComputePassShaderReloadInfo& reloadInfo : computeShadersReloadInfos) {
-        ComputePass& pass = m_renderPasses.getComputePassRefByHandle(reloadInfo.renderpass);
+        ComputePass& pass = RenderPassManager::getRef().getComputePassRefByHandle(reloadInfo.renderpass);
         ComputeShaderHandle shaderHandle = pass.shaderHandle;
         destroyComputePass(pass);
         pass = createComputePassInternal(pass.computePassDesc, reloadInfo.spirV);
@@ -283,7 +283,7 @@ void RenderBackend::updateShaderCode() {
 
     //recreate graphic passes
     for (const GraphicPassShaderReloadInfo& reloadInfo : graphicShadersReloadInfos) {
-        GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(reloadInfo.renderpass);
+        GraphicPass& pass = RenderPassManager::getRef().getGraphicPassRefByHandle(reloadInfo.renderpass);
         const GraphicShadersHandle shaderHandle = pass.shaderHandle;
         destroyGraphicPass(pass);
         pass = createGraphicPassInternal(pass.graphicPassDesc, reloadInfo.spirV);
@@ -358,7 +358,7 @@ void RenderBackend::setComputePassExecution(const ComputePassExecution& executio
 }
 
 void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData,const RenderPassHandle passHandle, const int workerIndex) {
-    const GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+    const GraphicPass& pass = RenderPassManager::getRef().getGraphicPassRefByHandle(passHandle);
 
     VkShaderStageFlags pushConstantStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     if (pass.graphicPassDesc.shaderDescriptions.geometry.has_value()) {
@@ -418,7 +418,7 @@ void RenderBackend::setGlobalDescriptorSetResources(const RenderPassResources& r
 
 void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc) {
     assert(getRenderPassType(passHandle) == RenderPassType::Graphic);
-    GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+    GraphicPass& pass = RenderPassManager::getRef().getGraphicPassRefByHandle(passHandle);
     pass.graphicPassDesc.shaderDescriptions = desc;
     GraphicPassShaderSpirV spirV;
     if (m_shaderFileManager.loadGraphicShadersSpirV(pass.shaderHandle, &spirV)) {
@@ -433,7 +433,7 @@ void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle pa
 
 void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle passHandle, const ShaderDescription& desc) {
     assert(getRenderPassType(passHandle) == RenderPassType::Compute);
-    ComputePass& pass = m_renderPasses.getComputePassRefByHandle(passHandle);
+    ComputePass& pass = RenderPassManager::getRef().getComputePassRefByHandle(passHandle);
     pass.computePassDesc.shaderDescription = desc;
     std::vector<uint32_t> spirV;
     std::vector<char> glsl;
@@ -652,7 +652,7 @@ RenderPassHandle RenderBackend::createComputePass(const ComputePassDescription& 
 
     ComputePass pass = createComputePassInternal(desc, spirV);
     pass.shaderHandle = shaderHandle;
-    RenderPassHandle passHandle = m_renderPasses.addComputePass(pass);
+    RenderPassHandle passHandle = RenderPassManager::getRef().addComputePass(pass);
     m_shaderFileManager.setComputePassHandle(shaderHandle, passHandle);
     return passHandle;
 }
@@ -670,7 +670,7 @@ RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& 
     //create vulkan pass and handle
     GraphicPass pass = createGraphicPassInternal(desc, spirV);
     pass.shaderHandle = shaderHandle;
-    RenderPassHandle passHandle = m_renderPasses.addGraphicPass(pass); 
+    RenderPassHandle passHandle = RenderPassManager::getRef().addGraphicPass(pass); 
     m_shaderFileManager.setGraphicPassHandle(shaderHandle, passHandle);
     return passHandle;
 }
@@ -1044,7 +1044,7 @@ VkRenderPassBeginInfo createBeginInfo(const uint32_t width, const uint32_t heigh
 void RenderBackend::submitGraphicPass(const GraphicPassExecution& execution,
     const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer, const VkFramebuffer framebuffer) {
 
-    GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle);
+    GraphicPass& pass = RenderPassManager::getRef().getGraphicPassRefByHandle(execution.genericInfo.handle);
     startDebugLabel(commandBuffer, pass.graphicPassDesc.name);
 
     TimestampQuery timeQuery;
@@ -1085,7 +1085,7 @@ void RenderBackend::submitComputePass(const ComputePassExecution& execution,
     TimestampQuery timeQuery;
 
     //TODO: add push constants for compute passes
-    ComputePass& pass = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle);
+    ComputePass& pass = RenderPassManager::getRef().getComputePassRefByHandle(execution.genericInfo.handle);
     startDebugLabel(commandBuffer, pass.computePassDesc.name);
 
     timeQuery.name = pass.computePassDesc.name;
@@ -1123,7 +1123,7 @@ void RenderBackend::waitForRenderFinished() {
 std::vector<VkFramebuffer> RenderBackend::createGraphicPassFramebuffer(const std::vector<GraphicPassExecution>& execution) {
     std::vector<VkFramebuffer> framebuffers;
     for (const GraphicPassExecution& exe : execution) {
-        const GraphicPass pass = m_renderPasses.getGraphicPassRefByHandle(exe.genericInfo.handle);
+        const GraphicPass pass = RenderPassManager::getRef().getGraphicPassRefByHandle(exe.genericInfo.handle);
         const VkFramebuffer newFramebuffer = createVulkanFramebuffer(exe.targets, pass.vulkanRenderPass);
         framebuffers.push_back(newFramebuffer);
     }
@@ -1904,12 +1904,12 @@ void RenderBackend::updateRenderPassDescriptorSets() {
     for (const auto& executionEntry : m_renderPassExecutions) {
         if (executionEntry.type == RenderPassType::Graphic) {
             const auto& execution = m_graphicPassExecutions[executionEntry.index];
-            const VkDescriptorSet descriptorSet = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
+            const VkDescriptorSet descriptorSet = RenderPassManager::getRef().getGraphicPassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
             updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
         }
         else {
             const auto& execution = m_computePassExecutions[executionEntry.index];
-            const VkDescriptorSet descriptorSet = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
+            const VkDescriptorSet descriptorSet = RenderPassManager::getRef().getComputePassRefByHandle(execution.genericInfo.handle).descriptorSets[m_frameIndexMod2];
             updateDescriptorSet(descriptorSet, execution.genericInfo.resources);
         }
     }
@@ -1919,7 +1919,7 @@ void RenderBackend::startGraphicPassRecording() {
     for (int i = 0; i < m_graphicPassExecutions.size(); i++) {
         const GraphicPassExecution execution = m_graphicPassExecutions[i];
         const RenderPassHandle passHandle = execution.genericInfo.handle;
-        const GraphicPass pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+        const GraphicPass pass = RenderPassManager::getRef().getGraphicPassRefByHandle(passHandle);
 
         VkCommandBufferInheritanceInfo inheritanceInfo;
         inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
