@@ -280,7 +280,6 @@ private:
     std::vector<Image>      m_images;
     std::vector<Mesh>       m_meshes;
     std::vector<VkSampler>  m_samplers;
-    std::vector<Buffer>     m_uniformBuffers;
     std::vector<Buffer>     m_storageBuffers;
 
     Image& getImageRef(const ImageHandle handle);
@@ -317,7 +316,6 @@ private:
 
     Image createImageInternal(const ImageDescription& description, const void* initialData, const size_t initialDataSize);
     VkImageView createImageView(const Image& image, const VkImageViewType viewType, const uint32_t baseMip, const uint32_t mipLevels, const VkImageAspectFlags aspectMask);
-    Buffer      createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
 
     VkImageSubresourceLayers createSubresourceLayers(const Image& image, const uint32_t mipLevel);
 
@@ -492,7 +490,6 @@ private:
     */
     void destroyImage(const ImageHandle handle);
     void destroyImageInternal(const Image& image);
-    void destroyBuffer(const Buffer& buffer);
     void destroyMesh(const Mesh& mesh);
     void destroyGraphicPass(const GraphicPass& pass);
     void destroyComputePass(const ComputePass& pass);

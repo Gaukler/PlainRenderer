@@ -15,6 +15,8 @@
 #include "VulkanImageFormats.h"
 #include "Runtime/Timer.h"
 #include "JobSystem.h"
+#include "UniformBufferManager.h"
+#include "Buffer.h"
 
 // disable ImGui warnings
 #pragma warning( push )
@@ -110,7 +112,7 @@ void RenderBackend::setup(GLFWwindow* window) {
         const auto stagingBufferUsageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         const auto stagingBufferMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         const std::vector<uint32_t> stagingBufferQueueFamilies = { vkContext.queueFamilies.transferQueueFamilyIndex };
-        m_stagingBuffer = createBufferInternal(
+        m_stagingBuffer = createVulkanBuffer(
             m_stagingBufferSize, 
             stagingBufferQueueFamilies, 
             stagingBufferUsageFlags, 
@@ -157,11 +159,8 @@ void RenderBackend::shutdown() {
     for (const auto& mesh : m_meshes) {
         destroyMesh(mesh);
     }
-    for (const auto& buffer : m_uniformBuffers) {
-        destroyBuffer(buffer);
-    }
     for (const auto& buffer : m_storageBuffers) {
-        destroyBuffer(buffer);
+        destroyVulkanBuffer(buffer);
     }
     for (const auto& sampler : m_samplers) {
         vkDestroySampler(vkContext.device, sampler, nullptr);
@@ -172,6 +171,7 @@ void RenderBackend::shutdown() {
     for (const auto& f : m_transientFramebuffers[1]) {
         destroyFramebuffer(f);
     }
+    UniformBufferManager::getRef().shutdown();
 
     vkDestroyDescriptorSetLayout(vkContext.device, m_globalTextureArrayDescriporSetLayout, nullptr);
 
@@ -188,7 +188,7 @@ void RenderBackend::shutdown() {
     vkDestroyRenderPass(vkContext.device, m_ui.renderPass, nullptr);
     ImGui_ImplVulkan_Shutdown();
 
-    destroyBuffer(m_stagingBuffer);
+    destroyVulkanBuffer(m_stagingBuffer);
 
     for (const auto& pool : m_descriptorPools) {
         vkDestroyDescriptorPool(vkContext.device, pool.vkPool, nullptr);
@@ -561,7 +561,8 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
     
     //execute deferred buffer fill orders
     for (const UniformBufferFillOrder& order : m_deferredUniformBufferFills) {
-        fillBuffer(m_uniformBuffers[order.buffer.index], order.data.data(), order.data.size());
+        const auto buffer = UniformBufferManager::getRef().getUniformBufferRef(order.buffer);
+        fillBuffer(buffer, order.data.data(), order.data.size());
     }
     for (const StorageBufferFillOrder& order : m_deferredStorageBufferFills) {
         fillBuffer(m_storageBuffers[order.buffer.index], order.data.data(), order.data.size());
@@ -695,7 +696,7 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
         }
 
         const VkDeviceSize indexBufferSize = meshData.indexBuffer.size() * sizeof(uint16_t);
-        mesh.indexBuffer = createBufferInternal(
+        mesh.indexBuffer = createVulkanBuffer(
             indexBufferSize, 
             queueFamilies, 
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
@@ -704,7 +705,7 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
 
         //vertex buffer
         const VkDeviceSize vertexBufferSize = meshData.vertexBuffer.size() * sizeof(uint8_t);
-        mesh.vertexBuffer = createBufferInternal(
+        mesh.vertexBuffer = createVulkanBuffer(
             vertexBufferSize, 
             queueFamilies,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
@@ -744,16 +745,13 @@ UniformBufferHandle RenderBackend::createUniformBuffer(const UniformBufferDescri
         vkContext.queueFamilies.graphicsQueueIndex,
         vkContext.queueFamilies.computeQueueIndex };
 
-    Buffer uniformBuffer = createBufferInternal(desc.size, queueFamilies,
+    Buffer uniformBuffer = createVulkanBuffer(desc.size, queueFamilies,
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     if (desc.initialData != nullptr) {
         fillBuffer(uniformBuffer, desc.initialData, desc.size);
     }
-
-    UniformBufferHandle handle = { (uint32_t)m_uniformBuffers.size() };
-    m_uniformBuffers.push_back(uniformBuffer);
-    return handle;
+    return UniformBufferManager::getRef().addUniformBuffer(uniformBuffer);
 }
 
 StorageBufferHandle RenderBackend::createStorageBuffer(const StorageBufferDescription& desc) {
@@ -763,7 +761,7 @@ StorageBufferHandle RenderBackend::createStorageBuffer(const StorageBufferDescri
         vkContext.queueFamilies.graphicsQueueIndex,
         vkContext.queueFamilies.computeQueueIndex};
 
-    Buffer storageBuffer = createBufferInternal(desc.size, queueFamilies, 
+    Buffer storageBuffer = createVulkanBuffer(desc.size, queueFamilies,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     if (desc.initialData != nullptr) {
@@ -2166,50 +2164,6 @@ VkImageView RenderBackend::createImageView(const Image& image, const VkImageView
     return view;
 }
 
-Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags) {
-
-    VkBufferCreateInfo bufferInfo = {};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.pNext = nullptr;
-    bufferInfo.flags = 0;
-    bufferInfo.size = size;
-    bufferInfo.usage = usage;
-
-    //find unique queue families    
-    std::vector<uint32_t> uniqueQueueFamilies;
-    for (const auto& index : queueFamilies) {
-        if (!vectorContains(uniqueQueueFamilies, index)) {
-            uniqueQueueFamilies.push_back(index);
-        }
-    }
-
-    if (queueFamilies.size() > 1) {
-        bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-    }
-    else {
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    }
-
-    bufferInfo.queueFamilyIndexCount = (uint32_t)uniqueQueueFamilies.size();
-    bufferInfo.pQueueFamilyIndices = uniqueQueueFamilies.data();
-
-    Buffer buffer;
-    buffer.size = size;
-    auto res = vkCreateBuffer(vkContext.device, &bufferInfo, nullptr, &buffer.vulkanHandle);
-    assert(res == VK_SUCCESS);
-
-    //memory
-    VkMemoryRequirements memoryRequirements;
-    vkGetBufferMemoryRequirements(vkContext.device, buffer.vulkanHandle, &memoryRequirements);
-    if (!VkMemoryAllocator::getRef().allocate(memoryRequirements, memoryFlags, &buffer.memory)) {
-        throw("Could not allocate buffer memory");
-    }
-    res = vkBindBufferMemory(vkContext.device, buffer.vulkanHandle, buffer.memory.vkMemory, buffer.memory.offset);
-    assert(res == VK_SUCCESS);
-
-    return buffer;
-}
-
 VkImageSubresourceLayers RenderBackend::createSubresourceLayers(const Image& image, const uint32_t mipLevel) {
     VkImageSubresourceLayers layers;
     layers.aspectMask = isDepthFormat(image.format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
@@ -2775,7 +2729,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
 
     //uniform buffer
     for (const auto& resource : resources.uniformBuffers) {
-        Buffer buffer = m_uniformBuffers[resource.buffer.index];
+        const Buffer& buffer = UniformBufferManager::getRef().getUniformBufferRef(resource.buffer);
         VkDescriptorBufferInfo bufferInfo;
         bufferInfo.buffer = buffer.vulkanHandle;
         bufferInfo.offset = 0;
@@ -3716,14 +3670,9 @@ void RenderBackend::destroyImageInternal(const Image& image) {
     }
 }
 
-void RenderBackend::destroyBuffer(const Buffer& buffer) {
-    vkDestroyBuffer(vkContext.device, buffer.vulkanHandle, nullptr);
-    VkMemoryAllocator::getRef().free(buffer.memory);
-}
-
 void RenderBackend::destroyMesh(const Mesh& mesh) {
-    destroyBuffer(mesh.vertexBuffer);
-    destroyBuffer(mesh.indexBuffer);
+    destroyVulkanBuffer(mesh.vertexBuffer);
+    destroyVulkanBuffer(mesh.indexBuffer);
 }
 
 void RenderBackend::destroyGraphicPass(const GraphicPass& pass) {
