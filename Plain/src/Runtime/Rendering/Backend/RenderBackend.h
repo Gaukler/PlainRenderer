@@ -29,14 +29,14 @@ struct UIRenderInfo {
     VkRenderPass                        renderPass = VK_NULL_HANDLE;
 };
 
-//structs that are referenced by VkPipelineShaderStageCreateInfo
+// structs that are referenced by VkPipelineShaderStageCreateInfo
 struct VulkanShaderCreateAdditionalStructs {
     VkSpecializationInfo                    specialisationInfo = {};
     std::vector<VkSpecializationMapEntry>   specilisationMap;
     std::vector<char>                       specialisationData;
 };
 
-//because they are extensions they need to be acquired using vkGetDeviceProcAddr
+// because they are extensions they need to be acquired using vkGetDeviceProcAddr
 struct VulkanDebugUtilsFunctions {
     PFN_vkCmdBeginDebugUtilsLabelEXT    vkCmdBeginDebugUtilsLabelEXT    = nullptr;
     PFN_vkCmdEndDebugUtilsLabelEXT      vkCmdEndDebugUtilsLabelEXT      = nullptr;
@@ -71,9 +71,9 @@ struct TimestampQuery {
     std::string name;
 };
 
-//per pass execution time
+// per pass execution time
 struct RenderPassTime{
-    float timeMs = 0; //time in milliseconds
+    float timeMs = 0; // time in milliseconds
     std::string name;
 };
 
@@ -104,33 +104,33 @@ public:
     void shutdown();
     void recreateSwapchain(const uint32_t width, const uint32_t height, GLFWwindow* window);
 
-    //checks if any shaders are out of date, if so reloads them and reconstructs the corresponding pipeline
+    // checks if any shaders are out of date, if so reloads them and reconstructs the corresponding pipeline
     void updateShaderCode();
 
-    //multiple images must be resizable at once, as framebuffers may only be updated once all images have been resized    
+    // multiple images must be resizable at once, as framebuffers may only be updated once all images have been resized    
     void resizeImages(const std::vector<ImageHandle>& images, const uint32_t width, const uint32_t height);
 
     //old frame cleanup and new frame preparations, must be called before render pass executions can be set
     void newFrame();
 
-    //must be called after newFrame and before startDrawcallRecording
+    // must be called after newFrame and before startDrawcallRecording
     void setGraphicPassExecution(const GraphicPassExecution& execution);
 
-    //must be called after newFrame and before startDrawcallRecording
+    // must be called after newFrame and before startDrawcallRecording
     void setComputePassExecution(const ComputePassExecution& execution);
 
-    //prepares for mesh drawcalls, must be called after all render pass executions have been set
+    // prepares for mesh drawcalls, must be called after all render pass executions have been set
     void prepareForDrawcallRecording();
 
-    //must be called after startDrawcallRecording
+    // must be called after startDrawcallRecording
     void drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData, const RenderPassHandle passHandle, const int workerIndex);
 
-    //actual copy is deferred to before submitting, to avoid stalling cpu until previous frame is finished rendering
-    //results in an extra copy of data
+    // actual copy is deferred to before submitting, to avoid stalling cpu until previous frame is finished rendering
+    // results in an extra copy of data
     void setUniformBufferData(const UniformBufferHandle buffer, const void* data, const size_t size);
 
-    //actual copy is deferred to before submitting, to avoid stalling cpu until previous frame is finished rendering
-    //results in an extra copy of data
+    // actual copy is deferred to before submitting, to avoid stalling cpu until previous frame is finished rendering
+    // results in an extra copy of data
     void setStorageBufferData(const StorageBufferHandle buffer, const void* data, const size_t size);
 
     //must be set once before creating renderpasses
@@ -138,17 +138,17 @@ public:
 
     void setGlobalDescriptorSetResources(const RenderPassResources& resources);
 
-    //set path and specialisation constants, forces recompile and pipeline recreation
+    // set path and specialisation constants, forces recompile and pipeline recreation
     void updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc);
     void updateComputePassShaderDescription(const RenderPassHandle passHandle, const ShaderDescription& desc);
 
-    //actual rendering of frame using commands generated from drawMesh calls
+    // actual rendering of frame using commands generated from drawMesh calls
     void renderFrame(const bool presentToScreen);
 
     uint32_t getImageGlobalTextureArrayIndex(const ImageHandle image);
 
-    //the public create pass functions save the descriptions and create the handle, then call 
-    //the internal ones for creation of actual API objects    
+    // the public create pass functions save the descriptions and create the handle, then call 
+    // the internal ones for creation of actual API objects    
     RenderPassHandle createComputePass(const ComputePassDescription& desc);
     RenderPassHandle createGraphicPass(const GraphicPassDescription& desc);
 
@@ -205,7 +205,7 @@ private:
 
     void waitForRenderFinished();
 
-    //framebuffer stuff
+    // framebuffer stuff
     std::vector<VkFramebuffer> m_transientFramebuffers[2];
 
     std::vector<VkFramebuffer> createGraphicPassFramebuffer(const std::vector<GraphicPassExecution>& execution);
@@ -236,10 +236,10 @@ private:
     void                        createLogicalDevice();
     VkDebugReportCallbackEXT    setupDebugCallbacks();
 
-    //returns true if all family indices have been found, in that case indices are writen to QueueFamilies pointer
+    // returns true if all family indices have been found, in that case indices are writen to QueueFamilies pointer
     bool getQueueFamilies(const VkPhysicalDevice device, QueueFamilies* pOutQueueFamilies);
 
-    //debug marker use an extension and as such need to get function pointers
+    // debug marker use an extension and as such need to get function pointers
     void acquireDebugUtilsExtFunctionsPointers();
 
     VulkanDebugUtilsFunctions m_debugExtFunctions;
@@ -267,7 +267,7 @@ private:
     UIRenderInfo m_ui;
     void setupImgui(GLFWwindow* window);
 
-    //currently scheduled renderpass
+    // currently scheduled renderpass
     std::vector<RenderPassExecution>    m_framePasses;
     uint32_t                            m_swapchainInputImageIndex = 0;
     ImageHandle                         m_swapchainInputImageHandle;
@@ -277,8 +277,8 @@ private:
     resources
     =========
     */
-    std::vector<Image>      m_images;
-    std::vector<Mesh>       m_meshes;
+    std::vector<Image>  m_images;
+    std::vector<Mesh>   m_meshes;
 
     Image& getImageRef(const ImageHandle handle);
 
@@ -300,16 +300,16 @@ private:
         Image image;
     };
 
-    std::vector<AllocatedTempImage> m_allocatedTempImages;  //allocated images are shared by non-overlapping temporary images
+    std::vector<AllocatedTempImage> m_allocatedTempImages;  // allocated images are shared by non-overlapping temporary images
 
     std::vector<UniformBufferFillOrder> m_deferredUniformBufferFills;
     std::vector<StorageBufferFillOrder> m_deferredStorageBufferFills;
 
-    //freed indices
+    // freed indices
     std::vector<ImageHandle>    m_freeImageHandles;
 
-    //staging buffer
-    VkDeviceSize m_stagingBufferSize = 1048576; //1mb
+    // staging buffer
+    VkDeviceSize m_stagingBufferSize = 1048576; // 1mb
     Buffer m_stagingBuffer;
 
     Image createImageInternal(const ImageDescription& description, const void* initialData, const size_t initialDataSize);
@@ -317,11 +317,11 @@ private:
 
     VkImageSubresourceLayers createSubresourceLayers(const Image& image, const uint32_t mipLevel);
 
-    //copies data into a temporary staging buffer, then transfers data into image
+    // copies data into a temporary staging buffer, then transfers data into image
     void transferDataIntoImage(Image& target, const void* data, const VkDeviceSize size);
     void generateMipChain(Image& image, const VkImageLayout newLayout);
 
-    //fills buffer using the staging buffer
+    // fills buffer using the staging buffer
     void fillBuffer(Buffer target, const void* data, const VkDeviceSize size);
     void fillHostVisibleCoherentBuffer(Buffer target, const void* data, const VkDeviceSize size);
 
@@ -333,11 +333,11 @@ private:
 
     std::vector<VkCommandPool> m_drawcallCommandPools;
 
-    VkCommandPool   m_commandPool = VK_NULL_HANDLE;
-    VkCommandPool   m_transientCommandPool = VK_NULL_HANDLE; //used for short lived copy command buffer and such
+    VkCommandPool m_commandPool = VK_NULL_HANDLE;
+    VkCommandPool m_transientCommandPool = VK_NULL_HANDLE; // used for short lived copy command buffer and such
 
-    //primary command buffers used for all rendering
-    //two so one can be filled while the other is still rendering
+    // primary command buffers used for all rendering
+    // two so one can be filled while the other is still rendering
     VkCommandBuffer m_commandBuffers[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
 
     uint32_t m_frameIndex = 0;
@@ -347,12 +347,12 @@ private:
     VkCommandPool   createCommandPool(const uint32_t queueFamilyIndex, const VkCommandPoolCreateFlagBits flags);
     VkCommandBuffer allocateCommandBuffer(const VkCommandBufferLevel level, const VkCommandPool& pool);
 
-    //allocate and begin a one time use command buffer
-    //returned command buffer must be manually destroyed	
+    // allocate and begin a one time use command buffer
+    // returned command buffer must be manually destroyed	
     VkCommandBuffer beginOneTimeUseCommandBuffer();
 
-    //Queue recording must have been ended before
-    //returned fence must be manually destroyed
+    // Queue recording must have been ended before
+    // returned fence must be manually destroyed
     VkFence submitOneTimeUseCmdBuffer(VkCommandBuffer cmdBuffer, VkQueue queue);
 
     void startDebugLabel(const VkCommandBuffer cmdBuffer, const std::string& name);
@@ -364,39 +364,39 @@ private:
     =========
     */
     VkDescriptorSet m_globalDescriptorSet = VK_NULL_HANDLE;
-    VkDescriptorSetLayout m_globalDescriptorSetLayout = VK_NULL_HANDLE;    //contains global info, always bound to set 0
+    VkDescriptorSetLayout m_globalDescriptorSetLayout = VK_NULL_HANDLE;    // contains global info, always bound to set 0
 
-    //discriptor pools are added as existing ones run out
+    // discriptor pools are added as existing ones run out
     std::vector<DescriptorPool> m_descriptorPools;
 
-    //the imgui pool is just passed to the library, no need for allocation counting
+    // the imgui pool is just passed to the library, no need for allocation counting
     VkDescriptorPool m_imguiDescriptorPool = VK_NULL_HANDLE;
 
-    //imgui requires a single sizeable pool, so it's handled separately
+    // imgui requires a single sizeable pool, so it's handled separately
     void createImguiDescriptorPool();
 
-    //create pool using m_descriptorPoolInitialAllocationSizes and add to m_descriptorPools
+    // create pool using m_descriptorPoolInitialAllocationSizes and add to m_descriptorPools
     void createDescriptorPool();
 
-    //how many types of descriptors are allocated from a new pool
+    // how many types of descriptors are allocated from a new pool
     const DescriptorPoolAllocationSizes m_descriptorPoolInitialAllocationSizes = {
-        128, //set count
-        128, //imageSampled
-        128, //imageStorage
-        128, //uniformBuffer
-        128, //storageBuffer
-        128  //sampler
+        128, // set count
+        128, // imageSampled
+        128, // imageStorage
+        128, // uniformBuffer
+        128, // storageBuffer
+        128  // sampler
     };
 
     DescriptorPoolAllocationSizes descriptorSetAllocationSizeFromShaderLayout(const ShaderLayout& layout);
 
-    //creates new descriptor pool if needed
-    //currently now way to free descriptor set
+    // creates new descriptor pool if needed
+    // currently now way to free descriptor set
     VkDescriptorSet         allocateDescriptorSet(const VkDescriptorSetLayout setLayout, const DescriptorPoolAllocationSizes& requiredSizes);
     void                    updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources);
     VkDescriptorSetLayout   createDescriptorSetLayout(const ShaderLayout& shaderLayout);
 
-    //isGraphicsPass controls if the push constant range is setup for the MVP matrix    
+    // isGraphicsPass controls if the push constant range is setup for the MVP matrix    
     VkPipelineLayout        createPipelineLayout(const VkDescriptorSetLayout setLayout, const size_t pushConstantSize,
         const VkShaderStageFlags stageFlags);
 
@@ -407,15 +407,15 @@ private:
     =========
     */
 
-    //actual creation of internal objects
-    //split from public function to allow use when reloading shader	
+    // actual creation of internal objects
+    // split from public function to allow use when reloading shader	
     ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
     GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
     VkRenderPass    createVulkanRenderPass(const std::vector<Attachment>& attachments);
     VkShaderModule  createShaderModule(const std::vector<uint32_t>& code);
 
-    //outAdditionalInfo has to be from parent scope to keep pointers to info structs valid
+    // outAdditionalInfo has to be from parent scope to keep pointers to info structs valid
     VkPipelineShaderStageCreateInfo         createPipelineShaderStageInfos(const VkShaderModule module, const VkShaderStageFlagBits stage,
         const std::vector<SpecialisationConstant>& specialisationInfo, VulkanShaderCreateAdditionalStructs* outAdditionalInfo);
     VkPipelineInputAssemblyStateCreateInfo  createDefaultInputAssemblyInfo();
@@ -425,16 +425,16 @@ private:
     VkPipelineMultisampleStateCreateInfo    createDefaultMultisamplingInfo();
     VkPipelineDepthStencilStateCreateInfo   createDepthStencilState(const DepthTest& depthTest);
 
-    //renderpass creation utilities    
+    // renderpass creation utilities    
     bool isDepthFormat(VkFormat format);
     bool isDepthFormat(ImageFormat format);
 
-    //renderpass barriers    
+    // renderpass barriers    
     void barriersCommand(const VkCommandBuffer commandBuffer, const std::vector<VkImageMemoryBarrier>& imageBarriers, const std::vector<VkBufferMemoryBarrier>& memoryBarriers);
 
-    //create necessary image barriers
-    //multiple barriers may be needed, as mip levels may have differing layouts
-    //sets image.layout to newLayout, image.currentAccess to dstAccess and image.currentlyWriting to false
+    // create necessary image barriers
+    // multiple barriers may be needed, as mip levels may have differing layouts
+    // sets image.layout to newLayout, image.currentAccess to dstAccess and image.currentlyWriting to false
     std::vector<VkImageMemoryBarrier> createImageBarriers(Image& image, const VkImageLayout newLayout,
         const VkAccessFlags dstAccess, const uint32_t baseMip, const uint32_t mipLevels);
 
@@ -453,26 +453,26 @@ private:
     VkFence     createFence();
 
 
-    //timestamp queries
+    // timestamp queries
     const uint32_t m_timestampQueryPoolQueryCount = 100;
 
-    //two pools to allow reset and usage of one while the other is rendered by gpu
+    // two pools to allow reset and usage of one while the other is rendered by gpu
     VkQueryPool m_timestampQueryPools[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
 
     float m_nanosecondsPerTimestamp = 1.f;
 
-    //one count for each frame in flight
+    // one count for each frame in flight
     uint32_t m_timestampQueryCounts[2] = { 0, 0 };
 
     std::vector<TimestampQuery> m_timestampQueriesPerFrame[2];	//one query list per frame in flight
     std::vector<RenderPassTime> m_renderpassTimings;
 
-    //must be called in an active command buffer
-    //issues vulkan timestamp query and increments timestamp query counter
-    //returns query index
+    // must be called in an active command buffer
+    // issues vulkan timestamp query and increments timestamp query counter
+    // returns query index
     uint32_t issueTimestampQuery(const VkCommandBuffer cmdBuffer, const int poolIndex);
 
-    //does not handle queryType VK_QUERY_TYPE_PIPELINE_STATISTICS 
+    // does not handle queryType VK_QUERY_TYPE_PIPELINE_STATISTICS 
     VkQueryPool createQueryPool(const VkQueryType queryType, const uint32_t queryCount);
     void resetTimestampQueryPool(const int poolIndex);
 
