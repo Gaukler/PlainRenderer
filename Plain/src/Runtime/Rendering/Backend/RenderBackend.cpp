@@ -16,6 +16,7 @@
 #include "Runtime/Timer.h"
 #include "JobSystem.h"
 #include "UniformBufferManager.h"
+#include "StorageBufferManager.h"
 #include "Buffer.h"
 
 // disable ImGui warnings
@@ -159,9 +160,6 @@ void RenderBackend::shutdown() {
     for (const auto& mesh : m_meshes) {
         destroyMesh(mesh);
     }
-    for (const auto& buffer : m_storageBuffers) {
-        destroyVulkanBuffer(buffer);
-    }
     for (const auto& sampler : m_samplers) {
         vkDestroySampler(vkContext.device, sampler, nullptr);
     }
@@ -172,6 +170,7 @@ void RenderBackend::shutdown() {
         destroyFramebuffer(f);
     }
     UniformBufferManager::getRef().shutdown();
+    StorageBufferManager::getRef().shutdown();
 
     vkDestroyDescriptorSetLayout(vkContext.device, m_globalTextureArrayDescriporSetLayout, nullptr);
 
@@ -565,7 +564,8 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
         fillBuffer(buffer, order.data.data(), order.data.size());
     }
     for (const StorageBufferFillOrder& order : m_deferredStorageBufferFills) {
-        fillBuffer(m_storageBuffers[order.buffer.index], order.data.data(), order.data.size());
+        const auto buffer = StorageBufferManager::getRef().getStorageBufferRef(order.buffer);
+        fillBuffer(buffer, order.data.data(), order.data.size());
     }
     m_deferredUniformBufferFills.clear();
     m_deferredStorageBufferFills.clear();
@@ -768,9 +768,7 @@ StorageBufferHandle RenderBackend::createStorageBuffer(const StorageBufferDescri
         fillBuffer(storageBuffer, desc.initialData, desc.size);
     }
 
-    StorageBufferHandle handle = { (uint32_t)m_storageBuffers.size() };
-    m_storageBuffers.push_back(storageBuffer);
-    return handle;
+    return StorageBufferManager::getRef().addStorageBuffer(storageBuffer);
 }
 
 SamplerHandle RenderBackend::createSampler(const SamplerDescription& desc) {
@@ -1001,7 +999,7 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
         //storage buffer barriers
         for (const auto& bufferResource : resources.storageBuffers) {
         	StorageBufferHandle handle = bufferResource.buffer;
-        	Buffer& buffer = m_storageBuffers[handle.index];
+        	Buffer& buffer = StorageBufferManager::getRef().getStorageBufferRef(handle);
         	const bool needsBarrier = buffer.isBeingWritten;
         	if (needsBarrier) {
         		VkBufferMemoryBarrier barrier = createBufferBarrier(buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
@@ -2742,7 +2740,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
 
     //storage buffer
     for (const auto& resource : resources.storageBuffers) {
-        Buffer buffer = m_storageBuffers[resource.buffer.index];
+        Buffer buffer = StorageBufferManager::getRef().getStorageBufferRef(resource.buffer);
         VkDescriptorBufferInfo bufferInfo;
         bufferInfo.buffer = buffer.vulkanHandle;
         bufferInfo.offset = 0;

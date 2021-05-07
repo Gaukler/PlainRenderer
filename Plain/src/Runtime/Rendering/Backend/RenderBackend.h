@@ -280,7 +280,6 @@ private:
     std::vector<Image>      m_images;
     std::vector<Mesh>       m_meshes;
     std::vector<VkSampler>  m_samplers;
-    std::vector<Buffer>     m_storageBuffers;
 
     Image& getImageRef(const ImageHandle handle);
 
