@@ -32,3 +32,4 @@ struct ImageDescription {
 //result is a float because compressed formats can have less than one byte per pixel
 float getImageFormatBytePerPixel(const ImageFormat format);
 bool getImageFormatIsBCnCompressed(const ImageFormat format);
+bool isDepthFormat(ImageFormat format);

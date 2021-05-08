@@ -15,6 +15,7 @@
 #include "VulkanImageFormats.h"
 #include "Runtime/Timer.h"
 #include "JobSystem.h"
+#include "VulkanImage.h"
 
 // disable ImGui warnings
 #pragma warning( push )
@@ -963,7 +964,7 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
                 Image& image = getImageRef(target.image);
 
             //check if any mip levels need a layout transition                
-            const VkImageLayout requiredLayout = isDepthFormat(image.format) ?
+            const VkImageLayout requiredLayout = isVulkanDepthFormat(image.format) ?
                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
             bool needsLayoutTransition = false;
@@ -974,7 +975,7 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
             }
 
             if (image.currentlyWriting || needsLayoutTransition) {
-                const VkAccessFlags access = isDepthFormat(image.format) ?
+                const VkAccessFlags access = isVulkanDepthFormat(image.format) ?
                     VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
                 const auto& layoutBarriers = createImageBarriers(image, requiredLayout, access, 0,
@@ -1173,14 +1174,14 @@ bool RenderBackend::validateAttachments(const std::vector<RenderTarget>& targets
         }
 
         const bool isResolutionMatching =
-            attachment.extent.width == resolution.x ||
-            attachment.extent.height == resolution.y;
+            attachment.desc.width  == resolution.x ||
+            attachment.desc.height == resolution.y;
         if (!isResolutionMatching) {
             std::cout << failureMessagePrologue << "image resolutions not matching\n";
             return false;
         }
 
-        const bool isAttachment2D = attachment.extent.depth == 1;
+        const bool isAttachment2D = attachment.desc.depth == 1;
         if (!isAttachment2D) {
             std::cout << failureMessagePrologue << "image depth not 1, 2D image required for framebuffer\n";
             return false;
@@ -1199,7 +1200,7 @@ glm::uvec2 RenderBackend::getResolutionFromRenderTargets(const std::vector<Rende
         return glm::uvec2(0);
     }
     const Image& firstImage = getImageRef(targets[0].image);
-    return glm::uvec2(firstImage.extent.width, firstImage.extent.height);
+    return glm::uvec2(firstImage.desc.width, firstImage.desc.height);
 }
 
 void RenderBackend::createSurface(GLFWwindow* window) {
@@ -1305,11 +1306,12 @@ void RenderBackend::getSwapchainImages(const uint32_t width, const uint32_t heig
         Image image;
         image.isSwapchainImage = true;
         image.vulkanHandle = vulkanImage;
-        image.extent.width = width;
-        image.extent.height = height;
-        image.extent.depth = 1;
+        image.desc.width = width;
+        image.desc.height = height;
+        image.desc.depth = 1;
         image.format = m_swapchain.surfaceFormat.format;
-        image.viewPerMip.push_back(createImageView(image, VK_IMAGE_VIEW_TYPE_2D, 0, 1, VK_IMAGE_ASPECT_COLOR_BIT));
+        image.desc.type = ImageType::Type2D;
+        image.viewPerMip.push_back(createImageView(image, 0, 1));
         image.layoutPerMip.push_back(VK_IMAGE_LAYOUT_UNDEFINED);
 
         if (m_freeImageHandles.size() > 0) {
@@ -1398,8 +1400,8 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
 
     //create framebuffers
     VkExtent2D extent;
-    extent.width  = m_images[m_swapchain.imageHandles[0].index].extent.width;
-    extent.height = m_images[m_swapchain.imageHandles[0].index].extent.height;
+    extent.width  = m_images[m_swapchain.imageHandles[0].index].desc.width;
+    extent.height = m_images[m_swapchain.imageHandles[0].index].desc.height;
     for (const auto& imageHandle : m_swapchain.imageHandles) {
         RenderTarget uiTarget;
         uiTarget.image = imageHandle;
@@ -1634,191 +1636,86 @@ void RenderBackend::startGraphicPassRecording() {
 
 Image RenderBackend::createImageInternal(const ImageDescription& desc, const void* initialData, const size_t initialDataSize) {
     const VkFormat format = imageFormatToVulkanFormat(desc.format);
-    const VkImageAspectFlagBits aspectFlag = imageFormatToVkAspectFlagBits(desc.format);
-
-    VkImageType type;
-    VkImageViewType viewType;
-    switch (desc.type) {
-    case ImageType::Type1D:     type = VK_IMAGE_TYPE_1D; viewType = VK_IMAGE_VIEW_TYPE_1D; break;
-    case ImageType::Type2D:     type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_2D; break;
-    case ImageType::Type3D:     type = VK_IMAGE_TYPE_3D; viewType = VK_IMAGE_VIEW_TYPE_3D; break;
-    case ImageType::TypeCube:   type = VK_IMAGE_TYPE_2D; viewType = VK_IMAGE_VIEW_TYPE_CUBE; break;
-    default: throw std::runtime_error("Unsuported type enum");
-    }
-
-    uint32_t mipCount;
-    switch (desc.mipCount) {
-    case(MipCount::One): mipCount = 1; break;
-    case(MipCount::Manual): mipCount = desc.manualMipCount; break;
-    case(MipCount::FullChain): mipCount = mipCountFromResolution(desc.width, desc.height, desc.depth); break;
-    default: throw std::runtime_error("Unsuported mipCoun enum");
-    }
-
-    VkImageUsageFlags usage = 0;
-    if (bool(desc.usageFlags & ImageUsageFlags::Attachment)) {
-        const VkImageUsageFlagBits attachmentUsage = isDepthFormat(format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        usage |= attachmentUsage;
-    }
-    if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
-        usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    }
-    if (bool(desc.usageFlags & ImageUsageFlags::Storage)) {
-        usage |= VK_IMAGE_USAGE_STORAGE_BIT;
-    }
-    if (initialDataSize > 0) {
-        usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    }
-    if (desc.autoCreateMips) {
-        usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    }
+    const uint32_t mipCount = computeImageMipCount(desc);
+    const bool bFillImageWithData = initialDataSize > 0;
 
     Image image;
-    image.extent.width = desc.width;
-    image.extent.height = desc.height;
-    image.extent.depth = desc.depth;
     image.desc = desc;
     image.format = format;
-    image.type = desc.type;
+    image.layoutPerMip = createInitialImageLayouts(mipCount);
+    image.vulkanHandle = createVulkanImage(desc, bFillImageWithData);
+    image.memory = allocateImageMemory(image.vulkanHandle);
+    image.viewPerMip = createImageViews(image, mipCount);
 
-    for (uint32_t i = 0; i < mipCount; i++) {
-        image.layoutPerMip.push_back(VK_IMAGE_LAYOUT_UNDEFINED);
-    }
-
-    VkImageCreateFlags flags = 0;
-    uint32_t arrayLayers = 1;
-    if (desc.type == ImageType::TypeCube) {
-        flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-        arrayLayers = 6;
-        assert(desc.width == desc.height);
-        assert(desc.depth == 1);
-    }
-
-    VkImageCreateInfo imageInfo = {};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.pNext = nullptr;
-    imageInfo.flags = flags;
-    imageInfo.imageType = type;
-    imageInfo.format = format;
-    imageInfo.extent = image.extent;
-    imageInfo.mipLevels = mipCount;
-    imageInfo.arrayLayers = arrayLayers;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = usage;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.queueFamilyIndexCount = 1;
-    imageInfo.pQueueFamilyIndices = &vkContext.queueFamilies.graphicsQueueIndex;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-    auto res = vkCreateImage(vkContext.device, &imageInfo, nullptr, &image.vulkanHandle);
-    checkVulkanResult(res);
-
-    //bind memory
-    VkMemoryRequirements memoryRequirements;
-    vkGetImageMemoryRequirements(vkContext.device, image.vulkanHandle, &memoryRequirements);
-    const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &image.memory)) {
-        throw("Could not allocate image memory");
-    }
-    res = vkBindImageMemory(vkContext.device, image.vulkanHandle, image.memory.vkMemory, image.memory.offset);
-    assert(res == VK_SUCCESS);
-
-    //create image view
-    image.viewPerMip.reserve(mipCount);
-    for (uint32_t i = 0; i < mipCount; i++) {
-        const auto view = createImageView(image, viewType, i, mipCount - i, aspectFlag);
-        image.viewPerMip.push_back(view);
-    }
-
-    //fill with data
-    if (initialDataSize != 0) {
+    if (bFillImageWithData) {
         transferDataIntoImage(image, initialData, initialDataSize);
     }
-
-    //generate mipmaps
     if (desc.autoCreateMips) {
         generateMipChain(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
 
-    //most textures with sampled usage are used by the material system
-    //the material systems assumes the read_only_optimal layout
-    //if no mips are generated the layout will still be transfer_dst or undefined
-    //to avoid issues all sampled images without mip generation are manually transitioned to read_only_optimal
-    if (bool(desc.usageFlags & ImageUsageFlags::Sampled) && !desc.autoCreateMips) {
-        const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
-
-        const auto newLayoutBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
-        barriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
-
-        //end recording
-        res = vkEndCommandBuffer(transitionCmdBuffer);
-        assert(res == VK_SUCCESS);
-
-        //submit
-        VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
-
-        res = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        assert(res == VK_SUCCESS);
-
-        //cleanup
-        vkDestroyFence(vkContext.device, fence, nullptr);
-        vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &transitionCmdBuffer);
+    // most textures with sampled usage are used by the material system
+    // the material systems assumes the read_only_optimal layout
+    // if no mips are generated the layout will still be transfer_dst or undefined
+    // to avoid issues all sampled images without mip generation are manually transitioned to read_only_optimal
+    const bool manualLayoutTransitionRequired = bool(desc.usageFlags & ImageUsageFlags::Sampled) && !desc.autoCreateMips;
+    if (manualLayoutTransitionRequired) {
+        manualImageLayoutTransition(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
 
-    //add to global texture descriptor array, if image can be sampled
-    if (bool(desc.usageFlags & ImageUsageFlags::Sampled)) {
-        if (m_globalTextureArrayDescriptorSetFreeTextureIndices.size() > 0) {
-            image.globalDescriptorSetIndex = m_globalTextureArrayDescriptorSetFreeTextureIndices.back();
-            m_globalTextureArrayDescriptorSetFreeTextureIndices.pop_back();
-        }
-        else {
-            image.globalDescriptorSetIndex = (int32_t)m_globalTextureArrayDescriptorSetTextureCount;
-            m_globalTextureArrayDescriptorSetTextureCount++;
-        }
-
-        setGlobalTextureArrayDescriptorSetTexture(image.viewPerMip[0], image.globalDescriptorSetIndex);
+    const bool imageCanBeSampled = bool(desc.usageFlags & ImageUsageFlags::Sampled);
+    if (imageCanBeSampled) {
+        addImageToGlobalDescriptorSetLayout(image);
     }
     return image;
 }
 
-VkImageView RenderBackend::createImageView(const Image& image, const VkImageViewType viewType, 
-    const uint32_t baseMip, const uint32_t mipLevels, const VkImageAspectFlags aspectMask) {
+void RenderBackend::manualImageLayoutTransition(Image& image, const VkImageLayout newLayout) {
 
-    VkImageViewCreateInfo viewInfo = {};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.pNext = nullptr;
-    viewInfo.flags = 0;
-    viewInfo.image = image.vulkanHandle;
-    viewInfo.viewType = viewType;
-    viewInfo.format = image.format;
+    const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
+    const auto newLayoutBarriers = createImageBarriers(image, newLayout,
+        VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
+    barriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
 
-    VkComponentMapping components = {};
-    components.r = VK_COMPONENT_SWIZZLE_R;
-    components.g = VK_COMPONENT_SWIZZLE_G;
-    components.b = VK_COMPONENT_SWIZZLE_B;
-    components.a = VK_COMPONENT_SWIZZLE_A;
-
-    viewInfo.components = components;
-    uint32_t layerCount = 1;
-    if (viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
-        layerCount = 6;
-    }
-
-    VkImageSubresourceRange subresource = {};
-    subresource.aspectMask = aspectMask;
-    subresource.baseMipLevel = baseMip;
-    subresource.levelCount = mipLevels;
-    subresource.baseArrayLayer = 0;
-    subresource.layerCount = layerCount;
-
-    viewInfo.subresourceRange = subresource;
-
-    VkImageView view;
-    auto res = vkCreateImageView(vkContext.device, &viewInfo, nullptr, &view);
+    auto res = vkEndCommandBuffer(transitionCmdBuffer);
     checkVulkanResult(res);
 
-    return view;
+    VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
+
+    res = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    checkVulkanResult(res);
+
+    vkDestroyFence(vkContext.device, fence, nullptr);
+    vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &transitionCmdBuffer);
+}
+
+void RenderBackend::addImageToGlobalDescriptorSetLayout(Image& image) {
+    const bool isFreeIndexAvailable = m_globalTextureArrayDescriptorSetFreeTextureIndices.size() > 0;
+    if (isFreeIndexAvailable) {
+        image.globalDescriptorSetIndex = m_globalTextureArrayDescriptorSetFreeTextureIndices.back();
+        m_globalTextureArrayDescriptorSetFreeTextureIndices.pop_back();
+    }
+    else {
+        image.globalDescriptorSetIndex = (int32_t)m_globalTextureArrayDescriptorSetTextureCount;
+        m_globalTextureArrayDescriptorSetTextureCount++;
+    }
+    setGlobalTextureArrayDescriptorSetTexture(image.viewPerMip[0], image.globalDescriptorSetIndex);
+}
+
+VulkanAllocation RenderBackend::allocateImageMemory(const VkImage image) {
+    VkMemoryRequirements memoryRequirements;
+    vkGetImageMemoryRequirements(vkContext.device, image, &memoryRequirements);
+
+    const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    VulkanAllocation allocation;
+    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &allocation)) {
+        throw("Could not allocate image memory");
+    }
+
+    auto res = vkBindImageMemory(vkContext.device, image, allocation.vkMemory, allocation.offset);
+    checkVulkanResult(res);
+
+    return allocation;
 }
 
 Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags) {
@@ -1867,7 +1764,7 @@ Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::v
 
 VkImageSubresourceLayers RenderBackend::createSubresourceLayers(const Image& image, const uint32_t mipLevel) {
     VkImageSubresourceLayers layers;
-    layers.aspectMask = isDepthFormat(image.format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    layers.aspectMask = isVulkanDepthFormat(image.format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     layers.mipLevel = mipLevel;
     layers.baseArrayLayer = 0;
     layers.layerCount = 1;
@@ -1884,11 +1781,11 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
 
     //if size is bigger than mip level 0 automatically switch to next mip level
     uint32_t mipLevel = 0;
-    VkDeviceSize currentMipWidth = target.extent.width;
-    VkDeviceSize currentMipHeight = target.extent.height;
-    VkDeviceSize currentMipDepth = target.extent.depth;
+    VkDeviceSize currentMipWidth = target.desc.width;
+    VkDeviceSize currentMipHeight = target.desc.height;
+    VkDeviceSize currentMipDepth = target.desc.depth;
 
-    VkDeviceSize bytesPerRow    = (size_t)(target.extent.width * bytePerPixel);
+    VkDeviceSize bytesPerRow    = (size_t)(target.desc.width * bytePerPixel);
     VkDeviceSize currentMipSize = (VkDeviceSize)(currentMipWidth * currentMipHeight * currentMipDepth * bytePerPixel);
 
     //memory offset per mip is tracked separately to check if a mip border is reached
@@ -1912,14 +1809,14 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
             currentMipDepth = glm::max(currentMipDepth, VkDeviceSize(1));
             bytesPerRow /= 2;
 
-            //reduce size depending on dimensions
-            if (target.type == ImageType::Type1D) {
+            // reduce size depending on dimensions
+            if (target.desc.type == ImageType::Type1D) {
                 currentMipSize /= 2;
             }
-            else if (target.type == ImageType::Type2D) {
+            else if (target.desc.type == ImageType::Type2D) {
                 currentMipSize /= 4;
             }
-            else if (target.type == ImageType::Type3D) {
+            else if (target.desc.type == ImageType::Type3D) {
                 currentMipSize /= 8;
             }
             else {
@@ -1928,10 +1825,10 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
                 return;
             }
 
-            //memory offset per mip is reset
+            // memory offset per mip is reset
             mipMemoryOffset = 0;
 
-            //BCn compressed textures store at least a 4x4 pixel block, resulting in at least a 4 pixel row
+            // BCn compressed textures store at least a 4x4 pixel block, resulting in at least a 4 pixel row
             if (isBCnCompressed) {
                 const VkDeviceSize minPixelPerRox = 4;
                 bytesPerRow = std::max(bytesPerRow, VkDeviceSize(minPixelPerRox * bytePerPixel));
@@ -1942,21 +1839,21 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         }
 
         
-        //the size to copy is limited either by
-        //-the staging buffer size
-        //-the size left to copy on the current mip level
+        // the size to copy is limited either by
+        // -the staging buffer size
+        // -the size left to copy on the current mip level
         VkDeviceSize copySize = std::min(m_stagingBufferSize, currentMipSize - mipMemoryOffset);
 
-        //always copy entire rows
+        // always copy entire rows
         copySize = copySize / bytesPerRow * bytesPerRow;
 
-        //copy data to staging buffer
+        // copy data to staging buffer
         fillHostVisibleCoherentBuffer(m_stagingBuffer, (char*)data + totalMemoryOffset, copySize);
 
-        //begin command buffer for copying
+        // begin command buffer for copying
         VkCommandBuffer copyBuffer = beginOneTimeUseCommandBuffer();
 
-        //layout transition to transfer_dst the first time
+        // layout transition to transfer_dst the first time
         if (totalMemoryOffset == 0) {
             const auto toTransferDstBarrier = createImageBarriers(target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_ACCESS_TRANSFER_READ_BIT, 0, (uint32_t)target.viewPerMip.size());
@@ -1965,38 +1862,38 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         }
         
 
-        //calculate which region to copy
+        // calculate which region to copy
         VkBufferImageCopy region = {};
         region.bufferOffset = 0;
         region.imageSubresource = createSubresourceLayers(target, mipLevel);
-        //entire rows are copied, so the starting row(offset.y) is the current mip offset divided by the row size
+        // entire rows are copied, so the starting row(offset.y) is the current mip offset divided by the row size
         region.imageOffset = { 0, int32_t(mipMemoryOffset / bytesPerRow), 0 };
         region.bufferRowLength = (uint32_t)currentMipWidth;
         region.bufferImageHeight = (uint32_t)currentMipHeight;
-        //copy as many rows as fit into the copy size, without going over the mip height
+        // copy as many rows as fit into the copy size, without going over the mip height
         region.imageExtent.height = (uint32_t)std::min(copySize / bytesPerRow, currentMipHeight);
         region.imageExtent.width = (uint32_t)currentMipWidth;
         region.imageExtent.depth = (uint32_t)currentMipDepth;
 
-        //BCn compressed textures are stored in 4x4 pixel blocks, so that is the minimum buffer size
+        // BCn compressed textures are stored in 4x4 pixel blocks, so that is the minimum buffer size
         if (isBCnCompressed) {
             region.bufferRowLength      = std::max(region.bufferRowLength,      (uint32_t)4);;
             region.bufferImageHeight    = std::max(region.bufferImageHeight,    (uint32_t)4);;
         }
 
-        //issue for commands, then wait
+        // issue for commands, then wait
         vkCmdCopyBufferToImage(copyBuffer, m_stagingBuffer.vulkanHandle, target.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         vkEndCommandBuffer(copyBuffer);
         VkFence fence = submitOneTimeUseCmdBuffer(copyBuffer, vkContext.transferQueue);
         auto result = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
         checkVulkanResult(result);
 
-        //cleanup
+        // cleanup
         vkDestroyFence(vkContext.device, fence, nullptr);
         vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &copyBuffer);
 
-        //update memory offsets
-        //BCn compressed textures store at least a 4x4 pixel block
+        // update memory offsets
+        // BCn compressed textures store at least a 4x4 pixel block
         if (isBCnCompressed) {
             mipMemoryOffset     += std::max(copySize, 4 * 4 * (VkDeviceSize)bytePerPixel);
             totalMemoryOffset   += std::max(copySize, 4 * 4 * (VkDeviceSize)bytePerPixel);
@@ -2029,9 +1926,9 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
     blitInfo.dstOffsets[0].z = 0;
 
     //initial offset extent
-    blitInfo.srcOffsets[1].x = image.extent.width;
-    blitInfo.srcOffsets[1].y = image.extent.height;
-    blitInfo.srcOffsets[1].z = image.extent.depth;
+    blitInfo.srcOffsets[1].x = image.desc.width;
+    blitInfo.srcOffsets[1].y = image.desc.height;
+    blitInfo.srcOffsets[1].z = image.desc.depth;
 
     blitInfo.dstOffsets[1].x = blitInfo.srcOffsets[1].x != 1 ? blitInfo.srcOffsets[1].x / 2 : 1;
     blitInfo.dstOffsets[1].y = blitInfo.srcOffsets[1].y != 1 ? blitInfo.srcOffsets[1].y / 2 : 1;
@@ -3160,20 +3057,6 @@ VkPipelineDepthStencilStateCreateInfo RenderBackend::createDepthStencilState(con
     return depthInfo;
 }
 
-bool RenderBackend::isDepthFormat(ImageFormat format) {
-    return (format == ImageFormat::Depth16 ||
-        format == ImageFormat::Depth32);
-}
-
-bool RenderBackend::isDepthFormat(VkFormat format) {
-    return (
-        format == VK_FORMAT_D16_UNORM ||
-        format == VK_FORMAT_D16_UNORM_S8_UINT ||
-        format == VK_FORMAT_D24_UNORM_S8_UINT ||
-        format == VK_FORMAT_D32_SFLOAT ||
-        format == VK_FORMAT_D32_SFLOAT_S8_UINT);
-}
-
 void RenderBackend::barriersCommand(const VkCommandBuffer commandBuffer, 
     const std::vector<VkImageMemoryBarrier>& imageBarriers, const std::vector<VkBufferMemoryBarrier>& memoryBarriers) {
 
@@ -3185,17 +3068,14 @@ std::vector<VkImageMemoryBarrier> RenderBackend::createImageBarriers(Image& imag
     const VkAccessFlags dstAccess, const uint32_t baseMip, const uint32_t mipLevels) {
 
     VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT;
-    const bool isDepthImage = isDepthFormat(image.format);
+    const bool isDepthImage = isVulkanDepthFormat(image.format);
     if (isDepthImage) {
         aspectFlags = VK_IMAGE_ASPECT_DEPTH_BIT;
     }
 
     std::vector<VkImageMemoryBarrier> barriers;
 
-    uint32_t layerCount = 1;
-    if (image.type == ImageType::TypeCube) {
-        layerCount = 6;
-    }
+    const uint32_t layerCount = computeImageLayerCount(image.desc.type);
 
     // first barrier 
     VkImageMemoryBarrier firstBarrier;

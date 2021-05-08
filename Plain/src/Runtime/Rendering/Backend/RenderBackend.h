@@ -296,8 +296,11 @@ private:
     Buffer m_stagingBuffer;
 
     Image createImageInternal(const ImageDescription& description, const void* initialData, const size_t initialDataSize);
-    VkImageView createImageView(const Image& image, const VkImageViewType viewType, const uint32_t baseMip, const uint32_t mipLevels, const VkImageAspectFlags aspectMask);
-    Buffer      createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
+    VulkanAllocation allocateImageMemory(const VkImage image);
+    Buffer createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
+
+    void manualImageLayoutTransition(Image& image, const VkImageLayout newLayout);
+    void addImageToGlobalDescriptorSetLayout(Image& image);
 
     VkImageSubresourceLayers createSubresourceLayers(const Image& image, const uint32_t mipLevel);
 
@@ -408,10 +411,6 @@ private:
     VulkanRasterizationStateCreateInfo		createRasterizationState(const RasterizationConfig& raster);
     VkPipelineMultisampleStateCreateInfo    createDefaultMultisamplingInfo();
     VkPipelineDepthStencilStateCreateInfo   createDepthStencilState(const DepthTest& depthTest);
-
-    //renderpass creation utilities    
-    bool isDepthFormat(VkFormat format);
-    bool isDepthFormat(ImageFormat format);
 
     //renderpass barriers    
     void barriersCommand(const VkCommandBuffer commandBuffer, const std::vector<VkImageMemoryBarrier>& imageBarriers, const std::vector<VkBufferMemoryBarrier>& memoryBarriers);
