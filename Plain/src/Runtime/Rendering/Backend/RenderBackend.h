@@ -176,6 +176,9 @@ public:
 
 private:
 
+    // debug marker use an extension and as such need to get function pointers
+    void acquireDebugUtilsExtFunctionsPointers();
+
     ShaderFileManager m_shaderFileManager;
 
     VkDescriptorSetLayout m_globalTextureArrayDescriporSetLayout = VK_NULL_HANDLE;
@@ -215,32 +218,6 @@ private:
     bool validateAttachments(const std::vector<RenderTarget>& attachments);
     bool imageHasAttachmentUsageFlag(const Image& image);
     glm::uvec2 getResolutionFromRenderTargets(const std::vector<RenderTarget>& targets);
-
-    /*
-    =========
-    context
-    =========
-    */
-    VkDebugReportCallbackEXT    m_debugCallback = VK_NULL_HANDLE;
-
-#ifdef USE_VK_VALIDATION_LAYERS
-    const bool m_useValidationLayers = true;
-#else
-    const bool m_useValidationLayers = false;
-#endif
-
-    std::vector<const char*>    getRequiredInstanceExtensions();
-    void                        createVulkanInstance();
-    bool                        hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDevice);
-    void                        pickPhysicalDevice();
-    void                        createLogicalDevice();
-    VkDebugReportCallbackEXT    setupDebugCallbacks();
-
-    //returns true if all family indices have been found, in that case indices are writen to QueueFamilies pointer
-    bool getQueueFamilies(const VkPhysicalDevice device, QueueFamilies* pOutQueueFamilies);
-
-    //debug marker use an extension and as such need to get function pointers
-    void acquireDebugUtilsExtFunctionsPointers();
 
     VulkanDebugUtilsFunctions m_debugExtFunctions;
 
@@ -445,7 +422,7 @@ private:
     std::vector<VkImageMemoryBarrier> createImageBarriers(Image& image, const VkImageLayout newLayout,
         const VkAccessFlags dstAccess, const uint32_t baseMip, const uint32_t mipLevels);
 
-    VkBufferMemoryBarrier   createBufferBarrier(const Buffer& buffer, const VkAccessFlagBits srcAccess, const VkAccessFlagBits dstAccess);
+    VkBufferMemoryBarrier createBufferBarrier(const Buffer& buffer, const VkAccessFlagBits srcAccess, const VkAccessFlagBits dstAccess);
 
     /*
     =========
@@ -485,8 +462,6 @@ private:
 
     float m_timeOfLastGPUSubmit = 0.f;
     float m_lastFrameCPUTime = 0.f;
-
-    void checkVulkanResult(const VkResult result);
 
     /*
     =========
