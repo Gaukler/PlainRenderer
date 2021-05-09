@@ -9,8 +9,8 @@ struct GraphicPassShaderPaths {
     std::filesystem::path                 vertex;
     std::filesystem::path                 fragment;
     std::optional<std::filesystem::path>  geometry;
-    std::optional<std::filesystem::path>  tessellationControl;
-    std::optional<std::filesystem::path>  tessellationEvaluation;
+    std::optional<std::filesystem::path>  tessCtrl;
+    std::optional<std::filesystem::path>  tessEval;
 };
 
 //helper that loads shaders from all supplied paths into the corresponding out struct

@@ -13,10 +13,14 @@
 #include "Runtime/Timer.h"
 #include "JobSystem.h"
 #include "VulkanImage.h"
-#include "../../Window.h"
+#include "Runtime/Window.h"
 #include "Framebuffer.h"
 #include "RenderPass.h"
 #include "VulkanSync.h"
+#include "DescriptorSetLayout.h"
+#include "VulkanPipeline.h"
+#include "VulkanShaderModule.h"
+#include "VulkanShader.h"
 
 // disable ImGui warnings
 #pragma warning( push )
@@ -34,7 +38,7 @@ RenderBackend gRenderBackend;
 
 // vulkan uses enums, which result in a warning every time they are used
 // this warning is disabled for this entire file
-#pragma warning( disable : 26812) //C26812: Prefer 'enum class' over 'enum' 
+#pragma warning( disable : 26812) // Prefer 'enum class' over 'enum' 
 
 const uint32_t maxTextureCount = 1000;
 
@@ -386,23 +390,6 @@ void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle pa
         destroyComputePass(pass);
         pass = createComputePassInternal(pass.computePassDesc, spirV);
         pass.shaderHandle = shaderHandle;
-    }
-}
-
-//helper that picks correct vector from entry and returns RenderPassExecution accprdong to entry index
-RenderPassExecution getGenericRenderpassInfoFromExecutionEntry(const RenderPassExecutionEntry& entry,
-    const std::vector<GraphicPassExecution>& graphicExecutions,
-    const std::vector<ComputePassExecution>& computeExecutions) {
-    
-    if (entry.type == RenderPassType::Graphic) {
-        return graphicExecutions[entry.index].genericInfo;
-    }
-    else if (entry.type == RenderPassType::Compute) {
-        return computeExecutions[entry.index].genericInfo;
-    }
-    else {
-        std::cout << "Unknown RenderPassType\n";
-        throw("Unknown RenderPassType");
     }
 }
 
@@ -2254,51 +2241,6 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
     vkUpdateDescriptorSets(vkContext.device, (uint32_t)descriptorInfos.size(), descriptorInfos.data(), 0, nullptr);
 }
 
-VkDescriptorSetLayout RenderBackend::createDescriptorSetLayout(const ShaderLayout& shaderLayout) {
-
-    const std::vector<uint32_t>* bindingLists[5] = {
-        &shaderLayout.samplerBindings,
-        &shaderLayout.sampledImageBindings,
-        &shaderLayout.storageImageBindings,
-        &shaderLayout.storageBufferBindings,
-        &shaderLayout.uniformBufferBindings
-    };
-
-    const VkDescriptorType type[5] = {
-        VK_DESCRIPTOR_TYPE_SAMPLER,
-        VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-    };
-
-    std::vector<VkDescriptorSetLayoutBinding> layoutBindings;
-    for (uint32_t typeIndex = 0; typeIndex < 5; typeIndex++) {
-        for (const auto binding : *bindingLists[typeIndex]) {
-            VkDescriptorSetLayoutBinding layoutBinding;
-            layoutBinding.binding = binding;
-            layoutBinding.descriptorType = type[typeIndex];
-            layoutBinding.descriptorCount = 1;
-            layoutBinding.stageFlags = VK_SHADER_STAGE_ALL;
-            layoutBinding.pImmutableSamplers = nullptr;
-            layoutBindings.push_back(layoutBinding);
-        }
-    }
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo;
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.pNext = nullptr;
-    layoutInfo.flags = 0;
-    layoutInfo.bindingCount = (uint32_t)layoutBindings.size();
-    layoutInfo.pBindings = layoutBindings.data();
-
-    VkDescriptorSetLayout setLayout;
-    auto res = vkCreateDescriptorSetLayout(vkContext.device, &layoutInfo, nullptr, &setLayout);
-    checkVulkanResult(res);
-
-    return setLayout;
-}
-
 VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout setLayout, const size_t pushConstantSize, 
     const VkShaderStageFlags stageFlags) {
 
@@ -2336,19 +2278,21 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     pass.computePassDesc = desc;
     VkComputePipelineCreateInfo pipelineInfo;
 
+    const VkShaderStageFlagBits stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
     const VkShaderModule module = createShaderModule(spirV);
     const ShaderReflection reflection = performComputeShaderReflection(spirV);
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
-    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, reflection.pushConstantByteSize, VK_SHADER_STAGE_COMPUTE_BIT);
+    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, reflection.pushConstantByteSize, stageFlags);
     pass.pushConstantSize = reflection.pushConstantByteSize;
 
-    VulkanShaderCreateAdditionalStructs additionalStructs;
+    ShaderSpecialisationStructs specialisationStructs;
+    createShaderSpecialisationStructs(desc.shaderDescription.specialisationConstants, &specialisationStructs);
 
     pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     pipelineInfo.pNext = nullptr;
     pipelineInfo.flags = 0;
-    pipelineInfo.stage = createPipelineShaderStageInfos(module, VK_SHADER_STAGE_COMPUTE_BIT,
-        desc.shaderDescription.specialisationConstants, &additionalStructs);
+    pipelineInfo.stage = createPipelineShaderStageInfos(module, stageFlags, &specialisationStructs.info);
     pipelineInfo.layout = pass.pipelineLayout;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = 0;
@@ -2466,45 +2410,54 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
         }
     }
 
-    const VkShaderModule vertexModule   = createShaderModule(spirV.vertex);
-    const VkShaderModule fragmentModule = createShaderModule(spirV.fragment);
+    const GraphicPassShaderModules shaderModules = createGraphicPassShaderModules(spirV);
 
-    VkShaderModule geometryModule = VK_NULL_HANDLE;
-    VkShaderModule tesselationControlModule = VK_NULL_HANDLE;
-    VkShaderModule tesselationEvaluationModule = VK_NULL_HANDLE;
-    if (spirV.geometry.has_value()) {
-        geometryModule = createShaderModule(spirV.geometry.value());
-    }
-    if (desc.shaderDescriptions.tesselationControl.has_value()) {
-        assert(desc.shaderDescriptions.tesselationEvaluation.has_value());   //both shaders must be defined or none
-        tesselationControlModule    = createShaderModule(spirV.tessellationControl.value());
-        tesselationEvaluationModule = createShaderModule(spirV.tessellationEvaluation.value());
-    }
-
-    //create module infos    
+    // create module infos
     std::vector<VkPipelineShaderStageCreateInfo> stages;
 
-    VulkanShaderCreateAdditionalStructs additionalStructs[5];
+    ShaderSpecialisationStructs vertexSpecialisation;
+    createShaderSpecialisationStructs(desc.shaderDescriptions.vertex.specialisationConstants, 
+        &vertexSpecialisation);
+    stages.push_back(createPipelineShaderStageInfos(shaderModules.vertex, VK_SHADER_STAGE_VERTEX_BIT,
+        &vertexSpecialisation.info));
 
-    stages.push_back(createPipelineShaderStageInfos(vertexModule,   VK_SHADER_STAGE_VERTEX_BIT,   
-        desc.shaderDescriptions.vertex.specialisationConstants, &additionalStructs[0]));
-    stages.push_back(createPipelineShaderStageInfos(fragmentModule, VK_SHADER_STAGE_FRAGMENT_BIT, 
-        desc.shaderDescriptions.fragment.specialisationConstants, &additionalStructs[1]));
+    ShaderSpecialisationStructs fragmentSpecialisation;
+    createShaderSpecialisationStructs(desc.shaderDescriptions.fragment.specialisationConstants, &fragmentSpecialisation);
+    stages.push_back(createPipelineShaderStageInfos(shaderModules.fragment, VK_SHADER_STAGE_FRAGMENT_BIT,
+        &fragmentSpecialisation.info));
 
-    if (geometryModule != VK_NULL_HANDLE) {
-        stages.push_back(createPipelineShaderStageInfos(geometryModule, VK_SHADER_STAGE_GEOMETRY_BIT, 
-            desc.shaderDescriptions.geometry.value().specialisationConstants, &additionalStructs[2]));
+    ShaderSpecialisationStructs geometrySpecialisation;
+    const bool hasGeometryShader = shaderModules.geometry != VK_NULL_HANDLE;
+    if (hasGeometryShader) {
+        createShaderSpecialisationStructs(desc.shaderDescriptions.geometry.value().specialisationConstants, 
+            &geometrySpecialisation);
+        stages.push_back(createPipelineShaderStageInfos(shaderModules.geometry, VK_SHADER_STAGE_GEOMETRY_BIT,
+            &geometrySpecialisation.info));
     }
-    if (tesselationControlModule != VK_NULL_HANDLE) {
-        stages.push_back(createPipelineShaderStageInfos(tesselationControlModule, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, 
-            desc.shaderDescriptions.tesselationControl.value().specialisationConstants, &additionalStructs[3]));
-        stages.push_back(createPipelineShaderStageInfos(tesselationEvaluationModule, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
-            desc.shaderDescriptions.tesselationEvaluation.value().specialisationConstants, &additionalStructs[4]));
+
+    ShaderSpecialisationStructs tessCtrlSpecialisation;
+    ShaderSpecialisationStructs tessEvalSpecialisation;
+    const bool hasTesselationShaders = shaderModules.tessEval != VK_NULL_HANDLE && shaderModules.tessCtrl != VK_NULL_HANDLE;
+    if (hasTesselationShaders) {
+
+        createShaderSpecialisationStructs(
+            desc.shaderDescriptions.tessCtrl.value().specialisationConstants, &tessCtrlSpecialisation);
+        createShaderSpecialisationStructs(
+            desc.shaderDescriptions.tessEval.value().specialisationConstants, &tessEvalSpecialisation);
+
+        stages.push_back(createPipelineShaderStageInfos(shaderModules.tessCtrl, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+            &tessCtrlSpecialisation.info));
+        stages.push_back(createPipelineShaderStageInfos(shaderModules.tessEval, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
+            &tessEvalSpecialisation.info));
     }
 
     VkShaderStageFlags pipelineLayoutStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    if (desc.shaderDescriptions.geometry.has_value()) {
+    if (hasGeometryShader) {
         pipelineLayoutStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+    }
+    if (hasTesselationShaders) {
+        pipelineLayoutStageFlags |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+        pipelineLayoutStageFlags |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
     }
 
     const ShaderReflection reflection = performShaderReflection(spirV);
@@ -2524,7 +2477,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
             attribute.offset = currentOffset;
             attributes.push_back(attribute);
         }
-        //vertex buffer has attributes even if not used
+        // vertex buffer has attributes even if not used
         currentOffset += vertexInputBytePerLocation[(size_t)location];
     }
 
@@ -2547,82 +2500,30 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     vertexInputInfo.pVertexAttributeDescriptions = attributes.data();
 
     pass.vulkanRenderPass = createVulkanRenderPass(desc.attachments);
+    const auto blendingAttachments = createAttachmentBlendStates(desc.attachments, desc.blending);
+    const auto blendState = createBlendState(blendingAttachments);
 
-    VkPipelineViewportStateCreateInfo viewportState = {};
-    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.pNext = nullptr;
-    viewportState.flags = 0;
-    viewportState.viewportCount = 1;
-    viewportState.pViewports = nullptr; //ignored as viewport is dynamic
-    viewportState.scissorCount = 1;
-    viewportState.pScissors = nullptr;  //ignored as viewport is dynamic
-
-    //only global blending state for all attachments
-    //currently only no blending and additive supported    
-    VkPipelineColorBlendAttachmentState blendingAttachment = {};
-    blendingAttachment.blendEnable = desc.blending != BlendState::None ? VK_TRUE : VK_FALSE;
-    blendingAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    blendingAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
-    blendingAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-    blendingAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    blendingAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    blendingAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-    blendingAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-
-    std::vector<VkPipelineColorBlendAttachmentState> blendingAttachments;
-    for (const auto& attachment : desc.attachments) {
-        if (!isDepthFormat(attachment.format)) {
-            blendingAttachments.push_back(blendingAttachment);
-        }
+    auto rasterizationState = createRasterizationState(desc.rasterization);
+    VkPipelineRasterizationConservativeStateCreateInfoEXT conservativeRasterInfo;
+    if (desc.rasterization.conservative) {
+        conservativeRasterInfo = createConservativeRasterCreateInfo();
+        rasterizationState.pNext = &conservativeRasterInfo;
     }
 
-    VkPipelineColorBlendStateCreateInfo blending = {};
-    blending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    blending.pNext = nullptr;
-    blending.flags = 0;
-    blending.logicOpEnable = VK_FALSE;
-    blending.logicOp = VK_LOGIC_OP_NO_OP;
-    blending.attachmentCount = (uint32_t)blendingAttachments.size();
-    blending.pAttachments = blendingAttachments.data();
-    blending.blendConstants[0] = 0.f;
-    blending.blendConstants[1] = 0.f;
-    blending.blendConstants[2] = 0.f;
-    blending.blendConstants[3] = 0.f;
-
-    const auto rasterizationState = createRasterizationState(desc.rasterization);
-    auto multisamplingState = createDefaultMultisamplingInfo();
+    const auto multisamplingState = createDefaultMultisamplingInfo();
     const auto depthStencilState = createDepthStencilState(desc.depthTest);
 
-    VkPipelineTessellationStateCreateInfo tesselationState = {};
-    VkPipelineTessellationStateCreateInfo* pTesselationState;
-    if (desc.shaderDescriptions.tesselationControl.has_value()) {
+    VkPipelineTessellationStateCreateInfo tesselationState;
+    VkPipelineTessellationStateCreateInfo* pTesselationState = nullptr;
+    if (desc.shaderDescriptions.tessCtrl.has_value()) {
         tesselationState = createTesselationState(desc.patchControlPoints);
         pTesselationState = &tesselationState;
     }
-    else {
-        pTesselationState = nullptr;
-    }
 
-    auto inputAssemblyState = createDefaultInputAssemblyInfo();
-
-    if (desc.rasterization.mode == RasterizationeMode::Line) {
-        inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-    }
-    else if (desc.rasterization.mode == RasterizationeMode::Point) {
-        inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-    }
-
-    std::vector<VkDynamicState> dynamicStates;
-    dynamicStates.push_back(VK_DYNAMIC_STATE_VIEWPORT);
-    dynamicStates.push_back(VK_DYNAMIC_STATE_SCISSOR);
-
-    VkPipelineDynamicStateCreateInfo dynamicStateInfo;
-    dynamicStateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicStateInfo.pNext = nullptr;
-    dynamicStateInfo.flags = 0;
-    dynamicStateInfo.dynamicStateCount = (uint32_t)dynamicStates.size();
-    dynamicStateInfo.pDynamicStates = dynamicStates.data();
-
+    const std::vector<VkDynamicState> dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    const auto dynamicStateInfo = createDynamicStateInfo(dynamicStates);
+    const auto inputAssemblyState = createInputAssemblyInfo(desc.rasterization.mode);
+    const auto viewportState = createDynamicViewportCreateInfo();
 
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -2634,10 +2535,10 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pipelineInfo.pInputAssemblyState = &inputAssemblyState;
     pipelineInfo.pTessellationState = pTesselationState;
     pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizationState.baseInfo;
+    pipelineInfo.pRasterizationState = &rasterizationState;
     pipelineInfo.pMultisampleState = &multisamplingState;
     pipelineInfo.pDepthStencilState = &depthStencilState;
-    pipelineInfo.pColorBlendState = &blending;
+    pipelineInfo.pColorBlendState = &blendState;
     pipelineInfo.pDynamicState = &dynamicStateInfo;
     pipelineInfo.layout = pass.pipelineLayout;
     pipelineInfo.renderPass = pass.vulkanRenderPass;
@@ -2648,30 +2549,9 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     auto result = vkCreateGraphicsPipelines(vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pass.pipeline);
     checkVulkanResult(result);
 
-    //shader modules aren't needed anymore
-    vkDestroyShaderModule(vkContext.device, vertexModule, nullptr);
-    vkDestroyShaderModule(vkContext.device, fragmentModule, nullptr);
-    if (geometryModule != VK_NULL_HANDLE) {
-        vkDestroyShaderModule(vkContext.device, geometryModule, nullptr);
-    }
-    if (tesselationControlModule != VK_NULL_HANDLE) {
-        vkDestroyShaderModule(vkContext.device, tesselationControlModule, nullptr);
-        vkDestroyShaderModule(vkContext.device, tesselationEvaluationModule, nullptr);
-    }
+    destroyGraphicPassShaderModules(shaderModules);
 
-    //clear values    
-    for (const auto& attachment : desc.attachments) {
-        if (!isDepthFormat(attachment.format)) {
-            VkClearValue colorClear = {};
-            colorClear.color = { 0, 0, 0, 0 };
-            pass.clearValues.push_back(colorClear);
-        }
-        else {
-            VkClearValue depthClear = {};
-            depthClear.depthStencil.depth = 0.f;
-            pass.clearValues.push_back(depthClear);
-        }
-    }
+    pass.clearValues = createGraphicPassClearValues(desc.attachments);
 
     const auto setSizes = descriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
     pass.descriptorSets[0] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
@@ -2684,89 +2564,21 @@ bool validateAttachmentFormatsAreCompatible(const ImageFormat a, const ImageForm
     return imageFormatToVkAspectFlagBits(a) == imageFormatToVkAspectFlagBits(b);
 }
 
-VkShaderModule RenderBackend::createShaderModule(const std::vector<uint32_t>& code) {
-
-    VkShaderModuleCreateInfo moduleInfo;
-    moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    moduleInfo.pNext = nullptr;
-    moduleInfo.flags = 0;
-    moduleInfo.codeSize = code.size() * sizeof(uint32_t);
-    moduleInfo.pCode = code.data();
-
-    VkShaderModule shaderModule;
-    auto res = vkCreateShaderModule(vkContext.device, &moduleInfo, nullptr, &shaderModule);
-    checkVulkanResult(res);
-
-    return shaderModule;
-}
-
 VkPipelineShaderStageCreateInfo RenderBackend::createPipelineShaderStageInfos(
     const VkShaderModule module, 
     const VkShaderStageFlagBits stage,
-    const std::vector<SpecialisationConstant>& specialisationInfo, 
-    VulkanShaderCreateAdditionalStructs* outAdditionalInfo) {
-
-    assert(outAdditionalInfo != nullptr);
-    size_t specialisationCount = specialisationInfo.size();
+    const VkSpecializationInfo* pSpecialisationInfo) {
 
     VkPipelineShaderStageCreateInfo createInfos;
-    createInfos.sType                  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    createInfos.pNext                  = nullptr;
-    createInfos.flags                  = 0;
-    createInfos.stage                  = stage;
-    createInfos.module                 = module;
-    createInfos.pName                  = "main";
-    createInfos.pSpecializationInfo    = nullptr;
-
-    if (specialisationInfo.size() > 0) {
-
-        outAdditionalInfo->specilisationMap.resize(specialisationCount);
-
-        size_t currentOffset = 0;
-        for (uint32_t i = 0; i < outAdditionalInfo->specilisationMap.size(); i++) {
-            const auto constant = specialisationInfo[i];
-
-            outAdditionalInfo->specilisationMap[i].constantID = constant.location;
-            outAdditionalInfo->specilisationMap[i].offset = (uint32_t)currentOffset;
-            outAdditionalInfo->specilisationMap[i].size = constant.data.size();
-
-            currentOffset += constant.data.size();
-        }
-
-        {
-            //make space
-            outAdditionalInfo->specialisationData.resize(currentOffset);
-
-            //reset offset
-            currentOffset = 0;
-
-            //copy data into place
-            for (const auto& constant : specialisationInfo) {
-                memcpy(outAdditionalInfo->specialisationData.data() + currentOffset, constant.data.data(), constant.data.size());
-                currentOffset += constant.data.size();
-            }
-        }
-        
-
-        outAdditionalInfo->specialisationInfo.dataSize      = specialisationCount * sizeof(int);
-        outAdditionalInfo->specialisationInfo.mapEntryCount = (uint32_t)specialisationCount;
-        outAdditionalInfo->specialisationInfo.pData         = outAdditionalInfo->specialisationData.data();
-        outAdditionalInfo->specialisationInfo.pMapEntries   = outAdditionalInfo->specilisationMap.data();
-
-        createInfos.pSpecializationInfo = &outAdditionalInfo->specialisationInfo;
-    }
+    createInfos.sType   = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    createInfos.pNext   = nullptr;
+    createInfos.flags   = 0;
+    createInfos.stage   = stage;
+    createInfos.module  = module;
+    createInfos.pName   = "main";
+    createInfos.pSpecializationInfo = pSpecialisationInfo;
 
     return createInfos;
-}
-
-VkPipelineInputAssemblyStateCreateInfo RenderBackend::createDefaultInputAssemblyInfo() {
-    VkPipelineInputAssemblyStateCreateInfo info;
-    info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    info.pNext = nullptr;
-    info.flags = 0;
-    info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    info.primitiveRestartEnable = VK_FALSE;
-    return info;
 }
 
 VkPipelineTessellationStateCreateInfo RenderBackend::createTesselationState(const uint32_t patchControlPoints) {
@@ -2776,52 +2588,6 @@ VkPipelineTessellationStateCreateInfo RenderBackend::createTesselationState(cons
     info.flags = 0;
     info.patchControlPoints = patchControlPoints;
     return info;
-}
-
-VulkanRasterizationStateCreateInfo RenderBackend::createRasterizationState(const RasterizationConfig& raster) {
-
-    VkPolygonMode polygonMode = VK_POLYGON_MODE_FILL;
-    switch (raster.mode) {
-    case RasterizationeMode::Fill:  polygonMode = VK_POLYGON_MODE_FILL; break;
-    case RasterizationeMode::Line:  polygonMode = VK_POLYGON_MODE_LINE; break;
-    case RasterizationeMode::Point:  polygonMode = VK_POLYGON_MODE_POINT; break;
-    default: std::cout << "RenderBackend::createRasterizationState: Unknown RasterizationeMode\n"; break;
-    };
-
-    VkCullModeFlags cullFlags = VK_CULL_MODE_NONE;
-    switch (raster.cullMode) {
-    case CullMode::None:  cullFlags = VK_CULL_MODE_NONE; break;
-    case CullMode::Front:  cullFlags = VK_CULL_MODE_FRONT_BIT; break;
-    case CullMode::Back:  cullFlags = VK_CULL_MODE_BACK_BIT; break;
-    default: std::cout << "RenderBackend::createRasterizationState unknown CullMode\n"; break;
-    };
-
-	VulkanRasterizationStateCreateInfo vkRaster = {};
-
-	vkRaster.baseInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    vkRaster.baseInfo.pNext = nullptr;
-    vkRaster.baseInfo.flags = 0;
-    vkRaster.baseInfo.depthClampEnable = raster.clampDepth;
-    vkRaster.baseInfo.rasterizerDiscardEnable = VK_FALSE;
-    vkRaster.baseInfo.polygonMode = polygonMode;
-    vkRaster.baseInfo.cullMode = cullFlags;
-    vkRaster.baseInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    vkRaster.baseInfo.depthBiasEnable = VK_FALSE;
-    vkRaster.baseInfo.depthBiasConstantFactor = 0.f;
-    vkRaster.baseInfo.depthBiasClamp = 0.f;
-    vkRaster.baseInfo.depthBiasSlopeFactor = 0.f;
-    vkRaster.baseInfo.lineWidth = 1.f;
-
-    if (raster.conservative) {
-        vkRaster.conservativeInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_CONSERVATIVE_STATE_CREATE_INFO_EXT;
-        vkRaster.conservativeInfo.pNext = nullptr;
-        vkRaster.conservativeInfo.flags = 0;
-        vkRaster.conservativeInfo.conservativeRasterizationMode = VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT;
-
-        vkRaster.baseInfo.pNext = &vkRaster.conservativeInfo;
-    }
-
-    return vkRaster;
 }
 
 VkPipelineMultisampleStateCreateInfo RenderBackend::createDefaultMultisamplingInfo() {

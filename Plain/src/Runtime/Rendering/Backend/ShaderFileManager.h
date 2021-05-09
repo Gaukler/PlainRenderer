@@ -29,8 +29,8 @@ struct GraphicShadersLoadInfo {
     ShaderLoadInfo vertex;
     ShaderLoadInfo fragment;
     std::optional<ShaderLoadInfo> geometry;
-    std::optional<ShaderLoadInfo> tessellationControl;
-    std::optional<ShaderLoadInfo> tessellationEvaluation;
+    std::optional<ShaderLoadInfo> tessCtrl;
+    std::optional<ShaderLoadInfo> tessEval;
 };
 
 struct ComputeShaderSourceInfo {

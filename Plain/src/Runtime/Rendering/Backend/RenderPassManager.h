@@ -2,10 +2,6 @@
 #include "pch.h"
 #include "Resources.h"
 
-enum class RenderPassType { Graphic, Compute };
-
-RenderPassType getRenderPassType(const RenderPassHandle handle);
-
 /*
 RenderPass handles are shared between compute and graphics to allow easy dependency management in the frontend
 the first bit of the handle indicates wether a handle is a compute or graphic pass

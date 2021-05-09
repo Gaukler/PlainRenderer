@@ -123,8 +123,8 @@ struct GraphicPassShaderDescriptions {
     ShaderDescription                 vertex;
     ShaderDescription                 fragment;
     std::optional<ShaderDescription>  geometry;
-    std::optional<ShaderDescription>  tesselationControl;
-    std::optional<ShaderDescription>  tesselationEvaluation;
+    std::optional<ShaderDescription>  tessCtrl;
+    std::optional<ShaderDescription>  tessEval;
 };
 
 enum class VertexFormat { Full, PositionOnly };

@@ -3,6 +3,17 @@
 #include "VulkanImageFormats.h"
 #include "VulkanContext.h"
 
+RenderPassType getRenderPassType(const RenderPassHandle handle) {
+    // first bit indicates pass type
+    const bool firstBitSet = bool(handle.index >> 31);
+    if (firstBitSet) {
+        return RenderPassType::Graphic;
+    }
+    else {
+        return RenderPassType::Compute;
+    }
+}
+
 VkRenderPass createVulkanRenderPass(const std::vector<Attachment>& attachments) {
 
     VkRenderPass            pass;
@@ -79,6 +90,63 @@ VkRenderPass createVulkanRenderPass(const std::vector<Attachment>& attachments) 
     checkVulkanResult(res);
 
     return pass;
+}
+
+std::vector<VkClearValue> createGraphicPassClearValues(const std::vector<Attachment>& attachments) {
+    std::vector<VkClearValue> clearValues;
+    for (const auto& attachment : attachments) {
+        if (!isDepthFormat(attachment.format)) {
+            VkClearValue colorClear = {};
+            colorClear.color = { 0, 0, 0, 0 };
+            clearValues.push_back(colorClear);
+        }
+        else {
+            VkClearValue depthClear = {};
+            depthClear.depthStencil.depth = 0.f;
+            clearValues.push_back(depthClear);
+        }
+    }
+    return clearValues;
+}
+
+std::vector<VkPipelineColorBlendAttachmentState> createAttachmentBlendStates(const std::vector<Attachment>& attachments, 
+    const BlendState blendState) {
+    // only global blending state for all attachments
+    // currently only no blending and additive supported
+    VkPipelineColorBlendAttachmentState attachmentBlendState;
+    attachmentBlendState.blendEnable = blendState != BlendState::None ? VK_TRUE : VK_FALSE;
+    attachmentBlendState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    attachmentBlendState.dstColorBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
+    attachmentBlendState.colorBlendOp = VK_BLEND_OP_ADD;
+    attachmentBlendState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    attachmentBlendState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    attachmentBlendState.alphaBlendOp = VK_BLEND_OP_ADD;
+    attachmentBlendState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    std::vector<VkPipelineColorBlendAttachmentState> blendingAttachments;
+    for (const auto& attachment : attachments) {
+        if (!isDepthFormat(attachment.format)) {
+            blendingAttachments.push_back(attachmentBlendState);
+        }
+    }
+    return blendingAttachments;
+}
+
+VkPipelineColorBlendStateCreateInfo createBlendState(
+    const std::vector<VkPipelineColorBlendAttachmentState>& blendAttachmentStates) {
+    VkPipelineColorBlendStateCreateInfo blending;
+    blending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    blending.pNext = nullptr;
+    blending.flags = 0;
+    blending.logicOpEnable = VK_FALSE;
+    blending.logicOp = VK_LOGIC_OP_NO_OP;
+    blending.attachmentCount = (uint32_t)blendAttachmentStates.size();
+    blending.pAttachments = blendAttachmentStates.data();
+    blending.blendConstants[0] = 0.f;
+    blending.blendConstants[1] = 0.f;
+    blending.blendConstants[2] = 0.f;
+    blending.blendConstants[3] = 0.f;
+    return blending;
 }
 
 void destroyGraphicPass(const GraphicPass& pass) {

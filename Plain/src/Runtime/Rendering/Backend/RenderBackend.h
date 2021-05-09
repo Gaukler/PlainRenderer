@@ -12,6 +12,7 @@
 #include "ShaderFileManager.h"
 #include "RenderPassManager.h"
 #include "DescriptorPool.h"
+#include "RenderPassExecution.h"
 
 struct GLFWwindow;
 
@@ -28,13 +29,6 @@ struct UIRenderInfo {
     std::vector<VkRenderPassBeginInfo>  passBeginInfos;
     std::vector<VkFramebuffer>          framebuffers;
     VkRenderPass                        renderPass = VK_NULL_HANDLE;
-};
-
-//structs that are referenced by VkPipelineShaderStageCreateInfo
-struct VulkanShaderCreateAdditionalStructs {
-    VkSpecializationInfo                    specialisationInfo = {};
-    std::vector<VkSpecializationMapEntry>   specilisationMap;
-    std::vector<char>                       specialisationData;
 };
 
 //because they are extensions they need to be acquired using vkGetDeviceProcAddr
@@ -62,16 +56,6 @@ struct TimestampQuery {
 struct RenderPassTime{
     float timeMs = 0; //time in milliseconds
     std::string name;
-};
-
-struct VulkanRasterizationStateCreateInfo {
-    VkPipelineRasterizationStateCreateInfo	baseInfo;
-    VkPipelineRasterizationConservativeStateCreateInfoEXT conservativeInfo;
-};
-
-struct RenderPassExecutionEntry {
-    RenderPassType type;
-    int index;
 };
 
 struct UniformBufferFillOrder {
@@ -236,7 +220,7 @@ private:
     std::vector<VkFramebuffer> createImGuiFramebuffers();
     std::vector<VkRenderPassBeginInfo> RenderBackend::createImGuiPassBeginInfo(const int width, const int height);
 
-    //currently scheduled renderpass
+    // currently scheduled renderpass
     std::vector<RenderPassExecution>    m_framePasses;
     uint32_t                            m_swapchainInputImageIndex = 0;
     ImageHandle                         m_swapchainInputImageHandle;
@@ -361,7 +345,6 @@ private:
     VkDescriptorSet         allocateDescriptorSet(const VkDescriptorSetLayout setLayout, const DescriptorPoolAllocationSizes& requiredSizes);
     VkDescriptorPool        findFittingDescriptorPool(const DescriptorPoolAllocationSizes& requiredSizes);
     void                    updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources);
-    VkDescriptorSetLayout   createDescriptorSetLayout(const ShaderLayout& shaderLayout);
 
     //isGraphicsPass controls if the push constant range is setup for the MVP matrix    
     VkPipelineLayout        createPipelineLayout(const VkDescriptorSetLayout setLayout, const size_t pushConstantSize,
@@ -379,15 +362,13 @@ private:
     ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
     GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
-    VkShaderModule  createShaderModule(const std::vector<uint32_t>& code);
-
     //outAdditionalInfo has to be from parent scope to keep pointers to info structs valid
-    VkPipelineShaderStageCreateInfo         createPipelineShaderStageInfos(const VkShaderModule module, const VkShaderStageFlagBits stage,
-        const std::vector<SpecialisationConstant>& specialisationInfo, VulkanShaderCreateAdditionalStructs* outAdditionalInfo);
-    VkPipelineInputAssemblyStateCreateInfo  createDefaultInputAssemblyInfo();
-    VkPipelineTessellationStateCreateInfo   createTesselationState(const uint32_t patchControlPoints);
+    VkPipelineShaderStageCreateInfo createPipelineShaderStageInfos(
+        const VkShaderModule module, 
+        const VkShaderStageFlagBits stage,
+        const VkSpecializationInfo* pSpecialisationInfo);
 
-    VulkanRasterizationStateCreateInfo		createRasterizationState(const RasterizationConfig& raster);
+    VkPipelineTessellationStateCreateInfo   createTesselationState(const uint32_t patchControlPoints);
     VkPipelineMultisampleStateCreateInfo    createDefaultMultisamplingInfo();
     VkPipelineDepthStencilStateCreateInfo   createDepthStencilState(const DepthTest& depthTest);
 

@@ -24,13 +24,13 @@ bool loadGraphicPassShaders(const GraphicPassShaderPaths& shaderPaths, GraphicPa
         outSpirV->geometry = std::vector<uint32_t>();
         success &= loadShader(shaderPaths.geometry.value(), &outSpirV->geometry.value());
     }
-    if (shaderPaths.tessellationControl.has_value()) {
-        outSpirV->tessellationControl = std::vector<uint32_t>();
-        success &= loadShader(shaderPaths.tessellationControl.value(), &outSpirV->tessellationControl.value());
+    if (shaderPaths.tessCtrl.has_value()) {
+        outSpirV->tessCtrl = std::vector<uint32_t>();
+        success &= loadShader(shaderPaths.tessCtrl.value(), &outSpirV->tessCtrl.value());
     }
-    if (shaderPaths.tessellationEvaluation.has_value()) {
-        outSpirV->tessellationEvaluation = std::vector<uint32_t>();
-        success &= loadShader(shaderPaths.tessellationEvaluation.value(), &outSpirV->tessellationEvaluation.value());
+    if (shaderPaths.tessEval.has_value()) {
+        outSpirV->tessEval = std::vector<uint32_t>();
+        success &= loadShader(shaderPaths.tessEval.value(), &outSpirV->tessEval.value());
     }
     return success;
 }

@@ -122,15 +122,15 @@ GraphicShadersHandle ShaderFileManager::addGraphicShaders(const GraphicPassShade
         addGLSLIncludesFileIndicesToSet(path, &srcInfo.includeFileIndices);
     }
     //tesselation control
-    if (graphicShadersDesc.tesselationControl.has_value()) {
-        srcInfo.loadInfo.tessellationControl = loadInfoFromShaderDescription(graphicShadersDesc.tesselationControl.value());
-        const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessellationControl.value().shaderFileIndex];
+    if (graphicShadersDesc.tessCtrl.has_value()) {
+        srcInfo.loadInfo.tessCtrl = loadInfoFromShaderDescription(graphicShadersDesc.tessCtrl.value());
+        const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessCtrl.value().shaderFileIndex];
         addGLSLIncludesFileIndicesToSet(path, &srcInfo.includeFileIndices);
     }
     //tesselation evaluation
-    if (graphicShadersDesc.tesselationEvaluation.has_value()) {
-        srcInfo.loadInfo.tessellationEvaluation = loadInfoFromShaderDescription(graphicShadersDesc.tesselationEvaluation.value());
-        const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessellationEvaluation.value().shaderFileIndex];
+    if (graphicShadersDesc.tessEval.has_value()) {
+        srcInfo.loadInfo.tessEval = loadInfoFromShaderDescription(graphicShadersDesc.tessEval.value());
+        const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessEval.value().shaderFileIndex];
         addGLSLIncludesFileIndicesToSet(path, &srcInfo.includeFileIndices);
     }
 
@@ -188,14 +188,14 @@ bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handl
             std::cout << paths.geometry.value() << "\n";
         }
         //tessellation control path
-        if (srcInfo.loadInfo.tessellationControl.has_value()) {
-            paths.tessellationControl = m_filePathsAbsolute[srcInfo.loadInfo.tessellationControl.value().shaderFileIndex];
-            std::cout << paths.tessellationControl.value() << "\n";
+        if (srcInfo.loadInfo.tessCtrl.has_value()) {
+            paths.tessCtrl = m_filePathsAbsolute[srcInfo.loadInfo.tessCtrl.value().shaderFileIndex];
+            std::cout << paths.tessCtrl.value() << "\n";
         }
         //tessellation evaluation path
-        if (srcInfo.loadInfo.tessellationEvaluation.has_value()) {
-            paths.tessellationEvaluation = m_filePathsAbsolute[srcInfo.loadInfo.tessellationEvaluation.value().shaderFileIndex];
-            std::cout << paths.tessellationEvaluation.value() << "\n";
+        if (srcInfo.loadInfo.tessEval.has_value()) {
+            paths.tessEval = m_filePathsAbsolute[srcInfo.loadInfo.tessEval.value().shaderFileIndex];
+            std::cout << paths.tessEval.value() << "\n";
         }
         std::cout << "\n";
 
@@ -211,13 +211,13 @@ bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handl
                 const fs::path geoCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.geometry.value().spirvCacheFileIndex];
                 writeBinaryFile(geoCachePathAbsolute, outSpirV->geometry.value());
             }
-            if (srcInfo.loadInfo.tessellationControl.has_value()) {
-                const fs::path tessCtrlCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex];
-                writeBinaryFile(tessCtrlCachePathAbsolute, outSpirV->tessellationControl.value());
+            if (srcInfo.loadInfo.tessCtrl.has_value()) {
+                const fs::path tessCtrlCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.tessCtrl.value().spirvCacheFileIndex];
+                writeBinaryFile(tessCtrlCachePathAbsolute, outSpirV->tessCtrl.value());
             }
-            if (srcInfo.loadInfo.tessellationEvaluation.has_value()) {
-                const fs::path tessEvalCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex];
-                writeBinaryFile(tessEvalCachePathAbsolute, outSpirV->tessellationEvaluation.value());
+            if (srcInfo.loadInfo.tessEval.has_value()) {
+                const fs::path tessEvalCachePathAbsolute = m_filePathsAbsolute[srcInfo.loadInfo.tessEval.value().spirvCacheFileIndex];
+                writeBinaryFile(tessEvalCachePathAbsolute, outSpirV->tessEval.value());
             }
             return true;
         }
@@ -245,16 +245,16 @@ bool ShaderFileManager::loadGraphicShadersSpirV(const GraphicShadersHandle handl
             success &= loadBinaryFile(path, &outSpirV->geometry.value());
         }
         //tessellation control
-        if (srcInfo.loadInfo.tessellationControl.has_value()) {
-            const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex];
-            outSpirV->tessellationControl = std::vector<uint32_t>();
-            success &= loadBinaryFile(path, &outSpirV->tessellationControl.value());
+        if (srcInfo.loadInfo.tessCtrl.has_value()) {
+            const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessCtrl.value().spirvCacheFileIndex];
+            outSpirV->tessCtrl = std::vector<uint32_t>();
+            success &= loadBinaryFile(path, &outSpirV->tessCtrl.value());
         }
         //tesselation evaluation
-        if (srcInfo.loadInfo.tessellationEvaluation.has_value()) {
-            const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex];
-            outSpirV->tessellationEvaluation = std::vector<uint32_t>();
-            success &= loadBinaryFile(path, &outSpirV->tessellationEvaluation.value());
+        if (srcInfo.loadInfo.tessEval.has_value()) {
+            const fs::path path = m_filePathsAbsolute[srcInfo.loadInfo.tessEval.value().spirvCacheFileIndex];
+            outSpirV->tessEval = std::vector<uint32_t>();
+            success &= loadBinaryFile(path, &outSpirV->tessEval.value());
         }
         return success;
     }
@@ -310,8 +310,8 @@ std::vector<GraphicPassShaderReloadInfo> ShaderFileManager::reloadOutOfDateGraph
         GraphicShaderSourceInfo& shaderSrcInfo = m_graphicShaderSourceInfos[passIndex];
 
         const bool hasGeometryShader = shaderSrcInfo.loadInfo.geometry.has_value();
-        const bool hasTessellationControlShader = shaderSrcInfo.loadInfo.tessellationControl.has_value();
-        const bool hasTessellationEvauluationShader = shaderSrcInfo.loadInfo.tessellationEvaluation.has_value();
+        const bool hasTessellationControlShader = shaderSrcInfo.loadInfo.tessCtrl.has_value();
+        const bool hasTessellationEvauluationShader = shaderSrcInfo.loadInfo.tessEval.has_value();
 
         //reload glsl and compile to spirv
         GraphicPassShaderReloadInfo reloadInfo;
@@ -330,12 +330,12 @@ std::vector<GraphicPassShaderReloadInfo> ShaderFileManager::reloadOutOfDateGraph
             std::cout << shaderPaths.geometry.value() << "\n";
         }
         if (hasTessellationControlShader) {
-            shaderPaths.tessellationControl = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationControl.value().shaderFileIndex];
-            std::cout << shaderPaths.tessellationControl.value() << "\n";
+            shaderPaths.tessCtrl = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessCtrl.value().shaderFileIndex];
+            std::cout << shaderPaths.tessCtrl.value() << "\n";
         }
         if (hasTessellationEvauluationShader) {
-            shaderPaths.tessellationEvaluation = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationEvaluation.value().shaderFileIndex];
-            std::cout << shaderPaths.tessellationEvaluation.value() << "\n";
+            shaderPaths.tessEval = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessEval.value().shaderFileIndex];
+            std::cout << shaderPaths.tessEval.value() << "\n";
         }
         std::cout << "\n";
 
@@ -364,15 +364,15 @@ std::vector<GraphicPassShaderReloadInfo> ShaderFileManager::reloadOutOfDateGraph
             }
             //tessellation control
             if (hasTessellationControlShader) {
-                const fs::path tessellationControlCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex];
-                writeBinaryFile(tessellationControlCachePathAbsolute, reloadInfo.spirV.tessellationControl.value());
-                addGLSLIncludesFileIndicesToSet(shaderPaths.tessellationControl.value(), &shaderSrcInfo.includeFileIndices);
+                const fs::path tessellationControlCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessCtrl.value().spirvCacheFileIndex];
+                writeBinaryFile(tessellationControlCachePathAbsolute, reloadInfo.spirV.tessCtrl.value());
+                addGLSLIncludesFileIndicesToSet(shaderPaths.tessCtrl.value(), &shaderSrcInfo.includeFileIndices);
             }
             //tessellation control
             if (hasTessellationEvauluationShader) {
-                const fs::path tessellationEvaluationCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex];
-                writeBinaryFile(tessellationEvaluationCachePathAbsolute, reloadInfo.spirV.tessellationEvaluation.value());
-                addGLSLIncludesFileIndicesToSet(shaderPaths.tessellationEvaluation.value(), &shaderSrcInfo.includeFileIndices);
+                const fs::path tessellationEvaluationCachePathAbsolute = m_filePathsAbsolute[shaderSrcInfo.loadInfo.tessEval.value().spirvCacheFileIndex];
+                writeBinaryFile(tessellationEvaluationCachePathAbsolute, reloadInfo.spirV.tessEval.value());
+                addGLSLIncludesFileIndicesToSet(shaderPaths.tessEval.value(), &shaderSrcInfo.includeFileIndices);
             }
             else {
                 //update latest cache update point
@@ -383,10 +383,10 @@ std::vector<GraphicPassShaderReloadInfo> ShaderFileManager::reloadOutOfDateGraph
                     m_fileLastChanges[shaderSrcInfo.loadInfo.geometry.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
                 }
                 if (hasTessellationControlShader) {
-                    m_fileLastChanges[shaderSrcInfo.loadInfo.tessellationControl.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
+                    m_fileLastChanges[shaderSrcInfo.loadInfo.tessCtrl.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
                 }
                 if (hasTessellationEvauluationShader) {
-                    m_fileLastChanges[shaderSrcInfo.loadInfo.tessellationEvaluation.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
+                    m_fileLastChanges[shaderSrcInfo.loadInfo.tessEval.value().spirvCacheFileIndex] = fs::_File_time_clock::now();
                 }
             }
         }
@@ -472,13 +472,13 @@ bool ShaderFileManager::areGraphicShadersCachesOutOfDate(const GraphicShaderSour
             &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
     }
     //tesselation control
-    if (shaderSrcInfo.loadInfo.tessellationControl.has_value()) {
-        latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.tessellationControl.value(),
+    if (shaderSrcInfo.loadInfo.tessCtrl.has_value()) {
+        latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.tessCtrl.value(),
             &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
     }
     //tesselation evaluation
-    if (shaderSrcInfo.loadInfo.tessellationEvaluation.has_value()) {
-        latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.tessellationEvaluation.value(),
+    if (shaderSrcInfo.loadInfo.tessEval.has_value()) {
+        latestSrcAndCacheFileChanges(shaderSrcInfo.loadInfo.tessEval.value(),
             &latestSrcChange, &latestSpirvCacheChange, m_fileLastChanges);
     }
     //include files

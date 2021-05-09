@@ -57,16 +57,16 @@ struct GraphicPassShaderSpirV {
     std::vector<uint32_t> vertex;
     std::vector<uint32_t> fragment;
     std::optional<std::vector<uint32_t>> geometry;
-    std::optional<std::vector<uint32_t>> tessellationEvaluation;
-    std::optional<std::vector<uint32_t>> tessellationControl;
+    std::optional<std::vector<uint32_t>> tessEval; // tesselation evaluation
+    std::optional<std::vector<uint32_t>> tessCtrl; // tesselation control
 };
 
 struct GraphicPassShaderGLSL {
     std::vector<char> vertex;
     std::vector<char> fragment;
     std::optional<std::vector<char>> geometry;
-    std::optional<std::vector<char>> tesselationEvaluation;
-    std::optional<std::vector<char>> tesselationControl;
+    std::optional<std::vector<char>> tessEval; // tesselation evaluation
+    std::optional<std::vector<char>> tessCtrl; // tesselation control
 };
 
 struct GraphicPass {
