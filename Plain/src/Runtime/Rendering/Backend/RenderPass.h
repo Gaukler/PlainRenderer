@@ -4,3 +4,5 @@
 #include "Resources.h"
 
 VkRenderPass createVulkanRenderPass(const std::vector<Attachment>& attachments);
+void destroyGraphicPass(const GraphicPass& pass);
+void destroyComputePass(const ComputePass& pass);

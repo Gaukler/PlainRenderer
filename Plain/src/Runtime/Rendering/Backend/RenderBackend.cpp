@@ -16,6 +16,7 @@
 #include "../../Window.h"
 #include "Framebuffer.h"
 #include "RenderPass.h"
+#include "VulkanSync.h"
 
 // disable ImGui warnings
 #pragma warning( push )
@@ -215,15 +216,16 @@ void RenderBackend::updateShaderCode() {
     const std::vector<ComputePassShaderReloadInfo> computeShadersReloadInfos = m_shaderFileManager.reloadOutOfDateComputeShaders();
     const std::vector<GraphicPassShaderReloadInfo> graphicShadersReloadInfos = m_shaderFileManager.reloadOutOfDateGraphicShaders();
 
-    if (computeShadersReloadInfos.size() == 0 && graphicShadersReloadInfos.size() == 0) {
+    const bool noShadersToReload = computeShadersReloadInfos.size() == 0 && graphicShadersReloadInfos.size() == 0;
+    if (noShadersToReload) {
         return;
     }
 
-    //when updating passes they must not be used
+    // when updating passes they must not be used
     auto result = vkDeviceWaitIdle(vkContext.device);
     checkVulkanResult(result);
 
-    //recreate compute passes
+    // recreate compute passes
     for (const ComputePassShaderReloadInfo& reloadInfo : computeShadersReloadInfos) {
         ComputePass& pass = m_renderPasses.getComputePassRefByHandle(reloadInfo.renderpass);
         ComputeShaderHandle shaderHandle = pass.shaderHandle;
@@ -232,7 +234,7 @@ void RenderBackend::updateShaderCode() {
         pass.shaderHandle = shaderHandle;
     }
 
-    //recreate graphic passes
+    // recreate graphic passes
     for (const GraphicPassShaderReloadInfo& reloadInfo : graphicShadersReloadInfos) {
         GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(reloadInfo.renderpass);
         const GraphicShadersHandle shaderHandle = pass.shaderHandle;
@@ -243,8 +245,7 @@ void RenderBackend::updateShaderCode() {
 }
 
 void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const uint32_t width, const uint32_t height) {
-
-    //recreate image    
+    // recreate image
     for (const auto image : images) {
         m_images[image.index].desc.width = width;
         m_images[image.index].desc.height = height;
@@ -253,15 +254,6 @@ void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const u
         ImageHandle newHandle = createImage(imageDesc, nullptr, 0);
         assert(newHandle.index == image.index);
     }
-
-    //recreate framebuffer that use image    
-    VkExtent2D extent;
-    extent.width = width;
-    extent.height = height;
-
-    VkRect2D rect = {};
-    rect.extent = extent;
-    rect.offset = { 0, 0 };
 }
 
 void RenderBackend::newFrame() {
@@ -325,22 +317,23 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const 
 
         const Mesh mesh = m_meshes[meshHandles[i].index];
 
-        //vertex/index buffers            
+        // vertex/index buffers            
         VkDeviceSize offset[] = { 0 };
         vkCmdBindVertexBuffers(meshCommandBuffer, 0, 1, &mesh.vertexBuffer.vulkanHandle, offset);
         vkCmdBindIndexBuffer(meshCommandBuffer, mesh.indexBuffer.vulkanHandle, offset[0], mesh.indexPrecision);
 
-    if (pass.pushConstantSize > 0) {
-        //update push constants
-        vkCmdPushConstants(
-            meshCommandBuffer,
-            pass.pipelineLayout,
-            pushConstantStageFlags,
-            0,
-            (uint32_t)pass.pushConstantSize,
-            pushConstantData + i * pass.pushConstantSize);
-    }
-    vkCmdDrawIndexed(meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
+        const bool pushConstantDataAvailable = pass.pushConstantSize > 0;
+        if (pushConstantDataAvailable) {
+            // update push constants
+            vkCmdPushConstants(
+                meshCommandBuffer,
+                pass.pipelineLayout,
+                pushConstantStageFlags,
+                0,
+                (uint32_t)pass.pushConstantSize,
+                pushConstantData + i * pass.pushConstantSize);
+        }
+        vkCmdDrawIndexed(meshCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
     }
 }
 
@@ -2085,7 +2078,7 @@ void RenderBackend::endDebugLabel(const VkCommandBuffer cmdBuffer) {
 }
 
 void RenderBackend::createImguiDescriptorPool() {
-    //taken from imgui vulkan example, could not find any info if imgui can work with less allocations
+    // taken from imgui vulkan example, could not find any info if imgui can work with less allocations
     VkDescriptorPoolSize pool_sizes[] =
     {
         { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
@@ -2110,45 +2103,6 @@ void RenderBackend::createImguiDescriptorPool() {
     checkVulkanResult(res);
 }
 
-void RenderBackend::createDescriptorPool() {
-
-    const auto& initialSizes = m_descriptorPoolInitialAllocationSizes;
-
-    const uint32_t typeCount = 5;
-
-    VkDescriptorPoolCreateInfo poolInfo;
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.pNext = nullptr;
-    poolInfo.flags = 0;
-    poolInfo.maxSets = m_descriptorPoolInitialAllocationSizes.setCount;
-    poolInfo.poolSizeCount = typeCount;
-
-    VkDescriptorPoolSize poolSize[typeCount];
-    poolSize[0].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    poolSize[0].descriptorCount = initialSizes.imageSampled;
-
-    poolSize[1].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    poolSize[1].descriptorCount = initialSizes.imageStorage;
-
-    poolSize[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize[2].descriptorCount = initialSizes.uniformBuffer;
-
-    poolSize[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSize[3].descriptorCount = initialSizes.storageBuffer;
-
-    poolSize[4].type = VK_DESCRIPTOR_TYPE_SAMPLER;
-    poolSize[4].descriptorCount = initialSizes.sampler;
-
-    poolInfo.pPoolSizes = poolSize;
-
-    DescriptorPool pool;
-    pool.freeAllocations = initialSizes;
-    auto res = vkCreateDescriptorPool(vkContext.device, &poolInfo, nullptr, &pool.vkPool);
-    checkVulkanResult(res);
-    
-    m_descriptorPools.push_back(pool);
-}
-
 DescriptorPoolAllocationSizes RenderBackend::descriptorSetAllocationSizeFromShaderLayout(const ShaderLayout& layout) {
     DescriptorPoolAllocationSizes sizes;
     sizes.setCount = 1;
@@ -2160,6 +2114,24 @@ DescriptorPoolAllocationSizes RenderBackend::descriptorSetAllocationSizeFromShad
     return sizes;
 }
 
+VkDescriptorPool RenderBackend::findFittingDescriptorPool(const DescriptorPoolAllocationSizes& requiredSizes){
+
+    VkDescriptorPool fittingPool = VK_NULL_HANDLE;
+
+    for (auto& pool : m_descriptorPools) {
+        if (hasDescriptorPoolEnoughFreeAllocations(pool, requiredSizes)) {
+            fittingPool = pool.vkPool;
+            pool.freeAllocations = subtractDescriptorPoolSizes(pool.freeAllocations, requiredSizes);
+        }
+    }
+    const bool noFittingPoolFound = fittingPool == VK_NULL_HANDLE;
+    if (noFittingPoolFound) {
+        m_descriptorPools.push_back(createDescriptorPool());
+        fittingPool = m_descriptorPools.back().vkPool;
+    }
+    return fittingPool;
+}
+
 VkDescriptorSet RenderBackend::allocateDescriptorSet(const VkDescriptorSetLayout setLayout, const DescriptorPoolAllocationSizes& requiredSizes) {
 
     VkDescriptorSetAllocateInfo setInfo;
@@ -2168,42 +2140,7 @@ VkDescriptorSet RenderBackend::allocateDescriptorSet(const VkDescriptorSetLayout
     setInfo.descriptorPool = VK_NULL_HANDLE;
     setInfo.descriptorSetCount = 1;
     setInfo.pSetLayouts = &setLayout;
-
-    //find descriptor pool with enough free allocations
-    const auto hasPoolEnoughFreeAllocations = [](const DescriptorPool& pool, const DescriptorPoolAllocationSizes& requiredSizes) {
-        return
-            pool.freeAllocations.setCount       >= requiredSizes.setCount &&
-            pool.freeAllocations.imageSampled   >= requiredSizes.imageSampled &&
-            pool.freeAllocations.imageStorage   >= requiredSizes.imageStorage &&
-            pool.freeAllocations.storageBuffer  >= requiredSizes.storageBuffer &&
-            pool.freeAllocations.uniformBuffer  >= requiredSizes.uniformBuffer &&
-            pool.freeAllocations.sampler        >= requiredSizes.sampler;
-    };
-
-    //returns size of first - second
-    const auto subtractDescriptorPoolSizes = [](const DescriptorPoolAllocationSizes & first, const DescriptorPoolAllocationSizes & second) {
-        DescriptorPoolAllocationSizes result;
-        result.setCount         = first.setCount        - second.setCount;
-        result.imageSampled     = first.imageSampled    - second.imageSampled;
-        result.imageStorage     = first.imageStorage    - second.imageStorage;
-        result.storageBuffer    = first.storageBuffer   - second.storageBuffer;
-        result.uniformBuffer    = first.uniformBuffer   - second.uniformBuffer;
-        result.sampler          = first.sampler         - second.sampler;
-        return result;
-    };
-
-    for (auto& pool : m_descriptorPools) {
-        if (hasPoolEnoughFreeAllocations(pool, requiredSizes)) {
-            setInfo.descriptorPool = pool.vkPool;
-            pool.freeAllocations = subtractDescriptorPoolSizes(pool.freeAllocations, requiredSizes);
-        }
-    }
-
-    //if none has been found allocate a new pool
-    if (setInfo.descriptorPool == VK_NULL_HANDLE) {
-        createDescriptorPool();
-        setInfo.descriptorPool = m_descriptorPools.back().vkPool;
-    }
+    setInfo.descriptorPool = findFittingDescriptorPool(requiredSizes);
 
     VkDescriptorSet descriptorSet;
     auto result = vkAllocateDescriptorSets(vkContext.device, &setInfo, &descriptorSet);
@@ -2231,9 +2168,9 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
 
     std::vector<VkWriteDescriptorSet> descriptorInfos;
 
-    //buffer and images are given via pointer
-    //stored in vector to keep pointer valid
-    //resize first to avoid push_back invalidating pointers
+    // buffer and images are given via pointer
+    // stored in vector to keep pointer valid
+    // resize first to avoid push_back invalidating pointers
     uint32_t imageInfoIndex = 0;
     uint32_t bufferInfoIndex = 0;
     std::vector<VkDescriptorBufferInfo> bufferInfos;
@@ -2242,7 +2179,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
     imageInfos.resize(resources.samplers.size() + resources.storageImages.size() + resources.sampledImages.size());
     bufferInfos.resize(resources.uniformBuffers.size() + resources.storageBuffers.size());
 
-    //samplers
+    // samplers
     for (const auto& resource : resources.samplers) {
         VkDescriptorImageInfo samplerInfo;
         samplerInfo.sampler = m_samplers[resource.sampler.index];
@@ -2252,7 +2189,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
         descriptorInfos.push_back(writeSet);
     }
 
-    //sampled images
+    // sampled images
     for (const auto& resource : resources.sampledImages) {
         VkDescriptorImageInfo imageInfo;
 
@@ -2276,7 +2213,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
         descriptorInfos.push_back(writeSet);
     }
 
-    //storage images
+    // storage images
     for (const auto& resource : resources.storageImages) {
         VkDescriptorImageInfo imageInfo;
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -2287,7 +2224,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
         descriptorInfos.push_back(writeSet);
     }
 
-    //uniform buffer
+    // uniform buffer
     for (const auto& resource : resources.uniformBuffers) {
         Buffer buffer = m_uniformBuffers[resource.buffer.index];
         VkDescriptorBufferInfo bufferInfo;
@@ -2300,7 +2237,7 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
         descriptorInfos.push_back(writeSet);
     }
 
-    //storage buffer
+    // storage buffer
     for (const auto& resource : resources.storageBuffers) {
         Buffer buffer = m_storageBuffers[resource.buffer.index];
         VkDescriptorBufferInfo bufferInfo;
@@ -3034,34 +2971,6 @@ VkBufferMemoryBarrier RenderBackend::createBufferBarrier(const Buffer& buffer, c
     return barrier;
 }
 
-VkSemaphore RenderBackend::createSemaphore() {
-
-    VkSemaphoreCreateInfo semaphoreInfo = {};
-    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    semaphoreInfo.pNext = nullptr;
-    semaphoreInfo.flags = 0;
-
-    VkSemaphore semaphore;
-    auto res = vkCreateSemaphore(vkContext.device, &semaphoreInfo, nullptr, &semaphore);
-    checkVulkanResult(res);
-
-    return semaphore;
-}
-
-VkFence RenderBackend::createFence() {
-
-    VkFenceCreateInfo fenceInfo = {};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.pNext = nullptr;
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-    VkFence fence;
-    auto res = vkCreateFence(vkContext.device, &fenceInfo, nullptr, &fence);
-    checkVulkanResult(res);
-
-    return fence;
-}
-
 VkQueryPool RenderBackend::createQueryPool(const VkQueryType queryType, const uint32_t queryCount) {
 
     VkQueryPoolCreateInfo createInfo;
@@ -3127,17 +3036,4 @@ void RenderBackend::destroyBuffer(const Buffer& buffer) {
 void RenderBackend::destroyMesh(const Mesh& mesh) {
     destroyBuffer(mesh.vertexBuffer);
     destroyBuffer(mesh.indexBuffer);
-}
-
-void RenderBackend::destroyGraphicPass(const GraphicPass& pass) {
-    vkDestroyRenderPass(vkContext.device, pass.vulkanRenderPass, nullptr);
-    vkDestroyPipelineLayout(vkContext.device, pass.pipelineLayout, nullptr);
-    vkDestroyPipeline(vkContext.device, pass.pipeline, nullptr);
-    vkDestroyDescriptorSetLayout(vkContext.device, pass.descriptorSetLayout, nullptr);
-}
-
-void RenderBackend::destroyComputePass(const ComputePass& pass) {
-    vkDestroyPipelineLayout(vkContext.device, pass.pipelineLayout, nullptr);
-    vkDestroyPipeline(vkContext.device, pass.pipeline, nullptr);
-    vkDestroyDescriptorSetLayout(vkContext.device, pass.descriptorSetLayout, nullptr);
 }

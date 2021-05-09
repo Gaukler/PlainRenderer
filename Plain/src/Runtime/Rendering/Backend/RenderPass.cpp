@@ -80,3 +80,16 @@ VkRenderPass createVulkanRenderPass(const std::vector<Attachment>& attachments) 
 
     return pass;
 }
+
+void destroyGraphicPass(const GraphicPass& pass) {
+    vkDestroyRenderPass(vkContext.device, pass.vulkanRenderPass, nullptr);
+    vkDestroyPipelineLayout(vkContext.device, pass.pipelineLayout, nullptr);
+    vkDestroyPipeline(vkContext.device, pass.pipeline, nullptr);
+    vkDestroyDescriptorSetLayout(vkContext.device, pass.descriptorSetLayout, nullptr);
+}
+
+void destroyComputePass(const ComputePass& pass) {
+    vkDestroyPipelineLayout(vkContext.device, pass.pipelineLayout, nullptr);
+    vkDestroyPipeline(vkContext.device, pass.pipeline, nullptr);
+    vkDestroyDescriptorSetLayout(vkContext.device, pass.descriptorSetLayout, nullptr);
+}

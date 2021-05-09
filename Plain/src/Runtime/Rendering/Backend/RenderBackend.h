@@ -11,6 +11,7 @@
 #include "Common/MeshData.h"
 #include "ShaderFileManager.h"
 #include "RenderPassManager.h"
+#include "DescriptorPool.h"
 
 struct GLFWwindow;
 
@@ -49,20 +50,6 @@ struct VulkanDebugUtilsFunctions {
     PFN_vkSetDebugUtilsObjectNameEXT    vkSetDebugUtilsObjectNameEXT    = nullptr;
     PFN_vkSetDebugUtilsObjectTagEXT     vkSetDebugUtilsObjectTagEXT     = nullptr;
     PFN_vkSubmitDebugUtilsMessageEXT    vkSubmitDebugUtilsMessageEXT    = nullptr;
-};
-
-struct DescriptorPoolAllocationSizes {
-    uint32_t setCount       = 0;
-    uint32_t imageSampled   = 0;
-    uint32_t imageStorage   = 0;
-    uint32_t uniformBuffer  = 0;
-    uint32_t storageBuffer  = 0;
-    uint32_t sampler        = 0;
-};
-
-struct DescriptorPool {
-    VkDescriptorPool vkPool = VK_NULL_HANDLE;
-    DescriptorPoolAllocationSizes freeAllocations;
 };
 
 struct TimestampQuery {
@@ -367,24 +354,12 @@ private:
     //imgui requires a single sizeable pool, so it's handled separately
     void createImguiDescriptorPool();
 
-    //create pool using m_descriptorPoolInitialAllocationSizes and add to m_descriptorPools
-    void createDescriptorPool();
-
-    //how many types of descriptors are allocated from a new pool
-    const DescriptorPoolAllocationSizes m_descriptorPoolInitialAllocationSizes = {
-        128, //set count
-        128, //imageSampled
-        128, //imageStorage
-        128, //uniformBuffer
-        128, //storageBuffer
-        128  //sampler
-    };
-
     DescriptorPoolAllocationSizes descriptorSetAllocationSizeFromShaderLayout(const ShaderLayout& layout);
 
     //creates new descriptor pool if needed
     //currently now way to free descriptor set
     VkDescriptorSet         allocateDescriptorSet(const VkDescriptorSetLayout setLayout, const DescriptorPoolAllocationSizes& requiredSizes);
+    VkDescriptorPool        findFittingDescriptorPool(const DescriptorPoolAllocationSizes& requiredSizes);
     void                    updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources);
     VkDescriptorSetLayout   createDescriptorSetLayout(const ShaderLayout& shaderLayout);
 
@@ -435,11 +410,6 @@ private:
     VkSemaphore m_renderFinishedSemaphore = VK_NULL_HANDLE;
     VkFence     m_renderFinishedFence = VK_NULL_HANDLE;
 
-
-    VkSemaphore createSemaphore();
-    VkFence     createFence();
-
-
     //timestamp queries
     const uint32_t m_timestampQueryPoolQueryCount = 100;
 
@@ -475,8 +445,6 @@ private:
     void destroyImageInternal(const Image& image);
     void destroyBuffer(const Buffer& buffer);
     void destroyMesh(const Mesh& mesh);
-    void destroyGraphicPass(const GraphicPass& pass);
-    void destroyComputePass(const ComputePass& pass);
 };
 
 extern RenderBackend gRenderBackend;
