@@ -371,3 +371,16 @@ void destroyVulkanInstance() {
     }
     vkDestroyInstance(vkContext.vulkanInstance, nullptr);
 }
+
+VkPhysicalDeviceProperties getVulkanDeviceProperties() {
+    VkPhysicalDeviceProperties deviceProperties;
+    vkGetPhysicalDeviceProperties(vkContext.physicalDevice, &deviceProperties);
+    return deviceProperties;
+}
+
+void initializeVulkanQueues() {
+    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.graphicsQueueIndex, 0, &vkContext.graphicQueue);
+    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.presentationQueueIndex, 0, &vkContext.presentQueue);
+    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.transferQueueFamilyIndex, 0, &vkContext.transferQueue);
+    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.computeQueueIndex, 0, &vkContext.computeQueue);
+}

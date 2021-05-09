@@ -11,4 +11,5 @@ namespace Window {
     void initWindowSystem();
     GLFWwindow* createWindow(const int width, const int height);
     void toggleFullscreen();
+    std::array<int, 2> getGlfwWindowResolution(GLFWwindow* pWindow);
 }

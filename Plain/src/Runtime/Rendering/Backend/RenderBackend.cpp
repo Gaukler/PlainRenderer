@@ -1,9 +1,6 @@
 #include "pch.h"
 #include "RenderBackend.h"
 
-#define GLFW_INCLUDE_VULKAN
-#include "GLFW/glfw3.h"
-
 #include <vulkan/vulkan.h>
 
 #include "SpirvReflection.h"
@@ -16,6 +13,9 @@
 #include "Runtime/Timer.h"
 #include "JobSystem.h"
 #include "VulkanImage.h"
+#include "../../Window.h"
+#include "Framebuffer.h"
+#include "RenderPass.h"
 
 // disable ImGui warnings
 #pragma warning( push )
@@ -45,58 +45,31 @@ void RenderBackend::setup(GLFWwindow* window) {
     createSurface(window);
     pickPhysicalDevice(m_swapchain.surface);
 
-    // retrieve and output device name
-    VkPhysicalDeviceProperties deviceProperties;
-    vkGetPhysicalDeviceProperties(vkContext.physicalDevice, &deviceProperties);
+    VkPhysicalDeviceProperties deviceProperties = getVulkanDeviceProperties();
     m_nanosecondsPerTimestamp = deviceProperties.limits.timestampPeriod;
 
-    std::cout << "picked physical device: " << deviceProperties.deviceName << std::endl;
+    std::cout << "Picked physical device: " << deviceProperties.deviceName << std::endl;
     std::cout << std::endl;
 
     getQueueFamilies(vkContext.physicalDevice, &vkContext.queueFamilies, m_swapchain.surface);
     createLogicalDevice();
-
-    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.graphicsQueueIndex, 0,       &vkContext.graphicQueue);
-    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.presentationQueueIndex, 0,   &vkContext.presentQueue);
-    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.transferQueueFamilyIndex, 0, &vkContext.transferQueue);
-    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.computeQueueIndex, 0,        &vkContext.computeQueue);
-
+    initializeVulkanQueues();
     chooseSurfaceFormat();
     createSwapChain();
 
-    int width, height;
-    glfwGetWindowSize(window, &width, &height);
-    getSwapchainImages((uint32_t)width, (uint32_t)height);
+    const std::array<int, 2> resolution = Window::getGlfwWindowResolution(window);
+    initSwapchainImages((uint32_t)resolution[0], (uint32_t)resolution[1]);
 
     acquireDebugUtilsExtFunctionsPointers();
 
+    m_vkAllocator.create();
     m_commandPool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-
-    for (int i = 0; i < JobSystem::getWorkerCount(); i++) {
-        const VkCommandPool pool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-        m_drawcallCommandPools.push_back(pool);
-    }
-
+    m_drawcallCommandPools = createDrawcallCommandPools();
     m_transientCommandPool = createCommandPool(vkContext.queueFamilies.transferQueueFamilyIndex, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
-
     m_swapchain.imageAvaible = createSemaphore();
     m_renderFinishedSemaphore = createSemaphore();
     m_renderFinishedFence = createFence();
-
-    m_vkAllocator.create();
-
-    //staging buffer
-    {
-        const auto stagingBufferUsageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-        const auto stagingBufferMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        const std::vector<uint32_t> stagingBufferQueueFamilies = { vkContext.queueFamilies.transferQueueFamilyIndex };
-        m_stagingBuffer = createBufferInternal(
-            m_stagingBufferSize, 
-            stagingBufferQueueFamilies, 
-            stagingBufferUsageFlags, 
-            stagingBufferMemoryFlags);
-    }
-
+    m_stagingBuffer = createStagingBuffer();
     m_commandBuffers[0] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_commandPool);
     m_commandBuffers[1] = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_commandPool);
 
@@ -104,9 +77,28 @@ void RenderBackend::setup(GLFWwindow* window) {
     initGlobalTextureArrayDescriptorSet();
     setupImgui(window);
 
-    //query pools
     m_timestampQueryPools[0] = createQueryPool(VK_QUERY_TYPE_TIMESTAMP, m_timestampQueryPoolQueryCount);
     m_timestampQueryPools[1] = createQueryPool(VK_QUERY_TYPE_TIMESTAMP, m_timestampQueryPoolQueryCount);
+}
+
+Buffer RenderBackend::createStagingBuffer() {
+    const auto stagingBufferUsageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    const auto stagingBufferMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    const std::vector<uint32_t> stagingBufferQueueFamilies = { vkContext.queueFamilies.transferQueueFamilyIndex };
+    return createBufferInternal(
+        m_stagingBufferSize,
+        stagingBufferQueueFamilies,
+        stagingBufferUsageFlags,
+        stagingBufferMemoryFlags);
+}
+
+std::vector<VkCommandPool> RenderBackend::createDrawcallCommandPools() {
+    std::vector<VkCommandPool> drawcallPools;
+    for (int i = 0; i < JobSystem::getWorkerCount(); i++) {
+        const VkCommandPool pool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+        drawcallPools.push_back(pool);
+    }
+    return drawcallPools;
 }
 
 void RenderBackend::acquireDebugUtilsExtFunctionsPointers() {
@@ -128,7 +120,6 @@ void RenderBackend::shutdown() {
     waitForRenderFinished();
     m_shaderFileManager.shutdown();
 
-    //destroy resources
     for (uint32_t i = 0; i < m_images.size(); i++) {
         destroyImage({ i });
     }
@@ -153,12 +144,8 @@ void RenderBackend::shutdown() {
     for (const auto& sampler : m_samplers) {
         vkDestroySampler(vkContext.device, sampler, nullptr);
     }
-    for (const auto& f : m_transientFramebuffers[0]) {
-        destroyFramebuffer(f);
-    }
-    for (const auto& f : m_transientFramebuffers[1]) {
-        destroyFramebuffer(f);
-    }
+    destroyFramebuffers(m_transientFramebuffers[0]);
+    destroyFramebuffers(m_transientFramebuffers[1]);
 
     vkDestroyDescriptorSetLayout(vkContext.device, m_globalTextureArrayDescriporSetLayout, nullptr);
 
@@ -168,10 +155,7 @@ void RenderBackend::shutdown() {
 
     m_vkAllocator.destroy();
 
-    //destroy ui
-    for (const auto& framebuffer : m_ui.framebuffers) {
-        vkDestroyFramebuffer(vkContext.device, framebuffer, nullptr);
-    }
+    destroyFramebuffers(m_ui.framebuffers);
     vkDestroyRenderPass(vkContext.device, m_ui.renderPass, nullptr);
     ImGui_ImplVulkan_Shutdown();
 
@@ -208,41 +192,22 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
     auto result = vkDeviceWaitIdle(vkContext.device);
     checkVulkanResult(result);
 
-    //destroy swapchain and views
     for (const auto& imageHandle : m_swapchain.imageHandles) {
         destroyImage(imageHandle);
     }
     vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
     vkDestroySurfaceKHR(vkContext.vulkanInstance, m_swapchain.surface, nullptr);
     
-    //recreate
     createSurface(window);
 
-    //queue families must revalidate present support for new surface
+    // queue families must revalidate present support for new surface
     getQueueFamilies(vkContext.physicalDevice, &vkContext.queueFamilies, m_swapchain.surface);
     createSwapChain();
-    getSwapchainImages(width, height);
+    initSwapchainImages(width, height);
 
-    //recreate imgui pass framebuffer
-    VkExtent2D extent;
-    extent.width = width;
-    extent.height = height;
-
-    assert(m_ui.framebuffers.size() == m_ui.passBeginInfos.size());
-    assert(m_ui.framebuffers.size() == m_swapchain.imageHandles.size());
-    for (uint32_t i = 0; i < m_ui.framebuffers.size(); i++) {
-
-        VkFramebuffer oldBuffer = m_ui.framebuffers[i];
-        vkDestroyFramebuffer(vkContext.device, oldBuffer, nullptr);
-
-        RenderTarget uiTarget;
-        uiTarget.image = m_swapchain.imageHandles[i];
-        uiTarget.mipLevel = 0;
-        VkFramebuffer newBuffer = createVulkanFramebuffer({ uiTarget }, m_ui.renderPass);
-        m_ui.framebuffers[i] = newBuffer;
-        m_ui.passBeginInfos[i].framebuffer = newBuffer;
-        m_ui.passBeginInfos[i].renderArea.extent = extent;
-    }
+    destroyFramebuffers(m_ui.framebuffers);
+    m_ui.framebuffers = createImGuiFramebuffers();
+    m_ui.passBeginInfos = createImGuiPassBeginInfo(width, height);
 }
 
 void RenderBackend::updateShaderCode() {
@@ -320,9 +285,7 @@ void RenderBackend::newFrame() {
 void RenderBackend::prepareForDrawcallRecording() {
     allocateTemporaryImages();
     updateRenderPassDescriptorSets();
-    for (const auto& f : m_transientFramebuffers[m_frameIndexMod2]) {
-        destroyFramebuffer(f);
-    }
+    destroyFramebuffers(m_transientFramebuffers[m_frameIndexMod2]);
     m_transientFramebuffers[m_frameIndexMod2] = createGraphicPassFramebuffer(m_graphicPassExecutions);
     startGraphicPassRecording();
 }
@@ -1150,10 +1113,6 @@ VkFramebuffer RenderBackend::createVulkanFramebuffer(const std::vector<RenderTar
     return framebuffer;
 }
 
-void RenderBackend::destroyFramebuffer(const VkFramebuffer& framebuffer) {
-    vkDestroyFramebuffer(vkContext.device, framebuffer, nullptr);
-}
-
 bool RenderBackend::validateAttachments(const std::vector<RenderTarget>& targets) {
 
     const std::string failureMessagePrologue = "Attachment validation failed: ";
@@ -1289,7 +1248,7 @@ void RenderBackend::createSwapChain() {
     checkVulkanResult(res);
 }
 
-void RenderBackend::getSwapchainImages(const uint32_t width, const uint32_t height) {
+void RenderBackend::initSwapchainImages(const uint32_t width, const uint32_t height) {
 
     uint32_t swapchainImageCount = 0;
     if (vkGetSwapchainImagesKHR(vkContext.device, m_swapchain.vulkanHandle, &swapchainImageCount, nullptr) != VK_SUCCESS) {
@@ -1398,29 +1357,32 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
     assert(res == VK_SUCCESS);
     ImGui_ImplVulkan_DestroyFontUploadObjects();
 
-    //create framebuffers
-    VkExtent2D extent;
-    extent.width  = m_images[m_swapchain.imageHandles[0].index].desc.width;
-    extent.height = m_images[m_swapchain.imageHandles[0].index].desc.height;
+    m_ui.framebuffers = createImGuiFramebuffers();
+
+    const int width = m_images[m_swapchain.imageHandles[0].index].desc.width;
+    const int height = m_images[m_swapchain.imageHandles[0].index].desc.height;
+    m_ui.passBeginInfos = createImGuiPassBeginInfo(width, height);
+}
+
+std::vector<VkFramebuffer> RenderBackend::createImGuiFramebuffers() {
+    std::vector<VkFramebuffer> buffers;
     for (const auto& imageHandle : m_swapchain.imageHandles) {
         RenderTarget uiTarget;
         uiTarget.image = imageHandle;
         uiTarget.mipLevel = 0;
         const VkFramebuffer framebuffer = createVulkanFramebuffer({ uiTarget }, m_ui.renderPass);
-        m_ui.framebuffers.push_back(framebuffer);
+        buffers.push_back(framebuffer);
     }
+    return buffers;
+}
 
-    //pass infos
+std::vector<VkRenderPassBeginInfo> RenderBackend::createImGuiPassBeginInfo(const int width, const int height) {
+    std::vector<VkRenderPassBeginInfo> passBeginInfos;
     for (const auto& framebuffer : m_ui.framebuffers) {
-        VkRenderPassBeginInfo info = {};
-        info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        info.renderPass = m_ui.renderPass;
-        info.framebuffer = framebuffer;
-        info.renderArea.extent = extent;
-        info.clearValueCount = 0;
-        info.pClearValues = nullptr;
-        m_ui.passBeginInfos.push_back(info);
+        const auto beginInfo = createBeginInfo(width, height, m_ui.renderPass, framebuffer, {});
+        passBeginInfos.push_back(beginInfo);
     }
+    return passBeginInfos;
 }
 
 Image& RenderBackend::getImageRef(const ImageHandle handle) {
@@ -2783,84 +2745,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
 bool validateAttachmentFormatsAreCompatible(const ImageFormat a, const ImageFormat b) {
     return imageFormatToVkAspectFlagBits(a) == imageFormatToVkAspectFlagBits(b);
-}
-
-VkRenderPass RenderBackend::createVulkanRenderPass(const std::vector<Attachment>& attachments) {
-
-    VkRenderPass            pass;
-    VkRenderPassCreateInfo  info;
-    std::vector<VkAttachmentDescription> descriptions;
-    VkSubpassDescription subpass;
-    std::vector<VkAttachmentReference> colorReferences;
-    VkAttachmentReference  depthReference;
-    bool hasDepth = false;
-
-    //attachment descriptions
-    for (uint32_t i = 0; i < attachments.size(); i++) {
-
-        Attachment attachment = attachments[i];
-        VkAttachmentLoadOp loadOp;
-        VkAttachmentDescription desc;
-
-        switch (attachment.loadOp) {
-        case(AttachmentLoadOp::Clear): loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; break;
-        case(AttachmentLoadOp::Load): loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; break;
-        case(AttachmentLoadOp::DontCare): loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; break;
-        default: throw std::runtime_error("Unknown attachment load op");
-        }
-
-        VkImageLayout layout = isDepthFormat(attachment.format) ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-        desc.flags = 0;
-        desc.format = imageFormatToVulkanFormat(attachment.format);
-        desc.samples = VK_SAMPLE_COUNT_1_BIT;
-        desc.loadOp = loadOp;
-        desc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        desc.initialLayout = layout;
-        desc.finalLayout = layout;
-
-        VkAttachmentReference ref;
-        ref.attachment = i;
-        ref.layout = desc.initialLayout;
-        if (desc.format == VK_FORMAT_D16_UNORM ||
-            desc.format == VK_FORMAT_D32_SFLOAT) {
-            depthReference = ref;
-            hasDepth = true;
-        }
-        else {
-            colorReferences.push_back(ref);
-        }
-        descriptions.push_back(desc);
-    }
-
-    //subpass
-    subpass.flags = 0;
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.inputAttachmentCount = 0;
-    subpass.pInputAttachments = nullptr;
-    subpass.colorAttachmentCount = (uint32_t)colorReferences.size();
-    subpass.pColorAttachments = colorReferences.data();
-    subpass.pResolveAttachments = nullptr;
-    subpass.pDepthStencilAttachment = hasDepth ? &depthReference : nullptr;
-    subpass.preserveAttachmentCount = 0;
-    subpass.pPreserveAttachments = nullptr;
-
-    info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    info.pNext = nullptr;
-    info.flags = 0;
-    info.attachmentCount = (uint32_t)descriptions.size();
-    info.pAttachments = descriptions.data();
-    info.subpassCount = 1;
-    info.pSubpasses = &subpass;
-    info.dependencyCount = 0;
-    info.pDependencies = nullptr;
-
-    auto res = vkCreateRenderPass(vkContext.device, &info, nullptr, &pass);
-    checkVulkanResult(res);
-
-    return pass;
 }
 
 VkShaderModule RenderBackend::createShaderModule(const std::vector<uint32_t>& code) {

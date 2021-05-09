@@ -21,7 +21,7 @@ struct VulkanContext {
     VkQueue transferQueue = VK_NULL_HANDLE;
 };
 
-VkDebugReportCallbackEXT    setupDebugCallbacks();
+VkDebugReportCallbackEXT setupDebugCallbacks();
 
 // returns true if all family indices have been found, in that case indices are writen to QueueFamilies pointer
 bool getQueueFamilies(const VkPhysicalDevice device, QueueFamilies* pOutQueueFamilies, const VkSurfaceKHR surface);
@@ -33,5 +33,7 @@ void destroyVulkanInstance();
 bool hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDevice);
 void pickPhysicalDevice(const VkSurfaceKHR surface);
 void createLogicalDevice();
+VkPhysicalDeviceProperties getVulkanDeviceProperties();
+void initializeVulkanQueues();
 
 extern VulkanContext vkContext;

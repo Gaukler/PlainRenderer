@@ -68,4 +68,10 @@ namespace Window {
             windowState.isFullscreen = true;
         }
     }
+
+    std::array<int, 2> getGlfwWindowResolution(GLFWwindow* pWindow) {
+        std::array<int, 2> resolution;
+        glfwGetWindowSize(pWindow, &resolution[0], &resolution[1]);
+        return resolution;
+    }
 }

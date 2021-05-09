@@ -176,6 +176,9 @@ public:
 
 private:
 
+    Buffer createStagingBuffer();
+    std::vector<VkCommandPool> createDrawcallCommandPools();
+
     // debug marker use an extension and as such need to get function pointers
     void acquireDebugUtilsExtFunctionsPointers();
 
@@ -213,7 +216,6 @@ private:
 
     std::vector<VkFramebuffer> createGraphicPassFramebuffer(const std::vector<GraphicPassExecution>& execution);
     VkFramebuffer createVulkanFramebuffer(const std::vector<RenderTarget>& targets, const VkRenderPass renderpass);
-    void destroyFramebuffer(const VkFramebuffer& framebuffer);
 
     bool validateAttachments(const std::vector<RenderTarget>& attachments);
     bool imageHasAttachmentUsageFlag(const Image& image);
@@ -233,7 +235,7 @@ private:
     void chooseSurfaceFormat();
     void createSwapChain();
 
-    void getSwapchainImages(const uint32_t width, const uint32_t height);
+    void initSwapchainImages(const uint32_t width, const uint32_t height);
     void presentImage(const VkSemaphore waitSemaphore);
 
     /*
@@ -243,6 +245,9 @@ private:
     */
     UIRenderInfo m_ui;
     void setupImgui(GLFWwindow* window);
+
+    std::vector<VkFramebuffer> createImGuiFramebuffers();
+    std::vector<VkRenderPassBeginInfo> RenderBackend::createImGuiPassBeginInfo(const int width, const int height);
 
     //currently scheduled renderpass
     std::vector<RenderPassExecution>    m_framePasses;
@@ -399,7 +404,6 @@ private:
     ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
     GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
-    VkRenderPass    createVulkanRenderPass(const std::vector<Attachment>& attachments);
     VkShaderModule  createShaderModule(const std::vector<uint32_t>& code);
 
     //outAdditionalInfo has to be from parent scope to keep pointers to info structs valid
