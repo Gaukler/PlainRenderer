@@ -24,12 +24,24 @@ const VertexInputFlags vertexInputFlagPerLocation[VERTEX_INPUT_ATTRIBUTE_COUNT] 
     VertexInputFlags::Bitangent
 };
 
+const uint32_t vertexInputPositionByteSize  = 12;
+const uint32_t vertexInputUVByteSize        = 4;
+const uint32_t vertexInputNormalByteSize    = 4;
+const uint32_t vertexInputTangentByteSize   = 4;
+const uint32_t vertexInputBitangentByteSize = 4;
+
 const uint32_t vertexInputBytePerLocation[VERTEX_INPUT_ATTRIBUTE_COUNT] = {
-    12,
-    4,
-    4,
-    4,
-    4 
+    vertexInputPositionByteSize,
+    vertexInputUVByteSize,
+    vertexInputNormalByteSize,
+    vertexInputTangentByteSize,
+    vertexInputBitangentByteSize
 };
 
-const uint32_t vertexFormatFullByteSize = 28;
+constexpr uint32_t getFullVertexFormatByteSize() {
+    uint32_t size = 0;
+    for (const uint32_t attributeSize : vertexInputBytePerLocation) {
+        size += attributeSize;
+    }
+    return size;
+}

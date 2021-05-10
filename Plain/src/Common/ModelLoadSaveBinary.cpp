@@ -4,32 +4,34 @@
 #include "Utilities/DirectoryUtils.h"
 #include "VertexInput.h"
 
-const uint32_t binaryModelMagicNumber = *(uint32_t*)"PlMB"; //stands for Plain Model Binary
+const uint32_t binaryModelMagicNumber = *(uint32_t*)"PlMB"; // stands for Plain Model Binary
 
 struct ModelFileHeader {
-    uint32_t magicNumber;   //for verification
+    uint32_t magicNumber;   // for verification
     size_t objectCount;
     size_t meshCount;
 };
 
-//Binary model file structure:
-//ModelFileHeader
-//
-//header.objectCount time the Object struct which contains a 4x4 model matrix and a mesh index
-//
-//header.meshCount times the following data structure:
-//uint32_t indexCount
-//uint32_t vertexCount
-//uint32_t albedo texture path length
-//char* albedo texture path
-//uint32_t normal texture path length
-//char* normal texture path
-//uint32_t specular texture path length
-//char* specular texture path
-//index buffer data, as 16 bit or 32 bit unsigned int, uses 16 bit if index count < uint16_t::max
-//vertex buffer data, vertexCount times full vertex format size
+/*
+Binary model file structure:
+ModelFileHeader
 
-//copies data and returns offset + copy size
+header.objectCount time the Object struct which contains a 4x4 model matrix and a mesh index
+
+header.meshCount times the following data structure:
+uint32_t indexCount
+uint32_t vertexCount
+uint32_t albedo texture path length
+char* albedo texture path
+uint32_t normal texture path length
+char* normal texture path
+uint32_t specular texture path length
+char* specular texture path
+index buffer data, as 16 bit or 32 bit unsigned int, uses 16 bit if index count < uint16_t::max
+vertex buffer data, vertexCount times full vertex format size
+*/
+
+// copies data and returns offset + copy size
 size_t copyToBuffer(const void* src, uint8_t* dst, const size_t copySize, const size_t offset) {
     memcpy(dst + offset, src, copySize);
     return offset + copySize;
@@ -47,13 +49,13 @@ void saveBinaryScene(const std::filesystem::path& filename, SceneBinary scene){
         meshDataSize += sizeof(meshBinary.indexCount);
         meshDataSize += sizeof(meshBinary.vertexCount);
         meshDataSize += sizeof(meshBinary.boundingBox);
-        meshDataSize += sizeof(uint32_t); //albedo texture path length
+        meshDataSize += sizeof(uint32_t); // albedo texture path length
         meshDataSize += meshBinary.texturePaths.albedoTexturePath.string().size();
-        meshDataSize += sizeof(uint32_t); //normal texture path length
+        meshDataSize += sizeof(uint32_t); // normal texture path length
         meshDataSize += meshBinary.texturePaths.normalTexturePath.string().size();
-        meshDataSize += sizeof(uint32_t); //specular texture path length
+        meshDataSize += sizeof(uint32_t); // specular texture path length
         meshDataSize += meshBinary.texturePaths.specularTexturePath.string().size();
-        meshDataSize += sizeof(uint32_t); //sdf texture path length
+        meshDataSize += sizeof(uint32_t); // sdf texture path length
         meshDataSize += sizeof(meshBinary.meanAlbedo);
         meshDataSize += meshBinary.texturePaths.sdfTexturePath.string().size();
         meshDataSize += sizeof(uint16_t) * meshBinary.indexBuffer.size();
@@ -148,7 +150,7 @@ bool loadBinaryScene(const std::filesystem::path& filename, SceneBinary* outScen
     const size_t fileSize = file.tellg();
     file.seekg(0, file.beg);
 
-    //read header
+    // read header
     ModelFileHeader header;
     file.read((char*)&header, sizeof(header));
 
@@ -158,12 +160,12 @@ bool loadBinaryScene(const std::filesystem::path& filename, SceneBinary* outScen
         return false;
     }
 
-    //read object data
+    // read object data
     outScene->objects.resize(header.objectCount);
     const size_t objectDataSize = header.objectCount * sizeof(ObjectBinary);
     file.read((char*)outScene->objects.data(), objectDataSize);
 
-    //read mesh data
+    // read mesh data
     outScene->meshes.reserve(header.meshCount);
 
     for (size_t i = 0; i < header.meshCount; i++) {
@@ -205,19 +207,19 @@ bool loadBinaryScene(const std::filesystem::path& filename, SceneBinary* outScen
         size_t halfPerIndex;
         size_t bytePerIndex;
         if (mesh.indexCount < std::numeric_limits<uint16_t>::max()) {
-            //indices fit into 16 bit 
+            // indices fit into 16 bit 
             halfPerIndex = 1;
             bytePerIndex = 2;
         }
         else {
-            //indices require 32 bit
+            // indices require 32 bit
             halfPerIndex = 2;
             bytePerIndex = 4;
         }
         mesh.indexBuffer.resize(mesh.indexCount * halfPerIndex);
         file.read((char*)mesh.indexBuffer.data(), mesh.indexCount * bytePerIndex);
 
-        size_t vertexBufferSize = (size_t)vertexFormatFullByteSize * (size_t)mesh.vertexCount;
+        size_t vertexBufferSize = (size_t)getFullVertexFormatByteSize() * (size_t)mesh.vertexCount;
         mesh.vertexBuffer.resize(vertexBufferSize);
         file.read((char*)mesh.vertexBuffer.data(), vertexBufferSize);
 

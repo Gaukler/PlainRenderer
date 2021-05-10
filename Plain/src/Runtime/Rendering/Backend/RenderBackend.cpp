@@ -8,7 +8,7 @@
 #include "ShaderIO.h"
 #include "Utilities/GeneralUtils.h"
 #include "Utilities/MathUtils.h"
-#include "VertexInputVulkan.h"
+#include "VulkanVertexInput.h"
 #include "VulkanImageFormats.h"
 #include "Runtime/Timer.h"
 #include "JobSystem.h"
@@ -2300,10 +2300,8 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     auto res = vkCreateComputePipelines(vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pass.pipeline);
     checkVulkanResult(res);
 
-    //shader module no needed anymore
     vkDestroyShaderModule(vkContext.device, module, nullptr);
 
-    //descriptor set    
     const auto setSizes = descriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
     pass.descriptorSets[0] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
     pass.descriptorSets[1] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
@@ -2423,31 +2421,9 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pass.pushConstantSize = reflection.pushConstantByteSize;
     pass.clearValues = createGraphicPassClearValues(desc.attachments);
 
-    std::vector<VkVertexInputAttributeDescription> attributes;
-    uint32_t currentOffset = 0;
+    const std::vector<VkVertexInputAttributeDescription> attributes = createVertexInputDescriptions(reflection.vertexInputFlags);
+    const VkVertexInputBindingDescription vertexBinding = createVertexInputBindingDescription(desc.vertexFormat);
 
-    for (uint32_t location = 0; location < VERTEX_INPUT_ATTRIBUTE_COUNT; location++) {
-        if (bool(vertexInputFlagPerLocation[location] & reflection.vertexInputFlags)) {
-            VkVertexInputAttributeDescription attribute;
-            attribute.location = location;
-            attribute.binding = 0;
-            attribute.format = vertexInputFormatsPerLocation[(size_t)location];
-            attribute.offset = currentOffset;
-            attributes.push_back(attribute);
-        }
-        // vertex buffer has attributes even if not used
-        currentOffset += vertexInputBytePerLocation[(size_t)location];
-    }
-
-    VkVertexInputBindingDescription vertexBinding = {};
-    vertexBinding.binding = 0;
-    vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-    switch (desc.vertexFormat) {
-        case VertexFormat::Full: vertexBinding.stride = currentOffset; break;
-        case VertexFormat::PositionOnly: vertexBinding.stride = vertexInputBytePerLocation[0]; break; //location 0 is position
-        default: vertexBinding.stride = currentOffset; std::cout << "Warning: unknown vertex format\n"; break;
-    }
-    
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInputInfo.pNext = nullptr;
