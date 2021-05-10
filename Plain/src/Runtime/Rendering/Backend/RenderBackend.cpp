@@ -2412,58 +2412,16 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
     const GraphicPassShaderModules shaderModules = createGraphicPassShaderModules(spirV);
 
-    // create module infos
-    std::vector<VkPipelineShaderStageCreateInfo> stages;
-
-    ShaderSpecialisationStructs vertexSpecialisation;
-    createShaderSpecialisationStructs(desc.shaderDescriptions.vertex.specialisationConstants, 
-        &vertexSpecialisation);
-    stages.push_back(createPipelineShaderStageInfos(shaderModules.vertex, VK_SHADER_STAGE_VERTEX_BIT,
-        &vertexSpecialisation.info));
-
-    ShaderSpecialisationStructs fragmentSpecialisation;
-    createShaderSpecialisationStructs(desc.shaderDescriptions.fragment.specialisationConstants, &fragmentSpecialisation);
-    stages.push_back(createPipelineShaderStageInfos(shaderModules.fragment, VK_SHADER_STAGE_FRAGMENT_BIT,
-        &fragmentSpecialisation.info));
-
-    ShaderSpecialisationStructs geometrySpecialisation;
-    const bool hasGeometryShader = shaderModules.geometry != VK_NULL_HANDLE;
-    if (hasGeometryShader) {
-        createShaderSpecialisationStructs(desc.shaderDescriptions.geometry.value().specialisationConstants, 
-            &geometrySpecialisation);
-        stages.push_back(createPipelineShaderStageInfos(shaderModules.geometry, VK_SHADER_STAGE_GEOMETRY_BIT,
-            &geometrySpecialisation.info));
-    }
-
-    ShaderSpecialisationStructs tessCtrlSpecialisation;
-    ShaderSpecialisationStructs tessEvalSpecialisation;
-    const bool hasTesselationShaders = shaderModules.tessEval != VK_NULL_HANDLE && shaderModules.tessCtrl != VK_NULL_HANDLE;
-    if (hasTesselationShaders) {
-
-        createShaderSpecialisationStructs(
-            desc.shaderDescriptions.tessCtrl.value().specialisationConstants, &tessCtrlSpecialisation);
-        createShaderSpecialisationStructs(
-            desc.shaderDescriptions.tessEval.value().specialisationConstants, &tessEvalSpecialisation);
-
-        stages.push_back(createPipelineShaderStageInfos(shaderModules.tessCtrl, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
-            &tessCtrlSpecialisation.info));
-        stages.push_back(createPipelineShaderStageInfos(shaderModules.tessEval, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
-            &tessEvalSpecialisation.info));
-    }
-
-    VkShaderStageFlags pipelineLayoutStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    if (hasGeometryShader) {
-        pipelineLayoutStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
-    }
-    if (hasTesselationShaders) {
-        pipelineLayoutStageFlags |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-        pipelineLayoutStageFlags |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-    }
+    GraphicPassSpecialisationStructs specialisationStructs;
+    const auto shaderStages = createGraphicPipelineShaderCreateInfo(
+        desc.shaderDescriptions, shaderModules, &specialisationStructs);
 
     const ShaderReflection reflection = performShaderReflection(spirV);
+    const auto pipelineShaderStageFlags = getGraphicPassShaderStageFlags(shaderModules);
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
-    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, reflection.pushConstantByteSize, pipelineLayoutStageFlags);
+    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, reflection.pushConstantByteSize, pipelineShaderStageFlags);
     pass.pushConstantSize = reflection.pushConstantByteSize;
+    pass.clearValues = createGraphicPassClearValues(desc.attachments);
 
     std::vector<VkVertexInputAttributeDescription> attributes;
     uint32_t currentOffset = 0;
@@ -2529,8 +2487,8 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     pipelineInfo.pNext = nullptr;
     pipelineInfo.flags = 0;
-    pipelineInfo.stageCount = (uint32_t)stages.size();
-    pipelineInfo.pStages = stages.data();
+    pipelineInfo.stageCount = (uint32_t)shaderStages.size();
+    pipelineInfo.pStages = shaderStages.data();
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssemblyState;
     pipelineInfo.pTessellationState = pTesselationState;
@@ -2551,8 +2509,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
     destroyGraphicPassShaderModules(shaderModules);
 
-    pass.clearValues = createGraphicPassClearValues(desc.attachments);
-
     const auto setSizes = descriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
     pass.descriptorSets[0] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
     pass.descriptorSets[1] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
@@ -2562,23 +2518,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
 bool validateAttachmentFormatsAreCompatible(const ImageFormat a, const ImageFormat b) {
     return imageFormatToVkAspectFlagBits(a) == imageFormatToVkAspectFlagBits(b);
-}
-
-VkPipelineShaderStageCreateInfo RenderBackend::createPipelineShaderStageInfos(
-    const VkShaderModule module, 
-    const VkShaderStageFlagBits stage,
-    const VkSpecializationInfo* pSpecialisationInfo) {
-
-    VkPipelineShaderStageCreateInfo createInfos;
-    createInfos.sType   = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    createInfos.pNext   = nullptr;
-    createInfos.flags   = 0;
-    createInfos.stage   = stage;
-    createInfos.module  = module;
-    createInfos.pName   = "main";
-    createInfos.pSpecializationInfo = pSpecialisationInfo;
-
-    return createInfos;
 }
 
 VkPipelineTessellationStateCreateInfo RenderBackend::createTesselationState(const uint32_t patchControlPoints) {

@@ -63,3 +63,78 @@ void createShaderSpecialisationStructs(const std::vector<SpecialisationConstant>
     outStructs->data = copySpecialisationDataIntoSingleArray(totalDataSize, constants);
     outStructs->info = createShaderSpecialisationInfo(outStructs->data, outStructs->mapEntries);
 }
+
+std::vector<VkPipelineShaderStageCreateInfo> createGraphicPipelineShaderCreateInfo(
+    const GraphicPassShaderDescriptions& shaders, 
+    const GraphicPassShaderModules& shaderModules, 
+    GraphicPassSpecialisationStructs* outSpecialisationStructs) {
+
+    std::vector<VkPipelineShaderStageCreateInfo> stages;
+
+    createShaderSpecialisationStructs(shaders.vertex.specialisationConstants,
+        &outSpecialisationStructs->vertex);
+    stages.push_back(createPipelineShaderStageInfos(shaderModules.vertex, VK_SHADER_STAGE_VERTEX_BIT,
+        &outSpecialisationStructs->vertex.info));
+
+    createShaderSpecialisationStructs(shaders.fragment.specialisationConstants, 
+        &outSpecialisationStructs->fragment);
+    stages.push_back(createPipelineShaderStageInfos(shaderModules.fragment, VK_SHADER_STAGE_FRAGMENT_BIT,
+        &outSpecialisationStructs->fragment.info));
+
+    if (graphicPassModulesHaveGeometryShader(shaderModules)) {
+        createShaderSpecialisationStructs(shaders.geometry.value().specialisationConstants,
+            &outSpecialisationStructs->geometry);
+        stages.push_back(createPipelineShaderStageInfos(shaderModules.geometry, VK_SHADER_STAGE_GEOMETRY_BIT,
+            &outSpecialisationStructs->geometry.info));
+    }
+    if (graphicPassModulesHaveTesselationShaders(shaderModules)) {
+
+        createShaderSpecialisationStructs(
+            shaders.tessCtrl.value().specialisationConstants, &outSpecialisationStructs->tessCtrl);
+        createShaderSpecialisationStructs(
+            shaders.tessEval.value().specialisationConstants, &outSpecialisationStructs->tessEval);
+
+        stages.push_back(createPipelineShaderStageInfos(shaderModules.tessCtrl, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+            &outSpecialisationStructs->tessCtrl.info));
+        stages.push_back(createPipelineShaderStageInfos(shaderModules.tessEval, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
+            &outSpecialisationStructs->tessEval.info));
+    }
+    return stages;
+}
+
+VkPipelineShaderStageCreateInfo createPipelineShaderStageInfos(
+    const VkShaderModule module,
+    const VkShaderStageFlagBits stage,
+    const VkSpecializationInfo* pSpecialisationInfo) {
+
+    VkPipelineShaderStageCreateInfo createInfos;
+    createInfos.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    createInfos.pNext = nullptr;
+    createInfos.flags = 0;
+    createInfos.stage = stage;
+    createInfos.module = module;
+    createInfos.pName = "main";
+    createInfos.pSpecializationInfo = pSpecialisationInfo;
+
+    return createInfos;
+}
+
+VkShaderStageFlags getGraphicPassShaderStageFlags(const GraphicPassShaderModules shaderModules) {
+    VkShaderStageFlags pipelineLayoutStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    if (graphicPassModulesHaveGeometryShader(shaderModules)) {
+        pipelineLayoutStageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+    }
+    if (graphicPassModulesHaveTesselationShaders(shaderModules)) {
+        pipelineLayoutStageFlags |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+        pipelineLayoutStageFlags |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+    }
+    return pipelineLayoutStageFlags;
+}
+
+bool graphicPassModulesHaveGeometryShader(const GraphicPassShaderModules shaderModules) {
+    return shaderModules.geometry != VK_NULL_HANDLE;
+}
+
+bool graphicPassModulesHaveTesselationShaders(const GraphicPassShaderModules shaderModules) {
+    return shaderModules.tessEval != VK_NULL_HANDLE && shaderModules.tessCtrl != VK_NULL_HANDLE;
+}

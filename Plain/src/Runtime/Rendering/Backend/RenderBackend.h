@@ -362,12 +362,6 @@ private:
     ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
     GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
-    //outAdditionalInfo has to be from parent scope to keep pointers to info structs valid
-    VkPipelineShaderStageCreateInfo createPipelineShaderStageInfos(
-        const VkShaderModule module, 
-        const VkShaderStageFlagBits stage,
-        const VkSpecializationInfo* pSpecialisationInfo);
-
     VkPipelineTessellationStateCreateInfo   createTesselationState(const uint32_t patchControlPoints);
     VkPipelineMultisampleStateCreateInfo    createDefaultMultisamplingInfo();
     VkPipelineDepthStencilStateCreateInfo   createDepthStencilState(const DepthTest& depthTest);
