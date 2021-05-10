@@ -147,6 +147,9 @@ public:
 
 private:
 
+    void reloadComputePass(const ComputePassShaderReloadInfo& reloadInfo);
+    void reloadGraphicPass(const GraphicPassShaderReloadInfo& reloadInfo);
+
     Buffer createStagingBuffer();
     std::vector<VkCommandPool> createDrawcallCommandPools();
 
@@ -250,7 +253,10 @@ private:
     void allocateTemporaryImages();
     void resetAllocatedTempImages();
     void updateRenderPassDescriptorSets();
-    void startGraphicPassRecording(); // after this drawcalls can be submitted, but no renderpass executions issued anymore
+
+    // after this drawcalls can be submitted, but no renderpass executions issued anymore
+    void startGraphicPassRecording(const GraphicPassExecution& execution,
+        const VkFramebuffer framebuffer); 
 
     std::vector<TemporaryImage> m_temporaryImages;
 
