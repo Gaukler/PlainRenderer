@@ -8,3 +8,8 @@ VkPipelineDynamicStateCreateInfo createDynamicStateInfo(const std::vector<VkDyna
 VkPipelineRasterizationStateCreateInfo createRasterizationState(const RasterizationConfig& raster);
 VkPipelineRasterizationConservativeStateCreateInfoEXT createConservativeRasterCreateInfo();
 VkPipelineViewportStateCreateInfo createDynamicViewportCreateInfo();
+VkPipelineTessellationStateCreateInfo createTesselationState(const uint32_t patchControlPoints);
+VkPipelineMultisampleStateCreateInfo  createDefaultMultisamplingInfo();
+VkPipelineDepthStencilStateCreateInfo createDepthStencilState(const DepthTest& depthTest);
+VkStencilOpState createStencilOpStateDummy();
+VkCompareOp depthFunctionToVulkanCompareOp(const DepthFunction function);

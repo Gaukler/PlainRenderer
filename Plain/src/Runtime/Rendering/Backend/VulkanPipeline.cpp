@@ -86,3 +86,71 @@ VkPipelineViewportStateCreateInfo createDynamicViewportCreateInfo() {
     viewportState.pScissors = nullptr;  // ignored as viewport is dynamic
     return viewportState;
 }
+
+VkPipelineTessellationStateCreateInfo createTesselationState(const uint32_t patchControlPoints) {
+    VkPipelineTessellationStateCreateInfo info;
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
+    info.pNext = nullptr;
+    info.flags = 0;
+    info.patchControlPoints = patchControlPoints;
+    return info;
+}
+
+VkPipelineMultisampleStateCreateInfo createDefaultMultisamplingInfo() {
+    VkPipelineMultisampleStateCreateInfo multisampling = {};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.pNext = nullptr;
+    multisampling.flags = 0;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.minSampleShading = 0.f;
+    multisampling.pSampleMask = nullptr;
+    multisampling.alphaToCoverageEnable = VK_FALSE;
+    multisampling.alphaToOneEnable = VK_FALSE;
+    return multisampling;
+}
+
+VkPipelineDepthStencilStateCreateInfo createDepthStencilState(const DepthTest& depthTest) {
+
+    const VkStencilOpState stencilInfoDummy = createStencilOpStateDummy();
+
+    VkPipelineDepthStencilStateCreateInfo depthInfo;
+    depthInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthInfo.pNext = nullptr;
+    depthInfo.flags = 0;
+    depthInfo.depthTestEnable = depthTest.function != DepthFunction::Always;
+    depthInfo.depthWriteEnable = depthTest.write;
+    depthInfo.depthCompareOp = depthFunctionToVulkanCompareOp(depthTest.function);
+    depthInfo.depthBoundsTestEnable = VK_FALSE;
+    depthInfo.stencilTestEnable = VK_FALSE;
+    depthInfo.front = stencilInfoDummy;
+    depthInfo.back = stencilInfoDummy;
+    depthInfo.minDepthBounds = 0.f;
+    depthInfo.maxDepthBounds = 1.f;
+    return depthInfo;
+}
+
+VkStencilOpState createStencilOpStateDummy() {
+    VkStencilOpState state = {};
+    state.failOp = VK_STENCIL_OP_KEEP;
+    state.passOp = VK_STENCIL_OP_KEEP;
+    state.depthFailOp = VK_STENCIL_OP_KEEP;
+    state.compareOp = VK_COMPARE_OP_NEVER;
+    state.compareMask = 0;
+    state.writeMask = 0;
+    state.reference = 0;
+    return state;
+}
+
+VkCompareOp depthFunctionToVulkanCompareOp(const DepthFunction function) {
+    switch (function) {
+        case DepthFunction::Always:         return VK_COMPARE_OP_ALWAYS;
+        case DepthFunction::Equal:          return VK_COMPARE_OP_EQUAL;
+        case DepthFunction::Greater:        return VK_COMPARE_OP_GREATER;
+        case DepthFunction::GreaterEqual:   return VK_COMPARE_OP_GREATER_OR_EQUAL;
+        case DepthFunction::Less:           return VK_COMPARE_OP_LESS;
+        case DepthFunction::LessEqual:      return VK_COMPARE_OP_LESS_OR_EQUAL;
+        case DepthFunction::Never:          return VK_COMPARE_OP_NEVER;
+        default: std::cout << "RenderBackend::createDepthStencilState unknown DepthFunction\n"; return VK_COMPARE_OP_ALWAYS;
+    }
+}

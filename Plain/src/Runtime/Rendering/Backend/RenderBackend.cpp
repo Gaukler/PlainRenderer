@@ -2480,7 +2480,7 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = 0;
 
-    auto result = vkCreateGraphicsPipelines(vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pass.pipeline);
+    const auto result = vkCreateGraphicsPipelines(vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pass.pipeline);
     checkVulkanResult(result);
 
     destroyGraphicPassShaderModules(shaderModules);
@@ -2494,69 +2494,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
 bool validateAttachmentFormatsAreCompatible(const ImageFormat a, const ImageFormat b) {
     return imageFormatToVkAspectFlagBits(a) == imageFormatToVkAspectFlagBits(b);
-}
-
-VkPipelineTessellationStateCreateInfo RenderBackend::createTesselationState(const uint32_t patchControlPoints) {
-    VkPipelineTessellationStateCreateInfo info;
-    info.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
-    info.pNext = nullptr;
-    info.flags = 0;
-    info.patchControlPoints = patchControlPoints;
-    return info;
-}
-
-VkPipelineMultisampleStateCreateInfo RenderBackend::createDefaultMultisamplingInfo() {
-    VkPipelineMultisampleStateCreateInfo multisampling = {};
-    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.pNext = nullptr;
-    multisampling.flags = 0;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.minSampleShading = 0.f;
-    multisampling.pSampleMask = nullptr;
-    multisampling.alphaToCoverageEnable = VK_FALSE;
-    multisampling.alphaToOneEnable = VK_FALSE;
-    return multisampling;
-}
-
-VkPipelineDepthStencilStateCreateInfo RenderBackend::createDepthStencilState(const DepthTest& depthTest) {
-
-    // no stencil used, infos don't matter
-    VkStencilOpState stencilInfoDummy = {};
-    stencilInfoDummy.failOp = VK_STENCIL_OP_KEEP;
-    stencilInfoDummy.passOp = VK_STENCIL_OP_KEEP;
-    stencilInfoDummy.depthFailOp = VK_STENCIL_OP_KEEP;
-    stencilInfoDummy.compareOp = VK_COMPARE_OP_NEVER;
-    stencilInfoDummy.compareMask = 0;
-    stencilInfoDummy.writeMask = 0;
-    stencilInfoDummy.reference = 0;
-
-    VkPipelineDepthStencilStateCreateInfo depthInfo = {};
-    VkCompareOp compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-    switch (depthTest.function) {
-    case DepthFunction::Always: compareOp = VK_COMPARE_OP_ALWAYS; break;
-    case DepthFunction::Equal: compareOp = VK_COMPARE_OP_EQUAL; break;
-    case DepthFunction::Greater: compareOp = VK_COMPARE_OP_GREATER; break;
-    case DepthFunction::GreaterEqual : compareOp = VK_COMPARE_OP_GREATER_OR_EQUAL; break;
-    case DepthFunction::Less: compareOp = VK_COMPARE_OP_LESS; break;
-    case DepthFunction::LessEqual: compareOp = VK_COMPARE_OP_LESS_OR_EQUAL; break;
-    case DepthFunction::Never : compareOp = VK_COMPARE_OP_NEVER; break;
-    default: std::cout << "RenderBackend::createDepthStencilState unknown DepthFunction\n"; break;
-    }
-
-    depthInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthInfo.pNext = nullptr;
-    depthInfo.flags = 0;
-    depthInfo.depthTestEnable = depthTest.function != DepthFunction::Always;
-    depthInfo.depthWriteEnable = depthTest.write;
-    depthInfo.depthCompareOp = compareOp;
-    depthInfo.depthBoundsTestEnable = VK_FALSE;
-    depthInfo.stencilTestEnable = VK_FALSE;
-    depthInfo.front = stencilInfoDummy;
-    depthInfo.back = stencilInfoDummy;
-    depthInfo.minDepthBounds = 0.f;
-    depthInfo.maxDepthBounds = 1.f;
-    return depthInfo;
 }
 
 void RenderBackend::barriersCommand(const VkCommandBuffer commandBuffer, 

@@ -362,10 +362,6 @@ private:
     ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
     GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
-    VkPipelineTessellationStateCreateInfo   createTesselationState(const uint32_t patchControlPoints);
-    VkPipelineMultisampleStateCreateInfo    createDefaultMultisamplingInfo();
-    VkPipelineDepthStencilStateCreateInfo   createDepthStencilState(const DepthTest& depthTest);
-
     //renderpass barriers    
     void barriersCommand(const VkCommandBuffer commandBuffer, const std::vector<VkImageMemoryBarrier>& imageBarriers, const std::vector<VkBufferMemoryBarrier>& memoryBarriers);
 
