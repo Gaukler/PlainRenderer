@@ -19,3 +19,4 @@ VkImageSubresourceRange createImageSubresourceRange(const ImageDescription& desc
 VkExtent3D createImageExtent(const ImageDescription& desc);
 VkImage createVulkanImage(const ImageDescription& desc, const bool isTransferTarget);
 std::vector<VkImageLayout> createInitialImageLayouts(const uint32_t mipCount);
+VkImageAspectFlags getVkImageAspectFlags(const VkFormat format);

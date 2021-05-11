@@ -23,6 +23,7 @@
 #include "VulkanShader.h"
 #include "VulkanCommandRecording.h"
 #include "VulkanSampler.h"
+#include "VulkanBarrier.h"
 
 // disable ImGui warnings
 #pragma warning( push )
@@ -422,7 +423,7 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
     auto& swapchainPresentImage = m_images[m_swapchainInputImageHandle.index];
     const auto& transitionToPresentBarrier = createImageBarriers(swapchainPresentImage, 
         VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
-    barriersCommand(currentCommandBuffer, transitionToPresentBarrier, std::vector<VkBufferMemoryBarrier> {});
+    issueBarriersCommand(currentCommandBuffer, transitionToPresentBarrier, std::vector<VkBufferMemoryBarrier> {});
 
     auto res = vkEndCommandBuffer(currentCommandBuffer);
     assert(res == VK_SUCCESS);
@@ -702,8 +703,8 @@ struct ImageHandleDecoded {
 
 ImageHandleDecoded decodeImageHandle(const ImageHandle handle) {
     ImageHandleDecoded decoded;
-    decoded.isTempImage = bool(handle.index >> 31); //first bit indicates if image is temp
-    decoded.index = handle.index & 0x7FFFFFFF;      //mask out first bit for index
+    decoded.isTempImage = bool(handle.index >> 31); // first bit indicates if image is temp
+    decoded.index = handle.index & 0x7FFFFFFF;      // mask out first bit for index
     return decoded;
 }
 
@@ -733,11 +734,11 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
         const RenderPassResources& resources = execution.resources;
         RenderPassBarriers barriers;
 
-        //storage images        
+        // storage images        
         for (const ImageResource& storageImage : resources.storageImages) {
             Image& image = getImageRef(storageImage.image);
 
-            //check if any mip levels need a layout transition            
+            // check if any mip levels need a layout transition            
             const VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_GENERAL;
             bool needsLayoutTransition = false;
             for (const auto& layout : image.layoutPerMip) {
@@ -746,8 +747,8 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
                 }
             }
 
-            //check if image already has a barrier
-            //can happen if same image is used as two storage image when accessing different mips            
+            // check if image already has a barrier
+            // can happen if same image is used as two storage image when accessing different mips            
             bool hasBarrierAlready = false;
             for (const auto& barrier : barriers.imageBarriers) {
                 if (barrier.image == image.vulkanHandle) {
@@ -764,10 +765,10 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
             image.currentlyWriting = true;
         }
 
-        //sampled images
+        // sampled images
         for (const ImageResource& sampledImage : resources.sampledImages) {
 
-            //use general layout if image is used as a storage image too
+            // use general layout if image is used as a storage image too
             bool isUsedAsStorageImage = false;
             {
                 for (const ImageResource& storageImage : resources.storageImages) {
@@ -783,7 +784,7 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
 
             Image& image = getImageRef(sampledImage.image);
 
-            //check if any mip levels need a layout transition            
+            // check if any mip levels need a layout transition            
             VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
             bool needsLayoutTransition = false;
@@ -800,14 +801,14 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
             }
         }
 
-        //attachments        
+        // attachments
         if (executionEntry.type == RenderPassType::Graphic) {
             const GraphicPassExecution graphicExecutionInfo = m_graphicPassExecutions[executionEntry.index];
 
             for (const RenderTarget& target : graphicExecutionInfo.targets) {
                 Image& image = getImageRef(target.image);
 
-            //check if any mip levels need a layout transition                
+            // check if any mip levels need a layout transition                
             const VkImageLayout requiredLayout = isVulkanDepthFormat(image.format) ?
                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
@@ -830,18 +831,18 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
             }
         }
 
-        //storage buffer barriers
+        // storage buffer barriers
         for (const auto& bufferResource : resources.storageBuffers) {
-        	StorageBufferHandle handle = bufferResource.buffer;
-        	Buffer& buffer = m_storageBuffers[handle.index];
-        	const bool needsBarrier = buffer.isBeingWritten;
-        	if (needsBarrier) {
-        		VkBufferMemoryBarrier barrier = createBufferBarrier(buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
-        		barriers.memoryBarriers.push_back(barrier);
-        	}
+            StorageBufferHandle handle = bufferResource.buffer;
+            Buffer& buffer = m_storageBuffers[handle.index];
+            const bool needsBarrier = buffer.isBeingWritten;
+            if (needsBarrier) {
+                VkBufferMemoryBarrier barrier = createBufferBarrier(buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+                barriers.memoryBarriers.push_back(barrier);
+            }
         
-        	//update writing state
-        	buffer.isBeingWritten = !bufferResource.readOnly;
+            // update writing state
+            buffer.isBeingWritten = !bufferResource.readOnly;
         }
         barrierList.push_back(barriers);
     }
@@ -881,7 +882,7 @@ void RenderBackend::submitGraphicPass(const GraphicPassExecution& execution,
     timeQuery.name = pass.graphicPassDesc.name;
     timeQuery.startQuery = issueTimestampQuery(commandBuffer, m_frameIndexMod2);
 
-    barriersCommand(commandBuffer, barriers.imageBarriers, barriers.memoryBarriers);
+    issueBarriersCommand(commandBuffer, barriers.imageBarriers, barriers.memoryBarriers);
 
     const glm::ivec2 resolution = getResolutionFromRenderTargets(execution.targets);
     const auto beginInfo = createBeginInfo(resolution.x, resolution.y, pass.vulkanRenderPass, 
@@ -921,7 +922,7 @@ void RenderBackend::submitComputePass(const ComputePassExecution& execution,
     timeQuery.name = pass.computePassDesc.name;
     timeQuery.startQuery = issueTimestampQuery(commandBuffer, m_frameIndexMod2);
 
-    barriersCommand(commandBuffer, barriers.imageBarriers, barriers.memoryBarriers);
+    issueBarriersCommand(commandBuffer, barriers.imageBarriers, barriers.memoryBarriers);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
 
@@ -1477,7 +1478,7 @@ void RenderBackend::manualImageLayoutTransition(Image& image, const VkImageLayou
     const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
     const auto newLayoutBarriers = createImageBarriers(image, newLayout,
         VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
-    barriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
+    issueBarriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
 
     auto res = vkEndCommandBuffer(transitionCmdBuffer);
     checkVulkanResult(res);
@@ -1566,7 +1567,7 @@ Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::v
 
 VkImageSubresourceLayers RenderBackend::createSubresourceLayers(const Image& image, const uint32_t mipLevel) {
     VkImageSubresourceLayers layers;
-    layers.aspectMask = isVulkanDepthFormat(image.format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    layers.aspectMask = getVkImageAspectFlags(image.format);
     layers.mipLevel = mipLevel;
     layers.baseArrayLayer = 0;
     layers.layerCount = 1;
@@ -1660,7 +1661,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
             const auto toTransferDstBarrier = createImageBarriers(target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_ACCESS_TRANSFER_READ_BIT, 0, (uint32_t)target.viewPerMip.size());
 
-            barriersCommand(copyBuffer, toTransferDstBarrier, std::vector<VkBufferMemoryBarrier> {});
+            issueBarriersCommand(copyBuffer, toTransferDstBarrier, std::vector<VkBufferMemoryBarrier> {});
         }
         
 
@@ -1745,7 +1746,7 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
         const auto dstBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, srcMip + 1, 1); //dst
         barriers.insert(barriers.end(), dstBarriers.begin(), dstBarriers.end());
 
-        barriersCommand(blitCmdBuffer, barriers, std::vector<VkBufferMemoryBarrier> {});
+        issueBarriersCommand(blitCmdBuffer, barriers, std::vector<VkBufferMemoryBarrier> {});
 
         //blit operation
         blitInfo.srcSubresource = createSubresourceLayers(image, srcMip );
@@ -1766,7 +1767,7 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
 
     //bring image into new layout
     const auto newLayoutBarriers = createImageBarriers(image, newLayout, VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
-    barriersCommand(blitCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
+    issueBarriersCommand(blitCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
 
     //end recording
     auto res = vkEndCommandBuffer(blitCmdBuffer);
@@ -2398,76 +2399,27 @@ bool validateAttachmentFormatsAreCompatible(const ImageFormat a, const ImageForm
     return imageFormatToVkAspectFlagBits(a) == imageFormatToVkAspectFlagBits(b);
 }
 
-void RenderBackend::barriersCommand(const VkCommandBuffer commandBuffer, 
-    const std::vector<VkImageMemoryBarrier>& imageBarriers, const std::vector<VkBufferMemoryBarrier>& memoryBarriers) {
-
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 
-        (uint32_t)memoryBarriers.size(), memoryBarriers.data(), (uint32_t)imageBarriers.size(), imageBarriers.data());
-}
-
 std::vector<VkImageMemoryBarrier> RenderBackend::createImageBarriers(Image& image, const VkImageLayout newLayout,
     const VkAccessFlags dstAccess, const uint32_t baseMip, const uint32_t mipLevels) {
 
-    VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT;
-    const bool isDepthImage = isVulkanDepthFormat(image.format);
-    if (isDepthImage) {
-        aspectFlags = VK_IMAGE_ASPECT_DEPTH_BIT;
-    }
-
     std::vector<VkImageMemoryBarrier> barriers;
-
-    const uint32_t layerCount = computeImageLayerCount(image.desc.type);
-
-    // first barrier 
-    VkImageMemoryBarrier firstBarrier;
-    firstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    firstBarrier.pNext = nullptr;
-    firstBarrier.srcAccessMask = image.currentAccess;
-    firstBarrier.dstAccessMask = dstAccess;
-    firstBarrier.oldLayout = image.layoutPerMip[baseMip];
-    firstBarrier.newLayout = newLayout;
-    firstBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    firstBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    firstBarrier.image = image.vulkanHandle;
-    firstBarrier.subresourceRange.aspectMask = aspectFlags;
-    firstBarrier.subresourceRange.baseMipLevel = baseMip;
-    firstBarrier.subresourceRange.levelCount = 1;
-    firstBarrier.subresourceRange.baseArrayLayer = 0;
-    firstBarrier.subresourceRange.layerCount = layerCount;
+    const VkImageMemoryBarrier firstBarrier = createImageBarrier(image, dstAccess, newLayout, baseMip);
     barriers.push_back(firstBarrier);
 
     // add subsequent mip level barriers
-    for (uint32_t i = 1; i < mipLevels; i++) {
+    for (uint32_t mipOffset = 1; mipOffset < mipLevels; mipOffset++) {
 
-        // same mip layout: extens subresource range
-        uint32_t mipLevel = baseMip + i;
-        if (image.layoutPerMip[mipLevel] == barriers.back().oldLayout) {
+        uint32_t mipLevel = baseMip + mipOffset;
+        const bool canExtendLastBarrier = image.layoutPerMip[mipLevel] == barriers.back().oldLayout;
+        if (canExtendLastBarrier) {
             barriers.back().subresourceRange.levelCount++;
         }
-
-        // different mip layout: new barrier
         else {
-            VkImageMemoryBarrier barrier;
-            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            barrier.pNext = nullptr;
-            barrier.srcAccessMask = image.currentAccess;
-            barrier.dstAccessMask = dstAccess;
-            barrier.oldLayout = image.layoutPerMip[mipLevel];
-            barrier.newLayout = newLayout;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = image.vulkanHandle;
-            barrier.subresourceRange.aspectMask = aspectFlags;
-            barrier.subresourceRange.baseMipLevel = mipLevel;
-            barrier.subresourceRange.levelCount = 1;
-            barrier.subresourceRange.baseArrayLayer = 0;
-            barrier.subresourceRange.layerCount = layerCount;
-
+            const VkImageMemoryBarrier barrier = createImageBarrier(image, dstAccess, newLayout, mipLevel);
             barriers.push_back(barrier);
         }
     }
 
-    // update image properties
     for (uint32_t i = baseMip; i < baseMip + mipLevels; i++) {
         image.layoutPerMip[i] = newLayout;
     }
@@ -2475,20 +2427,6 @@ std::vector<VkImageMemoryBarrier> RenderBackend::createImageBarriers(Image& imag
     image.currentlyWriting = false;
 
     return barriers;
-}
-
-VkBufferMemoryBarrier RenderBackend::createBufferBarrier(const Buffer& buffer, const VkAccessFlagBits srcAccess, const VkAccessFlagBits dstAccess) {
-    VkBufferMemoryBarrier barrier;
-    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    barrier.pNext = nullptr;
-    barrier.srcAccessMask = srcAccess;
-    barrier.srcAccessMask = dstAccess;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.buffer = buffer.vulkanHandle;
-    barrier.offset = 0;
-    barrier.size = buffer.size;
-    return barrier;
 }
 
 VkQueryPool RenderBackend::createQueryPool(const VkQueryType queryType, const uint32_t queryCount) {

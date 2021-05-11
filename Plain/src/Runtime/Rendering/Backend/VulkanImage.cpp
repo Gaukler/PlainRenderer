@@ -168,3 +168,12 @@ VkImage createVulkanImage(const ImageDescription& desc, const bool isTransferTar
 std::vector<VkImageLayout> createInitialImageLayouts(const uint32_t mipCount) {
     return std::vector<VkImageLayout>(mipCount, VK_IMAGE_LAYOUT_UNDEFINED);
 }
+
+VkImageAspectFlags getVkImageAspectFlags(const VkFormat format) {
+    if (isVulkanDepthFormat(format)) {
+        return VK_IMAGE_ASPECT_DEPTH_BIT;
+    }
+    else {
+        return VK_IMAGE_ASPECT_COLOR_BIT;
+    }
+}

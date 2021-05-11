@@ -363,21 +363,16 @@ private:
     =========
     */
 
-    //actual creation of internal objects
-    //split from public function to allow use when reloading shader	
+    // actual creation of internal objects
+    // split from public function to allow use when reloading shader	
     ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
     GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
-    //renderpass barriers    
-    void barriersCommand(const VkCommandBuffer commandBuffer, const std::vector<VkImageMemoryBarrier>& imageBarriers, const std::vector<VkBufferMemoryBarrier>& memoryBarriers);
-
-    //create necessary image barriers
-    //multiple barriers may be needed, as mip levels may have differing layouts
-    //sets image.layout to newLayout, image.currentAccess to dstAccess and image.currentlyWriting to false
+    // create necessary image barriers
+    // multiple barriers may be needed, as mip levels may have differing layouts
+    // sets image.layout to newLayout, image.currentAccess to dstAccess and image.currentlyWriting to false
     std::vector<VkImageMemoryBarrier> createImageBarriers(Image& image, const VkImageLayout newLayout,
         const VkAccessFlags dstAccess, const uint32_t baseMip, const uint32_t mipLevels);
-
-    VkBufferMemoryBarrier createBufferBarrier(const Buffer& buffer, const VkAccessFlagBits srcAccess, const VkAccessFlagBits dstAccess);
 
     /*
     =========
