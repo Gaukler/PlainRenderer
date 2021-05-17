@@ -177,13 +177,19 @@ private:
     std::vector<GraphicPassExecution> m_graphicPassExecutions;
     std::vector<ComputePassExecution> m_computePassExecutions;
 
+    void submitRenderPasses(const VkCommandBuffer commandBuffer, const std::vector<RenderPassBarriers> barriers);
+    void submitImGuiRenderpass(const VkCommandBuffer commandBuffer);
     void submitGraphicPass(const GraphicPassExecution& execution,
         const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer, const VkFramebuffer framebuffer);
 
     void submitComputePass(const ComputePassExecution& execution,
         const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer);
 
+    void submitFrameToGraphicsQueue(const VkCommandBuffer commandBuffer, const bool presentToScreen);
+
     void waitForRenderFinished();
+
+    void executeDeferredBufferFillOrders();
 
     //framebuffer stuff
     std::vector<VkFramebuffer> m_transientFramebuffers[2];

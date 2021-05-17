@@ -352,6 +352,32 @@ void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle pa
     }
 }
 
+void RenderBackend::submitImGuiRenderpass(const VkCommandBuffer commandBuffer) {
+    startDebugLabel(commandBuffer, "ImGui");
+
+    TimestampQuery imguiQuery;
+    imguiQuery.name = "ImGui";
+    imguiQuery.startQuery = issueTimestampQuery(commandBuffer, m_frameIndexMod2);
+
+    ImGui::Render();
+
+    const std::vector<VkImageMemoryBarrier> uiBarrier = createImageBarriers(m_images[m_swapchainInputImageHandle.index],
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        0, 0, nullptr, 0, nullptr, 1, uiBarrier.data());
+
+    vkCmdBeginRenderPass(commandBuffer, &m_ui.passBeginInfos[m_swapchainInputImageIndex], VK_SUBPASS_CONTENTS_INLINE);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+    vkCmdEndRenderPass(commandBuffer);
+
+    imguiQuery.endQuery = issueTimestampQuery(commandBuffer, m_frameIndexMod2);
+    m_timestampQueriesPerFrame[m_frameIndexMod2].push_back(imguiQuery);
+
+    endDebugLabel(commandBuffer);
+}
+
 void RenderBackend::renderFrame(const bool presentToScreen) {
 
     // reset doesn't work before waiting for render finished fence
@@ -372,53 +398,10 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
     }
 
     const std::vector<RenderPassBarriers> barriers = createRenderPassBarriers();
+    submitRenderPasses(currentCommandBuffer, barriers);
 
-    int graphicPassIndex = 0;
-    for (int i = 0; i < m_renderPassExecutions.size(); i++) {
-        const RenderPassExecutionEntry& executionEntry = m_renderPassExecutions[i];
-        if (executionEntry.type == RenderPassType::Graphic) {
-            const VkFramebuffer f = m_transientFramebuffers[m_frameIndexMod2][graphicPassIndex];
-            submitGraphicPass(m_graphicPassExecutions[executionEntry.index], barriers[i], 
-                currentCommandBuffer, f);
-            graphicPassIndex++;
-        }
-        else if (executionEntry.type == RenderPassType::Compute) {
-            submitComputePass(m_computePassExecutions[executionEntry.index], barriers[i], currentCommandBuffer);
-        }
-        else {
-            std::cout << "Unknown RenderPassType\n";
-        }
-    }
-
-    // imgui
-    {
-        startDebugLabel(currentCommandBuffer, "ImGui");
-    
-        TimestampQuery imguiQuery;
-        imguiQuery.name = "ImGui";
-        imguiQuery.startQuery = issueTimestampQuery(currentCommandBuffer, m_frameIndexMod2);
-    
-        ImGui::Render();
-
-        const std::vector<VkImageMemoryBarrier> uiBarrier = createImageBarriers(m_images[m_swapchainInputImageHandle.index],
-            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
-
-        vkCmdPipelineBarrier(currentCommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-            0, 0, nullptr, 0, nullptr, 1, uiBarrier.data());
-    
-        vkCmdBeginRenderPass(currentCommandBuffer, &m_ui.passBeginInfos[m_swapchainInputImageIndex], VK_SUBPASS_CONTENTS_INLINE);
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentCommandBuffer);
-        vkCmdEndRenderPass(currentCommandBuffer);
-    
-        imguiQuery.endQuery = issueTimestampQuery(currentCommandBuffer, m_frameIndexMod2);
-        m_timestampQueriesPerFrame[m_frameIndexMod2].push_back(imguiQuery);
-    
-        endDebugLabel(currentCommandBuffer);
-    }
-    
     m_timestampQueriesPerFrame[m_frameIndexMod2][frameQueryIndex].endQuery = issueTimestampQuery(currentCommandBuffer, m_frameIndexMod2);
-    
+
     // transition swapchain image to present
     auto& swapchainPresentImage = m_images[m_swapchainInputImageHandle.index];
     const auto& transitionToPresentBarrier = createImageBarriers(swapchainPresentImage, 
@@ -436,34 +419,9 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
     assert(res == VK_SUCCESS);
     res = vkResetFences(vkContext.device, 1, &m_renderFinishedFence);
     assert(res == VK_SUCCESS);
-    
-    // execute deferred buffer fill orders
-    for (const UniformBufferFillOrder& order : m_deferredUniformBufferFills) {
-        fillBuffer(m_uniformBuffers[order.buffer.index], order.data.data(), order.data.size());
-    }
-    for (const StorageBufferFillOrder& order : m_deferredStorageBufferFills) {
-        fillBuffer(m_storageBuffers[order.buffer.index], order.data.data(), order.data.size());
-    }
-    m_deferredUniformBufferFills.clear();
-    m_deferredStorageBufferFills.clear();
 
-    // submit 
-    VkSubmitInfo submit = {};
-    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit.pNext = nullptr;
-    submit.waitSemaphoreCount = presentToScreen ? 1 : 0;
-    submit.pWaitSemaphores = &m_swapchain.imageAvaible;
-
-    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    submit.pWaitDstStageMask = &waitStage;
-
-    submit.commandBufferCount = 1;
-    submit.pCommandBuffers = &currentCommandBuffer;
-    submit.signalSemaphoreCount = presentToScreen ? 1 : 0;;
-    submit.pSignalSemaphores = &m_renderFinishedSemaphore;
-
-    res = vkQueueSubmit(vkContext.graphicQueue, 1, &submit, m_renderFinishedFence);
-    assert(res == VK_SUCCESS);
+    executeDeferredBufferFillOrders();
+    submitFrameToGraphicsQueue(currentCommandBuffer, presentToScreen);
 
     if (presentToScreen) {
         presentImage(m_renderFinishedSemaphore);
@@ -872,6 +830,26 @@ VkRenderPassBeginInfo createBeginInfo(const uint32_t width, const uint32_t heigh
     return beginInfo;
 }
 
+void RenderBackend::submitRenderPasses(const VkCommandBuffer commandBuffer, const std::vector<RenderPassBarriers> barriers) {
+    int graphicPassIndex = 0;
+    for (int i = 0; i < m_renderPassExecutions.size(); i++) {
+        const RenderPassExecutionEntry& executionEntry = m_renderPassExecutions[i];
+        if (executionEntry.type == RenderPassType::Graphic) {
+            const VkFramebuffer f = m_transientFramebuffers[m_frameIndexMod2][graphicPassIndex];
+            submitGraphicPass(m_graphicPassExecutions[executionEntry.index], barriers[i],
+                commandBuffer, f);
+            graphicPassIndex++;
+        }
+        else if (executionEntry.type == RenderPassType::Compute) {
+            submitComputePass(m_computePassExecutions[executionEntry.index], barriers[i], commandBuffer);
+        }
+        else {
+            std::cout << "Unknown RenderPassType\n";
+        }
+    }
+    submitImGuiRenderpass(commandBuffer);
+}
+
 void RenderBackend::submitGraphicPass(const GraphicPassExecution& execution,
     const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer, const VkFramebuffer framebuffer) {
 
@@ -946,9 +924,39 @@ void RenderBackend::submitComputePass(const ComputePassExecution& execution,
     m_timestampQueriesPerFrame[m_frameIndexMod2].push_back(timeQuery);
 }
 
+void RenderBackend::submitFrameToGraphicsQueue(const VkCommandBuffer commandBuffer, const bool presentToScreen) {
+    VkSubmitInfo submit = {};
+    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.pNext = nullptr;
+    submit.waitSemaphoreCount = presentToScreen ? 1 : 0;
+    submit.pWaitSemaphores = &m_swapchain.imageAvaible;
+
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    submit.pWaitDstStageMask = &waitStage;
+
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &commandBuffer;
+    submit.signalSemaphoreCount = presentToScreen ? 1 : 0;;
+    submit.pSignalSemaphores = &m_renderFinishedSemaphore;
+
+    const auto result = vkQueueSubmit(vkContext.graphicQueue, 1, &submit, m_renderFinishedFence);
+    checkVulkanResult(result);
+}
+
 void RenderBackend::waitForRenderFinished() {
     auto result = vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, INT64_MAX);
     checkVulkanResult(result);
+}
+
+void RenderBackend::executeDeferredBufferFillOrders() {
+    for (const UniformBufferFillOrder& order : m_deferredUniformBufferFills) {
+        fillBuffer(m_uniformBuffers[order.buffer.index], order.data.data(), order.data.size());
+    }
+    for (const StorageBufferFillOrder& order : m_deferredStorageBufferFills) {
+        fillBuffer(m_storageBuffers[order.buffer.index], order.data.data(), order.data.size());
+    }
+    m_deferredUniformBufferFills.clear();
+    m_deferredStorageBufferFills.clear();
 }
 
 std::vector<VkFramebuffer> RenderBackend::createGraphicPassFramebuffer(const std::vector<GraphicPassExecution>& execution) {
