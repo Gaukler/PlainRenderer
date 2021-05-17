@@ -25,6 +25,8 @@
 #include "VulkanSampler.h"
 #include "VulkanBarrier.h"
 #include "VulkanRenderPass.h"
+#include "VulkanCommandBuffer.h"
+#include "VulkanCommandPool.h"
 
 // disable ImGui warnings
 #pragma warning( push )
@@ -1454,7 +1456,9 @@ Image RenderBackend::createImageInternal(const ImageDescription& desc, const voi
 
 void RenderBackend::manualImageLayoutTransition(Image& image, const VkImageLayout newLayout) {
 
-    const auto transitionCmdBuffer = beginOneTimeUseCommandBuffer();
+    const VkCommandBuffer transitionCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transientCommandPool);
+    beginCommandBuffer(transitionCmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
     const auto newLayoutBarriers = createImageBarriers(image, newLayout,
         VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
     issueBarriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
@@ -1629,8 +1633,8 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         // copy data to staging buffer
         fillHostVisibleCoherentBuffer(m_stagingBuffer, (char*)data + totalMemoryOffset, copySize);
 
-        // begin command buffer for copying
-        VkCommandBuffer copyBuffer = beginOneTimeUseCommandBuffer();
+        const VkCommandBuffer copyBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transientCommandPool);
+        beginCommandBuffer(copyBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
         // layout transition to transfer_dst the first time
         if (totalMemoryOffset == 0) {
@@ -1712,7 +1716,8 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
     blitInfo.dstOffsets[1].y = blitInfo.srcOffsets[1].y != 1 ? blitInfo.srcOffsets[1].y / 2 : 1;
     blitInfo.dstOffsets[1].z = blitInfo.srcOffsets[1].z != 1 ? blitInfo.srcOffsets[1].z / 2 : 1;
 
-    const auto blitCmdBuffer = beginOneTimeUseCommandBuffer();
+    const VkCommandBuffer blitCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transientCommandPool);
+    beginCommandBuffer(blitCmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
     for (uint32_t srcMip = 0; srcMip < image.viewPerMip.size() - 1; srcMip++) {
 
@@ -1770,7 +1775,8 @@ void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSi
         vkUnmapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory);
 
         // copy staging buffer to dst
-        VkCommandBuffer copyCmdBuffer = beginOneTimeUseCommandBuffer();
+        const VkCommandBuffer copyCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transientCommandPool);
+        beginCommandBuffer(copyCmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
         // copy command
         VkBufferCopy region = {};
@@ -1796,56 +1802,6 @@ void RenderBackend::fillHostVisibleCoherentBuffer(Buffer target, const void* dat
     checkVulkanResult(result);
     memcpy(mappedData, data, size);
     vkUnmapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory);
-}
-
-VkCommandPool RenderBackend::createCommandPool(const uint32_t queueFamilyIndex, const VkCommandPoolCreateFlagBits flags) {
-
-    VkCommandPoolCreateInfo poolInfo = {};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.pNext = nullptr;
-    poolInfo.flags = flags;
-    poolInfo.queueFamilyIndex = queueFamilyIndex;
-
-    VkCommandPool pool;
-    auto res = vkCreateCommandPool(vkContext.device, &poolInfo, nullptr, &pool);
-    checkVulkanResult(res);
-
-    return pool;
-}
-
-VkCommandBuffer RenderBackend::allocateCommandBuffer(const VkCommandBufferLevel level, const VkCommandPool& pool) {
-
-    VkCommandBufferAllocateInfo bufferInfo = {};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    bufferInfo.pNext = nullptr;
-    bufferInfo.commandPool = pool;
-    bufferInfo.level = level;
-    bufferInfo.commandBufferCount = 1;
-
-    VkCommandBuffer commandBuffer;
-    auto res = vkAllocateCommandBuffers(vkContext.device, &bufferInfo, &commandBuffer);
-    checkVulkanResult(res);
-
-    return commandBuffer;
-}
-
-VkCommandBuffer RenderBackend::beginOneTimeUseCommandBuffer() {
-
-    //allocate copy command buffer
-    VkCommandBufferAllocateInfo command = {};
-    command.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    command.pNext = nullptr;
-    command.commandPool = m_transientCommandPool;
-    command.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    command.commandBufferCount = 1;
-
-    VkCommandBuffer cmdBuffer;
-    auto res = vkAllocateCommandBuffers(vkContext.device, &command, &cmdBuffer);
-    assert(res == VK_SUCCESS);
-
-    beginCommandBuffer(cmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-    return cmdBuffer;
 }
 
 VkFence RenderBackend::submitOneTimeUseCmdBuffer(VkCommandBuffer cmdBuffer, VkQueue queue) {
@@ -2155,15 +2111,6 @@ Buffer RenderBackend::createStagingBuffer() {
         stagingBufferQueueFamilies,
         stagingBufferUsageFlags,
         stagingBufferMemoryFlags);
-}
-
-std::vector<VkCommandPool> RenderBackend::createDrawcallCommandPools() {
-    std::vector<VkCommandPool> drawcallPools;
-    for (int i = 0; i < JobSystem::getWorkerCount(); i++) {
-        const VkCommandPool pool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-        drawcallPools.push_back(pool);
-    }
-    return drawcallPools;
 }
 
 void RenderBackend::acquireDebugUtilsExtFunctionsPointers() {

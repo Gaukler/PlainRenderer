@@ -151,7 +151,6 @@ private:
     void reloadGraphicPass(const GraphicPassShaderReloadInfo& reloadInfo);
 
     Buffer createStagingBuffer();
-    std::vector<VkCommandPool> createDrawcallCommandPools();
 
     // debug marker use an extension and as such need to get function pointers
     void acquireDebugUtilsExtFunctionsPointers();
@@ -318,14 +317,6 @@ private:
 
     uint32_t m_frameIndex = 0;
     uint32_t m_frameIndexMod2 = 0;
-
-
-    VkCommandPool   createCommandPool(const uint32_t queueFamilyIndex, const VkCommandPoolCreateFlagBits flags);
-    VkCommandBuffer allocateCommandBuffer(const VkCommandBufferLevel level, const VkCommandPool& pool);
-
-    //allocate and begin a one time use command buffer
-    //returned command buffer must be manually destroyed	
-    VkCommandBuffer beginOneTimeUseCommandBuffer();
 
     //Queue recording must have been ended before
     //returned fence must be manually destroyed
