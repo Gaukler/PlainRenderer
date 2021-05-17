@@ -408,15 +408,14 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
         VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
     issueBarriersCommand(currentCommandBuffer, transitionToPresentBarrier, std::vector<VkBufferMemoryBarrier> {});
 
-    auto res = vkEndCommandBuffer(currentCommandBuffer);
-    assert(res == VK_SUCCESS);
+    endCommandBufferRecording(currentCommandBuffer);
 
     // compute cpu time after drawcall recording, but before waiting for GPU to finish
     m_lastFrameCPUTime = Timer::getTimeFloat() - m_timeOfLastGPUSubmit;
     
     // wait for in flight frame to render so resources are avaible
     waitForFence(m_renderFinishedFence);
-    res = vkResetFences(vkContext.device, 1, &m_renderFinishedFence);
+    auto res = vkResetFences(vkContext.device, 1, &m_renderFinishedFence);
     assert(res == VK_SUCCESS);
 
     executeDeferredBufferFillOrders();
@@ -873,8 +872,7 @@ void RenderBackend::submitGraphicPass(const GraphicPassExecution& execution,
         const int cmdBufferIndex = poolIndex + m_frameIndexMod2 * poolCount;
         const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[cmdBufferIndex];
 
-        //stop recording mesh commands
-        vkEndCommandBuffer(meshCommandBuffer);
+        endCommandBufferRecording(meshCommandBuffer);
     }
     //execute mesh commands
     const int cmdBufferIndexOffset = m_frameIndexMod2 * poolCount;
@@ -1232,9 +1230,8 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
     end_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     end_info.commandBufferCount = 1;
     end_info.pCommandBuffers = &currentCommandBuffer;
-    auto res = vkEndCommandBuffer(currentCommandBuffer);
-    assert(res == VK_SUCCESS);
-    res = vkQueueSubmit(vkContext.graphicQueue, 1, &end_info, VK_NULL_HANDLE);
+    endCommandBufferRecording(currentCommandBuffer);
+    auto res = vkQueueSubmit(vkContext.graphicQueue, 1, &end_info, VK_NULL_HANDLE);
     assert(res == VK_SUCCESS);
 
     res = vkDeviceWaitIdle(vkContext.device);
@@ -1486,8 +1483,7 @@ void RenderBackend::manualImageLayoutTransition(Image& image, const VkImageLayou
         VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
     issueBarriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
 
-    auto res = vkEndCommandBuffer(transitionCmdBuffer);
-    checkVulkanResult(res);
+    endCommandBufferRecording(transitionCmdBuffer);
 
     const VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
     waitForFence(fence);
@@ -1690,7 +1686,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
 
         // issue for commands, then wait
         vkCmdCopyBufferToImage(copyBuffer, m_stagingBuffer.vulkanHandle, target.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-        vkEndCommandBuffer(copyBuffer);
+        endCommandBufferRecording(copyBuffer);
         const VkFence fence = submitOneTimeUseCmdBuffer(copyBuffer, vkContext.transferQueue);
         waitForFence(fence);
 
@@ -1772,9 +1768,7 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
     const auto newLayoutBarriers = createImageBarriers(image, newLayout, VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
     issueBarriersCommand(blitCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
 
-    // end recording
-    auto res = vkEndCommandBuffer(blitCmdBuffer);
-    assert(res == VK_SUCCESS);
+    endCommandBufferRecording(blitCmdBuffer);
 
     // submit
     const VkFence fence = submitOneTimeUseCmdBuffer(blitCmdBuffer, vkContext.transferQueue);
@@ -1808,8 +1802,7 @@ void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSi
         region.dstOffset = currentMemoryOffset;
         region.size = copySize;
         vkCmdCopyBuffer(copyCmdBuffer, m_stagingBuffer.vulkanHandle, target.vulkanHandle, 1, &region);
-        res = vkEndCommandBuffer(copyCmdBuffer);       
-        assert(res == VK_SUCCESS);
+        endCommandBufferRecording(copyCmdBuffer);
 
         // submit and wait
         const VkFence fence = submitOneTimeUseCmdBuffer(copyCmdBuffer, vkContext.transferQueue);

@@ -19,6 +19,11 @@ void beginCommandBuffer(const VkCommandBuffer buffer, const VkCommandBufferUsage
     checkVulkanResult(res);
 }
 
+void endCommandBufferRecording(const VkCommandBuffer cmdBuffer) {
+    const auto result = vkEndCommandBuffer(cmdBuffer);
+    checkVulkanResult;
+}
+
 VkCommandBufferInheritanceInfo createCommandBufferInheritanceInfo(const VkRenderPass renderPass,
     const VkFramebuffer framebuffer) {
     VkCommandBufferInheritanceInfo inheritanceInfo;
