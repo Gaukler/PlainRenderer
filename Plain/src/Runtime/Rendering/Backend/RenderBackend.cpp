@@ -415,8 +415,7 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
     m_lastFrameCPUTime = Timer::getTimeFloat() - m_timeOfLastGPUSubmit;
     
     // wait for in flight frame to render so resources are avaible
-    res = vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, UINT64_MAX);
-    assert(res == VK_SUCCESS);
+    waitForFence(m_renderFinishedFence);
     res = vkResetFences(vkContext.device, 1, &m_renderFinishedFence);
     assert(res == VK_SUCCESS);
 
@@ -944,8 +943,7 @@ void RenderBackend::submitFrameToGraphicsQueue(const VkCommandBuffer commandBuff
 }
 
 void RenderBackend::waitForRenderFinished() {
-    auto result = vkWaitForFences(vkContext.device, 1, &m_renderFinishedFence, VK_TRUE, INT64_MAX);
-    checkVulkanResult(result);
+    waitForFence(m_renderFinishedFence);
 }
 
 void RenderBackend::executeDeferredBufferFillOrders() {
@@ -1491,10 +1489,8 @@ void RenderBackend::manualImageLayoutTransition(Image& image, const VkImageLayou
     auto res = vkEndCommandBuffer(transitionCmdBuffer);
     checkVulkanResult(res);
 
-    VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
-
-    res = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    checkVulkanResult(res);
+    const VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
+    waitForFence(fence);
 
     vkDestroyFence(vkContext.device, fence, nullptr);
     vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &transitionCmdBuffer);
@@ -1695,9 +1691,8 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
         // issue for commands, then wait
         vkCmdCopyBufferToImage(copyBuffer, m_stagingBuffer.vulkanHandle, target.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         vkEndCommandBuffer(copyBuffer);
-        VkFence fence = submitOneTimeUseCmdBuffer(copyBuffer, vkContext.transferQueue);
-        auto result = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        checkVulkanResult(result);
+        const VkFence fence = submitOneTimeUseCmdBuffer(copyBuffer, vkContext.transferQueue);
+        waitForFence(fence);
 
         // cleanup
         vkDestroyFence(vkContext.device, fence, nullptr);
@@ -1718,7 +1713,7 @@ void RenderBackend::transferDataIntoImage(Image& target, const void* data, const
 
 void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout) {
 
-    //check for linear filtering support
+    // check for linear filtering support
     VkFormatProperties formatProps;
     vkGetPhysicalDeviceFormatProperties(vkContext.physicalDevice, image.format, &formatProps);
     if (!(formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
@@ -1727,7 +1722,7 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
 
     VkImageBlit blitInfo;
 
-    //offset base stays zero
+    // offset base stays zero
     blitInfo.srcOffsets[0].x = 0;
     blitInfo.srcOffsets[0].y = 0;
     blitInfo.srcOffsets[0].z = 0;
@@ -1736,7 +1731,7 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
     blitInfo.dstOffsets[0].y = 0;
     blitInfo.dstOffsets[0].z = 0;
 
-    //initial offset extent
+    // initial offset extent
     blitInfo.srcOffsets[1].x = image.desc.width;
     blitInfo.srcOffsets[1].y = image.desc.height;
     blitInfo.srcOffsets[1].z = image.desc.depth;
@@ -1749,21 +1744,21 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
 
     for (uint32_t srcMip = 0; srcMip < image.viewPerMip.size() - 1; srcMip++) {
 
-        //barriers
+        // barriers
         auto barriers = createImageBarriers(image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, srcMip, 1); //src
         const auto dstBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, srcMip + 1, 1); //dst
         barriers.insert(barriers.end(), dstBarriers.begin(), dstBarriers.end());
 
         issueBarriersCommand(blitCmdBuffer, barriers, std::vector<VkBufferMemoryBarrier> {});
 
-        //blit operation
+        // blit operation
         blitInfo.srcSubresource = createSubresourceLayers(image, srcMip );
         blitInfo.dstSubresource = createSubresourceLayers(image, srcMip + 1);
 
         vkCmdBlitImage(blitCmdBuffer, image.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.vulkanHandle, 
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blitInfo, VK_FILTER_LINEAR);
 
-        //update offsets
+        // update offsets
         blitInfo.srcOffsets[1].x /= blitInfo.srcOffsets[1].x != 1 ? 2 : 1;
         blitInfo.srcOffsets[1].y /= blitInfo.srcOffsets[1].y != 1 ? 2 : 1;
         blitInfo.srcOffsets[1].z /= blitInfo.srcOffsets[1].z != 1 ? 2 : 1;
@@ -1773,43 +1768,41 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
         blitInfo.dstOffsets[1].z = blitInfo.srcOffsets[1].z != 1 ? blitInfo.srcOffsets[1].z / 2 : 1;
     }
 
-    //bring image into new layout
+    // bring image into new layout
     const auto newLayoutBarriers = createImageBarriers(image, newLayout, VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
     issueBarriersCommand(blitCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
 
-    //end recording
+    // end recording
     auto res = vkEndCommandBuffer(blitCmdBuffer);
     assert(res == VK_SUCCESS);
 
-    //submit
-    VkFence fence = submitOneTimeUseCmdBuffer(blitCmdBuffer, vkContext.transferQueue);
+    // submit
+    const VkFence fence = submitOneTimeUseCmdBuffer(blitCmdBuffer, vkContext.transferQueue);
+    waitForFence(fence);
 
-    res = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    assert(res == VK_SUCCESS);
-
-    //cleanup
+    // cleanup
     vkDestroyFence(vkContext.device, fence, nullptr);
     vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &blitCmdBuffer);
 }
 
 void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSize size) {
 
-    //TODO: creation of cmd buffer and fence in loop is somewhat inefficient
+    // TODO: creation of cmd buffer and fence in loop is somewhat inefficient
     for (VkDeviceSize currentMemoryOffset = 0; currentMemoryOffset < size; currentMemoryOffset += m_stagingBufferSize) {
 
         VkDeviceSize copySize = std::min(m_stagingBufferSize, size - currentMemoryOffset);
 
-        //copy data to staging buffer
+        // copy data to staging buffer
         void* mappedData;
         auto res = vkMapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory, 0, copySize, 0, (void**)&mappedData);
         assert(res == VK_SUCCESS);
         memcpy(mappedData, (char*)data + currentMemoryOffset, copySize);
         vkUnmapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory);
 
-        //copy staging buffer to dst
+        // copy staging buffer to dst
         VkCommandBuffer copyCmdBuffer = beginOneTimeUseCommandBuffer();
 
-        //copy command
+        // copy command
         VkBufferCopy region = {};
         region.srcOffset = 0;
         region.dstOffset = currentMemoryOffset;
@@ -1818,12 +1811,11 @@ void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSi
         res = vkEndCommandBuffer(copyCmdBuffer);       
         assert(res == VK_SUCCESS);
 
-        //submit and wait
-        VkFence fence = submitOneTimeUseCmdBuffer(copyCmdBuffer, vkContext.transferQueue);
-        res = vkWaitForFences(vkContext.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        assert(res == VK_SUCCESS);
+        // submit and wait
+        const VkFence fence = submitOneTimeUseCmdBuffer(copyCmdBuffer, vkContext.transferQueue);
+        waitForFence(fence);
 
-        //cleanup
+        // cleanup
         vkDestroyFence(vkContext.device, fence, nullptr);
         vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &copyCmdBuffer);
     }

@@ -25,8 +25,13 @@ VkFence createFence() {
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     VkFence fence;
-    auto res = vkCreateFence(vkContext.device, &fenceInfo, nullptr, &fence);
-    checkVulkanResult(res);
+    const auto result = vkCreateFence(vkContext.device, &fenceInfo, nullptr, &fence);
+    checkVulkanResult(result);
 
     return fence;
+}
+
+void waitForFence(const VkFence fence) {
+    const auto result = vkWaitForFences(vkContext.device, 1, &fence, true, UINT64_MAX);
+    checkVulkanResult(result);
 }

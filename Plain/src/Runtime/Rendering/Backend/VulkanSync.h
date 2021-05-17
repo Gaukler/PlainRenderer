@@ -4,3 +4,4 @@
 
 VkSemaphore createSemaphore();
 VkFence     createFence();
+void        waitForFence(const VkFence fence);
