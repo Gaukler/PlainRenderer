@@ -5,3 +5,4 @@
 VkSemaphore createSemaphore();
 VkFence     createFence();
 void        waitForFence(const VkFence fence);
+void        resetFence(const VkFence fence);

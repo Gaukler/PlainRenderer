@@ -35,3 +35,8 @@ void waitForFence(const VkFence fence) {
     const auto result = vkWaitForFences(vkContext.device, 1, &fence, true, UINT64_MAX);
     checkVulkanResult(result);
 }
+
+void resetFence(const VkFence fence) {
+    const auto result = vkResetFences(vkContext.device, 1, &fence);
+    checkVulkanResult(result);
+}

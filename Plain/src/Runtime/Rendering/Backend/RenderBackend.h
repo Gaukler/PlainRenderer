@@ -190,6 +190,7 @@ private:
     void waitForRenderFinished();
 
     void executeDeferredBufferFillOrders();
+    void retrieveLastFrameTimestamps();
 
     //framebuffer stuff
     std::vector<VkFramebuffer> m_transientFramebuffers[2];

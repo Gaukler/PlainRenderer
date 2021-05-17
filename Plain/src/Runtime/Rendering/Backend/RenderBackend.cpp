@@ -24,6 +24,7 @@
 #include "VulkanCommandRecording.h"
 #include "VulkanSampler.h"
 #include "VulkanBarrier.h"
+#include "VulkanRenderPass.h"
 
 // disable ImGui warnings
 #pragma warning( push )
@@ -415,8 +416,7 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
     
     // wait for in flight frame to render so resources are avaible
     waitForFence(m_renderFinishedFence);
-    auto res = vkResetFences(vkContext.device, 1, &m_renderFinishedFence);
-    assert(res == VK_SUCCESS);
+    resetFence(m_renderFinishedFence);
 
     executeDeferredBufferFillOrders();
     submitFrameToGraphicsQueue(currentCommandBuffer, presentToScreen);
@@ -426,48 +426,8 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
         glfwPollEvents();
     }
 
-    // timestamp after presenting, which waits for vsync
     m_timeOfLastGPUSubmit = Timer::getTimeFloat();
-
-    // get timestamp results of last frame
-    {
-        m_renderpassTimings.clear();
-        
-        const int previousFrameIndexMod2 = (m_frameIndexMod2 + 1) % 2;
-        const size_t previousFrameQueryCount = m_timestampQueryCounts[previousFrameIndexMod2];
-        const VkQueryPool previousQueryPool = m_timestampQueryPools[previousFrameIndexMod2];
-        
-        std::vector<uint32_t> timestamps;
-        timestamps.resize(previousFrameQueryCount);
-        
-        // res = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, 0, m_currentTimestampQueryCount,
-        //    timestamps.size() * sizeof(uint32_t), timestamps.data(), 0, VK_QUERY_RESULT_WAIT_BIT);
-        // assert(res == VK_SUCCESS);
-        // on Ryzen 4700U iGPU vkGetQueryPoolResults only returns correct results for the first query
-        // maybe it contains more info so needs more space per query?
-        // manually get every query for now
-        // FIXME: proper solution
-        for (size_t i = 0; i < previousFrameQueryCount; i++) {
-            auto result = vkGetQueryPoolResults(vkContext.device, previousQueryPool, (uint32_t)i, 1,
-                (uint32_t)timestamps.size() * sizeof(uint32_t), &timestamps[i], 0, VK_QUERY_RESULT_WAIT_BIT);
-            checkVulkanResult(result);
-        }
-        
-        for (const TimestampQuery query : m_timestampQueriesPerFrame[previousFrameIndexMod2]) {
-
-            const uint32_t startTime = timestamps[query.startQuery];
-            const uint32_t endTime = timestamps[query.endQuery];
-            const uint32_t time = endTime - startTime;
-
-            const float nanoseconds = (float)time * m_nanosecondsPerTimestamp;
-            const float milliseconds = nanoseconds * 0.000001f;
-
-            RenderPassTime timing;
-            timing.name = query.name;
-            timing.timeMs = milliseconds;
-            m_renderpassTimings.push_back(timing);
-        }
-    }
+    retrieveLastFrameTimestamps();
 }
 
 uint32_t RenderBackend::getImageGlobalTextureArrayIndex(const ImageHandle image) {
@@ -690,11 +650,11 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
         const RenderPassResources& resources = execution.resources;
         RenderPassBarriers barriers;
 
-        // storage images        
+        // storage images
         for (const ImageResource& storageImage : resources.storageImages) {
             Image& image = getImageRef(storageImage.image);
 
-            // check if any mip levels need a layout transition            
+            // check if any mip levels need a layout transition
             const VkImageLayout requiredLayout = VK_IMAGE_LAYOUT_GENERAL;
             bool needsLayoutTransition = false;
             for (const auto& layout : image.layoutPerMip) {
@@ -704,7 +664,7 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
             }
 
             // check if image already has a barrier
-            // can happen if same image is used as two storage image when accessing different mips            
+            // can happen if same image is used as two storage image when accessing different mips
             bool hasBarrierAlready = false;
             for (const auto& barrier : barriers.imageBarriers) {
                 if (barrier.image == image.vulkanHandle) {
@@ -764,7 +724,7 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
             for (const RenderTarget& target : graphicExecutionInfo.targets) {
                 Image& image = getImageRef(target.image);
 
-            // check if any mip levels need a layout transition                
+            // check if any mip levels need a layout transition
             const VkImageLayout requiredLayout = isVulkanDepthFormat(image.format) ?
                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
@@ -805,29 +765,6 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
     return barrierList;
 }
 
-VkRenderPassBeginInfo createBeginInfo(const uint32_t width, const uint32_t height, const VkRenderPass pass, 
-    const VkFramebuffer framebuffer, const std::vector<VkClearValue>& clearValues) {
-
-    VkExtent2D extent = {};
-    extent.width = width;
-    extent.height = height;
-
-    VkRect2D rect = {};
-    rect.extent = extent;
-    rect.offset = { 0, 0 };
-
-    VkRenderPassBeginInfo beginInfo = {};
-    beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    beginInfo.pNext = nullptr;
-    beginInfo.renderPass = pass;
-    beginInfo.framebuffer = framebuffer;
-    beginInfo.clearValueCount = (uint32_t)clearValues.size();
-    beginInfo.pClearValues = clearValues.data();
-    beginInfo.renderArea = rect;
-
-    return beginInfo;
-}
-
 void RenderBackend::submitRenderPasses(const VkCommandBuffer commandBuffer, const std::vector<RenderPassBarriers> barriers) {
     int graphicPassIndex = 0;
     for (int i = 0; i < m_renderPassExecutions.size(); i++) {
@@ -861,7 +798,7 @@ void RenderBackend::submitGraphicPass(const GraphicPassExecution& execution,
     issueBarriersCommand(commandBuffer, barriers.imageBarriers, barriers.memoryBarriers);
 
     const glm::ivec2 resolution = getResolutionFromRenderTargets(execution.targets);
-    const auto beginInfo = createBeginInfo(resolution.x, resolution.y, pass.vulkanRenderPass, 
+    const auto beginInfo = createRenderPassBeginInfo(resolution.x, resolution.y, pass.vulkanRenderPass, 
         framebuffer, pass.clearValues);
 
     //prepare pass
@@ -953,6 +890,45 @@ void RenderBackend::executeDeferredBufferFillOrders() {
     }
     m_deferredUniformBufferFills.clear();
     m_deferredStorageBufferFills.clear();
+}
+
+void RenderBackend::retrieveLastFrameTimestamps() {
+    m_renderpassTimings.clear();
+
+    const int previousFrameIndexMod2 = (m_frameIndexMod2 + 1) % 2;
+    const size_t previousFrameQueryCount = m_timestampQueryCounts[previousFrameIndexMod2];
+    const VkQueryPool previousQueryPool = m_timestampQueryPools[previousFrameIndexMod2];
+
+    std::vector<uint32_t> timestamps;
+    timestamps.resize(previousFrameQueryCount);
+
+    // res = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, 0, m_currentTimestampQueryCount,
+    //    timestamps.size() * sizeof(uint32_t), timestamps.data(), 0, VK_QUERY_RESULT_WAIT_BIT);
+    // assert(res == VK_SUCCESS);
+    // on Ryzen 4700U iGPU vkGetQueryPoolResults only returns correct results for the first query
+    // maybe it contains more info so needs more space per query?
+    // manually get every query for now
+    // FIXME: proper solution
+    for (size_t i = 0; i < previousFrameQueryCount; i++) {
+        auto result = vkGetQueryPoolResults(vkContext.device, previousQueryPool, (uint32_t)i, 1,
+            (uint32_t)timestamps.size() * sizeof(uint32_t), &timestamps[i], 0, VK_QUERY_RESULT_WAIT_BIT);
+        checkVulkanResult(result);
+    }
+
+    for (const TimestampQuery query : m_timestampQueriesPerFrame[previousFrameIndexMod2]) {
+
+        const uint32_t startTime = timestamps[query.startQuery];
+        const uint32_t endTime = timestamps[query.endQuery];
+        const uint32_t time = endTime - startTime;
+
+        const float nanoseconds = (float)time * m_nanosecondsPerTimestamp;
+        const float milliseconds = nanoseconds * 0.000001f;
+
+        RenderPassTime timing;
+        timing.name = query.name;
+        timing.timeMs = milliseconds;
+        m_renderpassTimings.push_back(timing);
+    }
 }
 
 std::vector<VkFramebuffer> RenderBackend::createGraphicPassFramebuffer(const std::vector<GraphicPassExecution>& execution) {
@@ -1260,7 +1236,7 @@ std::vector<VkFramebuffer> RenderBackend::createImGuiFramebuffers() {
 std::vector<VkRenderPassBeginInfo> RenderBackend::createImGuiPassBeginInfo(const int width, const int height) {
     std::vector<VkRenderPassBeginInfo> passBeginInfos;
     for (const auto& framebuffer : m_ui.framebuffers) {
-        const auto beginInfo = createBeginInfo(width, height, m_ui.renderPass, framebuffer, {});
+        const auto beginInfo = createRenderPassBeginInfo(width, height, m_ui.renderPass, framebuffer, {});
         passBeginInfos.push_back(beginInfo);
     }
     return passBeginInfos;
@@ -1885,12 +1861,11 @@ VkFence RenderBackend::submitOneTimeUseCmdBuffer(VkCommandBuffer cmdBuffer, VkQu
     submit.signalSemaphoreCount = 0;
     submit.pSignalSemaphores = nullptr;
 
-    VkFence fence = createFence();
-    auto res = vkResetFences(vkContext.device, 1, &fence);
-    assert(res == VK_SUCCESS);
+    const VkFence fence = createFence();
+    resetFence(fence);
 
-    res = vkQueueSubmit(queue, 1, &submit, fence);
-    assert(res == VK_SUCCESS);
+    const auto result = vkQueueSubmit(queue, 1, &submit, fence);
+    checkVulkanResult(result);
 
     return fence;
 }
