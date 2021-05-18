@@ -29,6 +29,7 @@
 #include "VulkanCommandPool.h"
 #include "VulkanSurface.h"
 #include "VulkanSwapchain.h"
+#include "VulkanBuffer.h"
 
 // disable ImGui warnings
 #pragma warning( push )
@@ -1420,44 +1421,12 @@ VulkanAllocation RenderBackend::allocateImageMemory(const VkImage image) {
 
 Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags) {
 
-    VkBufferCreateInfo bufferInfo = {};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.pNext = nullptr;
-    bufferInfo.flags = 0;
-    bufferInfo.size = size;
-    bufferInfo.usage = usage;
-
-    //find unique queue families    
-    std::vector<uint32_t> uniqueQueueFamilies;
-    for (const auto& index : queueFamilies) {
-        if (!vectorContains(uniqueQueueFamilies, index)) {
-            uniqueQueueFamilies.push_back(index);
-        }
-    }
-
-    if (queueFamilies.size() > 1) {
-        bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-    }
-    else {
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    }
-
-    bufferInfo.queueFamilyIndexCount = (uint32_t)uniqueQueueFamilies.size();
-    bufferInfo.pQueueFamilyIndices = uniqueQueueFamilies.data();
+    const std::vector<uint32_t> uniqueQueueFamilies = makeUniqueQueueFamilyList(queueFamilies);
 
     Buffer buffer;
-    buffer.size = size;
-    auto res = vkCreateBuffer(vkContext.device, &bufferInfo, nullptr, &buffer.vulkanHandle);
-    assert(res == VK_SUCCESS);
-
-    //memory
-    VkMemoryRequirements memoryRequirements;
-    vkGetBufferMemoryRequirements(vkContext.device, buffer.vulkanHandle, &memoryRequirements);
-    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &buffer.memory)) {
-        throw("Could not allocate buffer memory");
-    }
-    res = vkBindBufferMemory(vkContext.device, buffer.vulkanHandle, buffer.memory.vkMemory, buffer.memory.offset);
-    assert(res == VK_SUCCESS);
+    buffer.size         = size;
+    buffer.vulkanHandle = createVulkanBuffer(size, usage, uniqueQueueFamilies);
+    buffer.memory       = allocateAndBindBufferMemory(buffer.vulkanHandle, memoryFlags, m_vkAllocator);
 
     return buffer;
 }
