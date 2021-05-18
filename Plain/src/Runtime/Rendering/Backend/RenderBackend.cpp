@@ -27,6 +27,8 @@
 #include "VulkanRenderPass.h"
 #include "VulkanCommandBuffer.h"
 #include "VulkanCommandPool.h"
+#include "VulkanSurface.h"
+#include "VulkanSwapchain.h"
 
 // disable ImGui warnings
 #pragma warning( push )
@@ -53,7 +55,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_shaderFileManager.setup();
 
     createVulkanInstance();
-    createSurface(window);
+    m_swapchain.surface = createSurface(window);
     pickPhysicalDevice(m_swapchain.surface);
 
     VkPhysicalDeviceProperties deviceProperties = getVulkanDeviceProperties();
@@ -65,8 +67,9 @@ void RenderBackend::setup(GLFWwindow* window) {
     getQueueFamilies(vkContext.physicalDevice, &vkContext.queueFamilies, m_swapchain.surface);
     createLogicalDevice();
     initializeVulkanQueues();
-    chooseSurfaceFormat();
-    createSwapChain();
+    m_swapchain.surfaceFormat = chooseSurfaceFormat(m_swapchain.surface);
+    m_swapchain.minImageCount = 2; // for double buffered VSync
+    m_swapchain.vulkanHandle = createVulkanSwapChain(m_swapchain.minImageCount, m_swapchain.surface, m_swapchain.surfaceFormat);
 
     const std::array<int, 2> resolution = Window::getGlfwWindowResolution(window);
     initSwapchainImages((uint32_t)resolution[0], (uint32_t)resolution[1]);
@@ -175,11 +178,11 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
     vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
     vkDestroySurfaceKHR(vkContext.vulkanInstance, m_swapchain.surface, nullptr);
     
-    createSurface(window);
+    m_swapchain.surface = createSurface(window);
 
     // queue families must revalidate present support for new surface
     getQueueFamilies(vkContext.physicalDevice, &vkContext.queueFamilies, m_swapchain.surface);
-    createSwapChain();
+    m_swapchain.vulkanHandle = createVulkanSwapChain(m_swapchain.minImageCount, m_swapchain.surface, m_swapchain.surfaceFormat);
     initSwapchainImages(width, height);
 
     destroyFramebuffers(m_ui.framebuffers);
@@ -1024,92 +1027,6 @@ glm::uvec2 RenderBackend::getResolutionFromRenderTargets(const std::vector<Rende
     }
     const Image& firstImage = getImageRef(targets[0].image);
     return glm::uvec2(firstImage.desc.width, firstImage.desc.height);
-}
-
-void RenderBackend::createSurface(GLFWwindow* window) {
-
-    auto res = glfwCreateWindowSurface(vkContext.vulkanInstance, window, nullptr, &m_swapchain.surface);
-    checkVulkanResult(res);
-}
-
-void RenderBackend::chooseSurfaceFormat() {
-
-    //get avaible surface formats
-    uint32_t avaibleFormatCount = 0;
-    if (vkGetPhysicalDeviceSurfaceFormatsKHR(vkContext.physicalDevice, m_swapchain.surface, &avaibleFormatCount, nullptr) != VK_SUCCESS) {
-        throw std::runtime_error("failed to query surface image format count");
-    }
-    std::vector<VkSurfaceFormatKHR> avaibleFormats(avaibleFormatCount);
-    if (vkGetPhysicalDeviceSurfaceFormatsKHR(vkContext.physicalDevice, m_swapchain.surface, &avaibleFormatCount, avaibleFormats.data()) != VK_SUCCESS) {
-        throw std::runtime_error("failed to query surface image formats");
-    }
-
-    //requested image format
-    VkSurfaceFormatKHR requestedFormat = {};
-    requestedFormat.format = VK_FORMAT_B8G8R8A8_UNORM; //not srgb because it doesn't support image storage
-    requestedFormat.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-
-    //search for requested format, else keep first as fallback
-    VkSurfaceFormatKHR chosenFormat = avaibleFormats[0]; //vulkan guarantess at least 1 format, so this is safe
-    bool foundRequestedFormat = false;
-    for (const auto& available : avaibleFormats) {
-        if (available.colorSpace == requestedFormat.colorSpace && available.format == requestedFormat.format) {
-            chosenFormat = available;
-            foundRequestedFormat = true;
-            break;
-        }
-    }
-
-    if (!foundRequestedFormat) {
-        std::cerr << "Warning: did not find the requested image format for swapchain" << std::endl;
-    }
-
-    m_swapchain.surfaceFormat = chosenFormat;
-}
-
-void RenderBackend::createSwapChain() {
-
-    m_swapchain.minImageCount = 2;
-
-    VkSwapchainCreateInfoKHR swapchainInfo = {};
-    swapchainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    swapchainInfo.pNext = nullptr;
-    swapchainInfo.flags = 0;
-    swapchainInfo.surface = m_swapchain.surface;
-    swapchainInfo.minImageCount = m_swapchain.minImageCount; //double buffered Vsync
-    swapchainInfo.imageFormat = m_swapchain.surfaceFormat.format;
-    swapchainInfo.imageColorSpace = m_swapchain.surfaceFormat.colorSpace;
-
-    VkSurfaceCapabilitiesKHR surfaceCapabilities;
-    auto res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vkContext.physicalDevice, m_swapchain.surface, &surfaceCapabilities);
-    assert(res == VK_SUCCESS);
-
-    swapchainInfo.imageExtent = surfaceCapabilities.currentExtent;
-    swapchainInfo.imageArrayLayers = 1;
-    swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
-
-    //set sharing mode depdening on if queues are the same
-    uint32_t uniqueFamilies[2] = { vkContext.queueFamilies.graphicsQueueIndex, vkContext.queueFamilies.presentationQueueIndex };
-    if (uniqueFamilies[0] == uniqueFamilies[1]) {
-        swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        swapchainInfo.queueFamilyIndexCount = 0;
-        swapchainInfo.pQueueFamilyIndices = nullptr;
-    }
-    else {
-        swapchainInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-        swapchainInfo.queueFamilyIndexCount = 2;
-        swapchainInfo.pQueueFamilyIndices = uniqueFamilies;
-    }
-
-    swapchainInfo.preTransform = surfaceCapabilities.currentTransform;
-
-    swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    swapchainInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    swapchainInfo.clipped = VK_FALSE;
-    swapchainInfo.oldSwapchain = VK_NULL_HANDLE;
-
-    res = vkCreateSwapchainKHR(vkContext.device, &swapchainInfo, nullptr, &m_swapchain.vulkanHandle);
-    checkVulkanResult(res);
 }
 
 void RenderBackend::initSwapchainImages(const uint32_t width, const uint32_t height) {

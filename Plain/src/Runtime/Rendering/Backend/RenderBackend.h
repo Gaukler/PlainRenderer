@@ -210,11 +210,6 @@ private:
     */
     Swapchain m_swapchain;
 
-
-    void createSurface(GLFWwindow* window);
-    void chooseSurfaceFormat();
-    void createSwapChain();
-
     void initSwapchainImages(const uint32_t width, const uint32_t height);
     void presentImage(const VkSemaphore waitSemaphore);
 
