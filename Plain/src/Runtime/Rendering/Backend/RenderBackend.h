@@ -17,12 +17,12 @@
 struct GLFWwindow;
 
 struct Swapchain {
-    VkSurfaceKHR                surface = VK_NULL_HANDLE;
-    VkSurfaceFormatKHR          surfaceFormat = {};
-    VkSwapchainKHR              vulkanHandle;
-    uint32_t                    minImageCount;
-    std::vector<ImageHandle>    imageHandles;
-    VkSemaphore                 imageAvaible;
+    VkSurfaceKHR        surface = VK_NULL_HANDLE;
+    VkSurfaceFormatKHR  surfaceFormat = {};
+    VkSwapchainKHR      vulkanHandle;
+    uint32_t            minImageCount;
+    std::vector<Image>  images;
+    VkSemaphore         imageAvailable;
 };
 
 struct UIRenderInfo {
@@ -142,7 +142,7 @@ public:
     std::vector<RenderPassTime> getRenderpassTimings() const;
     float getLastFrameCPUTime() const;
 
-    ImageDescription getImageDescription(const ImageHandle image);
+    ImageDescription getImageDescription(const ImageHandle handle);
     void waitForGpuIdle();  // only use for rare events, such as resizing on settings change
 
 private:
@@ -194,10 +194,10 @@ private:
     //framebuffer stuff
     std::vector<VkFramebuffer> m_transientFramebuffers[2];
 
-    std::vector<VkFramebuffer> createGraphicPassFramebuffer(const std::vector<GraphicPassExecution>& execution);
-    VkFramebuffer createVulkanFramebuffer(const std::vector<RenderTarget>& targets, const VkRenderPass renderpass);
+    std::vector<VkFramebuffer>  createGraphicPassFramebuffers(const std::vector<GraphicPassExecution>& execution);
+    std::vector<VkImageView>    getImageViewsFromRenderTargets(const std::vector<RenderTarget>& targets);
 
-    bool validateAttachments(const std::vector<RenderTarget>& attachments);
+    bool validateRenderTargets(const std::vector<RenderTarget>& attachments);
     bool imageHasAttachmentUsageFlag(const Image& image);
     glm::uvec2 getResolutionFromRenderTargets(const std::vector<RenderTarget>& targets);
 
@@ -226,7 +226,6 @@ private:
 
     // currently scheduled renderpass
     std::vector<RenderPassExecution>    m_framePasses;
-    uint32_t                            m_swapchainInputImageIndex = 0;
     ImageHandle                         m_swapchainInputImageHandle;
 
     /*

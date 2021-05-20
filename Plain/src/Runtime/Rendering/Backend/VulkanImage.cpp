@@ -177,3 +177,9 @@ VkImageAspectFlags getVkImageAspectFlags(const VkFormat format) {
         return VK_IMAGE_ASPECT_COLOR_BIT;
     }
 }
+
+void destroyImageViews(const std::vector<VkImageView>& imageViews) {
+    for (const VkImageView &view : imageViews) {
+        vkDestroyImageView(vkContext.device, view, nullptr);
+    }
+}

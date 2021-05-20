@@ -15,28 +15,22 @@ struct ShaderLayout {
 };
 
 struct Image {
-
     VkImage                     vulkanHandle = VK_NULL_HANDLE;
     std::vector<VkImageView>    viewPerMip;
-    VkFormat                    format = VK_FORMAT_MAX_ENUM;
-
     std::vector<VkImageLayout>  layoutPerMip;
+    VkFormat                    format = VK_FORMAT_MAX_ENUM;
+    VulkanAllocation            memory;
     VkAccessFlags               currentAccess = 0;
     bool                        currentlyWriting = false;
-
-    //description backup in case of resize
-    ImageDescription desc;
-
-    bool isSwapchainImage = false;
-    VulkanAllocation memory;
-    int32_t globalDescriptorSetIndex = -1;
+    ImageDescription            desc;
+    int32_t                     globalDescriptorSetIndex = -1;
 };
 
 struct Buffer {
-    VkBuffer vulkanHandle = VK_NULL_HANDLE;
-    VkDeviceSize size = 0;
-    VulkanAllocation memory;
-    bool isBeingWritten = false;
+    VkBuffer            vulkanHandle = VK_NULL_HANDLE;
+    VkDeviceSize        size = 0;
+    VulkanAllocation    memory;
+    bool                isBeingWritten = false;
 };
 
 //disable warning caused by vulkan use

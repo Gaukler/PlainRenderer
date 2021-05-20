@@ -30,6 +30,7 @@
 #include "VulkanSurface.h"
 #include "VulkanSwapchain.h"
 #include "VulkanBuffer.h"
+#include "VulkanFramebuffer.h"
 
 // disable ImGui warnings
 #pragma warning( push )
@@ -53,6 +54,7 @@ const uint32_t maxTextureCount = 1000;
 
 void RenderBackend::setup(GLFWwindow* window) {
 
+    m_swapchainInputImageHandle.type = ImageHandleType::Swapchain;
     m_shaderFileManager.setup();
 
     createVulkanInstance();
@@ -81,7 +83,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_commandPool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     m_drawcallCommandPools = createDrawcallCommandPools();
     m_transientCommandPool = createCommandPool(vkContext.queueFamilies.transferQueueFamilyIndex, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
-    m_swapchain.imageAvaible = createSemaphore();
+    m_swapchain.imageAvailable = createSemaphore();
     m_renderFinishedSemaphore = createSemaphore();
     m_renderFinishedFence = createFence();
     m_stagingBuffer = createStagingBuffer();
@@ -101,8 +103,8 @@ void RenderBackend::shutdown() {
     waitForRenderFinished();
     m_shaderFileManager.shutdown();
 
-    for (uint32_t i = 0; i < m_images.size(); i++) {
-        destroyImage({ i });
+    for (const Image &image : m_images) {
+        destroyImageInternal(image);
     }
     for (const AllocatedTempImage& tempImage : m_allocatedTempImages) {
         destroyImageInternal(tempImage.image);
@@ -124,6 +126,9 @@ void RenderBackend::shutdown() {
     }
     for (const auto& sampler : m_samplers) {
         vkDestroySampler(vkContext.device, sampler, nullptr);
+    }
+    for (const auto& image : m_swapchain.images) {
+        destroyImageViews(image.viewPerMip);
     }
     destroyFramebuffers(m_transientFramebuffers[0]);
     destroyFramebuffers(m_transientFramebuffers[1]);
@@ -158,7 +163,7 @@ void RenderBackend::shutdown() {
     }
 
     vkDestroySemaphore(vkContext.device, m_renderFinishedSemaphore, nullptr);
-    vkDestroySemaphore(vkContext.device, m_swapchain.imageAvaible, nullptr);
+    vkDestroySemaphore(vkContext.device, m_swapchain.imageAvailable, nullptr);
 
     vkDestroyQueryPool(vkContext.device, m_timestampQueryPools[0], nullptr);
     vkDestroyQueryPool(vkContext.device, m_timestampQueryPools[1], nullptr);
@@ -173,8 +178,8 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
     auto result = vkDeviceWaitIdle(vkContext.device);
     checkVulkanResult(result);
 
-    for (const auto& imageHandle : m_swapchain.imageHandles) {
-        destroyImage(imageHandle);
+    for (const Image& image : m_swapchain.images) {
+        destroyImageViews(image.viewPerMip);
     }
     vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
     vkDestroySurfaceKHR(vkContext.vulkanInstance, m_swapchain.surface, nullptr);
@@ -213,13 +218,14 @@ void RenderBackend::updateShaderCode() {
 }
 
 void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const uint32_t width, const uint32_t height) {
-    for (const auto image : images) {
-        m_images[image.index].desc.width = width;
-        m_images[image.index].desc.height = height;
-        const auto imageDesc = m_images[image.index].desc;
-        destroyImage(image);
+    for (const auto imageHandle : images) {
+        Image& image = getImageRef(imageHandle);
+        image.desc.width = width;
+        image.desc.height = height;
+        const auto imageDesc = image.desc;
+        destroyImage(imageHandle);
         ImageHandle newHandle = createImage(imageDesc, nullptr, 0);
-        assert(newHandle.index == image.index);
+        assert(newHandle.index == imageHandle.index);
     }
 }
 
@@ -245,7 +251,7 @@ void RenderBackend::prepareForDrawcallRecording() {
     allocateTemporaryImages();
     updateRenderPassDescriptorSets();
     destroyFramebuffers(m_transientFramebuffers[m_frameIndexMod2]);
-    m_transientFramebuffers[m_frameIndexMod2] = createGraphicPassFramebuffer(m_graphicPassExecutions);
+    m_transientFramebuffers[m_frameIndexMod2] = createGraphicPassFramebuffers(m_graphicPassExecutions);
 
     for (int i = 0; i < m_graphicPassExecutions.size(); i++) {
         startGraphicPassRecording(m_graphicPassExecutions[i], m_transientFramebuffers[m_frameIndexMod2][i]);
@@ -368,14 +374,14 @@ void RenderBackend::submitImGuiRenderpass(const VkCommandBuffer commandBuffer) {
 
     ImGui::Render();
 
-    const std::vector<VkImageMemoryBarrier> uiBarrier = createImageBarriers(m_images[m_swapchainInputImageHandle.index],
+    const std::vector<VkImageMemoryBarrier> uiBarrier = createImageBarriers(getImageRef(m_swapchainInputImageHandle),
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
 
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
         0, 0, nullptr, 0, nullptr, 1, uiBarrier.data());
 
-    vkCmdBeginRenderPass(commandBuffer, &m_ui.passBeginInfos[m_swapchainInputImageIndex], VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(commandBuffer, &m_ui.passBeginInfos[m_swapchainInputImageHandle.index], VK_SUBPASS_CONTENTS_INLINE);
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
 
@@ -410,7 +416,7 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
     m_timestampQueriesPerFrame[m_frameIndexMod2][frameQueryIndex].endQuery = issueTimestampQuery(currentCommandBuffer, m_frameIndexMod2);
 
     // transition swapchain image to present
-    auto& swapchainPresentImage = m_images[m_swapchainInputImageHandle.index];
+    auto& swapchainPresentImage = getImageRef(m_swapchainInputImageHandle);
     const auto& transitionToPresentBarrier = createImageBarriers(swapchainPresentImage, 
         VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
     issueBarriersCommand(currentCommandBuffer, transitionToPresentBarrier, std::vector<VkBufferMemoryBarrier> {});
@@ -486,7 +492,7 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
         Mesh mesh;
         mesh.indexCount = meshData.indexCount;
 
-        //index buffer
+        // index buffer
         if (mesh.indexCount < std::numeric_limits<uint16_t>::max()) {
             mesh.indexPrecision = VK_INDEX_TYPE_UINT16;
         }
@@ -502,7 +508,7 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         fillBuffer(mesh.indexBuffer, meshData.indexBuffer.data(), indexBufferSize);
 
-        //vertex buffer
+        // vertex buffer
         const VkDeviceSize vertexBufferSize = meshData.vertexBuffer.size() * sizeof(uint8_t);
         mesh.vertexBuffer = createBufferInternal(
             vertexBufferSize, 
@@ -511,7 +517,7 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         fillBuffer(mesh.vertexBuffer, meshData.vertexBuffer.data(), vertexBufferSize);
 
-        //store and return handle
+        // store and return handle
         MeshHandle handle = { (uint32_t)m_meshes.size() };
         handles.push_back(handle);
         m_meshes.push_back(mesh);
@@ -523,8 +529,9 @@ ImageHandle RenderBackend::createImage(const ImageDescription& desc, const void*
 
     const Image image = createImageInternal(desc, initialData, initialDataSize);
 
-    //reuse a free image handle or create a new one
+    // reuse a free image handle or create a new one
     ImageHandle handle;
+    handle.type = ImageHandleType::Default;
     if (m_freeImageHandles.size() > 0) {
         handle = m_freeImageHandles.back();
         m_freeImageHandles.pop_back();
@@ -585,8 +592,8 @@ SamplerHandle RenderBackend::createSampler(const SamplerDescription& desc) {
 
 ImageHandle RenderBackend::createTemporaryImage(const ImageDescription& description) {
     ImageHandle handle;
-    handle.index = m_temporaryImages.size();
-    handle.index |= 0x80000000;
+    handle.type     = ImageHandleType::Transient;
+    handle.index    = m_temporaryImages.size();
 
     TemporaryImage tempImage;
     tempImage.desc = description;
@@ -596,9 +603,8 @@ ImageHandle RenderBackend::createTemporaryImage(const ImageDescription& descript
 }
 
 ImageHandle RenderBackend::getSwapchainInputImage() {
-    auto result = vkAcquireNextImageKHR(vkContext.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvaible, VK_NULL_HANDLE, &m_swapchainInputImageIndex);
+    const auto result = vkAcquireNextImageKHR(vkContext.device, m_swapchain.vulkanHandle, UINT64_MAX, m_swapchain.imageAvailable, VK_NULL_HANDLE, &m_swapchainInputImageHandle.index);
     checkVulkanResult(result);
-    m_swapchainInputImageHandle = m_swapchain.imageHandles[m_swapchainInputImageIndex];
     return m_swapchainInputImageHandle;
 }
 
@@ -618,26 +624,8 @@ float RenderBackend::getLastFrameCPUTime() const {
     return m_lastFrameCPUTime;
 }
 
-struct ImageHandleDecoded {
-    bool isTempImage = false;
-    int index = 0;
-};
-
-ImageHandleDecoded decodeImageHandle(const ImageHandle handle) {
-    ImageHandleDecoded decoded;
-    decoded.isTempImage = bool(handle.index >> 31); // first bit indicates if image is temp
-    decoded.index = handle.index & 0x7FFFFFFF;      // mask out first bit for index
-    return decoded;
-}
-
-ImageDescription RenderBackend::getImageDescription(const ImageHandle image) {
-    const ImageHandleDecoded decoded = decodeImageHandle(image);
-    if (decoded.isTempImage) {
-        return m_temporaryImages[decoded.index].desc;
-    }
-    else {
-        return m_images[decoded.index].desc;
-    }
+ImageDescription RenderBackend::getImageDescription(const ImageHandle handle) {
+    return getImageRef(handle).desc;
 }
 
 void RenderBackend::waitForGpuIdle() {
@@ -869,7 +857,7 @@ void RenderBackend::submitFrameToGraphicsQueue(const VkCommandBuffer commandBuff
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.pNext = nullptr;
     submit.waitSemaphoreCount = presentToScreen ? 1 : 0;
-    submit.pWaitSemaphores = &m_swapchain.imageAvaible;
+    submit.pWaitSemaphores = &m_swapchain.imageAvailable;
 
     VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     submit.pWaitDstStageMask = &waitStage;
@@ -937,53 +925,38 @@ void RenderBackend::retrieveLastFrameTimestamps() {
     }
 }
 
-std::vector<VkFramebuffer> RenderBackend::createGraphicPassFramebuffer(const std::vector<GraphicPassExecution>& execution) {
+std::vector<VkFramebuffer> RenderBackend::createGraphicPassFramebuffers(const std::vector<GraphicPassExecution>& execution) {
     std::vector<VkFramebuffer> framebuffers;
     for (const GraphicPassExecution& exe : execution) {
         const GraphicPass pass = m_renderPasses.getGraphicPassRefByHandle(exe.genericInfo.handle);
-        const VkFramebuffer newFramebuffer = createVulkanFramebuffer(exe.targets, pass.vulkanRenderPass);
-        framebuffers.push_back(newFramebuffer);
+        if (validateRenderTargets(exe.targets)) {
+            const std::vector<VkImageView>  targetViews     = getImageViewsFromRenderTargets(exe.targets);
+            const glm::ivec2                resolution      = getResolutionFromRenderTargets(exe.targets);
+            const VkFramebuffer             newFramebuffer  = createVulkanFramebuffer(targetViews, pass.vulkanRenderPass,
+                resolution.x, resolution.y);
+            framebuffers.push_back(newFramebuffer);
+        }
+        else {
+            std::cerr << "Cannot create graphic pass framebuffer: invalid attachments\n";
+            framebuffers.push_back(VK_NULL_HANDLE);
+        }
     }
     return framebuffers;
 }
 
-VkFramebuffer RenderBackend::createVulkanFramebuffer(const std::vector<RenderTarget>& targets, const VkRenderPass renderpass) {
-
-    if (!validateAttachments(targets)) {
-        std::cout << "createVulkanFramebuffer: invalid attachments\n";
-        return VK_NULL_HANDLE;
-    }
-
+std::vector<VkImageView> RenderBackend::getImageViewsFromRenderTargets(const std::vector<RenderTarget>& targets) {
     std::vector<VkImageView> views;
     for (const auto& target : targets) {
         const auto& image = getImageRef(target.image);
         const auto view = image.viewPerMip[target.mipLevel];
         views.push_back(view);
     }
-
-    VkFramebufferCreateInfo framebufferInfo = {};
-    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.pNext = nullptr;
-    framebufferInfo.flags = 0;
-    framebufferInfo.renderPass = renderpass;
-    framebufferInfo.attachmentCount = (uint32_t)views.size();
-    framebufferInfo.pAttachments = views.data();
-
-    const glm::ivec2 resolution = getResolutionFromRenderTargets(targets);
-    framebufferInfo.width = resolution.x;
-    framebufferInfo.height = resolution.y;
-    framebufferInfo.layers = 1;
-
-    VkFramebuffer framebuffer;
-    auto res = vkCreateFramebuffer(vkContext.device, &framebufferInfo, nullptr, &framebuffer);
-    checkVulkanResult(res);
-
-    return framebuffer;
+    return views;
 }
 
-bool RenderBackend::validateAttachments(const std::vector<RenderTarget>& targets) {
+bool RenderBackend::validateRenderTargets(const std::vector<RenderTarget>& targets) {
 
-    const std::string failureMessagePrologue = "Attachment validation failed: ";
+    const std::string failureMessagePrologue = "RenderTarget validation failed: ";
     if (targets.size() == 0) {
         std::cout << failureMessagePrologue << "no attachments\n";
         return false;
@@ -1042,10 +1015,9 @@ void RenderBackend::initSwapchainImages(const uint32_t width, const uint32_t hei
         throw std::runtime_error("failed to query swapchain images");
     }
 
-    m_swapchain.imageHandles.clear();
+    m_swapchain.images.clear();
     for (const auto vulkanImage : swapchainImages) {
         Image image;
-        image.isSwapchainImage = true;
         image.vulkanHandle = vulkanImage;
         image.desc.width = width;
         image.desc.height = height;
@@ -1054,17 +1026,7 @@ void RenderBackend::initSwapchainImages(const uint32_t width, const uint32_t hei
         image.desc.type = ImageType::Type2D;
         image.viewPerMip.push_back(createImageView(image, 0, 1));
         image.layoutPerMip.push_back(VK_IMAGE_LAYOUT_UNDEFINED);
-
-        if (m_freeImageHandles.size() > 0) {
-            ImageHandle handle = m_freeImageHandles.back();
-            m_freeImageHandles.pop_back();
-            m_swapchain.imageHandles.push_back(handle);
-            m_images[handle.index] = image;
-        }
-        else {
-            m_swapchain.imageHandles.push_back({ (uint32_t)m_images.size() });
-            m_images.push_back(image);
-        }
+        m_swapchain.images.push_back(image);
     }
 }
 
@@ -1077,7 +1039,7 @@ void RenderBackend::presentImage(const VkSemaphore waitSemaphore) {
     present.pWaitSemaphores = &waitSemaphore;
     present.swapchainCount = 1;
     present.pSwapchains = &m_swapchain.vulkanHandle;
-    present.pImageIndices = &m_swapchainInputImageIndex;
+    present.pImageIndices = &m_swapchainInputImageHandle.index;
 
     VkResult presentResult = VK_SUCCESS;
     present.pResults = &presentResult;
@@ -1109,7 +1071,7 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
     init_info.DescriptorPool = m_imguiDescriptorPool;
     init_info.Allocator = nullptr;
     init_info.MinImageCount = m_swapchain.minImageCount;
-    init_info.ImageCount = (uint32_t)m_swapchain.imageHandles.size();
+    init_info.ImageCount = (uint32_t)m_swapchain.images.size();
     init_info.CheckVkResultFn = nullptr;
     if (!ImGui_ImplVulkan_Init(&init_info, m_ui.renderPass)) {
         throw("ImGui inizialisation error");
@@ -1136,18 +1098,19 @@ void RenderBackend::setupImgui(GLFWwindow* window) {
 
     m_ui.framebuffers = createImGuiFramebuffers();
 
-    const int width = m_images[m_swapchain.imageHandles[0].index].desc.width;
-    const int height = m_images[m_swapchain.imageHandles[0].index].desc.height;
+    const int width  = m_swapchain.images.front().desc.width;
+    const int height = m_swapchain.images.front().desc.height;
     m_ui.passBeginInfos = createImGuiPassBeginInfo(width, height);
 }
 
 std::vector<VkFramebuffer> RenderBackend::createImGuiFramebuffers() {
     std::vector<VkFramebuffer> buffers;
-    for (const auto& imageHandle : m_swapchain.imageHandles) {
-        RenderTarget uiTarget;
-        uiTarget.image = imageHandle;
-        uiTarget.mipLevel = 0;
-        const VkFramebuffer framebuffer = createVulkanFramebuffer({ uiTarget }, m_ui.renderPass);
+    for (const auto& uiTarget : m_swapchain.images) {
+        assert(uiTarget.viewPerMip.size() > 0);
+        const VkImageView targetView = uiTarget.viewPerMip.front();
+        const uint32_t& width = uiTarget.desc.width;
+        const uint32_t& height = uiTarget.desc.height;
+        const VkFramebuffer framebuffer = createVulkanFramebuffer({ targetView }, m_ui.renderPass, width, height);
         buffers.push_back(framebuffer);
     }
     return buffers;
@@ -1163,15 +1126,22 @@ std::vector<VkRenderPassBeginInfo> RenderBackend::createImGuiPassBeginInfo(const
 }
 
 Image& RenderBackend::getImageRef(const ImageHandle handle) {
-    const ImageHandleDecoded decoded = decodeImageHandle(handle);
-    if (decoded.isTempImage) {
-        const int allocationIndex = m_temporaryImages[decoded.index].allocationIndex;
-        assert(allocationIndex >= allocationIndex);
+    if (handle.type == ImageHandleType::Default) {
+        assert(handle.index < m_images.size());
+        return m_images[handle.index];
+    }
+    else if(handle.type == ImageHandleType::Transient){
+        const int allocationIndex = m_temporaryImages[handle.index].allocationIndex;
         assert(allocationIndex < m_allocatedTempImages.size());
         return m_allocatedTempImages[allocationIndex].image;
     }
+    else if (handle.type == ImageHandleType::Swapchain) {
+        assert(handle.index < m_swapchain.images.size());
+        return m_swapchain.images[handle.index];
+    }
     else {
-        return m_images[decoded.index];
+        std::cerr << "Unknown image handle type\n";
+        return m_images.front();
     }
 }
 
@@ -1186,6 +1156,10 @@ bool imageDescriptionsMatch(const ImageDescription& d1, const ImageDescription& 
         d1.usageFlags   == d2.usageFlags;
 }
 
+bool isTransientImageHandle(const ImageHandle handle) {
+    return handle.type == ImageHandleType::Transient;
+}
+
 void RenderBackend::mapOverRenderpassTempImages(std::function<void(const int renderpassImage, 
     const int tempImageIndex)> function) {
 
@@ -1195,24 +1169,21 @@ void RenderBackend::mapOverRenderpassTempImages(std::function<void(const int ren
             m_graphicPassExecutions, m_computePassExecutions);
 
         for (const auto& imageResource : execution.resources.sampledImages) {
-            const auto decodedImageHandle = decodeImageHandle(imageResource.image);
-            if (decodedImageHandle.isTempImage) {
-                function(i, decodedImageHandle.index);
+            if (isTransientImageHandle(imageResource.image)) {
+                function(i, imageResource.image.index);
             }
         }
 
         for (const auto& imageResource : execution.resources.storageImages) {
-            const auto decodedImageHandle = decodeImageHandle(imageResource.image);
-            if (decodedImageHandle.isTempImage) {
-                function(i, decodedImageHandle.index);
+            if (isTransientImageHandle(imageResource.image)) {
+                function(i, imageResource.image.index);
             }
         }
         if (executionEntry.type == RenderPassType::Graphic) {
             const auto& graphicPass = m_graphicPassExecutions[executionEntry.index];
             for (const auto& target : graphicPass.targets) {
-                const auto decodedImageHandle = decodeImageHandle(target.image);
-                if (decodedImageHandle.isTempImage) {
-                    function(i, decodedImageHandle.index);
+                if (isTransientImageHandle(target.image)) {
+                    function(i, target.image.index);
                 }
             }
         }
@@ -1691,7 +1662,7 @@ void RenderBackend::fillHostVisibleCoherentBuffer(Buffer target, const void* dat
 }
 
 VkFence RenderBackend::submitOneTimeUseCmdBuffer(VkCommandBuffer cmdBuffer, VkQueue queue) {
-    //submit commands
+
     VkSubmitInfo submit = {};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.pNext = nullptr;
@@ -1713,14 +1684,15 @@ VkFence RenderBackend::submitOneTimeUseCmdBuffer(VkCommandBuffer cmdBuffer, VkQu
 }
 
 void RenderBackend::startDebugLabel(const VkCommandBuffer cmdBuffer, const std::string& name) {
-    const VkDebugUtilsLabelEXT uiLabel =
-    {
-        VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-        nullptr,
-        name.c_str(),
-        { 1.0f, 1.0f, 1.0f, 1.0f },
-    };
-    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT(cmdBuffer, &uiLabel);
+    VkDebugUtilsLabelEXT label;
+    label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+    label.pNext = nullptr;
+    label.pLabelName = name.c_str();
+    label.color[0] = 1.f;
+    label.color[1] = 1.f;
+    label.color[2] = 1.f;
+    label.color[3] = 1.f;
+    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT(cmdBuffer, &label);
 }
 
 void RenderBackend::endDebugLabel(const VkCommandBuffer cmdBuffer) {
@@ -2269,22 +2241,12 @@ void RenderBackend::destroyImage(const ImageHandle handle) {
 }
 
 void RenderBackend::destroyImageInternal(const Image& image) {
-
-    if (bool(image.desc.usageFlags & ImageUsageFlags::Sampled)) {
+    const bool isSampled = bool(image.desc.usageFlags & ImageUsageFlags::Sampled);
+    if (isSampled) {
         m_globalTextureArrayDescriptorSetFreeTextureIndices.push_back(image.globalDescriptorSetIndex);
     }
-
-    for (const auto& view : image.viewPerMip) {
-        vkDestroyImageView(vkContext.device, view, nullptr);
-    }
-
-    // swapchain images have no manualy allocated memory
-    // they are deleted by the swapchain
-    // view has to be destroyed manually though
-    if (!image.isSwapchainImage) {
-        m_vkAllocator.free(image.memory);
-        vkDestroyImage(vkContext.device, image.vulkanHandle, nullptr);
-    }
+    destroyImageViews(image.viewPerMip);
+    vkDestroyImage(vkContext.device, image.vulkanHandle, nullptr);
 }
 
 void RenderBackend::destroyBuffer(const Buffer& buffer) {
