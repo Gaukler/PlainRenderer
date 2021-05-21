@@ -21,3 +21,9 @@ VkFramebuffer createVulkanFramebuffer(const std::vector<VkImageView>& views, con
 
     return framebuffer;
 }
+
+void destroyFramebuffers(const std::vector<VkFramebuffer>& framebuffers) {
+    for (const auto& f : framebuffers) {
+        vkDestroyFramebuffer(vkContext.device, f, nullptr);
+    }
+}

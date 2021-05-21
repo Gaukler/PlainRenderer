@@ -4,3 +4,5 @@
 
 VkFramebuffer createVulkanFramebuffer(const std::vector<VkImageView>& views, const VkRenderPass renderpass,
     const uint32_t width, const uint32_t height);
+
+void destroyFramebuffers(const std::vector<VkFramebuffer>& framebuffers);

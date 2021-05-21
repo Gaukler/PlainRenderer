@@ -13,6 +13,7 @@
 #include "RenderPassManager.h"
 #include "DescriptorPool.h"
 #include "RenderPassExecution.h"
+#include "PerFrameResources.h"
 
 struct GLFWwindow;
 
@@ -31,7 +32,7 @@ struct UIRenderInfo {
     VkRenderPass                        renderPass = VK_NULL_HANDLE;
 };
 
-//because they are extensions they need to be acquired using vkGetDeviceProcAddr
+// because they are extensions they need to be acquired using vkGetDeviceProcAddr
 struct VulkanDebugUtilsFunctions {
     PFN_vkCmdBeginDebugUtilsLabelEXT    vkCmdBeginDebugUtilsLabelEXT    = nullptr;
     PFN_vkCmdEndDebugUtilsLabelEXT      vkCmdEndDebugUtilsLabelEXT      = nullptr;
@@ -46,15 +47,9 @@ struct VulkanDebugUtilsFunctions {
     PFN_vkSubmitDebugUtilsMessageEXT    vkSubmitDebugUtilsMessageEXT    = nullptr;
 };
 
-struct TimestampQuery {
-    uint32_t startQuery = 0;
-    uint32_t endQuery = 0;
-    std::string name;
-};
-
-//per pass execution time
+// per pass execution time
 struct RenderPassTime{
-    float timeMs = 0; //time in milliseconds
+    float timeMs = 0; // time in milliseconds
     std::string name;
 };
 
@@ -176,13 +171,13 @@ private:
     std::vector<GraphicPassExecution> m_graphicPassExecutions;
     std::vector<ComputePassExecution> m_computePassExecutions;
 
-    void submitRenderPasses(const VkCommandBuffer commandBuffer, const std::vector<RenderPassBarriers> barriers);
-    void submitImGuiRenderpass(const VkCommandBuffer commandBuffer);
+    void submitRenderPasses(PerFrameResources *inOutFrameResources, const std::vector<RenderPassBarriers> barriers);
+    void submitImGuiRenderpass(PerFrameResources* inOutFrameResources);
     void submitGraphicPass(const GraphicPassExecution& execution,
-        const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer, const VkFramebuffer framebuffer);
+        const RenderPassBarriers& barriers, PerFrameResources *inOutFrameResources, const VkFramebuffer framebuffer);
 
     void submitComputePass(const ComputePassExecution& execution,
-        const RenderPassBarriers& barriers, const VkCommandBuffer commandBuffer);
+        const RenderPassBarriers& barriers, PerFrameResources *inOutFrameResources);
 
     void submitFrameToGraphicsQueue(const VkCommandBuffer commandBuffer, const bool presentToScreen);
 
@@ -190,9 +185,6 @@ private:
 
     void executeDeferredBufferFillOrders();
     void retrieveLastFrameTimestamps();
-
-    //framebuffer stuff
-    std::vector<VkFramebuffer> m_transientFramebuffers[2];
 
     std::vector<VkFramebuffer>  createGraphicPassFramebuffers(const std::vector<GraphicPassExecution>& execution);
     std::vector<VkImageView>    getImageViewsFromRenderTargets(const std::vector<RenderTarget>& targets);
@@ -305,13 +297,6 @@ private:
     VkCommandPool   m_commandPool = VK_NULL_HANDLE;
     VkCommandPool   m_transientCommandPool = VK_NULL_HANDLE; //used for short lived copy command buffer and such
 
-    //primary command buffers used for all rendering
-    //two so one can be filled while the other is still rendering
-    VkCommandBuffer m_commandBuffers[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
-
-    uint32_t m_frameIndex = 0;
-    uint32_t m_frameIndexMod2 = 0;
-
     //Queue recording must have been ended before
     //returned fence must be manually destroyed
     VkFence submitOneTimeUseCmdBuffer(VkCommandBuffer cmdBuffer, VkQueue queue);
@@ -374,28 +359,10 @@ private:
     VkSemaphore m_renderFinishedSemaphore = VK_NULL_HANDLE;
     VkFence     m_renderFinishedFence = VK_NULL_HANDLE;
 
-    //timestamp queries
-    const uint32_t m_timestampQueryPoolQueryCount = 100;
-
-    //two pools to allow reset and usage of one while the other is rendered by gpu
-    VkQueryPool m_timestampQueryPools[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
-
     float m_nanosecondsPerTimestamp = 1.f;
 
-    //one count for each frame in flight
-    uint32_t m_timestampQueryCounts[2] = { 0, 0 };
-
-    std::vector<TimestampQuery> m_timestampQueriesPerFrame[2];	//one query list per frame in flight
     std::vector<RenderPassTime> m_renderpassTimings;
-
-    //must be called in an active command buffer
-    //issues vulkan timestamp query and increments timestamp query counter
-    //returns query index
-    uint32_t issueTimestampQuery(const VkCommandBuffer cmdBuffer, const int poolIndex);
-
-    //does not handle queryType VK_QUERY_TYPE_PIPELINE_STATISTICS 
-    VkQueryPool createQueryPool(const VkQueryType queryType, const uint32_t queryCount);
-    void resetTimestampQueryPool(const int poolIndex);
+    PerFrameResources m_perFrameResources[2];
 
     float m_timeOfLastGPUSubmit = 0.f;
     float m_lastFrameCPUTime = 0.f;
