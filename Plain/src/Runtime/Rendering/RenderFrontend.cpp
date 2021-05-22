@@ -253,7 +253,7 @@ void RenderFrontend::prepareNewFrame() {
         m_isSDFDiffuseTraceShaderDescriptionStale = false;
     }
     if (m_sdfTraceResolutionChanged) {
-        gRenderBackend.waitForGpuIdle();  // TODO: better solution than brute force wait
+        gRenderBackend.waitForGPUIdle();  // TODO: better solution than brute force wait
         m_sdfGi.resize(m_screenWidth, m_screenHeight, m_sdfTraceSettings);
         m_globalShaderInfo.cameraCut = true;
         m_sdfTraceResolutionChanged = false;

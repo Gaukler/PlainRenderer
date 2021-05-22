@@ -384,3 +384,8 @@ void initializeVulkanQueues() {
     vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.transferQueueFamilyIndex, 0, &vkContext.transferQueue);
     vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.computeQueueIndex, 0, &vkContext.computeQueue);
 }
+
+void waitForGpuIdle() {
+    const auto result = vkDeviceWaitIdle(vkContext.device);
+    checkVulkanResult(result);
+}

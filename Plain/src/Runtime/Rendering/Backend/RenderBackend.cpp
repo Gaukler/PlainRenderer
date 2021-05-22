@@ -28,23 +28,11 @@
 #include "VulkanCommandBuffer.h"
 #include "VulkanCommandPool.h"
 #include "VulkanSurface.h"
-#include "VulkanSwapchain.h"
 #include "VulkanBuffer.h"
 #include "VulkanFramebuffer.h"
 
-// disable ImGui warnings
-#pragma warning( push )
-#pragma warning( disable : 26495 26812)
-
-#include <imgui/imgui.h>
-#include <imgui/backends/imgui_impl_glfw.h>
-#include <imgui/backends/imgui_impl_vulkan.h>
-
 // definition of extern variable from header
 RenderBackend gRenderBackend;
-
-// reenable warnings
-#pragma warning( pop )
 
 // vulkan uses enums, which result in a warning every time they are used
 // this warning is disabled for this entire file
@@ -94,7 +82,7 @@ void RenderBackend::setup(GLFWwindow* window) {
 
     initGlobalTextureArrayDescriptorSetLayout();
     initGlobalTextureArrayDescriptorSet();
-    setupImgui(window);
+    m_imguiResources = createImguiRenderResources(window, m_swapchain, m_perFrameResources[0].commandBuffer);
 }
 
 void RenderBackend::shutdown() {
@@ -137,17 +125,14 @@ void RenderBackend::shutdown() {
     vkDestroySurfaceKHR(vkContext.vulkanInstance, m_swapchain.surface, nullptr);
 
     m_vkAllocator.destroy();
-
-    destroyFramebuffers(m_ui.framebuffers);
-    vkDestroyRenderPass(vkContext.device, m_ui.renderPass, nullptr);
-    ImGui_ImplVulkan_Shutdown();
+    imGuiShutdown(m_imguiResources);
 
     destroyBuffer(m_stagingBuffer);
 
     for (const auto& pool : m_descriptorPools) {
         vkDestroyDescriptorPool(vkContext.device, pool.vkPool, nullptr);
     }
-    vkDestroyDescriptorPool(vkContext.device, m_imguiDescriptorPool, nullptr);
+    
     vkDestroyDescriptorPool(vkContext.device, m_globalTextureArrayDescriptorPool, nullptr);
 
     vkDestroyDescriptorSetLayout(vkContext.device, m_globalDescriptorSetLayout, nullptr);
@@ -173,8 +158,7 @@ void RenderBackend::shutdown() {
 
 void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t height, GLFWwindow* window) {
 
-    auto result = vkDeviceWaitIdle(vkContext.device);
-    checkVulkanResult(result);
+    waitForGpuIdle();
 
     for (const Image& image : m_swapchain.images) {
         destroyImageViews(image.viewPerMip);
@@ -189,9 +173,13 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
     m_swapchain.vulkanHandle = createVulkanSwapChain(m_swapchain.minImageCount, m_swapchain.surface, m_swapchain.surfaceFormat);
     initSwapchainImages(width, height);
 
-    destroyFramebuffers(m_ui.framebuffers);
-    m_ui.framebuffers = createImGuiFramebuffers();
-    m_ui.passBeginInfos = createImGuiPassBeginInfo(width, height);
+    destroyFramebuffers(m_imguiResources.framebuffers);
+    m_imguiResources.framebuffers = createImGuiFramebuffers(m_swapchain.images, m_imguiResources.renderPass);
+    m_imguiResources.passBeginInfos = createImGuiPassBeginInfo(width, height, m_imguiResources.framebuffers, m_imguiResources.renderPass);
+}
+
+void RenderBackend::waitForGPUIdle() {
+    waitForGpuIdle();
 }
 
 void RenderBackend::updateShaderCode() {
@@ -204,8 +192,7 @@ void RenderBackend::updateShaderCode() {
         return;
     }
 
-    const auto result = vkDeviceWaitIdle(vkContext.device);
-    checkVulkanResult(result);
+    waitForGpuIdle();
 
     for (const ComputePassShaderReloadInfo& reloadInfo : computeShadersReloadInfos) {
         reloadComputePass(reloadInfo);
@@ -237,9 +224,7 @@ void RenderBackend::newFrame() {
 
     m_swapchainInputImageHandle.index = 0;
 
-    ImGui_ImplVulkan_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
+    markImGuiNewFrame();
 }
 
 void RenderBackend::prepareForDrawcallRecording() {
@@ -337,8 +322,7 @@ void RenderBackend::updateGraphicPassShaderDescription(const RenderPassHandle pa
     pass.graphicPassDesc.shaderDescriptions = desc;
     GraphicPassShaderSpirV spirV;
     if (m_shaderFileManager.loadGraphicShadersSpirV(pass.shaderHandle, &spirV)) {
-        auto result = vkDeviceWaitIdle(vkContext.device);
-        checkVulkanResult(result);
+        waitForGpuIdle();
         const GraphicShadersHandle shaderHandle = pass.shaderHandle;
         destroyGraphicPass(pass);
         pass = createGraphicPassInternal(pass.graphicPassDesc, spirV);
@@ -353,40 +337,12 @@ void RenderBackend::updateComputePassShaderDescription(const RenderPassHandle pa
     std::vector<uint32_t> spirV;
     std::vector<char> glsl;
     if (m_shaderFileManager.loadComputeShaderSpirV(pass.shaderHandle, &spirV)) {
-        auto result = vkDeviceWaitIdle(vkContext.device);
-        checkVulkanResult(result);
+        waitForGpuIdle();
         const ComputeShaderHandle shaderHandle = pass.shaderHandle;
         destroyComputePass(pass);
         pass = createComputePassInternal(pass.computePassDesc, spirV);
         pass.shaderHandle = shaderHandle;
     }
-}
-
-void RenderBackend::submitImGuiRenderpass(PerFrameResources *inOutFrameResources) {
-    assert(inOutFrameResources);
-    startDebugLabel(inOutFrameResources->commandBuffer, "ImGui");
-
-    TimestampQuery imguiQuery;
-    imguiQuery.name = "ImGui";
-    imguiQuery.startQuery = issueTimestampQuery(inOutFrameResources->commandBuffer, &inOutFrameResources->timestampQueryPool);
-
-    ImGui::Render();
-
-    const std::vector<VkImageMemoryBarrier> uiBarrier = createImageBarriers(getImageRef(m_swapchainInputImageHandle),
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
-
-    vkCmdPipelineBarrier(inOutFrameResources->commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-        0, 0, nullptr, 0, nullptr, 1, uiBarrier.data());
-
-    vkCmdBeginRenderPass(inOutFrameResources->commandBuffer, &m_ui.passBeginInfos[m_swapchainInputImageHandle.index], VK_SUBPASS_CONTENTS_INLINE);
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), inOutFrameResources->commandBuffer);
-    vkCmdEndRenderPass(inOutFrameResources->commandBuffer);
-
-    imguiQuery.endQuery = issueTimestampQuery(inOutFrameResources->commandBuffer, &inOutFrameResources->timestampQueryPool);
-    inOutFrameResources->timestampQueries.push_back(imguiQuery);
-
-    endDebugLabel(inOutFrameResources->commandBuffer);
 }
 
 void RenderBackend::renderFrame(const bool presentToScreen) {
@@ -626,10 +582,6 @@ ImageDescription RenderBackend::getImageDescription(const ImageHandle handle) {
     return getImageRef(handle).desc;
 }
 
-void RenderBackend::waitForGpuIdle() {
-    vkDeviceWaitIdle(vkContext.device);
-}
-
 std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
 
     std::vector<RenderPassBarriers> barrierList;
@@ -773,7 +725,15 @@ void RenderBackend::submitRenderPasses(PerFrameResources* inOutFrameResources, c
             std::cout << "Unknown RenderPassType\n";
         }
     }
-    submitImGuiRenderpass(inOutFrameResources);
+    startDebugLabel(inOutFrameResources->commandBuffer, "ImGui");
+
+    const std::vector<VkImageMemoryBarrier> uiBarrier = createImageBarriers(getImageRef(m_swapchainInputImageHandle),
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
+    const VkRenderPassBeginInfo& uiPassBeginInfo = m_imguiResources.passBeginInfos[m_swapchainInputImageHandle.index];
+
+    recordImGuiRenderpass(inOutFrameResources, uiBarrier, uiPassBeginInfo);
+    endDebugLabel(inOutFrameResources->commandBuffer);
 }
 
 void RenderBackend::submitGraphicPass(const GraphicPassExecution& execution,
@@ -1047,82 +1007,6 @@ void RenderBackend::presentImage(const VkSemaphore waitSemaphore) {
     checkVulkanResult(presentResult);
 }
 
-void RenderBackend::setupImgui(GLFWwindow* window) {
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGui::StyleColorsDark();
-    ImGui_ImplGlfw_InitForVulkan(window, true);
-
-    const ImageFormat swapchainFormat = vulkanImageFormatToImageFormat(m_swapchain.surfaceFormat.format);
-    const auto colorAttachment = Attachment(swapchainFormat, AttachmentLoadOp::Load);
-
-    m_ui.renderPass = createVulkanRenderPass(std::vector<Attachment> {colorAttachment});
-    createImguiDescriptorPool();
-
-    ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = vkContext.vulkanInstance;
-    init_info.PhysicalDevice = vkContext.physicalDevice;
-    init_info.Device = vkContext.device;
-    init_info.QueueFamily = vkContext.queueFamilies.graphicsQueueIndex;
-    init_info.Queue = vkContext.graphicQueue;
-    init_info.PipelineCache = VK_NULL_HANDLE;
-    init_info.DescriptorPool = m_imguiDescriptorPool;
-    init_info.Allocator = nullptr;
-    init_info.MinImageCount = m_swapchain.minImageCount;
-    init_info.ImageCount = (uint32_t)m_swapchain.images.size();
-    init_info.CheckVkResultFn = nullptr;
-    if (!ImGui_ImplVulkan_Init(&init_info, m_ui.renderPass)) {
-        throw("ImGui inizialisation error");
-    }
-
-    //build fonts texture    
-    const auto currentCommandBuffer = m_perFrameResources[0].commandBuffer;
-
-    beginCommandBuffer(currentCommandBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-    ImGui_ImplVulkan_CreateFontsTexture(currentCommandBuffer);
-
-    VkSubmitInfo end_info = {};
-    end_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    end_info.commandBufferCount = 1;
-    end_info.pCommandBuffers = &currentCommandBuffer;
-    endCommandBufferRecording(currentCommandBuffer);
-    auto res = vkQueueSubmit(vkContext.graphicQueue, 1, &end_info, VK_NULL_HANDLE);
-    assert(res == VK_SUCCESS);
-
-    res = vkDeviceWaitIdle(vkContext.device);
-    assert(res == VK_SUCCESS);
-    ImGui_ImplVulkan_DestroyFontUploadObjects();
-
-    m_ui.framebuffers = createImGuiFramebuffers();
-
-    const int width  = m_swapchain.images.front().desc.width;
-    const int height = m_swapchain.images.front().desc.height;
-    m_ui.passBeginInfos = createImGuiPassBeginInfo(width, height);
-}
-
-std::vector<VkFramebuffer> RenderBackend::createImGuiFramebuffers() {
-    std::vector<VkFramebuffer> buffers;
-    for (const auto& uiTarget : m_swapchain.images) {
-        assert(uiTarget.viewPerMip.size() > 0);
-        const VkImageView targetView = uiTarget.viewPerMip.front();
-        const uint32_t& width = uiTarget.desc.width;
-        const uint32_t& height = uiTarget.desc.height;
-        const VkFramebuffer framebuffer = createVulkanFramebuffer({ targetView }, m_ui.renderPass, width, height);
-        buffers.push_back(framebuffer);
-    }
-    return buffers;
-}
-
-std::vector<VkRenderPassBeginInfo> RenderBackend::createImGuiPassBeginInfo(const int width, const int height) {
-    std::vector<VkRenderPassBeginInfo> passBeginInfos;
-    for (const auto& framebuffer : m_ui.framebuffers) {
-        const auto beginInfo = createRenderPassBeginInfo(width, height, m_ui.renderPass, framebuffer, {});
-        passBeginInfos.push_back(beginInfo);
-    }
-    return passBeginInfos;
-}
-
 Image& RenderBackend::getImageRef(const ImageHandle handle) {
     if (handle.type == ImageHandleType::Default) {
         assert(handle.index < m_images.size());
@@ -1253,7 +1137,7 @@ void RenderBackend::resetAllocatedTempImages() {
         if (!m_allocatedTempImages[i].usedThisFrame) {
             // delete unused image
             std::swap(m_allocatedTempImages.back(), m_allocatedTempImages[i]);
-            vkDeviceWaitIdle(vkContext.device); // FIXME: don't use wait idle, use deferred destruction queue instead
+            waitForGpuIdle(); // FIXME: don't use wait idle, use deferred destruction queue instead
             destroyImageInternal(m_allocatedTempImages.back().image);
             m_allocatedTempImages.pop_back();
             std::cout << "Deleted unused image\n";
@@ -1695,32 +1579,6 @@ void RenderBackend::startDebugLabel(const VkCommandBuffer cmdBuffer, const std::
 
 void RenderBackend::endDebugLabel(const VkCommandBuffer cmdBuffer) {
     m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT(cmdBuffer);
-}
-
-void RenderBackend::createImguiDescriptorPool() {
-    // taken from imgui vulkan example, could not find any info if imgui can work with less allocations
-    VkDescriptorPoolSize pool_sizes[] =
-    {
-        { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
-        { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
-    };
-    VkDescriptorPoolCreateInfo pool_info = {};
-    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    pool_info.maxSets = 1000 * IM_ARRAYSIZE(pool_sizes);
-    pool_info.poolSizeCount = (uint32_t)IM_ARRAYSIZE(pool_sizes);
-    pool_info.pPoolSizes = pool_sizes;
-    auto res = vkCreateDescriptorPool(vkContext.device, &pool_info, nullptr, &m_imguiDescriptorPool);
-    checkVulkanResult(res);
 }
 
 DescriptorPoolAllocationSizes RenderBackend::descriptorSetAllocationSizeFromShaderLayout(const ShaderLayout& layout) {

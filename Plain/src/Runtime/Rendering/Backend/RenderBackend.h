@@ -14,23 +14,10 @@
 #include "DescriptorPool.h"
 #include "RenderPassExecution.h"
 #include "PerFrameResources.h"
+#include "ImGuiIntegration.h"
+#include "VulkanSwapchain.h"
 
 struct GLFWwindow;
-
-struct Swapchain {
-    VkSurfaceKHR        surface = VK_NULL_HANDLE;
-    VkSurfaceFormatKHR  surfaceFormat = {};
-    VkSwapchainKHR      vulkanHandle;
-    uint32_t            minImageCount;
-    std::vector<Image>  images;
-    VkSemaphore         imageAvailable;
-};
-
-struct UIRenderInfo {
-    std::vector<VkRenderPassBeginInfo>  passBeginInfos;
-    std::vector<VkFramebuffer>          framebuffers;
-    VkRenderPass                        renderPass = VK_NULL_HANDLE;
-};
 
 // because they are extensions they need to be acquired using vkGetDeviceProcAddr
 struct VulkanDebugUtilsFunctions {
@@ -69,6 +56,9 @@ public:
     void setup(GLFWwindow* window);
     void shutdown();
     void recreateSwapchain(const uint32_t width, const uint32_t height, GLFWwindow* window);
+
+    // TODO: this should not be available to to the frontend, remove all usages and this function
+    void waitForGPUIdle();
 
     //checks if any shaders are out of date, if so reloads them and reconstructs the corresponding pipeline
     void updateShaderCode();
@@ -138,7 +128,6 @@ public:
     float getLastFrameCPUTime() const;
 
     ImageDescription getImageDescription(const ImageHandle handle);
-    void waitForGpuIdle();  // only use for rare events, such as resizing on settings change
 
 private:
 
@@ -172,7 +161,6 @@ private:
     std::vector<ComputePassExecution> m_computePassExecutions;
 
     void submitRenderPasses(PerFrameResources *inOutFrameResources, const std::vector<RenderPassBarriers> barriers);
-    void submitImGuiRenderpass(PerFrameResources* inOutFrameResources);
     void submitGraphicPass(const GraphicPassExecution& execution,
         const RenderPassBarriers& barriers, PerFrameResources *inOutFrameResources, const VkFramebuffer framebuffer);
 
@@ -195,26 +183,12 @@ private:
 
     VulkanDebugUtilsFunctions m_debugExtFunctions;
 
-    /*
-    =========
-    swapchain
-    =========
-    */
     Swapchain m_swapchain;
 
     void initSwapchainImages(const uint32_t width, const uint32_t height);
     void presentImage(const VkSemaphore waitSemaphore);
 
-    /*
-    =========
-    imgui
-    =========
-    */
-    UIRenderInfo m_ui;
-    void setupImgui(GLFWwindow* window);
-
-    std::vector<VkFramebuffer> createImGuiFramebuffers();
-    std::vector<VkRenderPassBeginInfo> RenderBackend::createImGuiPassBeginInfo(const int width, const int height);
+    ImGuiRenderResources m_imguiResources;
 
     // currently scheduled renderpass
     std::vector<RenderPassExecution>    m_framePasses;
@@ -247,8 +221,7 @@ private:
     void updateRenderPassDescriptorSets();
 
     // after this drawcalls can be submitted, but no renderpass executions issued anymore
-    void startGraphicPassRecording(const GraphicPassExecution& execution,
-        const VkFramebuffer framebuffer); 
+    void startGraphicPassRecording(const GraphicPassExecution& execution, const VkFramebuffer framebuffer); 
 
     std::vector<TemporaryImage> m_temporaryImages;
 
@@ -262,11 +235,11 @@ private:
     std::vector<UniformBufferFillOrder> m_deferredUniformBufferFills;
     std::vector<StorageBufferFillOrder> m_deferredStorageBufferFills;
 
-    //freed indices
-    std::vector<ImageHandle>    m_freeImageHandles;
+    // freed indices
+    std::vector<ImageHandle> m_freeImageHandles;
 
-    //staging buffer
-    VkDeviceSize m_stagingBufferSize = 1048576; //1mb
+    // staging buffer
+    VkDeviceSize m_stagingBufferSize = 1048576; // 1mb
     Buffer m_stagingBuffer;
 
     Image createImageInternal(const ImageDescription& description, const void* initialData, const size_t initialDataSize);
@@ -315,12 +288,6 @@ private:
     //discriptor pools are added as existing ones run out
     std::vector<DescriptorPool> m_descriptorPools;
 
-    //the imgui pool is just passed to the library, no need for allocation counting
-    VkDescriptorPool m_imguiDescriptorPool = VK_NULL_HANDLE;
-
-    //imgui requires a single sizeable pool, so it's handled separately
-    void createImguiDescriptorPool();
-
     DescriptorPoolAllocationSizes descriptorSetAllocationSizeFromShaderLayout(const ShaderLayout& layout);
 
     //creates new descriptor pool if needed
@@ -332,13 +299,6 @@ private:
     //isGraphicsPass controls if the push constant range is setup for the MVP matrix    
     VkPipelineLayout        createPipelineLayout(const VkDescriptorSetLayout setLayout, const size_t pushConstantSize,
         const VkShaderStageFlags stageFlags);
-
-
-    /*
-    =========
-    renderpass creation
-    =========
-    */
 
     // actual creation of internal objects
     // split from public function to allow use when reloading shader	
@@ -362,16 +322,11 @@ private:
     float m_nanosecondsPerTimestamp = 1.f;
 
     std::vector<RenderPassTime> m_renderpassTimings;
-    PerFrameResources m_perFrameResources[2];
+    PerFrameResources           m_perFrameResources[2];
 
     float m_timeOfLastGPUSubmit = 0.f;
-    float m_lastFrameCPUTime = 0.f;
+    float m_lastFrameCPUTime    = 0.f;
 
-    /*
-    =========
-    resource destruction
-    =========
-    */
     void destroyImage(const ImageHandle handle);
     void destroyImageInternal(const Image& image);
     void destroyBuffer(const Buffer& buffer);

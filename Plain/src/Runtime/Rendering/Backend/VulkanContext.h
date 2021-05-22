@@ -35,5 +35,6 @@ void pickPhysicalDevice(const VkSurfaceKHR surface);
 void createLogicalDevice();
 VkPhysicalDeviceProperties getVulkanDeviceProperties();
 void initializeVulkanQueues();
+void waitForGpuIdle();
 
 extern VulkanContext vkContext;
