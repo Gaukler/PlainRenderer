@@ -252,9 +252,8 @@ private:
     void transferDataIntoImage(Image& target, const void* data, const VkDeviceSize size);
     void generateMipChain(Image& image, const VkImageLayout newLayout);
 
-    //fills buffer using the staging buffer
+    // fills buffer using the staging buffer
     void fillBuffer(Buffer target, const void* data, const VkDeviceSize size);
-    void fillHostVisibleCoherentBuffer(Buffer target, const void* data, const VkDeviceSize size);
 
     /*
     =========
@@ -264,12 +263,8 @@ private:
 
     std::vector<VkCommandPool> m_drawcallCommandPools;
 
-    VkCommandPool   m_commandPool = VK_NULL_HANDLE;
-    VkCommandPool   m_transientCommandPool = VK_NULL_HANDLE; //used for short lived copy command buffer and such
-
-    //Queue recording must have been ended before
-    //returned fence must be manually destroyed
-    VkFence submitOneTimeUseCmdBuffer(VkCommandBuffer cmdBuffer, VkQueue queue);
+    VkCommandPool   m_commandPool           = VK_NULL_HANDLE;
+    VkCommandPool   m_transientCommandPool  = VK_NULL_HANDLE; //used for short lived copy command buffer and such
 
     void startDebugLabel(const VkCommandBuffer cmdBuffer, const std::string& name);
     void endDebugLabel(const VkCommandBuffer cmdBuffer);

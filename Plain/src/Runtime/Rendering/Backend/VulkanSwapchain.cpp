@@ -25,8 +25,8 @@ VkSwapchainKHR createVulkanSwapChain(const int minImageCount, const VkSurfaceKHR
     swapchainInfo.oldSwapchain      = VK_NULL_HANDLE;
 
     uint32_t uniqueFamilies[2] = { 
-        vkContext.queueFamilies.graphicsQueueIndex, 
-        vkContext.queueFamilies.presentationQueueIndex };
+        vkContext.queueFamilies.graphics, 
+        vkContext.queueFamilies.presentation };
 
     const bool sharingQueueFamilies = uniqueFamilies[0] == uniqueFamilies[1];
     if (sharingQueueFamilies) {

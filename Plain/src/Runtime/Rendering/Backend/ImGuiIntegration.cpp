@@ -91,7 +91,7 @@ ImGuiRenderResources createImguiRenderResources(GLFWwindow* window, const Swapch
     init_info.Instance = vkContext.vulkanInstance;
     init_info.PhysicalDevice = vkContext.physicalDevice;
     init_info.Device = vkContext.device;
-    init_info.QueueFamily = vkContext.queueFamilies.graphicsQueueIndex;
+    init_info.QueueFamily = vkContext.queueFamilies.graphics;
     init_info.Queue = vkContext.graphicQueue;
     init_info.PipelineCache = VK_NULL_HANDLE;
     init_info.DescriptorPool = imguiResources.descriptorPool;

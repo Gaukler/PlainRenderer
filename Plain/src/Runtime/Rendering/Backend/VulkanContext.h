@@ -3,10 +3,10 @@
 #include <vulkan/vulkan.h>
 
 struct QueueFamilies {
-    uint32_t graphicsQueueIndex;
-    uint32_t presentationQueueIndex;
-    uint32_t computeQueueIndex;
-    uint32_t transferQueueFamilyIndex;
+    uint32_t graphics;
+    uint32_t presentation;
+    uint32_t compute;
+    uint32_t transfer;
 };
 
 struct VulkanContext {

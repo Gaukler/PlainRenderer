@@ -21,7 +21,7 @@ VkCommandPool createCommandPool(const uint32_t queueFamilyIndex, const VkCommand
 std::vector<VkCommandPool> createDrawcallCommandPools() {
     std::vector<VkCommandPool> drawcallPools;
     for (int i = 0; i < JobSystem::getWorkerCount(); i++) {
-        const VkCommandPool pool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+        const VkCommandPool pool = createCommandPool(vkContext.queueFamilies.graphics, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
         drawcallPools.push_back(pool);
     }
     return drawcallPools;

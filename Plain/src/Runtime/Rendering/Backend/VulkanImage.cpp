@@ -157,7 +157,7 @@ VkImage createVulkanImage(const ImageDescription& desc, const bool isTransferTar
     imageInfo.usage = getVulkanImageUsageFlags(desc, isTransferTarget);
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.queueFamilyIndexCount = 1;
-    imageInfo.pQueueFamilyIndices = &vkContext.queueFamilies.graphicsQueueIndex;
+    imageInfo.pQueueFamilyIndices = &vkContext.queueFamilies.graphics;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     VkImage image;

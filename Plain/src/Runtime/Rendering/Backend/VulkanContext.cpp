@@ -234,12 +234,12 @@ bool getQueueFamilies(const VkPhysicalDevice device, QueueFamilies* pOutQueueFam
     // iterate families and check if they fit our needs
     for (uint32_t i = 0; i < familyCount; i++) {
         if (families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
-            pOutQueueFamilies->computeQueueIndex = i;
+            pOutQueueFamilies->compute = i;
             foundCompute = true;
         }
         if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-            pOutQueueFamilies->graphicsQueueIndex = i;
-            pOutQueueFamilies->transferQueueFamilyIndex = i;
+            pOutQueueFamilies->graphics = i;
+            pOutQueueFamilies->transfer = i;
             foundGraphics = true;
         }
 
@@ -248,7 +248,7 @@ bool getQueueFamilies(const VkPhysicalDevice device, QueueFamilies* pOutQueueFam
         checkVulkanResult(res);
 
         if (isPresentationQueue) {
-            pOutQueueFamilies->presentationQueueIndex = i;
+            pOutQueueFamilies->presentation = i;
             foundPresentation = true;
         }
     }
@@ -259,10 +259,10 @@ void createLogicalDevice() {
 
     // set removes duplicates
     std::set<uint32_t> uniqueQueueFamilies = {
-        vkContext.queueFamilies.graphicsQueueIndex,
-        vkContext.queueFamilies.computeQueueIndex,
-        vkContext.queueFamilies.presentationQueueIndex,
-        vkContext.queueFamilies.transferQueueFamilyIndex
+        vkContext.queueFamilies.graphics,
+        vkContext.queueFamilies.compute,
+        vkContext.queueFamilies.presentation,
+        vkContext.queueFamilies.transfer
     };
 
     // queue infos
@@ -379,10 +379,10 @@ VkPhysicalDeviceProperties getVulkanDeviceProperties() {
 }
 
 void initializeVulkanQueues() {
-    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.graphicsQueueIndex, 0, &vkContext.graphicQueue);
-    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.presentationQueueIndex, 0, &vkContext.presentQueue);
-    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.transferQueueFamilyIndex, 0, &vkContext.transferQueue);
-    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.computeQueueIndex, 0, &vkContext.computeQueue);
+    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.graphics, 0, &vkContext.graphicQueue);
+    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.presentation, 0, &vkContext.presentQueue);
+    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.transfer, 0, &vkContext.transferQueue);
+    vkGetDeviceQueue(vkContext.device, vkContext.queueFamilies.compute, 0, &vkContext.computeQueue);
 }
 
 void waitForGpuIdle() {

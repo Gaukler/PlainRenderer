@@ -38,7 +38,7 @@ VkCommandBufferInheritanceInfo createCommandBufferInheritanceInfo(const VkRender
     return inheritanceInfo;
 }
 
-void setCommandBufferViewport(const VkCommandBuffer buffer, const float width, const float height) {
+void recordSetViewportCommand(const VkCommandBuffer buffer, const float width, const float height) {
     VkViewport viewport;
     viewport.x = 0;
     viewport.y = 0;
@@ -49,7 +49,7 @@ void setCommandBufferViewport(const VkCommandBuffer buffer, const float width, c
     vkCmdSetViewport(buffer, 0, 1, &viewport);
 }
 
-void setCommandBufferScissor(const VkCommandBuffer buffer, const float width, const float height) {
+void recordSetScissorCommand(const VkCommandBuffer buffer, const float width, const float height) {
     VkRect2D scissor;
     scissor.offset = { 0, 0 };
     scissor.extent.width = width;
