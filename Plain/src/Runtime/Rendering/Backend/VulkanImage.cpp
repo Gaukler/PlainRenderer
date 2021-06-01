@@ -3,6 +3,7 @@
 #include "VulkanContext.h"
 #include "Common/Utilities/MathUtils.h"
 #include "VulkanImageFormats.h"
+#include "VkMemoryAllocator.h"
 
 bool isVulkanDepthFormat(VkFormat format) {
     return (
@@ -182,4 +183,31 @@ void destroyImageViews(const std::vector<VkImageView>& imageViews) {
     for (const VkImageView &view : imageViews) {
         vkDestroyImageView(vkContext.device, view, nullptr);
     }
+}
+
+VkImageSubresourceLayers createSubresourceLayers(const Image& image, const uint32_t mipLevel) {
+    VkImageSubresourceLayers layers;
+    layers.aspectMask = getVkImageAspectFlags(image.format);
+    layers.mipLevel = mipLevel;
+    layers.baseArrayLayer = 0;
+    layers.layerCount = 1;
+    return layers;
+}
+
+VulkanAllocation allocateAndBindImageMemory(const VkImage image, VkMemoryAllocator* inOutMemoryVulkanAllocator) {
+    assert(inOutMemoryVulkanAllocator);
+    VkMemoryRequirements memoryRequirements;
+    vkGetImageMemoryRequirements(vkContext.device, image, &memoryRequirements);
+
+    const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    VulkanAllocation allocation;
+    const bool allocationSuccess = inOutMemoryVulkanAllocator->allocate(memoryRequirements, memoryFlags, &allocation);
+    if (!allocationSuccess) {
+        throw("Could not allocate image memory");
+    }
+
+    auto res = vkBindImageMemory(vkContext.device, image, allocation.vkMemory, allocation.offset);
+    checkVulkanResult(res);
+
+    return allocation;
 }

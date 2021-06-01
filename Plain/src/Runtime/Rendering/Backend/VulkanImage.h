@@ -4,6 +4,9 @@
 #include "../ResourceDescriptions.h"
 #include "Resources.h"
 
+// forward declaration
+class VkMemoryAllocator;
+
 bool isVulkanDepthFormat(VkFormat format);
 
 VkImageType                 imageTypeToVulkanImageType(const ImageType inType);
@@ -21,3 +24,5 @@ VkImage                     createVulkanImage(const ImageDescription& desc, cons
 std::vector<VkImageLayout>  createInitialImageLayouts(const uint32_t mipCount);
 VkImageAspectFlags          getVkImageAspectFlags(const VkFormat format);
 void                        destroyImageViews(const std::vector<VkImageView> &imageViews);
+VkImageSubresourceLayers    createSubresourceLayers(const Image& image, const uint32_t mipLevel);
+VulkanAllocation            allocateAndBindImageMemory(const VkImage image, VkMemoryAllocator* inOutMemoryVulkanAllocator);

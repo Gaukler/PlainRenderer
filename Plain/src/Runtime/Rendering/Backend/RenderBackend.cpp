@@ -30,6 +30,7 @@
 #include "VulkanSurface.h"
 #include "VulkanBuffer.h"
 #include "VulkanFramebuffer.h"
+#include "VulkanImageTransfer.h"
 
 // definition of extern variable from header
 RenderBackend gRenderBackend;
@@ -58,9 +59,9 @@ void RenderBackend::setup(GLFWwindow* window) {
     getQueueFamilies(vkContext.physicalDevice, &vkContext.queueFamilies, m_swapchain.surface);
     createLogicalDevice();
     initializeVulkanQueues();
-    m_swapchain.surfaceFormat = chooseSurfaceFormat(m_swapchain.surface);
-    m_swapchain.minImageCount = 2; // for double buffered VSync
-    m_swapchain.vulkanHandle = createVulkanSwapChain(m_swapchain.minImageCount, m_swapchain.surface, m_swapchain.surfaceFormat);
+    m_swapchain.surfaceFormat   = chooseSurfaceFormat(m_swapchain.surface);
+    m_swapchain.minImageCount   = 2; // for double buffered VSync
+    m_swapchain.vulkanHandle    = createVulkanSwapChain(m_swapchain.minImageCount, m_swapchain.surface, m_swapchain.surfaceFormat);
 
     const std::array<int, 2> resolution = Window::getGlfwWindowResolution(window);
     initSwapchainImages((uint32_t)resolution[0], (uint32_t)resolution[1]);
@@ -68,13 +69,16 @@ void RenderBackend::setup(GLFWwindow* window) {
     acquireDebugUtilsExtFunctionsPointers();
 
     m_vkAllocator.create();
-    m_commandPool = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    m_drawcallCommandPools = createDrawcallCommandPools();
-    m_transientCommandPool = createCommandPool(vkContext.queueFamilies.transferQueueFamilyIndex, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
-    m_swapchain.imageAvailable = createSemaphore();
-    m_renderFinishedSemaphore = createSemaphore();
-    m_renderFinishedFence = createFence();
-    m_stagingBuffer = createStagingBuffer();
+    m_commandPool           = createCommandPool(vkContext.queueFamilies.graphicsQueueIndex, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    m_drawcallCommandPools  = createDrawcallCommandPools();
+
+    const VkCommandPoolCreateFlagBits transientCmdPoolFlags = VkCommandPoolCreateFlagBits(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    m_transientCommandPool = createCommandPool(vkContext.queueFamilies.transferQueueFamilyIndex, transientCmdPoolFlags);
+
+    m_swapchain.imageAvailable  = createSemaphore();
+    m_renderFinishedSemaphore   = createSemaphore();
+    m_renderFinishedFence       = createFence();
+    m_stagingBuffer             = createStagingBuffer();
 
     for (auto& resources : m_perFrameResources) {
         resources = createPerFrameResources(m_commandPool);
@@ -1195,12 +1199,12 @@ Image RenderBackend::createImageInternal(const ImageDescription& desc, const voi
     const bool bFillImageWithData = initialDataSize > 0;
 
     Image image;
-    image.desc = desc;
-    image.format = format;
-    image.layoutPerMip = createInitialImageLayouts(mipCount);
-    image.vulkanHandle = createVulkanImage(desc, bFillImageWithData);
-    image.memory = allocateImageMemory(image.vulkanHandle);
-    image.viewPerMip = createImageViews(image, mipCount);
+    image.desc          = desc;
+    image.format        = format;
+    image.layoutPerMip  = createInitialImageLayouts(mipCount);
+    image.vulkanHandle  = createVulkanImage(desc, bFillImageWithData);
+    image.memory        = allocateAndBindImageMemory(image.vulkanHandle, &m_vkAllocator);
+    image.viewPerMip    = createImageViews(image, mipCount);
 
     if (bFillImageWithData) {
         transferDataIntoImage(image, initialData, initialDataSize);
@@ -1256,22 +1260,6 @@ void RenderBackend::addImageToGlobalDescriptorSetLayout(Image& image) {
     setGlobalTextureArrayDescriptorSetTexture(image.viewPerMip[0], image.globalDescriptorSetIndex);
 }
 
-VulkanAllocation RenderBackend::allocateImageMemory(const VkImage image) {
-    VkMemoryRequirements memoryRequirements;
-    vkGetImageMemoryRequirements(vkContext.device, image, &memoryRequirements);
-
-    const VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    VulkanAllocation allocation;
-    if (!m_vkAllocator.allocate(memoryRequirements, memoryFlags, &allocation)) {
-        throw("Could not allocate image memory");
-    }
-
-    auto res = vkBindImageMemory(vkContext.device, image, allocation.vkMemory, allocation.offset);
-    checkVulkanResult(res);
-
-    return allocation;
-}
-
 Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags) {
 
     const std::vector<uint32_t> uniqueQueueFamilies = makeUniqueQueueFamilyList(queueFamilies);
@@ -1284,146 +1272,75 @@ Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::v
     return buffer;
 }
 
-VkImageSubresourceLayers RenderBackend::createSubresourceLayers(const Image& image, const uint32_t mipLevel) {
-    VkImageSubresourceLayers layers;
-    layers.aspectMask = getVkImageAspectFlags(image.format);
-    layers.mipLevel = mipLevel;
-    layers.baseArrayLayer = 0;
-    layers.layerCount = 1;
-    return layers;
-}
-
 void RenderBackend::transferDataIntoImage(Image& target, const void* data, const VkDeviceSize size) {
 
-    //BCn compressed formats have certain properties that have to be considered when copying data
-    bool isBCnCompressed = getImageFormatIsBCnCompressed(target.desc.format);
+    const float         bytePerPixel    = getImageFormatBytePerPixel(target.desc.format);
+    const VkDeviceSize  minCopySize     = getImageFormatMinCopySizeInByte(target.desc.format);
 
-    //use double to avoid 4 to 8 byte casting warnings after arithmetic
-    double bytePerPixel = getImageFormatBytePerPixel(target.desc.format);
+    uint32_t    mipLevel = 0;
+    VkExtent3D  mipExtent;
+    mipExtent.width   = target.desc.width;
+    mipExtent.height  = target.desc.height;
+    mipExtent.depth   = target.desc.depth;
 
-    //if size is bigger than mip level 0 automatically switch to next mip level
-    uint32_t mipLevel = 0;
-    VkDeviceSize currentMipWidth = target.desc.width;
-    VkDeviceSize currentMipHeight = target.desc.height;
-    VkDeviceSize currentMipDepth = target.desc.depth;
+    VkDeviceSize bytesPerRow    = computeMipRowByteSize(mipExtent.width, bytePerPixel);
+    VkDeviceSize currentMipSize = computeImageMipByteSize(mipExtent, bytePerPixel);
 
-    VkDeviceSize bytesPerRow    = (size_t)(target.desc.width * bytePerPixel);
-    VkDeviceSize currentMipSize = (VkDeviceSize)(currentMipWidth * currentMipHeight * currentMipDepth * bytePerPixel);
+    VkDeviceSize byteOffsetMip      = 0;
+    VkDeviceSize byteOffsetGlobal   = 0;
 
-    //memory offset per mip is tracked separately to check if a mip border is reached
-    VkDeviceSize mipMemoryOffset = 0;
+    const VkCommandBuffer cmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transientCommandPool);
 
-    //total offset is used to check if entire data has been copied
-    VkDeviceSize totalMemoryOffset = 0;
+    while (byteOffsetGlobal < size) {
 
-    //if the image data is bigger than the staging buffer multiple copies are needed
-    //use a while loop because currentMemoryOffset is increased by copySize, which can vary at mip borders    
-    //TODO: creation of cmd buffer and fence in loop is inefficient
-    while (totalMemoryOffset < size) {
-
-        //check if mip border is reached
-        if (mipMemoryOffset >= currentMipSize) {
+        const bool mipBorderReached = byteOffsetMip >= currentMipSize;
+        if (mipBorderReached) {
             mipLevel++;
-            //resoltion is halved at every mip level
-            currentMipWidth /= 2;
-            currentMipHeight /= 2;
-            currentMipDepth /= 2;
-            currentMipDepth = glm::max(currentMipDepth, VkDeviceSize(1));
-            bytesPerRow /= 2;
+            byteOffsetMip = 0;
 
-            // reduce size depending on dimensions
-            if (target.desc.type == ImageType::Type1D) {
-                currentMipSize /= 2;
-            }
-            else if (target.desc.type == ImageType::Type2D) {
-                currentMipSize /= 4;
-            }
-            else if (target.desc.type == ImageType::Type3D) {
-                currentMipSize /= 8;
-            }
-            else {
-                std::cout << "Error: unknown image type" << std::endl;
-                assert(false);
-                return;
-            }
-
-            // memory offset per mip is reset
-            mipMemoryOffset = 0;
-
-            // BCn compressed textures store at least a 4x4 pixel block, resulting in at least a 4 pixel row
-            if (isBCnCompressed) {
-                const VkDeviceSize minPixelPerRox = 4;
-                bytesPerRow = std::max(bytesPerRow, VkDeviceSize(minPixelPerRox * bytePerPixel));
-
-                const VkDeviceSize minPixelsPerMip = 16;
-                currentMipSize = std::max(currentMipSize, VkDeviceSize(minPixelsPerMip * bytePerPixel));
-            }
+            mipExtent       = computeNextLowerMipExtent(mipExtent);
+            bytesPerRow     = computeMipRowByteSize(mipExtent.width, bytePerPixel);;
+            currentMipSize  = computeImageMipByteSize(mipExtent, bytePerPixel);
         }
 
-        
-        // the size to copy is limited either by
-        // -the staging buffer size
-        // -the size left to copy on the current mip level
-        VkDeviceSize copySize = std::min(m_stagingBufferSize, currentMipSize - mipMemoryOffset);
+        const VkDeviceSize numberOfRowsToCopy   = computeNumberOfImageRowsToCopy(currentMipSize, byteOffsetMip, m_stagingBufferSize, bytesPerRow);
+        const VkDeviceSize copySize             = computeImageCopySize(numberOfRowsToCopy, bytesPerRow, minCopySize);
 
-        // always copy entire rows
-        copySize = copySize / bytesPerRow * bytesPerRow;
+        fillHostVisibleCoherentBuffer(m_stagingBuffer, (char*)data + byteOffsetGlobal, copySize);
 
-        // copy data to staging buffer
-        fillHostVisibleCoherentBuffer(m_stagingBuffer, (char*)data + totalMemoryOffset, copySize);
+        const VkImageSubresourceLayers  subresource = createSubresourceLayers(target, mipLevel);
+        const VkOffset3D                offset      = createImageCopyOffset(byteOffsetMip, bytesPerRow);
+        const VkExtent3D                extent      = createImageCopyExtent(mipExtent, numberOfRowsToCopy);
 
-        const VkCommandBuffer copyBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transientCommandPool);
-        beginCommandBuffer(copyBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+        const VkBufferImageCopy region = createBufferImageCopyRegion(subresource, offset, extent);
 
-        // layout transition to transfer_dst the first time
-        if (totalMemoryOffset == 0) {
-            const auto toTransferDstBarrier = createImageBarriers(target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                VK_ACCESS_TRANSFER_READ_BIT, 0, (uint32_t)target.viewPerMip.size());
+        beginCommandBuffer(cmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
-            issueBarriersCommand(copyBuffer, toTransferDstBarrier, std::vector<VkBufferMemoryBarrier> {});
-        }
-        
+        const bool isFirstLoop = byteOffsetGlobal == 0;
+        if (isFirstLoop) {
+            // bring image into proper layout
+            const auto toTransferDstBarrier = createImageBarriers(
+                target,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_ACCESS_TRANSFER_READ_BIT,
+                0,
+                (uint32_t)target.viewPerMip.size());
 
-        // calculate which region to copy
-        VkBufferImageCopy region = {};
-        region.bufferOffset = 0;
-        region.imageSubresource = createSubresourceLayers(target, mipLevel);
-        // entire rows are copied, so the starting row(offset.y) is the current mip offset divided by the row size
-        region.imageOffset = { 0, int32_t(mipMemoryOffset / bytesPerRow), 0 };
-        region.bufferRowLength = (uint32_t)currentMipWidth;
-        region.bufferImageHeight = (uint32_t)currentMipHeight;
-        // copy as many rows as fit into the copy size, without going over the mip height
-        region.imageExtent.height = (uint32_t)std::min(copySize / bytesPerRow, currentMipHeight);
-        region.imageExtent.width = (uint32_t)currentMipWidth;
-        region.imageExtent.depth = (uint32_t)currentMipDepth;
-
-        // BCn compressed textures are stored in 4x4 pixel blocks, so that is the minimum buffer size
-        if (isBCnCompressed) {
-            region.bufferRowLength      = std::max(region.bufferRowLength,      (uint32_t)4);;
-            region.bufferImageHeight    = std::max(region.bufferImageHeight,    (uint32_t)4);;
+            issueBarriersCommand(cmdBuffer, toTransferDstBarrier, {});
         }
 
-        // issue for commands, then wait
-        vkCmdCopyBufferToImage(copyBuffer, m_stagingBuffer.vulkanHandle, target.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-        endCommandBufferRecording(copyBuffer);
-        const VkFence fence = submitOneTimeUseCmdBuffer(copyBuffer, vkContext.transferQueue);
+        vkCmdCopyBufferToImage(cmdBuffer, m_stagingBuffer.vulkanHandle, target.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        endCommandBufferRecording(cmdBuffer);
+        const VkFence fence = submitOneTimeUseCmdBuffer(cmdBuffer, vkContext.transferQueue);
         waitForFence(fence);
-
-        // cleanup
         vkDestroyFence(vkContext.device, fence, nullptr);
-        vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &copyBuffer);
+        resetCommandBuffer(cmdBuffer);
 
-        // update memory offsets
-        // BCn compressed textures store at least a 4x4 pixel block
-        if (isBCnCompressed) {
-            mipMemoryOffset     += std::max(copySize, 4 * 4 * (VkDeviceSize)bytePerPixel);
-            totalMemoryOffset   += std::max(copySize, 4 * 4 * (VkDeviceSize)bytePerPixel);
-        }
-        else {
-            mipMemoryOffset     += copySize;
-            totalMemoryOffset   += copySize;
-        }
+        byteOffsetMip       += copySize;
+        byteOffsetGlobal    += copySize;
     }
+
+    vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &cmdBuffer);
 }
 
 void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout) {

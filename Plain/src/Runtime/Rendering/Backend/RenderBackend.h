@@ -243,13 +243,10 @@ private:
     Buffer m_stagingBuffer;
 
     Image createImageInternal(const ImageDescription& description, const void* initialData, const size_t initialDataSize);
-    VulkanAllocation allocateImageMemory(const VkImage image);
     Buffer createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
 
     void manualImageLayoutTransition(Image& image, const VkImageLayout newLayout);
     void addImageToGlobalDescriptorSetLayout(Image& image);
-
-    VkImageSubresourceLayers createSubresourceLayers(const Image& image, const uint32_t mipLevel);
 
     //copies data into a temporary staging buffer, then transfers data into image
     void transferDataIntoImage(Image& target, const void* data, const VkDeviceSize size);
