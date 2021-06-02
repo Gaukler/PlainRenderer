@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "VulkanPipeline.h"
+#include "VulkanContext.h"
 
 VkPipelineInputAssemblyStateCreateInfo createInputAssemblyInfo(const RasterizationeMode rasterMode) {
     VkPipelineInputAssemblyStateCreateInfo info;

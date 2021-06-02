@@ -31,6 +31,7 @@
 #include "VulkanBuffer.h"
 #include "VulkanFramebuffer.h"
 #include "VulkanImageTransfer.h"
+#include "VulkanPipelineLayout.h"
 
 // definition of extern variable from header
 RenderBackend gRenderBackend;
@@ -1635,37 +1636,6 @@ void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderP
     vkUpdateDescriptorSets(vkContext.device, (uint32_t)descriptorInfos.size(), descriptorInfos.data(), 0, nullptr);
 }
 
-VkPipelineLayout RenderBackend::createPipelineLayout(const VkDescriptorSetLayout setLayout, const size_t pushConstantSize, 
-    const VkShaderStageFlags stageFlags) {
-
-    VkDescriptorSetLayout setLayouts[3] = { m_globalDescriptorSetLayout, setLayout, m_globalTextureArrayDescriporSetLayout };
-    uint32_t setCount = 3;
-
-    VkPipelineLayoutCreateInfo layoutInfo = {};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.pNext = nullptr;
-    layoutInfo.flags = 0;
-    layoutInfo.setLayoutCount = setCount;
-    layoutInfo.pSetLayouts = setLayouts;
-    layoutInfo.pushConstantRangeCount = 0;
-    layoutInfo.pPushConstantRanges = nullptr;
-
-    VkPushConstantRange pushConstantRange;
-    if (pushConstantSize > 0) {
-        pushConstantRange.stageFlags = stageFlags;
-        pushConstantRange.offset = 0;
-        pushConstantRange.size = (uint32_t)pushConstantSize;
-        layoutInfo.pPushConstantRanges = &pushConstantRange;
-        layoutInfo.pushConstantRangeCount = 1;
-    }
-    
-    VkPipelineLayout layout = {};
-    auto res = vkCreatePipelineLayout(vkContext.device, &layoutInfo, nullptr, &layout);
-    checkVulkanResult(res);
-
-    return layout;
-}
-
 ComputePass RenderBackend::createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV) {
 
     ComputePass pass;
@@ -1674,11 +1644,18 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
 
     const VkShaderStageFlagBits stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-    const VkShaderModule module = createShaderModule(spirV);
-    const ShaderReflection reflection = performComputeShaderReflection(spirV);
+    const VkShaderModule        module          = createShaderModule(spirV);
+    const ShaderReflection      reflection      = performComputeShaderReflection(spirV);
+
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
-    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, reflection.pushConstantByteSize, stageFlags);
-    pass.pushConstantSize = reflection.pushConstantByteSize;
+
+    const VkDescriptorSetLayout setLayouts[3] = {
+        m_globalDescriptorSetLayout,
+        pass.descriptorSetLayout,
+        m_globalTextureArrayDescriporSetLayout };
+
+    pass.pipelineLayout     = createPipelineLayout(setLayouts, reflection.pushConstantByteSize, stageFlags);
+    pass.pushConstantSize   = reflection.pushConstantByteSize;
 
     ShaderSpecialisationStructs specialisationStructs;
     createShaderSpecialisationStructs(desc.shaderDescription.specialisationConstants, &specialisationStructs);
@@ -1849,15 +1826,21 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     const auto shaderStages = createGraphicPipelineShaderCreateInfo(
         desc.shaderDescriptions, shaderModules, &specialisationStructs);
 
-    const ShaderReflection reflection = performShaderReflection(spirV);
-    const auto pipelineShaderStageFlags = getGraphicPassShaderStageFlags(shaderModules);
-    pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
-    pass.pipelineLayout = createPipelineLayout(pass.descriptorSetLayout, reflection.pushConstantByteSize, pipelineShaderStageFlags);
-    pass.pushConstantSize = reflection.pushConstantByteSize;
-    pass.clearValues = createGraphicPassClearValues(desc.attachments);
+    const ShaderReflection      reflection                  = performShaderReflection(spirV);
+    const VkShaderStageFlags    pipelineShaderStageFlags    = getGraphicPassShaderStageFlags(shaderModules);
+    pass.descriptorSetLayout                                = createDescriptorSetLayout(reflection.shaderLayout);
 
-    const std::vector<VkVertexInputAttributeDescription> attributes = createVertexInputDescriptions(reflection.vertexInputFlags);
-    const VkVertexInputBindingDescription vertexBinding = createVertexInputBindingDescription(desc.vertexFormat);
+    const VkDescriptorSetLayout setLayouts[3] = {
+        m_globalDescriptorSetLayout,
+        pass.descriptorSetLayout,
+        m_globalTextureArrayDescriporSetLayout };
+
+    pass.pipelineLayout     = createPipelineLayout(setLayouts, reflection.pushConstantByteSize, pipelineShaderStageFlags);
+    pass.pushConstantSize   = reflection.pushConstantByteSize;
+    pass.clearValues        = createGraphicPassClearValues(desc.attachments);
+
+    const auto                              attributes      = createVertexInputDescriptions(reflection.vertexInputFlags);
+    const VkVertexInputBindingDescription   vertexBinding   = createVertexInputBindingDescription(desc.vertexFormat);
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;

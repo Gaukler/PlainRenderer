@@ -288,10 +288,6 @@ private:
     VkDescriptorPool        findFittingDescriptorPool(const DescriptorPoolAllocationSizes& requiredSizes);
     void                    updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources);
 
-    //isGraphicsPass controls if the push constant range is setup for the MVP matrix    
-    VkPipelineLayout        createPipelineLayout(const VkDescriptorSetLayout setLayout, const size_t pushConstantSize,
-        const VkShaderStageFlags stageFlags);
-
     // actual creation of internal objects
     // split from public function to allow use when reloading shader	
     ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
