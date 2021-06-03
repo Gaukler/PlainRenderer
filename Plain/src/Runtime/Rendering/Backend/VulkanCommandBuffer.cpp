@@ -40,3 +40,14 @@ VkFence submitOneTimeUseCmdBuffer(const VkCommandBuffer cmdBuffer, const VkQueue
 
     return fence;
 }
+
+std::vector<VkCommandBuffer> createGraphicPassMeshCommandBuffers(const std::vector<VkCommandPool> &pools, const int frameCounts) {
+    std::vector<VkCommandBuffer> buffers;
+    for (int frameIndex = 0; frameIndex < frameCounts; frameIndex++) {
+        for (int poolIndex = 0; poolIndex < pools.size(); poolIndex++) {
+            const VkCommandPool pool = pools[poolIndex];
+            buffers.push_back(allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY, pool));
+        }
+    }
+    return buffers;
+}

@@ -24,17 +24,17 @@ struct VulkanContext {
 VkDebugReportCallbackEXT setupDebugCallbacks();
 
 // returns true if all family indices have been found, in that case indices are writen to QueueFamilies pointer
-bool getQueueFamilies(const VkPhysicalDevice device, QueueFamilies* pOutQueueFamilies, const VkSurfaceKHR surface);
+bool                        getQueueFamilies(const VkPhysicalDevice device, QueueFamilies* pOutQueueFamilies, const VkSurfaceKHR surface);
 
-void checkVulkanResult(const VkResult result);
-std::vector<const char*> getRequiredInstanceExtensions();
-void createVulkanInstance();
-void destroyVulkanInstance();
-bool hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDevice);
-void pickPhysicalDevice(const VkSurfaceKHR surface);
-void createLogicalDevice();
-VkPhysicalDeviceProperties getVulkanDeviceProperties();
-void initializeVulkanQueues();
-void waitForGpuIdle();
+void                        checkVulkanResult(const VkResult result);
+std::vector<const char*>    getRequiredInstanceExtensions();
+void                        createVulkanInstance();
+void                        destroyVulkanInstance();
+bool                        hasRequiredDeviceFeatures(const VkPhysicalDevice physicalDevice);
+void                        pickPhysicalDevice(const VkSurfaceKHR surface);
+void                        createLogicalDevice();
+VkPhysicalDeviceProperties  getVulkanDeviceProperties();
+void                        initializeVulkanQueues();
+void                        waitForGpuIdle();
 
 extern VulkanContext vkContext;

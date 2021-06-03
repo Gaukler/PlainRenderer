@@ -11,7 +11,7 @@
 #include "Common/MeshData.h"
 #include "ShaderFileManager.h"
 #include "RenderPassManager.h"
-#include "DescriptorPool.h"
+#include "VulkanDescriptorPool.h"
 #include "RenderPassExecution.h"
 #include "PerFrameResources.h"
 #include "ImGuiIntegration.h"
@@ -274,16 +274,14 @@ private:
     descriptors and layouts
     =========
     */
-    VkDescriptorSet m_globalDescriptorSet = VK_NULL_HANDLE;
-    VkDescriptorSetLayout m_globalDescriptorSetLayout = VK_NULL_HANDLE;    //contains global info, always bound to set 0
+    VkDescriptorSet         m_globalDescriptorSet       = VK_NULL_HANDLE;
+    VkDescriptorSetLayout   m_globalDescriptorSetLayout = VK_NULL_HANDLE;   // contains global info, always bound to set 0
 
-    //discriptor pools are added as existing ones run out
+    // discriptor pools are added as existing ones run out
     std::vector<DescriptorPool> m_descriptorPools;
 
-    DescriptorPoolAllocationSizes descriptorSetAllocationSizeFromShaderLayout(const ShaderLayout& layout);
-
-    //creates new descriptor pool if needed
-    //currently now way to free descriptor set
+    // creates new descriptor pool if needed
+    // currently now way to free descriptor set
     VkDescriptorSet         allocateDescriptorSet(const VkDescriptorSetLayout setLayout, const DescriptorPoolAllocationSizes& requiredSizes);
     VkDescriptorPool        findFittingDescriptorPool(const DescriptorPoolAllocationSizes& requiredSizes);
     void                    updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources);

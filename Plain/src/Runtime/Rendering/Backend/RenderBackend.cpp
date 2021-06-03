@@ -311,7 +311,7 @@ void RenderBackend::setGlobalDescriptorSetLayout(const ShaderLayout& layout) {
         std::cout << "Error: global descriptor set layout must only be set once\n";
     }
     m_globalDescriptorSetLayout = createDescriptorSetLayout(layout);
-    const DescriptorPoolAllocationSizes setSizes = descriptorSetAllocationSizeFromShaderLayout(layout);
+    const DescriptorPoolAllocationSizes setSizes = getDescriptorSetAllocationSizeFromShaderLayout(layout);
     m_globalDescriptorSet = allocateDescriptorSet(m_globalDescriptorSetLayout, setSizes);
 }
 
@@ -1485,17 +1485,6 @@ void RenderBackend::endDebugLabel(const VkCommandBuffer cmdBuffer) {
     m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT(cmdBuffer);
 }
 
-DescriptorPoolAllocationSizes RenderBackend::descriptorSetAllocationSizeFromShaderLayout(const ShaderLayout& layout) {
-    DescriptorPoolAllocationSizes sizes;
-    sizes.setCount = 1;
-    sizes.imageSampled  = (uint32_t)layout.sampledImageBindings.size();
-    sizes.imageStorage  = (uint32_t)layout.storageImageBindings.size();
-    sizes.storageBuffer = (uint32_t)layout.storageBufferBindings.size();
-    sizes.uniformBuffer = (uint32_t)layout.uniformBufferBindings.size();
-    sizes.sampler       = (uint32_t)layout.samplerBindings.size();
-    return sizes;
-}
-
 VkDescriptorPool RenderBackend::findFittingDescriptorPool(const DescriptorPoolAllocationSizes& requiredSizes){
 
     VkDescriptorPool fittingPool = VK_NULL_HANDLE;
@@ -1640,10 +1629,8 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
 
     ComputePass pass;
     pass.computePassDesc = desc;
-    VkComputePipelineCreateInfo pipelineInfo;
 
-    const VkShaderStageFlagBits stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
+    const VkShaderStageFlagBits stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
     const VkShaderModule        module          = createShaderModule(spirV);
     const ShaderReflection      reflection      = performComputeShaderReflection(spirV);
 
@@ -1660,6 +1647,7 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     ShaderSpecialisationStructs specialisationStructs;
     createShaderSpecialisationStructs(desc.shaderDescription.specialisationConstants, &specialisationStructs);
 
+    VkComputePipelineCreateInfo pipelineInfo;
     pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     pipelineInfo.pNext = nullptr;
     pipelineInfo.flags = 0;
@@ -1673,9 +1661,9 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
 
     vkDestroyShaderModule(vkContext.device, module, nullptr);
 
-    const auto setSizes = descriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
-    pass.descriptorSets[0] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
-    pass.descriptorSets[1] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
+    const auto setSizes     = getDescriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
+    pass.descriptorSets[0]  = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
+    pass.descriptorSets[1]  = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
 
     return pass;
 }
@@ -1697,7 +1685,7 @@ void RenderBackend::reloadGraphicPass(const GraphicPassShaderReloadInfo& reloadI
 }
 
 Buffer RenderBackend::createStagingBuffer() {
-    const auto stagingBufferUsageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    const auto stagingBufferUsageFlags  = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     const auto stagingBufferMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     const std::vector<uint32_t> stagingBufferQueueFamilies = { vkContext.queueFamilies.transfer };
     return createBufferInternal(
@@ -1808,19 +1796,12 @@ void RenderBackend::initGlobalTextureArrayDescriptorSet() {
     checkVulkanResult(result);
 }
 
-GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV) {
+GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescription &desc, const GraphicPassShaderSpirV &spirV) {
 
     GraphicPass pass;
-    pass.graphicPassDesc = desc;
-
-    for (int frameIndex = 0; frameIndex < 2; frameIndex++) {
-        for (int poolIndex = 0; poolIndex < m_drawcallCommandPools.size(); poolIndex++) {
-            const VkCommandPool pool = m_drawcallCommandPools[poolIndex];
-            pass.meshCommandBuffers.push_back(allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY, pool));
-        }
-    }
-
-    const GraphicPassShaderModules shaderModules = createGraphicPassShaderModules(spirV);
+    pass.graphicPassDesc                            = desc;
+    pass.meshCommandBuffers                         = createGraphicPassMeshCommandBuffers(m_drawcallCommandPools, 2);
+    const GraphicPassShaderModules  shaderModules   = createGraphicPassShaderModules(spirV);
 
     GraphicPassSpecialisationStructs specialisationStructs;
     const auto shaderStages = createGraphicPipelineShaderCreateInfo(
@@ -1838,74 +1819,14 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
     pass.pipelineLayout     = createPipelineLayout(setLayouts, reflection.pushConstantByteSize, pipelineShaderStageFlags);
     pass.pushConstantSize   = reflection.pushConstantByteSize;
     pass.clearValues        = createGraphicPassClearValues(desc.attachments);
-
-    const auto                              attributes      = createVertexInputDescriptions(reflection.vertexInputFlags);
-    const VkVertexInputBindingDescription   vertexBinding   = createVertexInputBindingDescription(desc.vertexFormat);
-
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
-    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.pNext = nullptr;
-    vertexInputInfo.flags = 0;
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &vertexBinding;
-    vertexInputInfo.vertexAttributeDescriptionCount = (uint32_t)attributes.size();
-    vertexInputInfo.pVertexAttributeDescriptions = attributes.data();
-
-    pass.vulkanRenderPass = createVulkanRenderPass(desc.attachments);
-    const auto blendingAttachments = createAttachmentBlendStates(desc.attachments, desc.blending);
-    const auto blendState = createBlendState(blendingAttachments);
-
-    auto rasterizationState = createRasterizationState(desc.rasterization);
-    VkPipelineRasterizationConservativeStateCreateInfoEXT conservativeRasterInfo;
-    if (desc.rasterization.conservative) {
-        conservativeRasterInfo = createConservativeRasterCreateInfo();
-        rasterizationState.pNext = &conservativeRasterInfo;
-    }
-
-    const auto multisamplingState = createDefaultMultisamplingInfo();
-    const auto depthStencilState = createDepthStencilState(desc.depthTest);
-
-    VkPipelineTessellationStateCreateInfo tesselationState;
-    VkPipelineTessellationStateCreateInfo* pTesselationState = nullptr;
-    if (desc.shaderDescriptions.tessCtrl.has_value()) {
-        tesselationState = createTesselationState(desc.patchControlPoints);
-        pTesselationState = &tesselationState;
-    }
-
-    const std::vector<VkDynamicState> dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-    const auto dynamicStateInfo = createDynamicStateInfo(dynamicStates);
-    const auto inputAssemblyState = createInputAssemblyInfo(desc.rasterization.mode);
-    const auto viewportState = createDynamicViewportCreateInfo();
-
-    VkGraphicsPipelineCreateInfo pipelineInfo = {};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.pNext = nullptr;
-    pipelineInfo.flags = 0;
-    pipelineInfo.stageCount = (uint32_t)shaderStages.size();
-    pipelineInfo.pStages = shaderStages.data();
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssemblyState;
-    pipelineInfo.pTessellationState = pTesselationState;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizationState;
-    pipelineInfo.pMultisampleState = &multisamplingState;
-    pipelineInfo.pDepthStencilState = &depthStencilState;
-    pipelineInfo.pColorBlendState = &blendState;
-    pipelineInfo.pDynamicState = &dynamicStateInfo;
-    pipelineInfo.layout = pass.pipelineLayout;
-    pipelineInfo.renderPass = pass.vulkanRenderPass;
-    pipelineInfo.subpass = 0;
-    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
-    pipelineInfo.basePipelineIndex = 0;
-
-    const auto result = vkCreateGraphicsPipelines(vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pass.pipeline);
-    checkVulkanResult(result);
+    pass.vulkanRenderPass   = createVulkanRenderPass(desc.attachments);
+    pass.pipeline           = createVulkanGraphicsPipeline(desc, pass.pipelineLayout, pass.vulkanRenderPass, shaderStages, reflection);
 
     destroyGraphicPassShaderModules(shaderModules);
 
-    const auto setSizes = descriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
-    pass.descriptorSets[0] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
-    pass.descriptorSets[1] = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
+    const auto setSizes     = getDescriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
+    pass.descriptorSets[0]  = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
+    pass.descriptorSets[1]  = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
 
     return pass;
 }

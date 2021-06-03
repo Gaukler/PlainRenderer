@@ -3,8 +3,6 @@
 #include <vulkan/vulkan.h>
 #include "Resources.h"
 
-VkShaderModule createShaderModule(const std::vector<uint32_t>& spirV);
-
 struct GraphicPassShaderModules {
     VkShaderModule vertex;
     VkShaderModule fragment;
@@ -13,6 +11,7 @@ struct GraphicPassShaderModules {
     VkShaderModule tessCtrl;
 };
 
-GraphicPassShaderModules createGraphicPassShaderModules(const GraphicPassShaderSpirV& spirV);
-void destroyGraphicPassShaderModules(const GraphicPassShaderModules& modules);
-void destroyShaderModule(const VkShaderModule shaderModule);
+VkShaderModule              createShaderModule(const std::vector<uint32_t>& spirV);
+GraphicPassShaderModules    createGraphicPassShaderModules(const GraphicPassShaderSpirV& spirV);
+void                        destroyGraphicPassShaderModules(const GraphicPassShaderModules& modules);
+void                        destroyShaderModule(const VkShaderModule shaderModule);

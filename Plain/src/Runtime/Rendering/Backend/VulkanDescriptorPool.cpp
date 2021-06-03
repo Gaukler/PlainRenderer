@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "DescriptorPool.h"
+#include "VulkanDescriptorPool.h"
 #include "VulkanContext.h"
 
 const DescriptorPoolAllocationSizes gInitialAllocationSizes = {
@@ -71,3 +71,14 @@ DescriptorPoolAllocationSizes subtractDescriptorPoolSizes(
     result.sampler = first.sampler - second.sampler;
     return result;
 };
+
+DescriptorPoolAllocationSizes getDescriptorSetAllocationSizeFromShaderLayout(const ShaderLayout& layout) {
+    DescriptorPoolAllocationSizes sizes;
+    sizes.setCount      = 1;
+    sizes.imageSampled  = (uint32_t)layout.sampledImageBindings.size();
+    sizes.imageStorage  = (uint32_t)layout.storageImageBindings.size();
+    sizes.storageBuffer = (uint32_t)layout.storageBufferBindings.size();
+    sizes.uniformBuffer = (uint32_t)layout.uniformBufferBindings.size();
+    sizes.sampler       = (uint32_t)layout.samplerBindings.size();
+    return sizes;
+}

@@ -42,3 +42,18 @@ VkVertexInputBindingDescription createVertexInputBindingDescription(const Vertex
     }
     return vertexBinding;
 }
+
+VkPipelineVertexInputStateCreateInfo createPipelineVertexInputStateCreateInfo(
+    const VkVertexInputBindingDescription& bindingDescription,
+    const std::vector<VkVertexInputAttributeDescription>& attributes) {
+
+    VkPipelineVertexInputStateCreateInfo info;
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    info.pNext = nullptr;
+    info.flags = 0;
+    info.vertexBindingDescriptionCount = 1;
+    info.pVertexBindingDescriptions = &bindingDescription;
+    info.vertexAttributeDescriptionCount = (uint32_t)attributes.size();
+    info.pVertexAttributeDescriptions = attributes.data();
+    return info;
+}
