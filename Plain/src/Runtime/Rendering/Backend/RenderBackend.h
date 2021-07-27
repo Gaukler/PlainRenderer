@@ -16,23 +16,24 @@
 #include "PerFrameResources.h"
 #include "ImGuiIntegration.h"
 #include "VulkanSwapchain.h"
+#include "VulkanTransfer.h"
 
 struct GLFWwindow;
 
 // per pass execution time
 struct RenderPassTime{
-    float timeMs = 0; // time in milliseconds
+    float       timeMs = 0; // time in milliseconds
     std::string name;
 };
 
 struct UniformBufferFillOrder {
     UniformBufferHandle buffer;
-    std::vector<char> data;
+    std::vector<char>   data;
 };
 
 struct StorageBufferFillOrder {
     StorageBufferHandle buffer;
-    std::vector<char> data;
+    std::vector<char>   data;
 };
 
 class RenderBackend {
@@ -215,25 +216,17 @@ private:
     std::vector<UniformBufferFillOrder> m_deferredUniformBufferFills;
     std::vector<StorageBufferFillOrder> m_deferredStorageBufferFills;
 
-    // freed indices
     std::vector<ImageHandle> m_freeImageHandles;
 
-    // staging buffer
-    VkDeviceSize m_stagingBufferSize = 1048576; // 1mb
-    Buffer m_stagingBuffer;
+    TransferResources m_transferResources;
 
-    Image createImageInternal(const ImageDescription& description, const void* initialData, const size_t initialDataSize);
-    Buffer createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
+    Image   createImageInternal(const ImageDescription& description, const Data& initialData);
+    Buffer  createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
 
     void manualImageLayoutTransition(Image& image, const VkImageLayout newLayout);
     void addImageToGlobalDescriptorSetLayout(Image& image);
 
-    //copies data into a temporary staging buffer, then transfers data into image
-    void transferDataIntoImage(Image& target, const void* data, const VkDeviceSize size);
     void generateMipChain(Image& image, const VkImageLayout newLayout);
-
-    // fills buffer using the staging buffer
-    void fillBuffer(Buffer target, const void* data, const VkDeviceSize size);
 
     /*
     =========
@@ -244,7 +237,6 @@ private:
     std::vector<VkCommandPool> m_drawcallCommandPools;
 
     VkCommandPool   m_commandPool           = VK_NULL_HANDLE;
-    VkCommandPool   m_transientCommandPool  = VK_NULL_HANDLE; //used for short lived copy command buffer and such
 
     /*
     =========

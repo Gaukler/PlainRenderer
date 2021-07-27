@@ -2,6 +2,9 @@
 #include "VulkanBuffer.h"
 #include "VulkanContext.h"
 #include "Common/Utilities/GeneralUtils.h"
+#include "VulkanCommandRecording.h"
+#include "VulkanCommandBuffer.h"
+#include "VulkanSync.h"
 
 VkBuffer createVulkanBuffer(const size_t size, const VkBufferUsageFlags usageFlags, 
     const std::vector<uint32_t> & uniqueQueueFamilies) {
@@ -57,7 +60,7 @@ std::vector<uint32_t> makeUniqueQueueFamilyList(const std::vector<uint32_t>& que
     return uniqueFamilyList;
 }
 
-void fillHostVisibleCoherentBuffer(Buffer target, const void* data, const VkDeviceSize size) {
+void fillHostVisibleCoherentBuffer(const Buffer& target, const void* data, const VkDeviceSize size) {
     void* mappedData;
     const auto result = vkMapMemory(
         vkContext.device, 
@@ -69,4 +72,42 @@ void fillHostVisibleCoherentBuffer(Buffer target, const void* data, const VkDevi
     checkVulkanResult(result);
     memcpy(mappedData, data, size);
     vkUnmapMemory(vkContext.device, target.memory.vkMemory);
+}
+
+void fillDeviceLocalBufferImmediate(const Buffer& target, const Data& data, const TransferResources& transferResources) {
+
+    const Buffer& stagingBuffer = transferResources.stagingBuffer;
+
+    // TODO: creation of cmd buffer and fence in loop is somewhat inefficient
+    for (VkDeviceSize currentMemoryOffset = 0; currentMemoryOffset < data.size; currentMemoryOffset += stagingBuffer.size) {
+
+        VkDeviceSize copySize = std::min(stagingBuffer.size, data.size - currentMemoryOffset);
+
+        // copy data to staging buffer
+        void* mappedData;
+        auto res = vkMapMemory(vkContext.device, stagingBuffer.memory.vkMemory, 0, copySize, 0, (void**)&mappedData);
+        assert(res == VK_SUCCESS);
+        memcpy(mappedData, (char*)data.ptr + currentMemoryOffset, copySize);
+        vkUnmapMemory(vkContext.device, stagingBuffer.memory.vkMemory);
+
+        // copy staging buffer to dst
+        const VkCommandBuffer copyCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, transferResources.transientCmdPool);
+        beginCommandBuffer(copyCmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+        // copy command
+        VkBufferCopy region = {};
+        region.srcOffset = 0;
+        region.dstOffset = currentMemoryOffset;
+        region.size = copySize;
+        vkCmdCopyBuffer(copyCmdBuffer, stagingBuffer.vulkanHandle, target.vulkanHandle, 1, &region);
+        endCommandBufferRecording(copyCmdBuffer);
+
+        // submit and wait
+        const VkFence fence = submitOneTimeUseCmdBuffer(copyCmdBuffer, vkContext.transferQueue);
+        waitForFence(fence);
+
+        // cleanup
+        vkDestroyFence(vkContext.device, fence, nullptr);
+        vkFreeCommandBuffers(vkContext.device, transferResources.transientCmdPool, 1, &copyCmdBuffer);
+    }
 }

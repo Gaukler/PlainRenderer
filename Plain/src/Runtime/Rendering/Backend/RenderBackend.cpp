@@ -74,13 +74,13 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_commandPool           = createCommandPool(vkContext.queueFamilies.graphics, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     m_drawcallCommandPools  = createDrawcallCommandPools();
 
-    const VkCommandPoolCreateFlagBits transientCmdPoolFlags = VkCommandPoolCreateFlagBits(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    m_transientCommandPool = createCommandPool(vkContext.queueFamilies.transfer, transientCmdPoolFlags);
-
     m_swapchain.imageAvailable  = createSemaphore();
     m_renderFinishedSemaphore   = createSemaphore();
     m_renderFinishedFence       = createFence();
-    m_stagingBuffer             = createStagingBuffer();
+
+    const VkCommandPoolCreateFlagBits transientCmdPoolFlags = VkCommandPoolCreateFlagBits(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    m_transferResources.transientCmdPool    = createCommandPool(vkContext.queueFamilies.transfer, transientCmdPoolFlags);
+    m_transferResources.stagingBuffer       = createStagingBuffer();
 
     for (auto& resources : m_perFrameResources) {
         resources = createPerFrameResources(m_commandPool);
@@ -133,7 +133,8 @@ void RenderBackend::shutdown() {
     m_vkAllocator.destroy();
     imGuiShutdown(m_imguiResources);
 
-    destroyBuffer(m_stagingBuffer);
+    vkDestroyCommandPool(vkContext.device, m_transferResources.transientCmdPool, nullptr);
+    destroyBuffer(m_transferResources.stagingBuffer);
 
     for (const auto& pool : m_descriptorPools) {
         vkDestroyDescriptorPool(vkContext.device, pool.vkPool, nullptr);
@@ -144,7 +145,6 @@ void RenderBackend::shutdown() {
     vkDestroyDescriptorSetLayout(vkContext.device, m_globalDescriptorSetLayout, nullptr);
 
     vkDestroyCommandPool(vkContext.device, m_commandPool, nullptr);
-    vkDestroyCommandPool(vkContext.device, m_transientCommandPool, nullptr);
 
     for (const VkCommandPool pool : m_drawcallCommandPools) {
         vkDestroyCommandPool(vkContext.device, pool, nullptr);
@@ -214,7 +214,7 @@ void RenderBackend::resizeImages(const std::vector<ImageHandle>& images, const u
         destroyImageInternal(image);
         image.desc.width        = width;
         image.desc.height       = height;
-        image                   = createImageInternal(image.desc, nullptr, 0);
+        image                   = createImageInternal(image.desc, Data());
     }
 }
 
@@ -463,7 +463,11 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
             bufferQueueFamilies, 
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        fillBuffer(mesh.indexBuffer, meshData.indexBuffer.data(), indexBufferSize);
+
+        fillDeviceLocalBufferImmediate(
+            mesh.indexBuffer, 
+            Data(meshData.indexBuffer.data(), indexBufferSize), 
+            m_transferResources);
 
         // vertex buffer
         const VkDeviceSize vertexBufferSize = meshData.vertexBuffer.size() * sizeof(uint8_t);
@@ -472,7 +476,11 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
             bufferQueueFamilies,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        fillBuffer(mesh.vertexBuffer, meshData.vertexBuffer.data(), vertexBufferSize);
+
+        fillDeviceLocalBufferImmediate(
+            mesh.vertexBuffer, 
+            Data(meshData.vertexBuffer.data(), vertexBufferSize),
+            m_transferResources);
 
         // store and return handle
         MeshHandle handle = { (uint32_t)m_meshes.size() };
@@ -482,9 +490,12 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
     return handles;
 }
 
-ImageHandle RenderBackend::createImage(const ImageDescription& desc, const void* initialData, const size_t initialDataSize) {
+ImageHandle RenderBackend::createImage(
+    const ImageDescription& desc, 
+    const void*             initialData, 
+    const size_t            initialDataSize) {
 
-    const Image image = createImageInternal(desc, initialData, initialDataSize);
+    const Image image = createImageInternal(desc, Data(initialData, initialDataSize));
 
     ImageHandle handle;
     handle.type = ImageHandleType::Default;
@@ -515,7 +526,7 @@ UniformBufferHandle RenderBackend::createUniformBuffer(const UniformBufferDescri
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     if (desc.initialData) {
-        fillBuffer(uniformBuffer, desc.initialData, desc.size);
+        fillDeviceLocalBufferImmediate(uniformBuffer, Data(desc.initialData, desc.size), m_transferResources);
     }
 
     const UniformBufferHandle handle = { (uint32_t)m_uniformBuffers.size() };
@@ -536,7 +547,7 @@ StorageBufferHandle RenderBackend::createStorageBuffer(const StorageBufferDescri
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     if (desc.initialData) {
-        fillBuffer(storageBuffer, desc.initialData, desc.size);
+        fillDeviceLocalBufferImmediate(storageBuffer, Data(desc.initialData, desc.size), m_transferResources);
     }
 
     StorageBufferHandle handle = { (uint32_t)m_storageBuffers.size() };
@@ -574,8 +585,8 @@ void RenderBackend::getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsed
     assert(outAllocatedSize != nullptr);
     assert(outUsedSize != nullptr);
     m_vkAllocator.getMemoryStats(outAllocatedSize, outUsedSize);
-    *outAllocatedSize   += (uint32_t)m_stagingBufferSize;
-    *outUsedSize        += (uint32_t)m_stagingBufferSize;
+    *outAllocatedSize   += (uint32_t)m_transferResources.stagingBuffer.size;
+    *outUsedSize        += (uint32_t)m_transferResources.stagingBuffer.size;
 }
 
 std::vector<RenderPassTime> RenderBackend::getRenderpassTimings() const {
@@ -857,10 +868,16 @@ void RenderBackend::waitForRenderFinished() {
 
 void RenderBackend::executeDeferredBufferFillOrders() {
     for (const UniformBufferFillOrder& order : m_deferredUniformBufferFills) {
-        fillBuffer(m_uniformBuffers[order.buffer.index], order.data.data(), order.data.size());
+        fillDeviceLocalBufferImmediate(
+            m_uniformBuffers[order.buffer.index], 
+            Data(order.data.data(), order.data.size()),
+            m_transferResources);
     }
     for (const StorageBufferFillOrder& order : m_deferredStorageBufferFills) {
-        fillBuffer(m_storageBuffers[order.buffer.index], order.data.data(), order.data.size());
+        fillDeviceLocalBufferImmediate(
+            m_storageBuffers[order.buffer.index], 
+            Data(order.data.data(), order.data.size()),
+            m_transferResources);
     }
     m_deferredUniformBufferFills.clear();
     m_deferredStorageBufferFills.clear();
@@ -1144,7 +1161,7 @@ void RenderBackend::allocateTemporaryImages() {
         if (!foundAllocatedImage) {
             std::cout << "Allocated temp image\n";
             AllocatedTempImage allocatedImage;
-            allocatedImage.image = createImageInternal(tempImage.desc, nullptr, 0);
+            allocatedImage.image = createImageInternal(tempImage.desc, Data());
             allocatedImage.usedThisFrame = true;
             tempImage.allocationIndex = m_allocatedTempImages.size();
             m_allocatedTempImages.push_back(allocatedImage);
@@ -1211,10 +1228,10 @@ void RenderBackend::startGraphicPassRecording(const GraphicPassExecution& execut
     }
 }
 
-Image RenderBackend::createImageInternal(const ImageDescription& desc, const void* initialData, const size_t initialDataSize) {
+Image RenderBackend::createImageInternal(const ImageDescription& desc, const Data& initialData) {
 
     const uint32_t  mipCount            = computeImageMipCount(desc);
-    const bool      bFillImageWithData  = initialDataSize > 0;
+    const bool      bFillImageWithData  = initialData.size > 0;
 
     Image image;
     image.desc          = desc;
@@ -1225,7 +1242,7 @@ Image RenderBackend::createImageInternal(const ImageDescription& desc, const voi
     image.viewPerMip    = createImageViews(image, mipCount);
 
     if (bFillImageWithData) {
-        transferDataIntoImage(image, initialData, initialDataSize);
+        transferDataIntoImageImmediate(image, initialData, m_transferResources);
     }
     if (desc.autoCreateMips) {
         generateMipChain(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -1249,7 +1266,7 @@ Image RenderBackend::createImageInternal(const ImageDescription& desc, const voi
 
 void RenderBackend::manualImageLayoutTransition(Image& image, const VkImageLayout newLayout) {
 
-    const VkCommandBuffer transitionCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transientCommandPool);
+    const VkCommandBuffer transitionCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transferResources.transientCmdPool);
     beginCommandBuffer(transitionCmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
     const auto newLayoutBarriers = createImageBarriers(
@@ -1266,7 +1283,7 @@ void RenderBackend::manualImageLayoutTransition(Image& image, const VkImageLayou
     waitForFence(fence);
 
     vkDestroyFence(vkContext.device, fence, nullptr);
-    vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &transitionCmdBuffer);
+    vkFreeCommandBuffers(vkContext.device, m_transferResources.transientCmdPool, 1, &transitionCmdBuffer);
 }
 
 void RenderBackend::addImageToGlobalDescriptorSetLayout(Image& image) {
@@ -1292,79 +1309,6 @@ Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::v
     buffer.memory       = allocateAndBindBufferMemory(buffer.vulkanHandle, memoryFlags, m_vkAllocator);
 
     return buffer;
-}
-
-void RenderBackend::transferDataIntoImage(Image& target, const void* data, const VkDeviceSize size) {
-
-    const float         bytePerPixel    = getImageFormatBytePerPixel(target.desc.format);
-    const VkDeviceSize  minCopySize     = getImageFormatMinCopySizeInByte(target.desc.format);
-
-    uint32_t    mipLevel = 0;
-    VkExtent3D  mipExtent;
-    mipExtent.width   = target.desc.width;
-    mipExtent.height  = target.desc.height;
-    mipExtent.depth   = target.desc.depth;
-
-    VkDeviceSize bytesPerRow    = computeMipRowByteSize(mipExtent.width, bytePerPixel);
-    VkDeviceSize currentMipSize = computeImageMipByteSize(mipExtent, bytePerPixel);
-
-    VkDeviceSize byteOffsetMip      = 0;
-    VkDeviceSize byteOffsetGlobal   = 0;
-
-    const VkCommandBuffer cmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transientCommandPool);
-
-    // TODO:    staging buffer is always filled as much as is needed to transfer current mip level
-    //          would be more efficient to fill staging buffer completely and do multiple mips at once where possible
-    while (byteOffsetGlobal < size) {
-
-        const bool mipBorderReached = byteOffsetMip >= currentMipSize;
-        if (mipBorderReached) {
-            mipLevel++;
-            byteOffsetMip = 0;
-
-            mipExtent       = computeNextLowerMipExtent(mipExtent);
-            bytesPerRow     = computeMipRowByteSize(mipExtent.width, bytePerPixel);;
-            currentMipSize  = computeImageMipByteSize(mipExtent, bytePerPixel);
-        }
-
-        const VkDeviceSize numberOfRowsToCopy   = computeNumberOfImageRowsToCopy(currentMipSize, byteOffsetMip, m_stagingBufferSize, bytesPerRow);
-        const VkDeviceSize copySize             = computeImageCopySize(numberOfRowsToCopy, bytesPerRow, minCopySize);
-
-        fillHostVisibleCoherentBuffer(m_stagingBuffer, (char*)data + byteOffsetGlobal, copySize);
-
-        const VkImageSubresourceLayers  subresource = createSubresourceLayers(target, mipLevel);
-        const VkOffset3D                offset      = createImageCopyOffset(byteOffsetMip, bytesPerRow);
-        const VkExtent3D                extent      = createImageCopyExtent(mipExtent, numberOfRowsToCopy);
-
-        const VkBufferImageCopy region = createBufferImageCopyRegion(subresource, offset, extent);
-
-        beginCommandBuffer(cmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-        const bool isFirstLoop = byteOffsetGlobal == 0;
-        if (isFirstLoop) {
-            // bring image into proper layout
-            const auto toTransferDstBarrier = createImageBarriers(
-                target,
-                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                VK_ACCESS_TRANSFER_READ_BIT,
-                0,
-                (uint32_t)target.viewPerMip.size());
-
-            issueBarriersCommand(cmdBuffer, toTransferDstBarrier, {});
-        }
-
-        vkCmdCopyBufferToImage(cmdBuffer, m_stagingBuffer.vulkanHandle, target.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-        endCommandBufferRecording(cmdBuffer);
-        const VkFence fence = submitOneTimeUseCmdBuffer(cmdBuffer, vkContext.transferQueue);
-        waitForFence(fence);
-        vkDestroyFence(vkContext.device, fence, nullptr);
-        resetCommandBuffer(cmdBuffer);
-
-        byteOffsetMip       += copySize;
-        byteOffsetGlobal    += copySize;
-    }
-
-    vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &cmdBuffer);
 }
 
 void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout) {
@@ -1396,7 +1340,7 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
     blitInfo.dstOffsets[1].y = blitInfo.srcOffsets[1].y != 1 ? blitInfo.srcOffsets[1].y / 2 : 1;
     blitInfo.dstOffsets[1].z = blitInfo.srcOffsets[1].z != 1 ? blitInfo.srcOffsets[1].z / 2 : 1;
 
-    const VkCommandBuffer blitCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transientCommandPool);
+    const VkCommandBuffer blitCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transferResources.transientCmdPool);
     beginCommandBuffer(blitCmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
     for (uint32_t srcMip = 0; srcMip < image.viewPerMip.size() - 1; srcMip++) {
@@ -1437,43 +1381,7 @@ void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout
 
     // cleanup
     vkDestroyFence(vkContext.device, fence, nullptr);
-    vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &blitCmdBuffer);
-}
-
-void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSize size) {
-
-    // TODO: creation of cmd buffer and fence in loop is somewhat inefficient
-    for (VkDeviceSize currentMemoryOffset = 0; currentMemoryOffset < size; currentMemoryOffset += m_stagingBufferSize) {
-
-        VkDeviceSize copySize = std::min(m_stagingBufferSize, size - currentMemoryOffset);
-
-        // copy data to staging buffer
-        void* mappedData;
-        auto res = vkMapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory, 0, copySize, 0, (void**)&mappedData);
-        assert(res == VK_SUCCESS);
-        memcpy(mappedData, (char*)data + currentMemoryOffset, copySize);
-        vkUnmapMemory(vkContext.device, m_stagingBuffer.memory.vkMemory);
-
-        // copy staging buffer to dst
-        const VkCommandBuffer copyCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transientCommandPool);
-        beginCommandBuffer(copyCmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-        // copy command
-        VkBufferCopy region = {};
-        region.srcOffset = 0;
-        region.dstOffset = currentMemoryOffset;
-        region.size = copySize;
-        vkCmdCopyBuffer(copyCmdBuffer, m_stagingBuffer.vulkanHandle, target.vulkanHandle, 1, &region);
-        endCommandBufferRecording(copyCmdBuffer);
-
-        // submit and wait
-        const VkFence fence = submitOneTimeUseCmdBuffer(copyCmdBuffer, vkContext.transferQueue);
-        waitForFence(fence);
-
-        // cleanup
-        vkDestroyFence(vkContext.device, fence, nullptr);
-        vkFreeCommandBuffers(vkContext.device, m_transientCommandPool, 1, &copyCmdBuffer);
-    }
+    vkFreeCommandBuffers(vkContext.device, m_transferResources.transientCmdPool, 1, &blitCmdBuffer);
 }
 
 VkDescriptorPool RenderBackend::findFittingDescriptorPool(const DescriptorPoolAllocationSizes& requiredSizes){
@@ -1621,9 +1529,9 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     ComputePass pass;
     pass.computePassDesc = desc;
 
-    const VkShaderStageFlagBits stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
-    const VkShaderModule        module          = createShaderModule(spirV);
-    const ShaderReflection      reflection      = performComputeShaderReflection(spirV);
+    const VkShaderStageFlagBits stageFlags  = VK_SHADER_STAGE_COMPUTE_BIT;
+    const VkShaderModule        module      = createShaderModule(spirV);
+    const ShaderReflection      reflection  = performComputeShaderReflection(spirV);
 
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
 
@@ -1639,13 +1547,13 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
     createShaderSpecialisationStructs(desc.shaderDescription.specialisationConstants, &specialisationStructs);
 
     VkComputePipelineCreateInfo pipelineInfo;
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    pipelineInfo.pNext = nullptr;
-    pipelineInfo.flags = 0;
-    pipelineInfo.stage = createPipelineShaderStageInfos(module, stageFlags, &specialisationStructs.info);
-    pipelineInfo.layout = pass.pipelineLayout;
+    pipelineInfo.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.pNext              = nullptr;
+    pipelineInfo.flags              = 0;
+    pipelineInfo.stage              = createPipelineShaderStageInfos(module, stageFlags, &specialisationStructs.info);
+    pipelineInfo.layout             = pass.pipelineLayout;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
-    pipelineInfo.basePipelineIndex = 0;
+    pipelineInfo.basePipelineIndex  = 0;
 
     auto res = vkCreateComputePipelines(vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pass.pipeline);
     checkVulkanResult(res);
@@ -1676,11 +1584,14 @@ void RenderBackend::reloadGraphicPass(const GraphicPassShaderReloadInfo& reloadI
 }
 
 Buffer RenderBackend::createStagingBuffer() {
+
+    VkDeviceSize stagingBufferSize = 1048576; // 1mb
+
     const auto stagingBufferUsageFlags  = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     const auto stagingBufferMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     const std::vector<uint32_t> stagingBufferQueueFamilies = { vkContext.queueFamilies.transfer };
     return createBufferInternal(
-        m_stagingBufferSize,
+        stagingBufferSize,
         stagingBufferQueueFamilies,
         stagingBufferUsageFlags,
         stagingBufferMemoryFlags);
@@ -1689,28 +1600,28 @@ Buffer RenderBackend::createStagingBuffer() {
 void RenderBackend::initGlobalTextureArrayDescriptorSetLayout() {
 
     VkDescriptorSetLayoutBinding textureArrayBinding;
-    textureArrayBinding.binding = 0;
-    textureArrayBinding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    textureArrayBinding.descriptorCount = maxTextureCount;
-    textureArrayBinding.stageFlags = VK_SHADER_STAGE_ALL;
-    textureArrayBinding.pImmutableSamplers = nullptr;
+    textureArrayBinding.binding             = 0;
+    textureArrayBinding.descriptorType      = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    textureArrayBinding.descriptorCount     = maxTextureCount;
+    textureArrayBinding.stageFlags          = VK_SHADER_STAGE_ALL;
+    textureArrayBinding.pImmutableSamplers  = nullptr;
 
     const VkDescriptorBindingFlags flags = 
         VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT |
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
 
     VkDescriptorSetLayoutBindingFlagsCreateInfo flagInfo;
-    flagInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    flagInfo.pNext = nullptr;
-    flagInfo.bindingCount = 1;
-    flagInfo.pBindingFlags = &flags;
+    flagInfo.sType          = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    flagInfo.pNext          = nullptr;
+    flagInfo.bindingCount   = 1;
+    flagInfo.pBindingFlags  = &flags;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo;
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.pNext = &flagInfo;
-    layoutInfo.flags = 0;
+    layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.pNext        = &flagInfo;
+    layoutInfo.flags        = 0;
     layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &textureArrayBinding;
+    layoutInfo.pBindings    = &textureArrayBinding;
 
     const VkResult result = vkCreateDescriptorSetLayout(vkContext.device, &layoutInfo, nullptr, &m_globalTextureArrayDescriporSetLayout);
     checkVulkanResult(result);
@@ -1719,20 +1630,20 @@ void RenderBackend::initGlobalTextureArrayDescriptorSetLayout() {
 void RenderBackend::setGlobalTextureArrayDescriptorSetTexture(const VkImageView imageView, const uint32_t index) {
 
     VkDescriptorImageInfo imageInfo;
-    imageInfo.imageView = imageView;
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView     = imageView;
+    imageInfo.imageLayout   = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkWriteDescriptorSet write;
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.pNext = nullptr;
-    write.dstSet = m_globalTextureArrayDescriptorSet;
-    write.dstBinding = 0;
-    write.dstArrayElement = index;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    write.pImageInfo = &imageInfo;
-    write.pBufferInfo = nullptr;
-    write.pTexelBufferView = nullptr;
+    write.sType             = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.pNext             = nullptr;
+    write.dstSet            = m_globalTextureArrayDescriptorSet;
+    write.dstBinding        = 0;
+    write.dstArrayElement   = index;
+    write.descriptorCount   = 1;
+    write.descriptorType    = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    write.pImageInfo        = &imageInfo;
+    write.pBufferInfo       = nullptr;
+    write.pTexelBufferView  = nullptr;
 
     vkUpdateDescriptorSets(vkContext.device, 1, &write, 0, nullptr);
 }
@@ -1746,28 +1657,28 @@ void RenderBackend::initGlobalTextureArrayDescriptorSet() {
     poolSize.descriptorCount = maxTextureCount;
 
     VkDescriptorPoolCreateInfo poolInfo;
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.pNext = nullptr;
-    poolInfo.flags = 0;
-    poolInfo.maxSets = 1;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.sType          = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.pNext          = nullptr;
+    poolInfo.flags          = 0;
+    poolInfo.maxSets        = 1;
+    poolInfo.poolSizeCount  = 1;
+    poolInfo.pPoolSizes     = &poolSize;
 
     VkResult result = vkCreateDescriptorPool(vkContext.device, &poolInfo, nullptr, &m_globalTextureArrayDescriptorPool);
     checkVulkanResult(result);
 
     VkDescriptorSetVariableDescriptorCountAllocateInfo variableDescriptorCountInfo;
-    variableDescriptorCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
-    variableDescriptorCountInfo.pNext = nullptr;
-    variableDescriptorCountInfo.descriptorSetCount = 1;
-    variableDescriptorCountInfo.pDescriptorCounts = &maxTextureCount;
+    variableDescriptorCountInfo.sType               = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
+    variableDescriptorCountInfo.pNext               = nullptr;
+    variableDescriptorCountInfo.descriptorSetCount  = 1;
+    variableDescriptorCountInfo.pDescriptorCounts   = &maxTextureCount;
 
     VkDescriptorSetAllocateInfo setInfo;
-    setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    setInfo.pNext = &variableDescriptorCountInfo;
-    setInfo.descriptorPool = m_globalTextureArrayDescriptorPool;
-    setInfo.descriptorSetCount = 1;
-    setInfo.pSetLayouts = &m_globalTextureArrayDescriporSetLayout;
+    setInfo.sType               = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    setInfo.pNext               = &variableDescriptorCountInfo;
+    setInfo.descriptorPool      = m_globalTextureArrayDescriptorPool;
+    setInfo.descriptorSetCount  = 1;
+    setInfo.pSetLayouts         = &m_globalTextureArrayDescriporSetLayout;
 
     result = vkAllocateDescriptorSets(vkContext.device, &setInfo, &m_globalTextureArrayDescriptorSet);
     checkVulkanResult(result);
