@@ -19,21 +19,6 @@
 
 struct GLFWwindow;
 
-// because they are extensions they need to be acquired using vkGetDeviceProcAddr
-struct VulkanDebugUtilsFunctions {
-    PFN_vkCmdBeginDebugUtilsLabelEXT    vkCmdBeginDebugUtilsLabelEXT    = nullptr;
-    PFN_vkCmdEndDebugUtilsLabelEXT      vkCmdEndDebugUtilsLabelEXT      = nullptr;
-    PFN_vkCmdInsertDebugUtilsLabelEXT   vkCmdInsertDebugUtilsLabelEXT   = nullptr;
-    PFN_vkCreateDebugUtilsMessengerEXT  vkCreateDebugUtilsMessengerEXT  = nullptr;
-    PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT = nullptr;
-    PFN_vkQueueBeginDebugUtilsLabelEXT  vkQueueBeginDebugUtilsLabelEXT  = nullptr;
-    PFN_vkQueueEndDebugUtilsLabelEXT    vkQueueEndDebugUtilsLabelEXT    = nullptr;
-    PFN_vkQueueInsertDebugUtilsLabelEXT vkQueueInsertDebugUtilsLabelEXT = nullptr;
-    PFN_vkSetDebugUtilsObjectNameEXT    vkSetDebugUtilsObjectNameEXT    = nullptr;
-    PFN_vkSetDebugUtilsObjectTagEXT     vkSetDebugUtilsObjectTagEXT     = nullptr;
-    PFN_vkSubmitDebugUtilsMessageEXT    vkSubmitDebugUtilsMessageEXT    = nullptr;
-};
-
 // per pass execution time
 struct RenderPassTime{
     float timeMs = 0; // time in milliseconds
@@ -60,45 +45,45 @@ public:
     // TODO: this should not be available to to the frontend, remove all usages and this function
     void waitForGPUIdle();
 
-    //checks if any shaders are out of date, if so reloads them and reconstructs the corresponding pipeline
+    // checks if any shaders are out of date, if so reloads them and reconstructs the corresponding pipeline
     void updateShaderCode();
 
-    //multiple images must be resizable at once, as framebuffers may only be updated once all images have been resized    
+    // multiple images must be resizable at once, as framebuffers may only be updated once all images have been resized    
     void resizeImages(const std::vector<ImageHandle>& images, const uint32_t width, const uint32_t height);
 
-    //old frame cleanup and new frame preparations, must be called before render pass executions can be set
+    // old frame cleanup and new frame preparations, must be called before render pass executions can be set
     void newFrame();
 
-    //must be called after newFrame and before startDrawcallRecording
+    // must be called after newFrame and before startDrawcallRecording
     void setGraphicPassExecution(const GraphicPassExecution& execution);
 
-    //must be called after newFrame and before startDrawcallRecording
+    // must be called after newFrame and before startDrawcallRecording
     void setComputePassExecution(const ComputePassExecution& execution);
 
-    //prepares for mesh drawcalls, must be called after all render pass executions have been set
+    // prepares for mesh drawcalls, must be called after all render pass executions have been set
     void prepareForDrawcallRecording();
 
-    //must be called after startDrawcallRecording
+    // must be called after startDrawcallRecording
     void drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData, const RenderPassHandle passHandle, const int workerIndex);
 
-    //actual copy is deferred to before submitting, to avoid stalling cpu until previous frame is finished rendering
-    //results in an extra copy of data
+    // actual copy is deferred to before submitting, to avoid stalling cpu until previous frame is finished rendering
+    // results in an extra copy of data
     void setUniformBufferData(const UniformBufferHandle buffer, const void* data, const size_t size);
 
-    //actual copy is deferred to before submitting, to avoid stalling cpu until previous frame is finished rendering
-    //results in an extra copy of data
+    // actual copy is deferred to before submitting, to avoid stalling cpu until previous frame is finished rendering
+    // results in an extra copy of data
     void setStorageBufferData(const StorageBufferHandle buffer, const void* data, const size_t size);
 
-    //must be set once before creating renderpasses
+    // must be set once before creating renderpasses
     void setGlobalDescriptorSetLayout(const ShaderLayout& layout);
 
     void setGlobalDescriptorSetResources(const RenderPassResources& resources);
 
-    //set path and specialisation constants, forces recompile and pipeline recreation
+    // set path and specialisation constants, forces recompile and pipeline recreation
     void updateGraphicPassShaderDescription(const RenderPassHandle passHandle, const GraphicPassShaderDescriptions& desc);
     void updateComputePassShaderDescription(const RenderPassHandle passHandle, const ShaderDescription& desc);
 
-    //actual rendering of frame using commands generated from drawMesh calls
+    // actual rendering of frame using commands generated from drawMesh calls
     void renderFrame(const bool presentToScreen);
 
     uint32_t getImageGlobalTextureArrayIndex(const ImageHandle image);
@@ -135,9 +120,6 @@ private:
     void reloadGraphicPass(const GraphicPassShaderReloadInfo& reloadInfo);
 
     Buffer createStagingBuffer();
-
-    // debug marker use an extension and as such need to get function pointers
-    void acquireDebugUtilsExtFunctionsPointers();
 
     ShaderFileManager m_shaderFileManager;
 
@@ -180,8 +162,6 @@ private:
     bool validateRenderTargets(const std::vector<RenderTarget>& attachments);
     bool imageHasAttachmentUsageFlag(const Image& image);
     glm::uvec2 getResolutionFromRenderTargets(const std::vector<RenderTarget>& targets);
-
-    VulkanDebugUtilsFunctions m_debugExtFunctions;
 
     Swapchain m_swapchain;
 
@@ -266,9 +246,6 @@ private:
     VkCommandPool   m_commandPool           = VK_NULL_HANDLE;
     VkCommandPool   m_transientCommandPool  = VK_NULL_HANDLE; //used for short lived copy command buffer and such
 
-    void startDebugLabel(const VkCommandBuffer cmdBuffer, const std::string& name);
-    void endDebugLabel(const VkCommandBuffer cmdBuffer);
-
     /*
     =========
     descriptors and layouts
@@ -290,12 +267,6 @@ private:
     // split from public function to allow use when reloading shader	
     ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
     GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
-
-    // create necessary image barriers
-    // multiple barriers may be needed, as mip levels may have differing layouts
-    // sets image.layout to newLayout, image.currentAccess to dstAccess and image.currentlyWriting to false
-    std::vector<VkImageMemoryBarrier> createImageBarriers(Image& image, const VkImageLayout newLayout,
-        const VkAccessFlags dstAccess, const uint32_t baseMip, const uint32_t mipLevels);
 
     /*
     =========

@@ -32,6 +32,7 @@
 #include "VulkanFramebuffer.h"
 #include "VulkanImageTransfer.h"
 #include "VulkanPipelineLayout.h"
+#include "VulkanDebug.h"
 
 // definition of extern variable from header
 RenderBackend gRenderBackend;
@@ -67,7 +68,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     const std::array<int, 2> resolution = Window::getGlfwWindowResolution(window);
     initSwapchainImages((uint32_t)resolution[0], (uint32_t)resolution[1]);
 
-    acquireDebugUtilsExtFunctionsPointers();
+    initVulkanDebugFunctions();
 
     m_vkAllocator.create();
     m_commandPool           = createCommandPool(vkContext.queueFamilies.graphics, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
@@ -170,7 +171,7 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
     }
     vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
     vkDestroySurfaceKHR(vkContext.vulkanInstance, m_swapchain.surface, nullptr);
-    
+
     m_swapchain.surface = createSurface(window);
 
     // queue families must revalidate present support for new surface
@@ -246,7 +247,7 @@ void RenderBackend::prepareForDrawcallRecording() {
 void RenderBackend::setGraphicPassExecution(const GraphicPassExecution& execution) {
     RenderPassExecutionEntry executionEntry;
     executionEntry.index = m_graphicPassExecutions.size();
-    executionEntry.type = RenderPassType::Graphic;
+    executionEntry.type  = RenderPassType::Graphic;
     m_renderPassExecutions.push_back(executionEntry);
     m_graphicPassExecutions.push_back(execution);
 }
@@ -254,7 +255,7 @@ void RenderBackend::setGraphicPassExecution(const GraphicPassExecution& executio
 void RenderBackend::setComputePassExecution(const ComputePassExecution& execution) {
     RenderPassExecutionEntry executionEntry;
     executionEntry.index = m_computePassExecutions.size();
-    executionEntry.type = RenderPassType::Compute;
+    executionEntry.type  = RenderPassType::Compute;
     m_renderPassExecutions.push_back(executionEntry);
     m_computePassExecutions.push_back(execution);
 }
@@ -431,8 +432,8 @@ RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& 
     }
 
     // create vulkan pass and handle
-    GraphicPass pass = createGraphicPassInternal(desc, spirV);
-    pass.shaderHandle = shaderHandle;
+    GraphicPass pass            = createGraphicPassInternal(desc, spirV);
+    pass.shaderHandle           = shaderHandle;
     RenderPassHandle passHandle = m_renderPasses.addGraphicPass(pass); 
     m_shaderFileManager.setGraphicPassHandle(shaderHandle, passHandle);
     return passHandle;
@@ -441,10 +442,9 @@ RenderPassHandle RenderBackend::createGraphicPass(const GraphicPassDescription& 
 std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary>& meshes) {
 
     std::vector<MeshHandle> handles;
-    for (uint32_t i = 0; i < meshes.size(); i++) {
+    for (const MeshBinary& meshData : meshes) {
 
-        const MeshBinary& meshData = meshes[i];
-        std::vector<uint32_t> queueFamilies = { vkContext.queueFamilies.graphics };
+        std::vector<uint32_t> bufferQueueFamilies = { vkContext.queueFamilies.graphics };
 
         Mesh mesh;
         mesh.indexCount = meshData.indexCount;
@@ -460,7 +460,7 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
         const VkDeviceSize indexBufferSize = meshData.indexBuffer.size() * sizeof(uint16_t);
         mesh.indexBuffer = createBufferInternal(
             indexBufferSize, 
-            queueFamilies, 
+            bufferQueueFamilies, 
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         fillBuffer(mesh.indexBuffer, meshData.indexBuffer.data(), indexBufferSize);
@@ -469,7 +469,7 @@ std::vector<MeshHandle> RenderBackend::createMeshes(const std::vector<MeshBinary
         const VkDeviceSize vertexBufferSize = meshData.vertexBuffer.size() * sizeof(uint8_t);
         mesh.vertexBuffer = createBufferInternal(
             vertexBufferSize, 
-            queueFamilies,
+            bufferQueueFamilies,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         fillBuffer(mesh.vertexBuffer, meshData.vertexBuffer.data(), vertexBufferSize);
@@ -756,8 +756,11 @@ void RenderBackend::submitRenderPasses(PerFrameResources* inOutFrameResources, c
     endDebugLabel(inOutFrameResources->commandBuffer);
 }
 
-void RenderBackend::submitGraphicPass(const GraphicPassExecution& execution,
-    const RenderPassBarriers& barriers, PerFrameResources *inOutFrameResources, const VkFramebuffer framebuffer) {
+void RenderBackend::submitGraphicPass(
+    const GraphicPassExecution& execution,
+    const RenderPassBarriers&   barriers, 
+    PerFrameResources           *inOutFrameResources, 
+    const VkFramebuffer         framebuffer) {
 
     GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle);
     startDebugLabel(inOutFrameResources->commandBuffer, pass.graphicPassDesc.name);
@@ -1209,13 +1212,13 @@ void RenderBackend::startGraphicPassRecording(const GraphicPassExecution& execut
 }
 
 Image RenderBackend::createImageInternal(const ImageDescription& desc, const void* initialData, const size_t initialDataSize) {
-    const VkFormat format = imageFormatToVulkanFormat(desc.format);
-    const uint32_t mipCount = computeImageMipCount(desc);
-    const bool bFillImageWithData = initialDataSize > 0;
+
+    const uint32_t  mipCount            = computeImageMipCount(desc);
+    const bool      bFillImageWithData  = initialDataSize > 0;
 
     Image image;
     image.desc          = desc;
-    image.format        = format;
+    image.format        = imageFormatToVulkanFormat(desc.format);;
     image.layoutPerMip  = createInitialImageLayouts(mipCount);
     image.vulkanHandle  = createVulkanImage(desc, bFillImageWithData);
     image.memory        = allocateAndBindImageMemory(image.vulkanHandle, &m_vkAllocator);
@@ -1249,10 +1252,14 @@ void RenderBackend::manualImageLayoutTransition(Image& image, const VkImageLayou
     const VkCommandBuffer transitionCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transientCommandPool);
     beginCommandBuffer(transitionCmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
-    const auto newLayoutBarriers = createImageBarriers(image, newLayout,
-        VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
-    issueBarriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
+    const auto newLayoutBarriers = createImageBarriers(
+        image, 
+        newLayout,
+        VK_ACCESS_TRANSFER_WRITE_BIT, 
+        0, 
+        (uint32_t)image.viewPerMip.size());
 
+    issueBarriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
     endCommandBufferRecording(transitionCmdBuffer);
 
     const VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
@@ -1469,22 +1476,6 @@ void RenderBackend::fillBuffer(Buffer target, const void* data, const VkDeviceSi
     }
 }
 
-void RenderBackend::startDebugLabel(const VkCommandBuffer cmdBuffer, const std::string& name) {
-    VkDebugUtilsLabelEXT label;
-    label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
-    label.pNext = nullptr;
-    label.pLabelName = name.c_str();
-    label.color[0] = 1.f;
-    label.color[1] = 1.f;
-    label.color[2] = 1.f;
-    label.color[3] = 1.f;
-    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT(cmdBuffer, &label);
-}
-
-void RenderBackend::endDebugLabel(const VkCommandBuffer cmdBuffer) {
-    m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT(cmdBuffer);
-}
-
 VkDescriptorPool RenderBackend::findFittingDescriptorPool(const DescriptorPoolAllocationSizes& requiredSizes){
 
     VkDescriptorPool fittingPool = VK_NULL_HANDLE;
@@ -1695,20 +1686,6 @@ Buffer RenderBackend::createStagingBuffer() {
         stagingBufferMemoryFlags);
 }
 
-void RenderBackend::acquireDebugUtilsExtFunctionsPointers() {
-    m_debugExtFunctions.vkCmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(vkContext.device, "vkCmdBeginDebugUtilsLabelEXT");
-    m_debugExtFunctions.vkCmdEndDebugUtilsLabelEXT = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(vkContext.device, "vkCmdEndDebugUtilsLabelEXT");
-    m_debugExtFunctions.vkCmdInsertDebugUtilsLabelEXT = (PFN_vkCmdInsertDebugUtilsLabelEXT)vkGetDeviceProcAddr(vkContext.device, "vkCmdInsertDebugUtilsLabelEXT");
-    m_debugExtFunctions.vkCreateDebugUtilsMessengerEXT = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetDeviceProcAddr(vkContext.device, "vkCreateDebugUtilsMessengerEXT");
-    m_debugExtFunctions.vkDestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetDeviceProcAddr(vkContext.device, "vkDestroyDebugUtilsMessengerEXT");
-    m_debugExtFunctions.vkQueueBeginDebugUtilsLabelEXT = (PFN_vkQueueBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(vkContext.device, "vkQueueBeginDebugUtilsLabelEXT");
-    m_debugExtFunctions.vkQueueEndDebugUtilsLabelEXT = (PFN_vkQueueEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(vkContext.device, "vkQueueEndDebugUtilsLabelEXT");
-    m_debugExtFunctions.vkQueueInsertDebugUtilsLabelEXT = (PFN_vkQueueInsertDebugUtilsLabelEXT)vkGetDeviceProcAddr(vkContext.device, "vkQueueInsertDebugUtilsLabelEXT");
-    m_debugExtFunctions.vkSetDebugUtilsObjectNameEXT = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetDeviceProcAddr(vkContext.device, "vkSetDebugUtilsObjectNameEXT");
-    m_debugExtFunctions.vkSetDebugUtilsObjectTagEXT = (PFN_vkSetDebugUtilsObjectTagEXT)vkGetDeviceProcAddr(vkContext.device, "vkSetDebugUtilsObjectTagEXT");
-    m_debugExtFunctions.vkSubmitDebugUtilsMessageEXT = (PFN_vkSubmitDebugUtilsMessageEXT)vkGetDeviceProcAddr(vkContext.device, "vkSubmitDebugUtilsMessageEXT");
-}
-
 void RenderBackend::initGlobalTextureArrayDescriptorSetLayout() {
 
     VkDescriptorSetLayoutBinding textureArrayBinding;
@@ -1833,36 +1810,6 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
 bool validateAttachmentFormatsAreCompatible(const ImageFormat a, const ImageFormat b) {
     return imageFormatToVkAspectFlagBits(a) == imageFormatToVkAspectFlagBits(b);
-}
-
-std::vector<VkImageMemoryBarrier> RenderBackend::createImageBarriers(Image& image, const VkImageLayout newLayout,
-    const VkAccessFlags dstAccess, const uint32_t baseMip, const uint32_t mipLevels) {
-
-    std::vector<VkImageMemoryBarrier> barriers;
-    const VkImageMemoryBarrier firstBarrier = createImageBarrier(image, dstAccess, newLayout, baseMip);
-    barriers.push_back(firstBarrier);
-
-    // add subsequent mip level barriers
-    for (uint32_t mipOffset = 1; mipOffset < mipLevels; mipOffset++) {
-
-        uint32_t mipLevel = baseMip + mipOffset;
-        const bool canExtendLastBarrier = image.layoutPerMip[mipLevel] == barriers.back().oldLayout;
-        if (canExtendLastBarrier) {
-            barriers.back().subresourceRange.levelCount++;
-        }
-        else {
-            const VkImageMemoryBarrier barrier = createImageBarrier(image, dstAccess, newLayout, mipLevel);
-            barriers.push_back(barrier);
-        }
-    }
-
-    for (uint32_t i = baseMip; i < baseMip + mipLevels; i++) {
-        image.layoutPerMip[i] = newLayout;
-    }
-    image.currentAccess = dstAccess;
-    image.currentlyWriting = false;
-
-    return barriers;
 }
 
 void RenderBackend::destroyImage(const ImageHandle handle) {

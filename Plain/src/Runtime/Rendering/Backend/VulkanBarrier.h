@@ -12,3 +12,12 @@ VkImageMemoryBarrier createImageBarrier(const Image& image, const VkAccessFlags 
 void issueBarriersCommand(const VkCommandBuffer commandBuffer,
     const std::vector<VkImageMemoryBarrier>& imageBarriers,
     const std::vector<VkBufferMemoryBarrier>& memoryBarriers);
+
+// multiple barriers may be needed, as mip levels may have differing layouts
+// sets image.layout to newLayout, image.currentAccess to dstAccess and image.currentlyWriting to false
+std::vector<VkImageMemoryBarrier> createImageBarriers(
+    Image&              image,
+    const VkImageLayout newLayout,
+    const VkAccessFlags dstAccess,
+    const uint32_t      baseMip,
+    const uint32_t      mipLevels);

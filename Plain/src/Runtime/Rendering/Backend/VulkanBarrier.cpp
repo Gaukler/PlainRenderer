@@ -46,3 +46,37 @@ void issueBarriersCommand(const VkCommandBuffer commandBuffer,
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
         (uint32_t)memoryBarriers.size(), memoryBarriers.data(), (uint32_t)imageBarriers.size(), imageBarriers.data());
 }
+
+std::vector<VkImageMemoryBarrier> createImageBarriers(
+    Image& image,
+    const VkImageLayout newLayout,
+    const VkAccessFlags dstAccess,
+    const uint32_t baseMip,
+    const uint32_t mipLevels) {
+
+    std::vector<VkImageMemoryBarrier> barriers;
+    const VkImageMemoryBarrier firstBarrier = createImageBarrier(image, dstAccess, newLayout, baseMip);
+    barriers.push_back(firstBarrier);
+
+    // add subsequent mip level barriers
+    for (uint32_t mipOffset = 1; mipOffset < mipLevels; mipOffset++) {
+
+        uint32_t mipLevel = baseMip + mipOffset;
+        const bool canExtendLastBarrier = image.layoutPerMip[mipLevel] == barriers.back().oldLayout;
+        if (canExtendLastBarrier) {
+            barriers.back().subresourceRange.levelCount++;
+        }
+        else {
+            const VkImageMemoryBarrier barrier = createImageBarrier(image, dstAccess, newLayout, mipLevel);
+            barriers.push_back(barrier);
+        }
+    }
+
+    for (uint32_t i = baseMip; i < baseMip + mipLevels; i++) {
+        image.layoutPerMip[i] = newLayout;
+    }
+    image.currentAccess = dstAccess;
+    image.currentlyWriting = false;
+
+    return barriers;
+}
