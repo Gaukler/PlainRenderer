@@ -18,5 +18,5 @@ VulkanAllocation allocateAndBindBufferMemory(
 std::vector<uint32_t>   makeUniqueQueueFamilyList(const std::vector<uint32_t>& queueFamilies);
 
 // TODO: auto pick correct version depending on target
-void fillHostVisibleCoherentBuffer(const Buffer& target, const void* data, const VkDeviceSize size);
+void fillHostVisibleCoherentBuffer(const Buffer& target, const Data& data);
 void fillDeviceLocalBufferImmediate(const Buffer& target, const Data& data, const TransferResources& transferResources);

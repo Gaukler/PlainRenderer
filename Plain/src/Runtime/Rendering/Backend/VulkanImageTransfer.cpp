@@ -73,7 +73,7 @@ void transferDataIntoImageImmediate(Image& target, const Data& data, TransferRes
         const VkDeviceSize numberOfRowsToCopy = computeNumberOfImageRowsToCopy(currentMipSize, byteOffsetMip, stagingBuffer.size, bytesPerRow);
         const VkDeviceSize copySize = computeImageCopySize(numberOfRowsToCopy, bytesPerRow, minCopySize);
 
-        fillHostVisibleCoherentBuffer(stagingBuffer, (char*)data.ptr + byteOffsetGlobal, copySize);
+        fillHostVisibleCoherentBuffer(stagingBuffer, Data((char*)data.ptr + byteOffsetGlobal, copySize));
 
         const VkImageSubresourceLayers  subresource = createSubresourceLayers(target, mipLevel);
         const VkOffset3D                offset = createImageCopyOffset(byteOffsetMip, bytesPerRow);

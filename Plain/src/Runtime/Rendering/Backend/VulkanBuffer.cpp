@@ -60,17 +60,17 @@ std::vector<uint32_t> makeUniqueQueueFamilyList(const std::vector<uint32_t>& que
     return uniqueFamilyList;
 }
 
-void fillHostVisibleCoherentBuffer(const Buffer& target, const void* data, const VkDeviceSize size) {
+void fillHostVisibleCoherentBuffer(const Buffer& target, const Data& data) {
     void* mappedData;
     const auto result = vkMapMemory(
         vkContext.device, 
         target.memory.vkMemory, 
         target.memory.offset, 
-        size, 
+        data.size, 
         0, 
         (void**)&mappedData);
     checkVulkanResult(result);
-    memcpy(mappedData, data, size);
+    memcpy(mappedData, data.ptr, data.size);
     vkUnmapMemory(vkContext.device, target.memory.vkMemory);
 }
 

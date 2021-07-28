@@ -223,3 +223,23 @@ VkPipeline createVulkanGraphicsPipeline(
 
     return pipeline;
 }
+
+VkPipeline createVulkanComputePipeline(
+    const VkPipelineLayout                  pipelineLayout, 
+    const VkPipelineShaderStageCreateInfo&  shaderStageInfo) {
+
+    VkComputePipelineCreateInfo pipelineInfo;
+    pipelineInfo.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.pNext              = nullptr;
+    pipelineInfo.flags              = 0;
+    pipelineInfo.stage              = shaderStageInfo;
+    pipelineInfo.layout             = pipelineLayout;
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+    pipelineInfo.basePipelineIndex  = 0;
+
+    VkPipeline pipeline;
+    auto res = vkCreateComputePipelines(vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
+    checkVulkanResult(res);
+
+    return pipeline;
+}

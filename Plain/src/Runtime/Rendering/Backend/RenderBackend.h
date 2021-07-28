@@ -223,10 +223,7 @@ private:
     Image   createImageInternal(const ImageDescription& description, const Data& initialData);
     Buffer  createBufferInternal(const VkDeviceSize size, const std::vector<uint32_t>& queueFamilies, const VkBufferUsageFlags usage, const uint32_t memoryFlags);
 
-    void manualImageLayoutTransition(Image& image, const VkImageLayout newLayout);
     void addImageToGlobalDescriptorSetLayout(Image& image);
-
-    void generateMipChain(Image& image, const VkImageLayout newLayout);
 
     /*
     =========

@@ -375,9 +375,7 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
 
     // transition swapchain image to present
     auto& swapchainPresentImage = getImageRef(m_swapchainInputImageHandle);
-    const auto& transitionToPresentBarrier = createImageBarriers(swapchainPresentImage, 
-        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
-    issueBarriersCommand(frameResources.commandBuffer, transitionToPresentBarrier, std::vector<VkBufferMemoryBarrier> {});
+    recordImageLayoutTransition(swapchainPresentImage, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, frameResources.commandBuffer);
 
     endCommandBufferRecording(frameResources.commandBuffer);
 
@@ -1245,7 +1243,7 @@ Image RenderBackend::createImageInternal(const ImageDescription& desc, const Dat
         transferDataIntoImageImmediate(image, initialData, m_transferResources);
     }
     if (desc.autoCreateMips) {
-        generateMipChain(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        generateMipChainImmediate(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, m_transferResources.transientCmdPool);
     }
 
     // most textures with sampled usage are used by the material system
@@ -1254,7 +1252,7 @@ Image RenderBackend::createImageInternal(const ImageDescription& desc, const Dat
     // to avoid issues all sampled images without mip generation are manually transitioned to read_only_optimal
     const bool manualLayoutTransitionRequired = bool(desc.usageFlags & ImageUsageFlags::Sampled) && !desc.autoCreateMips;
     if (manualLayoutTransitionRequired) {
-        manualImageLayoutTransition(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        imageLayoutTransitionImmediate(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, m_transferResources.transientCmdPool);
     }
 
     const bool imageCanBeSampled = bool(desc.usageFlags & ImageUsageFlags::Sampled);
@@ -1262,28 +1260,6 @@ Image RenderBackend::createImageInternal(const ImageDescription& desc, const Dat
         addImageToGlobalDescriptorSetLayout(image);
     }
     return image;
-}
-
-void RenderBackend::manualImageLayoutTransition(Image& image, const VkImageLayout newLayout) {
-
-    const VkCommandBuffer transitionCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transferResources.transientCmdPool);
-    beginCommandBuffer(transitionCmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-    const auto newLayoutBarriers = createImageBarriers(
-        image, 
-        newLayout,
-        VK_ACCESS_TRANSFER_WRITE_BIT, 
-        0, 
-        (uint32_t)image.viewPerMip.size());
-
-    issueBarriersCommand(transitionCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
-    endCommandBufferRecording(transitionCmdBuffer);
-
-    const VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
-    waitForFence(fence);
-
-    vkDestroyFence(vkContext.device, fence, nullptr);
-    vkFreeCommandBuffers(vkContext.device, m_transferResources.transientCmdPool, 1, &transitionCmdBuffer);
 }
 
 void RenderBackend::addImageToGlobalDescriptorSetLayout(Image& image) {
@@ -1309,79 +1285,6 @@ Buffer RenderBackend::createBufferInternal(const VkDeviceSize size, const std::v
     buffer.memory       = allocateAndBindBufferMemory(buffer.vulkanHandle, memoryFlags, m_vkAllocator);
 
     return buffer;
-}
-
-void RenderBackend::generateMipChain(Image& image, const VkImageLayout newLayout) {
-
-    // check for linear filtering support
-    VkFormatProperties formatProps;
-    vkGetPhysicalDeviceFormatProperties(vkContext.physicalDevice, image.format, &formatProps);
-    if (!(formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
-        throw std::runtime_error("physical device lacks linear filtering support for used format");
-    }
-
-    VkImageBlit blitInfo;
-
-    // offset base stays zero
-    blitInfo.srcOffsets[0].x = 0;
-    blitInfo.srcOffsets[0].y = 0;
-    blitInfo.srcOffsets[0].z = 0;
-
-    blitInfo.dstOffsets[0].x = 0;
-    blitInfo.dstOffsets[0].y = 0;
-    blitInfo.dstOffsets[0].z = 0;
-
-    // initial offset extent
-    blitInfo.srcOffsets[1].x = image.desc.width;
-    blitInfo.srcOffsets[1].y = image.desc.height;
-    blitInfo.srcOffsets[1].z = image.desc.depth;
-
-    blitInfo.dstOffsets[1].x = blitInfo.srcOffsets[1].x != 1 ? blitInfo.srcOffsets[1].x / 2 : 1;
-    blitInfo.dstOffsets[1].y = blitInfo.srcOffsets[1].y != 1 ? blitInfo.srcOffsets[1].y / 2 : 1;
-    blitInfo.dstOffsets[1].z = blitInfo.srcOffsets[1].z != 1 ? blitInfo.srcOffsets[1].z / 2 : 1;
-
-    const VkCommandBuffer blitCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_transferResources.transientCmdPool);
-    beginCommandBuffer(blitCmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-    for (uint32_t srcMip = 0; srcMip < image.viewPerMip.size() - 1; srcMip++) {
-
-        // barriers
-        auto barriers = createImageBarriers(image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, srcMip, 1); //src
-        const auto dstBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, srcMip + 1, 1); //dst
-        barriers.insert(barriers.end(), dstBarriers.begin(), dstBarriers.end());
-
-        issueBarriersCommand(blitCmdBuffer, barriers, std::vector<VkBufferMemoryBarrier> {});
-
-        // blit operation
-        blitInfo.srcSubresource = createSubresourceLayers(image, srcMip );
-        blitInfo.dstSubresource = createSubresourceLayers(image, srcMip + 1);
-
-        vkCmdBlitImage(blitCmdBuffer, image.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.vulkanHandle, 
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blitInfo, VK_FILTER_LINEAR);
-
-        // update offsets
-        blitInfo.srcOffsets[1].x /= blitInfo.srcOffsets[1].x != 1 ? 2 : 1;
-        blitInfo.srcOffsets[1].y /= blitInfo.srcOffsets[1].y != 1 ? 2 : 1;
-        blitInfo.srcOffsets[1].z /= blitInfo.srcOffsets[1].z != 1 ? 2 : 1;
-
-        blitInfo.dstOffsets[1].x = blitInfo.srcOffsets[1].x != 1 ? blitInfo.srcOffsets[1].x / 2 : 1;
-        blitInfo.dstOffsets[1].y = blitInfo.srcOffsets[1].y != 1 ? blitInfo.srcOffsets[1].y / 2 : 1;
-        blitInfo.dstOffsets[1].z = blitInfo.srcOffsets[1].z != 1 ? blitInfo.srcOffsets[1].z / 2 : 1;
-    }
-
-    // bring image into new layout
-    const auto newLayoutBarriers = createImageBarriers(image, newLayout, VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
-    issueBarriersCommand(blitCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
-
-    endCommandBufferRecording(blitCmdBuffer);
-
-    // submit
-    const VkFence fence = submitOneTimeUseCmdBuffer(blitCmdBuffer, vkContext.transferQueue);
-    waitForFence(fence);
-
-    // cleanup
-    vkDestroyFence(vkContext.device, fence, nullptr);
-    vkFreeCommandBuffers(vkContext.device, m_transferResources.transientCmdPool, 1, &blitCmdBuffer);
 }
 
 VkDescriptorPool RenderBackend::findFittingDescriptorPool(const DescriptorPoolAllocationSizes& requiredSizes){
@@ -1535,6 +1438,10 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
 
     pass.descriptorSetLayout = createDescriptorSetLayout(reflection.shaderLayout);
 
+    ShaderSpecialisationStructs specialisationStructs;
+    createShaderSpecialisationStructs(desc.shaderDescription.specialisationConstants, &specialisationStructs);
+    VkPipelineShaderStageCreateInfo shaderStageInfo = createPipelineShaderStageInfos(module, stageFlags, &specialisationStructs.info);
+
     const VkDescriptorSetLayout setLayouts[3] = {
         m_globalDescriptorSetLayout,
         pass.descriptorSetLayout,
@@ -1542,21 +1449,7 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
 
     pass.pipelineLayout     = createPipelineLayout(setLayouts, reflection.pushConstantByteSize, stageFlags);
     pass.pushConstantSize   = reflection.pushConstantByteSize;
-
-    ShaderSpecialisationStructs specialisationStructs;
-    createShaderSpecialisationStructs(desc.shaderDescription.specialisationConstants, &specialisationStructs);
-
-    VkComputePipelineCreateInfo pipelineInfo;
-    pipelineInfo.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    pipelineInfo.pNext              = nullptr;
-    pipelineInfo.flags              = 0;
-    pipelineInfo.stage              = createPipelineShaderStageInfos(module, stageFlags, &specialisationStructs.info);
-    pipelineInfo.layout             = pass.pipelineLayout;
-    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
-    pipelineInfo.basePipelineIndex  = 0;
-
-    auto res = vkCreateComputePipelines(vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pass.pipeline);
-    checkVulkanResult(res);
+    pass.pipeline           = createVulkanComputePipeline(pass.pipelineLayout, shaderStageInfo);
 
     vkDestroyShaderModule(vkContext.device, module, nullptr);
 
@@ -1693,7 +1586,9 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
     GraphicPassSpecialisationStructs specialisationStructs;
     const auto shaderStages = createGraphicPipelineShaderCreateInfo(
-        desc.shaderDescriptions, shaderModules, &specialisationStructs);
+        desc.shaderDescriptions, 
+        shaderModules, 
+        &specialisationStructs);
 
     const ShaderReflection      reflection                  = performShaderReflection(spirV);
     const VkShaderStageFlags    pipelineShaderStageFlags    = getGraphicPassShaderStageFlags(shaderModules);

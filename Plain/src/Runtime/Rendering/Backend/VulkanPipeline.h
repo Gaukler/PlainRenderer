@@ -15,9 +15,13 @@ VkPipelineDepthStencilStateCreateInfo                   createDepthStencilState(
 VkStencilOpState                                        createStencilOpStateDummy();
 VkCompareOp                                             depthFunctionToVulkanCompareOp(const DepthFunction function);
 
-VkPipeline                                              createVulkanGraphicsPipeline(
-    const GraphicPassDescription& desc,
-    const VkPipelineLayout pipelineLayout,
-    const VkRenderPass renderPass,
+VkPipeline createVulkanGraphicsPipeline(
+    const GraphicPassDescription&                       desc,
+    const VkPipelineLayout                              pipelineLayout,
+    const VkRenderPass                                  renderPass,
     const std::vector<VkPipelineShaderStageCreateInfo>& shaderStages,
-    const ShaderReflection& reflection);
+    const ShaderReflection&                             reflection);
+
+VkPipeline createVulkanComputePipeline(
+    const VkPipelineLayout                  pipelineLayout,
+    const VkPipelineShaderStageCreateInfo&  shaderStageInfo);

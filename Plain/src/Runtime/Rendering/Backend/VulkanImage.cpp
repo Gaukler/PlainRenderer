@@ -4,6 +4,10 @@
 #include "Common/Utilities/MathUtils.h"
 #include "VulkanImageFormats.h"
 #include "VkMemoryAllocator.h"
+#include "VulkanCommandRecording.h"
+#include "VulkanCommandBuffer.h"
+#include "VulkanBarrier.h"
+#include "VulkanSync.h"
 
 bool isVulkanDepthFormat(VkFormat format) {
     return (
@@ -210,4 +214,101 @@ VulkanAllocation allocateAndBindImageMemory(const VkImage image, VkMemoryAllocat
     checkVulkanResult(res);
 
     return allocation;
+}
+
+void generateMipChainImmediate(Image& image, const VkImageLayout newLayout, const VkCommandPool transientCmdPool) {
+
+    // check for linear filtering support
+    VkFormatProperties formatProps;
+    vkGetPhysicalDeviceFormatProperties(vkContext.physicalDevice, image.format, &formatProps);
+    if (!(formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+        throw std::runtime_error("physical device lacks linear filtering support for used format");
+    }
+
+    VkImageBlit blitInfo;
+
+    // offset base stays zero
+    blitInfo.srcOffsets[0].x = 0;
+    blitInfo.srcOffsets[0].y = 0;
+    blitInfo.srcOffsets[0].z = 0;
+
+    blitInfo.dstOffsets[0].x = 0;
+    blitInfo.dstOffsets[0].y = 0;
+    blitInfo.dstOffsets[0].z = 0;
+
+    // initial offset extent
+    blitInfo.srcOffsets[1].x = image.desc.width;
+    blitInfo.srcOffsets[1].y = image.desc.height;
+    blitInfo.srcOffsets[1].z = image.desc.depth;
+
+    blitInfo.dstOffsets[1].x = blitInfo.srcOffsets[1].x != 1 ? blitInfo.srcOffsets[1].x / 2 : 1;
+    blitInfo.dstOffsets[1].y = blitInfo.srcOffsets[1].y != 1 ? blitInfo.srcOffsets[1].y / 2 : 1;
+    blitInfo.dstOffsets[1].z = blitInfo.srcOffsets[1].z != 1 ? blitInfo.srcOffsets[1].z / 2 : 1;
+
+    const VkCommandBuffer blitCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, transientCmdPool);
+    beginCommandBuffer(blitCmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+    for (uint32_t srcMip = 0; srcMip < image.viewPerMip.size() - 1; srcMip++) {
+
+        // barriers
+        auto barriers = createImageBarriers(image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, srcMip, 1); //src
+        const auto dstBarriers = createImageBarriers(image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, srcMip + 1, 1); //dst
+        barriers.insert(barriers.end(), dstBarriers.begin(), dstBarriers.end());
+
+        issueBarriersCommand(blitCmdBuffer, barriers, std::vector<VkBufferMemoryBarrier> {});
+
+        // blit operation
+        blitInfo.srcSubresource = createSubresourceLayers(image, srcMip);
+        blitInfo.dstSubresource = createSubresourceLayers(image, srcMip + 1);
+
+        vkCmdBlitImage(blitCmdBuffer, image.vulkanHandle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.vulkanHandle,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blitInfo, VK_FILTER_LINEAR);
+
+        // update offsets
+        blitInfo.srcOffsets[1].x /= blitInfo.srcOffsets[1].x != 1 ? 2 : 1;
+        blitInfo.srcOffsets[1].y /= blitInfo.srcOffsets[1].y != 1 ? 2 : 1;
+        blitInfo.srcOffsets[1].z /= blitInfo.srcOffsets[1].z != 1 ? 2 : 1;
+
+        blitInfo.dstOffsets[1].x = blitInfo.srcOffsets[1].x != 1 ? blitInfo.srcOffsets[1].x / 2 : 1;
+        blitInfo.dstOffsets[1].y = blitInfo.srcOffsets[1].y != 1 ? blitInfo.srcOffsets[1].y / 2 : 1;
+        blitInfo.dstOffsets[1].z = blitInfo.srcOffsets[1].z != 1 ? blitInfo.srcOffsets[1].z / 2 : 1;
+    }
+
+    // bring image into new layout
+    const auto newLayoutBarriers = createImageBarriers(image, newLayout, VK_ACCESS_TRANSFER_WRITE_BIT, 0, (uint32_t)image.viewPerMip.size());
+    issueBarriersCommand(blitCmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
+
+    endCommandBufferRecording(blitCmdBuffer);
+
+    // submit
+    const VkFence fence = submitOneTimeUseCmdBuffer(blitCmdBuffer, vkContext.transferQueue);
+    waitForFence(fence);
+
+    // cleanup
+    vkDestroyFence(vkContext.device, fence, nullptr);
+    vkFreeCommandBuffers(vkContext.device, transientCmdPool, 1, &blitCmdBuffer);
+}
+
+void imageLayoutTransitionImmediate(Image& image, const VkImageLayout newLayout, const VkCommandPool transientCmdPool) {
+
+    const VkCommandBuffer transitionCmdBuffer = allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, transientCmdPool);
+    beginCommandBuffer(transitionCmdBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+    recordImageLayoutTransition(image, newLayout, transitionCmdBuffer);
+    endCommandBufferRecording(transitionCmdBuffer);
+
+    const VkFence fence = submitOneTimeUseCmdBuffer(transitionCmdBuffer, vkContext.transferQueue);
+    waitForFence(fence);
+
+    vkDestroyFence(vkContext.device, fence, nullptr);
+    vkFreeCommandBuffers(vkContext.device, transientCmdPool, 1, &transitionCmdBuffer);
+}
+
+void recordImageLayoutTransition(Image& image, const VkImageLayout newLayout, const VkCommandBuffer cmdBuffer) {
+    const auto newLayoutBarriers = createImageBarriers(
+        image,
+        newLayout,
+        VK_ACCESS_TRANSFER_WRITE_BIT,
+        0,
+        (uint32_t)image.viewPerMip.size());
+    issueBarriersCommand(cmdBuffer, newLayoutBarriers, std::vector<VkBufferMemoryBarrier> {});
 }

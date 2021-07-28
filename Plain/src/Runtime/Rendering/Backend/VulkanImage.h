@@ -26,3 +26,6 @@ VkImageAspectFlags          getVkImageAspectFlags(const VkFormat format);
 void                        destroyImageViews(const std::vector<VkImageView> &imageViews);
 VkImageSubresourceLayers    createSubresourceLayers(const Image& image, const uint32_t mipLevel);
 VulkanAllocation            allocateAndBindImageMemory(const VkImage image, VkMemoryAllocator* inOutMemoryVulkanAllocator);
+void                        generateMipChainImmediate(Image& image, const VkImageLayout newLayout, const VkCommandPool transientCmdPool);
+void                        imageLayoutTransitionImmediate(Image& image, const VkImageLayout newLayout, const VkCommandPool transientCmdPool);
+void                        recordImageLayoutTransition(Image& image, const VkImageLayout newLayout, const VkCommandBuffer cmdBuffer);
