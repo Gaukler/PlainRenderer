@@ -583,8 +583,6 @@ void RenderBackend::getMemoryStats(uint64_t* outAllocatedSize, uint64_t* outUsed
     assert(outAllocatedSize != nullptr);
     assert(outUsedSize != nullptr);
     m_vkAllocator.getMemoryStats(outAllocatedSize, outUsedSize);
-    *outAllocatedSize   += (uint32_t)m_transferResources.stagingBuffer.size;
-    *outUsedSize        += (uint32_t)m_transferResources.stagingBuffer.size;
 }
 
 std::vector<RenderPassTime> RenderBackend::getRenderpassTimings() const {
