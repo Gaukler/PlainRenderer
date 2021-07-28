@@ -66,7 +66,11 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_swapchain.vulkanHandle    = createVulkanSwapChain(m_swapchain.minImageCount, m_swapchain.surface, m_swapchain.surfaceFormat);
 
     const std::array<int, 2> resolution = Window::getGlfwWindowResolution(window);
-    initSwapchainImages((uint32_t)resolution[0], (uint32_t)resolution[1]);
+    m_swapchain.images =  createSwapchainImages(
+        (uint32_t)resolution[0], 
+        (uint32_t)resolution[1], 
+        m_swapchain.vulkanHandle, 
+        m_swapchain.surfaceFormat.format);
 
     initVulkanDebugFunctions();
 
@@ -176,12 +180,25 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
 
     // queue families must revalidate present support for new surface
     getQueueFamilies(vkContext.physicalDevice, &vkContext.queueFamilies, m_swapchain.surface);
-    m_swapchain.vulkanHandle = createVulkanSwapChain(m_swapchain.minImageCount, m_swapchain.surface, m_swapchain.surfaceFormat);
-    initSwapchainImages(width, height);
+
+    m_swapchain.vulkanHandle = createVulkanSwapChain(
+        m_swapchain.minImageCount, 
+        m_swapchain.surface, 
+        m_swapchain.surfaceFormat);
+
+    m_swapchain.images = createSwapchainImages(
+        width, 
+        height, 
+        m_swapchain.vulkanHandle, 
+        m_swapchain.surfaceFormat.format);
 
     destroyFramebuffers(m_imguiResources.framebuffers);
-    m_imguiResources.framebuffers = createImGuiFramebuffers(m_swapchain.images, m_imguiResources.renderPass);
-    m_imguiResources.passBeginInfos = createImGuiPassBeginInfo(width, height, m_imguiResources.framebuffers, m_imguiResources.renderPass);
+    m_imguiResources.framebuffers   = createImGuiFramebuffers(m_swapchain.images, m_imguiResources.renderPass);
+    m_imguiResources.passBeginInfos = createImGuiPassBeginInfo(
+        width, 
+        height, 
+        m_imguiResources.framebuffers, 
+        m_imguiResources.renderPass);
 }
 
 void RenderBackend::waitForGPUIdle() {
@@ -990,33 +1007,6 @@ glm::uvec2 RenderBackend::getResolutionFromRenderTargets(const std::vector<Rende
     }
     const Image& firstImage = getImageRef(targets[0].image);
     return glm::uvec2(firstImage.desc.width, firstImage.desc.height);
-}
-
-void RenderBackend::initSwapchainImages(const uint32_t width, const uint32_t height) {
-
-    uint32_t swapchainImageCount = 0;
-    if (vkGetSwapchainImagesKHR(vkContext.device, m_swapchain.vulkanHandle, &swapchainImageCount, nullptr) != VK_SUCCESS) {
-        throw std::runtime_error("failed to query swapchain image count");
-    }
-    std::vector<VkImage> swapchainImages;
-    swapchainImages.resize(swapchainImageCount);
-    if (vkGetSwapchainImagesKHR(vkContext.device, m_swapchain.vulkanHandle, &swapchainImageCount, swapchainImages.data()) != VK_SUCCESS) {
-        throw std::runtime_error("failed to query swapchain images");
-    }
-
-    m_swapchain.images.clear();
-    for (const auto vulkanImage : swapchainImages) {
-        Image image;
-        image.vulkanHandle = vulkanImage;
-        image.desc.width = width;
-        image.desc.height = height;
-        image.desc.depth = 1;
-        image.format = m_swapchain.surfaceFormat.format;
-        image.desc.type = ImageType::Type2D;
-        image.viewPerMip.push_back(createImageView(image, 0, 1));
-        image.layoutPerMip.push_back(VK_IMAGE_LAYOUT_UNDEFINED);
-        m_swapchain.images.push_back(image);
-    }
 }
 
 void RenderBackend::presentImage(const VkSemaphore waitSemaphore) {

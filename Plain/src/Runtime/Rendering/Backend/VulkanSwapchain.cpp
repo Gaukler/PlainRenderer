@@ -2,6 +2,7 @@
 #include "VulkanSwapchain.h"
 #include "VulkanContext.h"
 #include "VulkanSurface.h"
+#include "VulkanImage.h"
 
 VkSwapchainKHR createVulkanSwapChain(const int minImageCount, const VkSurfaceKHR surface, const VkSurfaceFormatKHR format) {
 
@@ -44,4 +45,37 @@ VkSwapchainKHR createVulkanSwapChain(const int minImageCount, const VkSurfaceKHR
     const auto result = vkCreateSwapchainKHR(vkContext.device, &swapchainInfo, nullptr, &swapchain);
     checkVulkanResult(result);
     return swapchain;
+}
+
+std::vector<Image> createSwapchainImages(
+    const uint32_t          width,
+    const uint32_t          height,
+    const VkSwapchainKHR    swapchain,
+    const VkFormat          format) {
+
+    uint32_t swapchainImageCount = 0;
+    if (vkGetSwapchainImagesKHR(vkContext.device, swapchain, &swapchainImageCount, nullptr) != VK_SUCCESS) {
+        throw std::runtime_error("failed to query swapchain image count");
+    }
+    std::vector<VkImage> swapchainImages;
+    swapchainImages.resize(swapchainImageCount);
+    if (vkGetSwapchainImagesKHR(vkContext.device, swapchain, &swapchainImageCount, swapchainImages.data()) != VK_SUCCESS) {
+        throw std::runtime_error("failed to query swapchain images");
+    }
+
+    std::vector<Image> images;
+    for (const auto vulkanImage : swapchainImages) {
+        Image image;
+        image.vulkanHandle  = vulkanImage;
+        image.desc.width    = width;
+        image.desc.height   = height;
+        image.desc.depth    = 1;
+        image.format        = format;
+        image.desc.type     = ImageType::Type2D;
+        image.viewPerMip.push_back(createImageView(image, 0, 1));
+        image.layoutPerMip.push_back(VK_IMAGE_LAYOUT_UNDEFINED);
+
+        images.push_back(image);
+    }
+    return images;
 }
