@@ -387,7 +387,20 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
     resetFence(m_renderFinishedFence);
 
     executeDeferredBufferFillOrders();
-    submitFrameToGraphicsQueue(frameResources.commandBuffer, presentToScreen);
+
+    // submit command buffer to queue
+    std::vector<VkSemaphore> submissionWaitSemaphores;
+    std::vector<VkSemaphore> submissionSignalSemaphores;
+    if (presentToScreen) {
+        submissionWaitSemaphores    = { m_swapchain.imageAvailable };
+        submissionSignalSemaphores  = { m_renderFinishedSemaphore };
+    }
+
+    submitCmdBufferToGraphicsQueue(
+        frameResources.commandBuffer, 
+        submissionWaitSemaphores,
+        submissionSignalSemaphores,
+        m_renderFinishedFence);
 
     if (presentToScreen) {
         presentImage(m_renderFinishedSemaphore);
@@ -652,12 +665,10 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
 
             // use general layout if image is used as a storage image too
             bool isUsedAsStorageImage = false;
-            {
-                for (const ImageResource& storageImage : resources.storageImages) {
-                    if (storageImage.image.index == sampledImage.image.index) {
-                        isUsedAsStorageImage = true;
-                        break;
-                    }
+            for (const ImageResource& storageImage : resources.storageImages) {
+                if (storageImage.image.index == sampledImage.image.index) {
+                    isUsedAsStorageImage = true;
+                    break;
                 }
             }
             if (isUsedAsStorageImage) {
@@ -737,9 +748,11 @@ std::vector<RenderPassBarriers> RenderBackend::createRenderPassBarriers() {
 }
 
 void RenderBackend::submitRenderPasses(PerFrameResources* inOutFrameResources, const std::vector<RenderPassBarriers> barriers) {
+
     int graphicPassIndex = 0;
     for (int i = 0; i < m_renderPassExecutions.size(); i++) {
         const RenderPassExecutionEntry& executionEntry = m_renderPassExecutions[i];
+
         if (executionEntry.type == RenderPassType::Graphic) {
             const VkFramebuffer f = inOutFrameResources->transientFramebuffers[graphicPassIndex];
             submitGraphicPass(m_graphicPassExecutions[executionEntry.index], barriers[i], inOutFrameResources, f);
@@ -766,7 +779,7 @@ void RenderBackend::submitRenderPasses(PerFrameResources* inOutFrameResources, c
 void RenderBackend::submitGraphicPass(
     const GraphicPassExecution& execution,
     const RenderPassBarriers&   barriers, 
-    PerFrameResources           *inOutFrameResources, 
+    PerFrameResources*          inOutFrameResources, 
     const VkFramebuffer         framebuffer) {
 
     GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(execution.genericInfo.handle);
@@ -806,12 +819,10 @@ void RenderBackend::submitGraphicPass(
 void RenderBackend::submitComputePass(const ComputePassExecution& execution,
     const RenderPassBarriers& barriers, PerFrameResources *inOutFrameResources) {
 
-    TimestampQuery timeQuery;
-
-    //TODO: add push constants for compute passes
     ComputePass& pass = m_renderPasses.getComputePassRefByHandle(execution.genericInfo.handle);
     startDebugLabel(inOutFrameResources->commandBuffer, pass.computePassDesc.name);
 
+    TimestampQuery timeQuery;
     timeQuery.name = pass.computePassDesc.name;
     timeQuery.startQuery = issueTimestampQuery(inOutFrameResources->commandBuffer, &inOutFrameResources->timestampQueryPool);
 
@@ -839,25 +850,6 @@ void RenderBackend::submitComputePass(const ComputePassExecution& execution,
     inOutFrameResources->timestampQueries.push_back(timeQuery);
 }
 
-void RenderBackend::submitFrameToGraphicsQueue(const VkCommandBuffer commandBuffer, const bool presentToScreen) {
-    VkSubmitInfo submit = {};
-    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit.pNext = nullptr;
-    submit.waitSemaphoreCount = presentToScreen ? 1 : 0;
-    submit.pWaitSemaphores = &m_swapchain.imageAvailable;
-
-    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    submit.pWaitDstStageMask = &waitStage;
-
-    submit.commandBufferCount = 1;
-    submit.pCommandBuffers = &commandBuffer;
-    submit.signalSemaphoreCount = presentToScreen ? 1 : 0;;
-    submit.pSignalSemaphores = &m_renderFinishedSemaphore;
-
-    const auto result = vkQueueSubmit(vkContext.graphicQueue, 1, &submit, m_renderFinishedFence);
-    checkVulkanResult(result);
-}
-
 void RenderBackend::waitForRenderFinished() {
     waitForFence(m_renderFinishedFence);
 }
@@ -882,10 +874,10 @@ void RenderBackend::executeDeferredBufferFillOrders() {
 void RenderBackend::retrieveLastFrameTimestamps() {
     m_renderpassTimings.clear();
 
-    const int previousFrameIndexMod2        = (FrameIndex::getFrameIndexMod2() + 1) % 2;
-    const auto& previousFrameResources      = m_perFrameResources[previousFrameIndexMod2];
-    const size_t previousFrameQueryCount    = previousFrameResources.timestampQueryPool.queryCount;
-    const VkQueryPool previousQueryPool     = previousFrameResources.timestampQueryPool.vulkanHandle;
+    const int           previousFrameIndexMod2  = (FrameIndex::getFrameIndexMod2() + 1) % 2;
+    const auto&         previousFrameResources  = m_perFrameResources[previousFrameIndexMod2];
+    const size_t        previousFrameQueryCount = previousFrameResources.timestampQueryPool.queryCount;
+    const VkQueryPool   previousQueryPool       = previousFrameResources.timestampQueryPool.vulkanHandle;
 
     std::vector<uint32_t> timestamps;
     timestamps.resize(previousFrameQueryCount);
@@ -898,23 +890,30 @@ void RenderBackend::retrieveLastFrameTimestamps() {
     // manually get every query for now
     // FIXME: proper solution
     for (size_t i = 0; i < previousFrameQueryCount; i++) {
-        auto result = vkGetQueryPoolResults(vkContext.device, previousQueryPool, (uint32_t)i, 1,
-            (uint32_t)timestamps.size() * sizeof(uint32_t), &timestamps[i], 0, VK_QUERY_RESULT_WAIT_BIT);
+        auto result = vkGetQueryPoolResults(
+            vkContext.device, 
+            previousQueryPool, 
+            (uint32_t)i, 
+            1,
+            (uint32_t)timestamps.size() * sizeof(uint32_t), 
+            &timestamps[i], 
+            0, 
+            VK_QUERY_RESULT_WAIT_BIT);
         checkVulkanResult(result);
     }
 
     for (const TimestampQuery query : previousFrameResources.timestampQueries) {
 
-        const uint32_t startTime = timestamps[query.startQuery];
-        const uint32_t endTime = timestamps[query.endQuery];
-        const uint32_t time = endTime - startTime;
+        const uint32_t startTime    = timestamps[query.startQuery];
+        const uint32_t endTime      = timestamps[query.endQuery];
+        const uint32_t time         = endTime - startTime;
 
-        const float nanoseconds = (float)time * m_nanosecondsPerTimestamp;
-        const float milliseconds = nanoseconds * 0.000001f;
+        const float nanoseconds     = (float)time * m_nanosecondsPerTimestamp;
+        const float milliseconds    = nanoseconds * 0.000001f;
 
         RenderPassTime timing;
-        timing.name = query.name;
-        timing.timeMs = milliseconds;
+        timing.name     = query.name;
+        timing.timeMs   = milliseconds;
         m_renderpassTimings.push_back(timing);
     }
 }
@@ -941,8 +940,8 @@ std::vector<VkFramebuffer> RenderBackend::createGraphicPassFramebuffers(const st
 std::vector<VkImageView> RenderBackend::getImageViewsFromRenderTargets(const std::vector<RenderTarget>& targets) {
     std::vector<VkImageView> views;
     for (const auto& target : targets) {
-        const auto& image = getImageRef(target.image);
-        const auto view = image.viewPerMip[target.mipLevel];
+        const auto& image   = getImageRef(target.image);
+        const auto view     = image.viewPerMip[target.mipLevel];
         views.push_back(view);
     }
     return views;
@@ -961,8 +960,9 @@ bool RenderBackend::validateRenderTargets(const std::vector<RenderTarget>& targe
     for (const auto attachmentDefinition : targets) {
 
         const Image& attachment = getImageRef(attachmentDefinition.image);
+        const bool imageHasAttachmentUsageFlag = bool(attachment.desc.usageFlags | ImageUsageFlags::Attachment);
 
-        if (!imageHasAttachmentUsageFlag(attachment)) {
+        if (!imageHasAttachmentUsageFlag) {
             std::cout << failureMessagePrologue << "attachment image is missing attachment usage flag\n";
             return false;
         }
@@ -982,10 +982,6 @@ bool RenderBackend::validateRenderTargets(const std::vector<RenderTarget>& targe
         }
     }
     return true;
-}
-
-bool RenderBackend::imageHasAttachmentUsageFlag(const Image& image) {
-    return bool(image.desc.usageFlags | ImageUsageFlags::Attachment);
 }
 
 glm::uvec2 RenderBackend::getResolutionFromRenderTargets(const std::vector<RenderTarget>& targets) {

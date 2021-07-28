@@ -51,3 +51,27 @@ std::vector<VkCommandBuffer> createGraphicPassMeshCommandBuffers(const std::vect
     }
     return buffers;
 }
+
+void submitCmdBufferToGraphicsQueue(
+    const VkCommandBuffer           commandBuffer,
+    const std::vector<VkSemaphore>& waitSemaphores,
+    const std::vector<VkSemaphore>& signalSemaphore,
+    const VkFence                   submitFence) {
+
+    VkSubmitInfo submit;
+    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.pNext = nullptr;
+    submit.waitSemaphoreCount = waitSemaphores.size();
+    submit.pWaitSemaphores = waitSemaphores.data();
+
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    submit.pWaitDstStageMask = &waitStage;
+
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &commandBuffer;
+    submit.signalSemaphoreCount = signalSemaphore.size();
+    submit.pSignalSemaphores = signalSemaphore.data();
+
+    const auto result = vkQueueSubmit(vkContext.graphicQueue, 1, &submit, submitFence);
+    checkVulkanResult(result);
+}

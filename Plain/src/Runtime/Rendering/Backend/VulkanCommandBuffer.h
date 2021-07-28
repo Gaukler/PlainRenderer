@@ -11,3 +11,9 @@ VkFence                         submitOneTimeUseCmdBuffer(const VkCommandBuffer 
 std::vector<VkCommandBuffer>    createGraphicPassMeshCommandBuffers(
     const std::vector<VkCommandPool> &pools, 
     const int frameCounts);
+
+void submitCmdBufferToGraphicsQueue(
+    const VkCommandBuffer           commandBuffer,
+    const std::vector<VkSemaphore>& waitSemaphores,
+    const std::vector<VkSemaphore>& signalSemaphore,
+    const VkFence                   submitFence);

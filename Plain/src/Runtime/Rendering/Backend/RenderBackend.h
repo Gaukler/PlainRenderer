@@ -139,30 +139,32 @@ private:
 
     std::vector<RenderPassBarriers> createRenderPassBarriers();
 
-    std::vector<RenderPassExecutionEntry> m_renderPassExecutions;
-    std::vector<GraphicPassExecution> m_graphicPassExecutions;
-    std::vector<ComputePassExecution> m_computePassExecutions;
+    std::vector<RenderPassExecutionEntry>   m_renderPassExecutions;
+    std::vector<GraphicPassExecution>       m_graphicPassExecutions;
+    std::vector<ComputePassExecution>       m_computePassExecutions;
 
     void submitRenderPasses(PerFrameResources *inOutFrameResources, const std::vector<RenderPassBarriers> barriers);
-    void submitGraphicPass(const GraphicPassExecution& execution,
-        const RenderPassBarriers& barriers, PerFrameResources *inOutFrameResources, const VkFramebuffer framebuffer);
 
-    void submitComputePass(const ComputePassExecution& execution,
-        const RenderPassBarriers& barriers, PerFrameResources *inOutFrameResources);
+    void submitGraphicPass(
+        const GraphicPassExecution& execution,
+        const RenderPassBarriers&   barriers, 
+        PerFrameResources*          inOutFrameResources, 
+        const VkFramebuffer         framebuffer);
 
-    void submitFrameToGraphicsQueue(const VkCommandBuffer commandBuffer, const bool presentToScreen);
+    void submitComputePass(
+        const ComputePassExecution& execution,
+        const RenderPassBarriers&   barriers, 
+        PerFrameResources*          inOutFrameResources);
 
     void waitForRenderFinished();
-
     void executeDeferredBufferFillOrders();
     void retrieveLastFrameTimestamps();
 
     std::vector<VkFramebuffer>  createGraphicPassFramebuffers(const std::vector<GraphicPassExecution>& execution);
     std::vector<VkImageView>    getImageViewsFromRenderTargets(const std::vector<RenderTarget>& targets);
 
-    bool validateRenderTargets(const std::vector<RenderTarget>& attachments);
-    bool imageHasAttachmentUsageFlag(const Image& image);
-    glm::uvec2 getResolutionFromRenderTargets(const std::vector<RenderTarget>& targets);
+    bool        validateRenderTargets(const std::vector<RenderTarget>& attachments);
+    glm::uvec2  getResolutionFromRenderTargets(const std::vector<RenderTarget>& targets);
 
     Swapchain m_swapchain;
 
@@ -175,11 +177,6 @@ private:
     std::vector<RenderPassExecution>    m_framePasses;
     ImageHandle                         m_swapchainInputImageHandle;
 
-    /*
-    =========
-    resources
-    =========
-    */
     VkMemoryAllocator m_vkAllocator;
 
     RenderPassManager       m_renderPasses;
@@ -207,11 +204,12 @@ private:
     std::vector<TemporaryImage> m_temporaryImages;
 
     struct AllocatedTempImage {
-        bool usedThisFrame = false;
-        Image image;
+        bool    usedThisFrame = false;
+        Image   image;
     };
 
-    std::vector<AllocatedTempImage> m_allocatedTempImages;  //allocated images are shared by non-overlapping temporary images
+    // allocated images are shared by non-overlapping temporary images
+    std::vector<AllocatedTempImage> m_allocatedTempImages;
 
     std::vector<UniformBufferFillOrder> m_deferredUniformBufferFills;
     std::vector<StorageBufferFillOrder> m_deferredStorageBufferFills;
@@ -225,45 +223,31 @@ private:
 
     void addImageToGlobalDescriptorSetLayout(Image& image);
 
-    /*
-    =========
-    commands
-    =========
-    */
+    // pools for secondary command buffers per thread 
+    std::vector<VkCommandPool>  m_drawcallCommandPools;
+    VkCommandPool               m_commandPool = VK_NULL_HANDLE;
 
-    std::vector<VkCommandPool> m_drawcallCommandPools;
-
-    VkCommandPool   m_commandPool           = VK_NULL_HANDLE;
-
-    /*
-    =========
-    descriptors and layouts
-    =========
-    */
     VkDescriptorSet         m_globalDescriptorSet       = VK_NULL_HANDLE;
-    VkDescriptorSetLayout   m_globalDescriptorSetLayout = VK_NULL_HANDLE;   // contains global info, always bound to set 0
 
-    // discriptor pools are added as existing ones run out
+    // contains global info, always bound to set 0
+    VkDescriptorSetLayout   m_globalDescriptorSetLayout = VK_NULL_HANDLE;
+
+    // descriptor pools are added as existing ones run out
     std::vector<DescriptorPool> m_descriptorPools;
 
     // creates new descriptor pool if needed
-    // currently now way to free descriptor set
+    // currently no way to free descriptor set
     VkDescriptorSet         allocateDescriptorSet(const VkDescriptorSetLayout setLayout, const DescriptorPoolAllocationSizes& requiredSizes);
     VkDescriptorPool        findFittingDescriptorPool(const DescriptorPoolAllocationSizes& requiredSizes);
     void                    updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources);
 
     // actual creation of internal objects
-    // split from public function to allow use when reloading shader	
+    // split from public function to allow usage when reloading shader	
     ComputePass createComputePassInternal(const ComputePassDescription& desc, const std::vector<uint32_t>& spirV);
     GraphicPass createGraphicPassInternal(const GraphicPassDescription& desc, const GraphicPassShaderSpirV& spirV);
 
-    /*
-    =========
-    sync objects
-    =========
-    */
-    VkSemaphore m_renderFinishedSemaphore = VK_NULL_HANDLE;
-    VkFence     m_renderFinishedFence = VK_NULL_HANDLE;
+    VkSemaphore m_renderFinishedSemaphore   = VK_NULL_HANDLE;
+    VkFence     m_renderFinishedFence       = VK_NULL_HANDLE;
 
     float m_nanosecondsPerTimestamp = 1.f;
 
