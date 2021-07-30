@@ -33,6 +33,7 @@
 #include "VulkanImageTransfer.h"
 #include "VulkanPipelineLayout.h"
 #include "VulkanDebug.h"
+#include "VulkanDescriptorSet.h"
 
 // definition of extern variable from header
 RenderBackend gRenderBackend;
@@ -53,7 +54,6 @@ void RenderBackend::setup(GLFWwindow* window) {
     pickPhysicalDevice(m_swapchain.surface);
 
     VkPhysicalDeviceProperties deviceProperties = getVulkanDeviceProperties();
-    m_nanosecondsPerTimestamp = deviceProperties.limits.timestampPeriod;
 
     std::cout << "Picked physical device: " << deviceProperties.deviceName << std::endl;
     std::cout << std::endl;
@@ -73,6 +73,7 @@ void RenderBackend::setup(GLFWwindow* window) {
         m_swapchain.surfaceFormat.format);
 
     initVulkanDebugFunctions();
+    initVulkanTimestamps();
 
     m_vkAllocator.create();
     m_commandPool           = createCommandPool(vkContext.queueFamilies.graphics, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
@@ -303,7 +304,6 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const 
 
         const bool pushConstantDataAvailable = pass.pushConstantSize > 0;
         if (pushConstantDataAvailable) {
-            // update push constants
             vkCmdPushConstants(
                 meshCommandBuffer,
                 pass.pipelineLayout,
@@ -329,8 +329,10 @@ void RenderBackend::setGlobalDescriptorSetLayout(const ShaderLayout& layout) {
         std::cout << "Error: global descriptor set layout must only be set once\n";
     }
     m_globalDescriptorSetLayout = createDescriptorSetLayout(layout);
-    const DescriptorPoolAllocationSizes setSizes = getDescriptorSetAllocationSizeFromShaderLayout(layout);
-    m_globalDescriptorSet = allocateDescriptorSet(m_globalDescriptorSetLayout, setSizes);
+    const DescriptorPoolAllocationSizes setSizes    = getDescriptorSetAllocationSizeFromShaderLayout(layout);
+    const VkDescriptorPool              pool        = findFittingDescriptorPool(setSizes);
+
+    m_globalDescriptorSet = allocateVulkanDescriptorSet(m_globalDescriptorSetLayout, pool);
 }
 
 void RenderBackend::setGlobalDescriptorSetResources(const RenderPassResources& resources) {
@@ -420,12 +422,19 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
         m_renderFinishedFence);
 
     if (presentToScreen) {
-        presentImage(m_renderFinishedSemaphore);
+        presentImage(m_renderFinishedSemaphore, m_swapchain.vulkanHandle, m_swapchainInputImageHandle.index);
         glfwPollEvents();
     }
 
     m_timeOfLastGPUSubmit = Timer::getTimeFloat();
-    retrieveLastFrameTimestamps();
+
+    // retrieve previous frame renderpass timings
+    const int   previousFrameIndexMod2 = (FrameIndex::getFrameIndexMod2() + 1) % 2;
+    const auto& previousFrameResources = m_perFrameResources[previousFrameIndexMod2];
+
+    m_renderpassTimings = retrieveRenderPassTimes(
+        previousFrameResources.timestampQueryPool,
+        previousFrameResources.timestampQueries);
 }
 
 uint32_t RenderBackend::getImageGlobalTextureArrayIndex(const ImageHandle image) {
@@ -888,53 +897,6 @@ void RenderBackend::executeDeferredBufferFillOrders() {
     m_deferredStorageBufferFills.clear();
 }
 
-void RenderBackend::retrieveLastFrameTimestamps() {
-    m_renderpassTimings.clear();
-
-    const int           previousFrameIndexMod2  = (FrameIndex::getFrameIndexMod2() + 1) % 2;
-    const auto&         previousFrameResources  = m_perFrameResources[previousFrameIndexMod2];
-    const size_t        previousFrameQueryCount = previousFrameResources.timestampQueryPool.queryCount;
-    const VkQueryPool   previousQueryPool       = previousFrameResources.timestampQueryPool.vulkanHandle;
-
-    std::vector<uint32_t> timestamps;
-    timestamps.resize(previousFrameQueryCount);
-
-    // res = vkGetQueryPoolResults(vkContext.device, m_timestampQueryPool, 0, m_currentTimestampQueryCount,
-    //    timestamps.size() * sizeof(uint32_t), timestamps.data(), 0, VK_QUERY_RESULT_WAIT_BIT);
-    // assert(res == VK_SUCCESS);
-    // on Ryzen 4700U iGPU vkGetQueryPoolResults only returns correct results for the first query
-    // maybe it contains more info so needs more space per query?
-    // manually get every query for now
-    // FIXME: proper solution
-    for (size_t i = 0; i < previousFrameQueryCount; i++) {
-        auto result = vkGetQueryPoolResults(
-            vkContext.device, 
-            previousQueryPool, 
-            (uint32_t)i, 
-            1,
-            (uint32_t)timestamps.size() * sizeof(uint32_t), 
-            &timestamps[i], 
-            0, 
-            VK_QUERY_RESULT_WAIT_BIT);
-        checkVulkanResult(result);
-    }
-
-    for (const TimestampQuery query : previousFrameResources.timestampQueries) {
-
-        const uint32_t startTime    = timestamps[query.startQuery];
-        const uint32_t endTime      = timestamps[query.endQuery];
-        const uint32_t time         = endTime - startTime;
-
-        const float nanoseconds     = (float)time * m_nanosecondsPerTimestamp;
-        const float milliseconds    = nanoseconds * 0.000001f;
-
-        RenderPassTime timing;
-        timing.name     = query.name;
-        timing.timeMs   = milliseconds;
-        m_renderpassTimings.push_back(timing);
-    }
-}
-
 std::vector<VkFramebuffer> RenderBackend::createGraphicPassFramebuffers(const std::vector<GraphicPassExecution>& execution) {
     std::vector<VkFramebuffer> framebuffers;
     for (const GraphicPassExecution& exe : execution) {
@@ -942,8 +904,12 @@ std::vector<VkFramebuffer> RenderBackend::createGraphicPassFramebuffers(const st
         if (validateRenderTargets(exe.targets)) {
             const std::vector<VkImageView>  targetViews     = getImageViewsFromRenderTargets(exe.targets);
             const glm::ivec2                resolution      = getResolutionFromRenderTargets(exe.targets);
-            const VkFramebuffer             newFramebuffer  = createVulkanFramebuffer(targetViews, pass.vulkanRenderPass,
-                resolution.x, resolution.y);
+
+            const VkFramebuffer newFramebuffer = createVulkanFramebuffer(
+                targetViews, 
+                pass.vulkanRenderPass,
+                resolution.x, 
+                resolution.y);
             framebuffers.push_back(newFramebuffer);
         }
         else {
@@ -1007,25 +973,6 @@ glm::uvec2 RenderBackend::getResolutionFromRenderTargets(const std::vector<Rende
     }
     const Image& firstImage = getImageRef(targets[0].image);
     return glm::uvec2(firstImage.desc.width, firstImage.desc.height);
-}
-
-void RenderBackend::presentImage(const VkSemaphore waitSemaphore) {
-
-    VkPresentInfoKHR present;
-    present.sType               = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    present.pNext               = nullptr;
-    present.waitSemaphoreCount  = 1;
-    present.pWaitSemaphores     = &waitSemaphore;
-    present.swapchainCount      = 1;
-    present.pSwapchains         = &m_swapchain.vulkanHandle;
-    present.pImageIndices       = &m_swapchainInputImageHandle.index;
-
-    VkResult presentResult;
-    present.pResults = &presentResult;
-
-    const VkResult result = vkQueuePresentKHR(vkContext.presentQueue, &present);
-    checkVulkanResult(result);
-    checkVulkanResult(presentResult);
 }
 
 Image& RenderBackend::getImageRef(const ImageHandle handle) {
@@ -1122,30 +1069,32 @@ void RenderBackend::allocateTemporaryImages() {
             return;
         }
 
-        bool foundAllocatedImage = false;
+        bool foundAllocatedImage    = false;
         const TempImageUsage& usage = imagesUsage[tempImageIndex];
 
         for (int allocatedImageIndex = 0; allocatedImageIndex < m_allocatedTempImages.size(); allocatedImageIndex++) {
 
-            int& allocatedImageLastUse = allocatedImageLatestUsedPass[allocatedImageIndex];
-            auto& allocatedImage = m_allocatedTempImages[allocatedImageIndex];
-            const bool allocatedImageAvailable = allocatedImageLastUse < renderPassIndex;
+            int& allocatedImageLastUse          = allocatedImageLatestUsedPass[allocatedImageIndex];
+            auto& allocatedImage                = m_allocatedTempImages[allocatedImageIndex];
+            const bool allocatedImageAvailable  = allocatedImageLastUse < renderPassIndex;
 
             const bool requirementsMatching = imageDescriptionsMatch(tempImage.desc, allocatedImage.image.desc);
             if (allocatedImageAvailable && requirementsMatching) {
-                tempImage.allocationIndex = allocatedImageIndex;
-                allocatedImageLastUse = usage.lastUse;
-                foundAllocatedImage = true;
-                allocatedImage.usedThisFrame = true;
+                tempImage.allocationIndex       = allocatedImageIndex;
+                allocatedImageLastUse           = usage.lastUse;
+                foundAllocatedImage             = true;
+                allocatedImage.usedThisFrame    = true;
                 break;
             }
         }
         if (!foundAllocatedImage) {
             std::cout << "Allocated temp image\n";
+
             AllocatedTempImage allocatedImage;
-            allocatedImage.image = createImageInternal(tempImage.desc, Data());
-            allocatedImage.usedThisFrame = true;
-            tempImage.allocationIndex = m_allocatedTempImages.size();
+            allocatedImage.image            = createImageInternal(tempImage.desc, Data());
+            allocatedImage.usedThisFrame    = true;
+
+            tempImage.allocationIndex       = m_allocatedTempImages.size();
             m_allocatedTempImages.push_back(allocatedImage);
             allocatedImageLatestUsedPass.push_back(usage.lastUse);
         }
@@ -1164,7 +1113,6 @@ void RenderBackend::resetAllocatedTempImages() {
             std::cout << "Deleted unused image\n";
         }
         else {
-            // reset usage
             m_allocatedTempImages[i].usedThisFrame = false;
         }
     }
@@ -1185,23 +1133,26 @@ void RenderBackend::updateRenderPassDescriptorSets() {
     }
 }
 
-void RenderBackend::startGraphicPassRecording(const GraphicPassExecution& execution, 
-    const VkFramebuffer framebuffer) {
+void RenderBackend::startGraphicPassRecording(
+    const GraphicPassExecution& execution, 
+    const VkFramebuffer         framebuffer) {
 
-    const RenderPassHandle passHandle = execution.genericInfo.handle;
-    const GraphicPass pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
+    const RenderPassHandle  passHandle  = execution.genericInfo.handle;
+    const GraphicPass       pass        = m_renderPasses.getGraphicPassRefByHandle(passHandle);
 
     const auto inheritanceInfo = createCommandBufferInheritanceInfo(pass.vulkanRenderPass, framebuffer);
 
     const int poolCount = m_drawcallCommandPools.size();
     for (int cmdBufferIndex = 0; cmdBufferIndex < poolCount; cmdBufferIndex++) {
-        const int finalIndex = cmdBufferIndex + FrameIndex::getFrameIndexMod2() * poolCount;
-        const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[finalIndex];
+
+        const int               finalIndex          = cmdBufferIndex + FrameIndex::getFrameIndexMod2() * poolCount;
+        const VkCommandBuffer   meshCommandBuffer   = pass.meshCommandBuffers[finalIndex];
+
         resetCommandBuffer(meshCommandBuffer);
         beginCommandBuffer(meshCommandBuffer, VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
             &inheritanceInfo);
 
-        // prepare for drawcall recording
+        // prepare state for drawcall recording
         vkCmdBindPipeline(meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipeline);
 
         const glm::vec2 resolution = (glm::vec2)getResolutionFromRenderTargets(execution.targets);
@@ -1287,23 +1238,6 @@ VkDescriptorPool RenderBackend::findFittingDescriptorPool(const DescriptorPoolAl
         fittingPool = m_descriptorPools.back().vkPool;
     }
     return fittingPool;
-}
-
-VkDescriptorSet RenderBackend::allocateDescriptorSet(const VkDescriptorSetLayout setLayout, const DescriptorPoolAllocationSizes& requiredSizes) {
-
-    VkDescriptorSetAllocateInfo setInfo;
-    setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    setInfo.pNext = nullptr;
-    setInfo.descriptorPool = VK_NULL_HANDLE;
-    setInfo.descriptorSetCount = 1;
-    setInfo.pSetLayouts = &setLayout;
-    setInfo.descriptorPool = findFittingDescriptorPool(requiredSizes);
-
-    VkDescriptorSet descriptorSet;
-    auto result = vkAllocateDescriptorSets(vkContext.device, &setInfo, &descriptorSet);
-    checkVulkanResult(result);
-
-    return descriptorSet;
 }
 
 void RenderBackend::updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources) {
@@ -1437,9 +1371,11 @@ ComputePass RenderBackend::createComputePassInternal(const ComputePassDescriptio
 
     vkDestroyShaderModule(vkContext.device, module, nullptr);
 
-    const auto setSizes     = getDescriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
-    pass.descriptorSets[0]  = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
-    pass.descriptorSets[1]  = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
+    const DescriptorPoolAllocationSizes setSizes = getDescriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
+    for (int i = 0; i < 2; i++) {
+        const VkDescriptorPool pool = findFittingDescriptorPool(setSizes);
+        pass.descriptorSets[i] = allocateVulkanDescriptorSet(pass.descriptorSetLayout, pool);
+    }
 
     return pass;
 }
@@ -1591,15 +1527,13 @@ GraphicPass RenderBackend::createGraphicPassInternal(const GraphicPassDescriptio
 
     destroyGraphicPassShaderModules(shaderModules);
 
-    const auto setSizes     = getDescriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
-    pass.descriptorSets[0]  = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
-    pass.descriptorSets[1]  = allocateDescriptorSet(pass.descriptorSetLayout, setSizes);
+    const DescriptorPoolAllocationSizes setSizes = getDescriptorSetAllocationSizeFromShaderLayout(reflection.shaderLayout);
+    for (int i = 0; i < 2; i++) {
+        const VkDescriptorPool pool = findFittingDescriptorPool(setSizes);
+        pass.descriptorSets[i]      = allocateVulkanDescriptorSet(pass.descriptorSetLayout, pool);
+    }
 
     return pass;
-}
-
-bool validateAttachmentFormatsAreCompatible(const ImageFormat a, const ImageFormat b) {
-    return imageFormatToVkAspectFlagBits(a) == imageFormatToVkAspectFlagBits(b);
 }
 
 void RenderBackend::destroyImage(const ImageHandle handle) {

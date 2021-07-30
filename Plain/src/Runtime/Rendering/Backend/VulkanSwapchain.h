@@ -22,3 +22,5 @@ std::vector<Image> createSwapchainImages(
     const uint32_t          height,
     const VkSwapchainKHR    swapchain,
     const VkFormat          format);
+
+void presentImage(const VkSemaphore waitSemaphore, const VkSwapchainKHR swapchain, const uint32_t imageIndex);

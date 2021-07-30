@@ -79,3 +79,22 @@ std::vector<Image> createSwapchainImages(
     }
     return images;
 }
+
+void presentImage(const VkSemaphore waitSemaphore, const VkSwapchainKHR swapchain, const uint32_t imageIndex) {
+
+    VkPresentInfoKHR present;
+    present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    present.pNext = nullptr;
+    present.waitSemaphoreCount = 1;
+    present.pWaitSemaphores = &waitSemaphore;
+    present.swapchainCount = 1;
+    present.pSwapchains = &swapchain;
+    present.pImageIndices = &imageIndex;
+
+    VkResult presentResult;
+    present.pResults = &presentResult;
+
+    const VkResult result = vkQueuePresentKHR(vkContext.presentQueue, &present);
+    checkVulkanResult(result);
+    checkVulkanResult(presentResult);
+}

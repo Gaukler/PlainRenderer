@@ -20,12 +20,6 @@
 
 struct GLFWwindow;
 
-// per pass execution time
-struct RenderPassTime{
-    float       timeMs = 0; // time in milliseconds
-    std::string name;
-};
-
 struct UniformBufferFillOrder {
     UniformBufferHandle buffer;
     std::vector<char>   data;
@@ -158,7 +152,6 @@ private:
 
     void waitForRenderFinished();
     void executeDeferredBufferFillOrders();
-    void retrieveLastFrameTimestamps();
 
     std::vector<VkFramebuffer>  createGraphicPassFramebuffers(const std::vector<GraphicPassExecution>& execution);
     std::vector<VkImageView>    getImageViewsFromRenderTargets(const std::vector<RenderTarget>& targets);
@@ -167,8 +160,6 @@ private:
     glm::uvec2  getResolutionFromRenderTargets(const std::vector<RenderTarget>& targets);
 
     Swapchain m_swapchain;
-
-    void presentImage(const VkSemaphore waitSemaphore);
 
     ImGuiRenderResources m_imguiResources;
 
@@ -236,9 +227,8 @@ private:
 
     // creates new descriptor pool if needed
     // currently no way to free descriptor set
-    VkDescriptorSet         allocateDescriptorSet(const VkDescriptorSetLayout setLayout, const DescriptorPoolAllocationSizes& requiredSizes);
-    VkDescriptorPool        findFittingDescriptorPool(const DescriptorPoolAllocationSizes& requiredSizes);
-    void                    updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources);
+    VkDescriptorPool    findFittingDescriptorPool(const DescriptorPoolAllocationSizes& requiredSizes);
+    void                updateDescriptorSet(const VkDescriptorSet set, const RenderPassResources& resources);
 
     // actual creation of internal objects
     // split from public function to allow usage when reloading shader	
@@ -247,8 +237,6 @@ private:
 
     VkSemaphore m_renderFinishedSemaphore   = VK_NULL_HANDLE;
     VkFence     m_renderFinishedFence       = VK_NULL_HANDLE;
-
-    float m_nanosecondsPerTimestamp = 1.f;
 
     std::vector<RenderPassTime> m_renderpassTimings;
     PerFrameResources           m_perFrameResources[2];
