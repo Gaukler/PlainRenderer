@@ -183,7 +183,7 @@ private:
         int allocationIndex = -1;
     };
 
-    void mapOverRenderpassTempImages(std::function<void(const int renderpassImage, const int tempImageIndex)> function);
+    //void mapOverRenderpassTempImages(std::function<void(const int renderpassImage, const int tempImageIndex)> function);
     void allocateTemporaryImages();
     void resetAllocatedTempImages();
     void updateRenderPassDescriptorSets();

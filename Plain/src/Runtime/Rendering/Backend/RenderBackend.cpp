@@ -1023,76 +1023,84 @@ bool isTransientImageHandle(const ImageHandle handle) {
     return handle.type == ImageHandleType::Transient;
 }
 
-void RenderBackend::mapOverRenderpassTempImages(std::function<void(const int renderpassImage, 
-    const int tempImageIndex)> function) {
+void RenderBackend::allocateTemporaryImages() {
 
-    for (int i = 0; i < m_renderPassExecutions.size(); i++) {
+    // build a list of all temporary images and the renderpasses they belong to
+    struct TempImageOccurence {
+        uint32_t renderpassIndex;
+        uint32_t imageIndex;
+    };
+
+    std::vector<TempImageOccurence> tempImageOccurences;
+    for (uint32_t i = 0; i < m_renderPassExecutions.size(); i++) {
         const auto& executionEntry = m_renderPassExecutions[i];
-        const RenderPassExecution& execution = getGenericRenderpassInfoFromExecutionEntry(executionEntry,
-            m_graphicPassExecutions, m_computePassExecutions);
+
+        const RenderPassExecution& execution = getGenericRenderpassInfoFromExecutionEntry(
+            executionEntry,
+            m_graphicPassExecutions, 
+            m_computePassExecutions);
 
         for (const auto& imageResource : execution.resources.sampledImages) {
             if (isTransientImageHandle(imageResource.image)) {
-                function(i, imageResource.image.index);
+                tempImageOccurences.push_back(TempImageOccurence{ i, imageResource.image.index });
             }
         }
 
         for (const auto& imageResource : execution.resources.storageImages) {
             if (isTransientImageHandle(imageResource.image)) {
-                function(i, imageResource.image.index);
+                tempImageOccurences.push_back(TempImageOccurence{ i, imageResource.image.index });
             }
         }
+
         if (executionEntry.type == RenderPassType::Graphic) {
             const auto& graphicPass = m_graphicPassExecutions[executionEntry.index];
             for (const auto& target : graphicPass.targets) {
                 if (isTransientImageHandle(target.image)) {
-                    function(i, target.image.index);
+                    tempImageOccurences.push_back(TempImageOccurence{ i, target.image.index });
                 }
             }
         }
     }
-}
 
-void RenderBackend::allocateTemporaryImages() {
-
-    //compute temp image usage
+    // build a list of first and last usage per temp image
+    // this is used to check if matching temp images do not overlap, in which case they can share an allocated image
     struct TempImageUsage {
-        int firstUse = std::numeric_limits<int>::max();
-        int lastUse = 0;
+        uint32_t firstUse = std::numeric_limits<int>::max();
+        uint32_t lastUse = 0;
     };
     std::vector<TempImageUsage> imagesUsage(m_temporaryImages.size());
 
-    std::function<void(const int, const int)> usageLambda = [&imagesUsage](const int renderpassIndex, const int tempImageIndex) {
-        TempImageUsage& usage = imagesUsage[tempImageIndex];
-        usage.firstUse = std::min(usage.firstUse, renderpassIndex);
-        usage.lastUse = std::max(usage.lastUse, renderpassIndex);
+    for(const auto& occurence : tempImageOccurences) {
+        TempImageUsage& usage = imagesUsage[occurence.imageIndex];
+        usage.firstUse  = std::min(usage.firstUse,  occurence.renderpassIndex);
+        usage.lastUse   = std::max(usage.lastUse,   occurence.renderpassIndex);
     };
 
-    mapOverRenderpassTempImages(usageLambda);
-
+    // this list tracks per allocated image when their latest usage is
+    // used to check if allocation usage overlaps with temp image usage
     std::vector<int> allocatedImageLatestUsedPass(m_allocatedTempImages.size(), 0);
 
-    std::function<void(const int, const int)> allocationLambda =
-        [&imagesUsage, &allocatedImageLatestUsedPass, this](const int renderPassIndex, const int tempImageIndex) {
+    // actual allocation
+    for (const auto& occurence : tempImageOccurences) {
 
-        auto& tempImage = m_temporaryImages[tempImageIndex];
+        auto& tempImage = m_temporaryImages[occurence.imageIndex];
 
         const bool isAlreadyAllocated = tempImage.allocationIndex >= 0;
         if (isAlreadyAllocated) {
-            return;
+            continue;
         }
 
-        bool foundAllocatedImage    = false;
-        const TempImageUsage& usage = imagesUsage[tempImageIndex];
+        bool                    foundAllocatedImage = false;
+        const TempImageUsage&   usage               = imagesUsage[occurence.imageIndex];
 
         for (int allocatedImageIndex = 0; allocatedImageIndex < m_allocatedTempImages.size(); allocatedImageIndex++) {
 
-            int& allocatedImageLastUse          = allocatedImageLatestUsedPass[allocatedImageIndex];
-            auto& allocatedImage                = m_allocatedTempImages[allocatedImageIndex];
-            const bool allocatedImageAvailable  = allocatedImageLastUse < renderPassIndex;
+            int&                allocatedImageLastUse       = allocatedImageLatestUsedPass[allocatedImageIndex];
+            AllocatedTempImage& allocatedImage              = m_allocatedTempImages[allocatedImageIndex];
+            const bool          isAllocatedImageAvailable   = allocatedImageLastUse < occurence.renderpassIndex;
 
             const bool requirementsMatching = imageDescriptionsMatch(tempImage.desc, allocatedImage.image.desc);
-            if (allocatedImageAvailable && requirementsMatching) {
+            if (isAllocatedImageAvailable && requirementsMatching) {
                 tempImage.allocationIndex       = allocatedImageIndex;
                 allocatedImageLastUse           = usage.lastUse;
                 foundAllocatedImage             = true;
@@ -1111,8 +1119,7 @@ void RenderBackend::allocateTemporaryImages() {
             m_allocatedTempImages.push_back(allocatedImage);
             allocatedImageLatestUsedPass.push_back(usage.lastUse);
         }
-    };
-    mapOverRenderpassTempImages(allocationLambda);
+    }
 }
 
 void RenderBackend::resetAllocatedTempImages() {
@@ -1123,7 +1130,7 @@ void RenderBackend::resetAllocatedTempImages() {
             waitForGpuIdle(); // FIXME: don't use wait idle, use deferred destruction queue instead
             destroyImageInternal(m_allocatedTempImages.back().image);
             m_allocatedTempImages.pop_back();
-            std::cout << "Deleted unused image\n";
+            std::cout << "Deleted unused temp image\n";
         }
         else {
             m_allocatedTempImages[i].usedThisFrame = false;
