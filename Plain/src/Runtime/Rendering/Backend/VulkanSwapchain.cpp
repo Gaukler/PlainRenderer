@@ -4,7 +4,7 @@
 #include "VulkanSurface.h"
 #include "VulkanImage.h"
 
-VkSwapchainKHR createVulkanSwapChain(const int minImageCount, const VkSurfaceKHR surface, const VkSurfaceFormatKHR format) {
+VkSwapchainKHR createVulkanSwapchain(const int minImageCount, const VkSurfaceKHR surface, const VkSurfaceFormatKHR format) {
 
     const VkSurfaceCapabilitiesKHR surfaceCapabilities = getSurfaceCapabilities(surface);
 
@@ -97,4 +97,12 @@ void presentImage(const VkSemaphore waitSemaphore, const VkSwapchainKHR swapchai
     const VkResult result = vkQueuePresentKHR(vkContext.presentQueue, &present);
     checkVulkanResult(result);
     checkVulkanResult(presentResult);
+}
+
+void destroySwapchain(const Swapchain& swapchain) {
+    for (const Image& image : swapchain.images) {
+        destroyImageViews(image.viewPerMip);
+    }
+    vkDestroySwapchainKHR(vkContext.device, swapchain.vulkanHandle, nullptr);
+    vkDestroySurfaceKHR(vkContext.vulkanInstance, swapchain.surface, nullptr);
 }

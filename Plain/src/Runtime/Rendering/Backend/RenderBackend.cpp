@@ -63,7 +63,7 @@ void RenderBackend::setup(GLFWwindow* window) {
     initializeVulkanQueues();
     m_swapchain.surfaceFormat   = chooseSurfaceFormat(m_swapchain.surface);
     m_swapchain.minImageCount   = 2; // for double buffered VSync
-    m_swapchain.vulkanHandle    = createVulkanSwapChain(m_swapchain.minImageCount, m_swapchain.surface, m_swapchain.surfaceFormat);
+    m_swapchain.vulkanHandle    = createVulkanSwapchain(m_swapchain.minImageCount, m_swapchain.surface, m_swapchain.surfaceFormat);
 
     const std::array<int, 2> resolution = Window::getGlfwWindowResolution(window);
     m_swapchain.images =  createSwapchainImages(
@@ -125,15 +125,10 @@ void RenderBackend::shutdown() {
     for (const auto& sampler : m_samplers) {
         vkDestroySampler(vkContext.device, sampler, nullptr);
     }
-    for (const auto& image : m_swapchain.images) {
-        destroyImageViews(image.viewPerMip);
-    }
 
     vkDestroyDescriptorSetLayout(vkContext.device, m_globalTextureArrayDescriporSetLayout, nullptr);
 
-    //destroy swapchain
-    vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
-    vkDestroySurfaceKHR(vkContext.vulkanInstance, m_swapchain.surface, nullptr);
+    destroySwapchain(m_swapchain);
 
     m_vkAllocator.destroy();
     imGuiShutdown(m_imguiResources);
@@ -171,18 +166,14 @@ void RenderBackend::recreateSwapchain(const uint32_t width, const uint32_t heigh
 
     waitForGpuIdle();
 
-    for (const Image& image : m_swapchain.images) {
-        destroyImageViews(image.viewPerMip);
-    }
-    vkDestroySwapchainKHR(vkContext.device, m_swapchain.vulkanHandle, nullptr);
-    vkDestroySurfaceKHR(vkContext.vulkanInstance, m_swapchain.surface, nullptr);
+    destroySwapchain(m_swapchain);
 
     m_swapchain.surface = createSurface(window);
 
     // queue families must revalidate present support for new surface
     getQueueFamilies(vkContext.physicalDevice, &vkContext.queueFamilies, m_swapchain.surface);
 
-    m_swapchain.vulkanHandle = createVulkanSwapChain(
+    m_swapchain.vulkanHandle = createVulkanSwapchain(
         m_swapchain.minImageCount, 
         m_swapchain.surface, 
         m_swapchain.surfaceFormat);

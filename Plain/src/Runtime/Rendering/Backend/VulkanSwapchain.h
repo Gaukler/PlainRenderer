@@ -12,7 +12,7 @@ struct Swapchain {
     VkSemaphore         imageAvailable;
 };
 
-VkSwapchainKHR createVulkanSwapChain(
+VkSwapchainKHR createVulkanSwapchain(
     const int                   minImageCount, 
     const VkSurfaceKHR          surface, 
     const VkSurfaceFormatKHR    format);
@@ -24,3 +24,4 @@ std::vector<Image> createSwapchainImages(
     const VkFormat          format);
 
 void presentImage(const VkSemaphore waitSemaphore, const VkSwapchainKHR swapchain, const uint32_t imageIndex);
+void destroySwapchain(const Swapchain& swapchain);
