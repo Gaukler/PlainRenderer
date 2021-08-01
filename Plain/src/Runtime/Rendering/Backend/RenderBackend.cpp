@@ -1569,6 +1569,7 @@ void RenderBackend::destroyImageInternal(const Image& image) {
     }
     destroyImageViews(image.viewPerMip);
     vkDestroyImage(vkContext.device, image.vulkanHandle, nullptr);
+    m_vkAllocator.free(image.memory);
 }
 
 void RenderBackend::destroyBuffer(const Buffer& buffer) {
