@@ -53,11 +53,6 @@ void RenderBackend::setup(GLFWwindow* window) {
     m_swapchain.surface = createSurface(window);
     pickPhysicalDevice(m_swapchain.surface);
 
-    VkPhysicalDeviceProperties deviceProperties = getVulkanDeviceProperties();
-
-    std::cout << "Picked physical device: " << deviceProperties.deviceName << std::endl;
-    std::cout << std::endl;
-
     getQueueFamilies(vkContext.physicalDevice, &vkContext.queueFamilies, m_swapchain.surface);
     createLogicalDevice();
     initializeVulkanQueues();
@@ -269,7 +264,12 @@ void RenderBackend::setComputePassExecution(const ComputePassExecution& executio
     m_computePassExecutions.push_back(execution);
 }
 
-void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const char* pushConstantData,const RenderPassHandle passHandle, const int workerIndex) {
+void RenderBackend::drawMeshes(
+    const std::vector<MeshHandle>   meshHandles, 
+    const char*                     pushConstantData, 
+    const RenderPassHandle          passHandle, 
+    const int                       workerIndex) {
+
     const GraphicPass& pass = m_renderPasses.getGraphicPassRefByHandle(passHandle);
 
     VkShaderStageFlags pushConstantStageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -281,7 +281,12 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const 
     const int poolIndex = workerIndex + poolCount * FrameIndex::getFrameIndexMod2();
     
     const VkCommandBuffer meshCommandBuffer = pass.meshCommandBuffers[poolIndex];
-    const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSets[FrameIndex::getFrameIndexMod2()], m_globalTextureArrayDescriptorSet };
+
+    const VkDescriptorSet sets[3] = { 
+        m_globalDescriptorSet, 
+        pass.descriptorSets[FrameIndex::getFrameIndexMod2()], 
+        m_globalTextureArrayDescriptorSet };
+
     vkCmdBindDescriptorSets(meshCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
 
     for (uint32_t i = 0; i < meshHandles.size(); i++) {
@@ -289,9 +294,9 @@ void RenderBackend::drawMeshes(const std::vector<MeshHandle> meshHandles, const 
         const Mesh mesh = m_meshes[meshHandles[i].index];
 
         // vertex/index buffers
-        VkDeviceSize offset[] = { 0 };
-        vkCmdBindVertexBuffers(meshCommandBuffer, 0, 1, &mesh.vertexBuffer.vulkanHandle, offset);
-        vkCmdBindIndexBuffer(meshCommandBuffer, mesh.indexBuffer.vulkanHandle, offset[0], mesh.indexPrecision);
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(meshCommandBuffer, 0, 1, &mesh.vertexBuffer.vulkanHandle, &offset);
+        vkCmdBindIndexBuffer(meshCommandBuffer, mesh.indexBuffer.vulkanHandle, offset, mesh.indexPrecision);
 
         const bool pushConstantDataAvailable = pass.pushConstantSize > 0;
         if (pushConstantDataAvailable) {
@@ -370,13 +375,10 @@ void RenderBackend::renderFrame(const bool presentToScreen) {
     resetCommandBuffer(frameResources.commandBuffer);
     beginCommandBuffer(frameResources.commandBuffer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
-    {
-        TimestampQuery frameQuery;
-        frameQuery.name = "Frame";
-        frameQuery.startQuery = issueTimestampQuery(frameResources.commandBuffer, &frameResources.timestampQueryPool);
-
-        frameResources.timestampQueries.push_back(frameQuery);
-    }
+    TimestampQuery frameQuery;
+    frameQuery.name         = "Frame";
+    frameQuery.startQuery   = issueTimestampQuery(frameResources.commandBuffer, &frameResources.timestampQueryPool);
+    frameResources.timestampQueries.push_back(frameQuery);
 
     const std::vector<RenderPassBarriers> barriers = createRenderPassBarriers();
     submitRenderPasses(&frameResources, barriers);
@@ -784,7 +786,8 @@ void RenderBackend::submitRenderPasses(PerFrameResources* inOutFrameResources, c
     }
     startDebugLabel(inOutFrameResources->commandBuffer, "ImGui");
 
-    const std::vector<VkImageMemoryBarrier> uiBarrier = createImageBarriers(getImageRef(m_swapchainInputImageHandle),
+    const std::vector<VkImageMemoryBarrier> uiBarrier = createImageBarriers(
+        getImageRef(m_swapchainInputImageHandle),
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, 1);
     const VkRenderPassBeginInfo& uiPassBeginInfo = m_imguiResources.passBeginInfos[m_swapchainInputImageHandle.index];
@@ -808,13 +811,18 @@ void RenderBackend::submitGraphicPass(
 
     issueBarriersCommand(inOutFrameResources->commandBuffer, barriers.imageBarriers, barriers.memoryBarriers);
 
-    const glm::ivec2 resolution = getResolutionFromRenderTargets(execution.targets);
-    const auto beginInfo = createRenderPassBeginInfo(resolution.x, resolution.y, pass.vulkanRenderPass, 
-        framebuffer, pass.clearValues);
+    const glm::ivec2            resolution  = getResolutionFromRenderTargets(execution.targets);
+    const VkRenderPassBeginInfo beginInfo   = createRenderPassBeginInfo(
+        resolution.x, 
+        resolution.y, 
+        pass.vulkanRenderPass, 
+        framebuffer, 
+        pass.clearValues);
 
     //prepare pass
     vkCmdBeginRenderPass(inOutFrameResources->commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
+    // end drawcall command buffers
     const int poolCount = m_drawcallCommandPools.size();
     for (int poolIndex = 0; poolIndex < poolCount; poolIndex++) {
         const int cmdBufferIndex = poolIndex + FrameIndex::getFrameIndexMod2() * poolCount;
@@ -829,8 +837,9 @@ void RenderBackend::submitGraphicPass(
     vkCmdEndRenderPass(inOutFrameResources->commandBuffer);
 
     timeQuery.endQuery = issueTimestampQuery(inOutFrameResources->commandBuffer, &inOutFrameResources->timestampQueryPool);
-    endDebugLabel(inOutFrameResources->commandBuffer);
     inOutFrameResources->timestampQueries.push_back(timeQuery);
+
+    endDebugLabel(inOutFrameResources->commandBuffer);
 }
 
 void RenderBackend::submitComputePass(const ComputePassExecution& execution,
@@ -847,8 +856,20 @@ void RenderBackend::submitComputePass(const ComputePassExecution& execution,
 
     vkCmdBindPipeline(inOutFrameResources->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
 
-    const VkDescriptorSet sets[3] = { m_globalDescriptorSet, pass.descriptorSets[FrameIndex::getFrameIndexMod2()], m_globalTextureArrayDescriptorSet };
-    vkCmdBindDescriptorSets(inOutFrameResources->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipelineLayout, 0, 3, sets, 0, nullptr);
+    const VkDescriptorSet sets[3] = { 
+        m_globalDescriptorSet, 
+        pass.descriptorSets[FrameIndex::getFrameIndexMod2()], 
+        m_globalTextureArrayDescriptorSet };
+
+    vkCmdBindDescriptorSets(
+        inOutFrameResources->commandBuffer, 
+        VK_PIPELINE_BIND_POINT_COMPUTE, 
+        pass.pipelineLayout, 
+        0, 
+        3, 
+        sets, 
+        0, 
+        nullptr);
 
     if (execution.pushConstants.size() > 0) {
         vkCmdPushConstants(
@@ -863,8 +884,9 @@ void RenderBackend::submitComputePass(const ComputePassExecution& execution,
     vkCmdDispatch(inOutFrameResources->commandBuffer, execution.dispatchCount[0], execution.dispatchCount[1], execution.dispatchCount[2]);
 
     timeQuery.endQuery = issueTimestampQuery(inOutFrameResources->commandBuffer, &inOutFrameResources->timestampQueryPool);
-    endDebugLabel(inOutFrameResources->commandBuffer);
     inOutFrameResources->timestampQueries.push_back(timeQuery);
+
+    endDebugLabel(inOutFrameResources->commandBuffer);
 }
 
 void RenderBackend::waitForRenderFinished() {

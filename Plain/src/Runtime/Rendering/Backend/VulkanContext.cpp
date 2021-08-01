@@ -218,6 +218,9 @@ void pickPhysicalDevice(const VkSurfaceKHR surface) {
     if (vkContext.physicalDevice == VK_NULL_HANDLE) {
         throw std::runtime_error("failed to find suitable physical device");
     }
+
+    std::cout << "Picked physical device: " << getVulkanDeviceProperties().deviceName << std::endl;
+    std::cout << std::endl;
 }
 
 bool getQueueFamilies(const VkPhysicalDevice device, QueueFamilies* pOutQueueFamilies, const VkSurfaceKHR surface) {
